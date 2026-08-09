@@ -220,7 +220,7 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | GET | `/notifications` | `notifications` | Optional `?limit=` |
 | GET | `/notifications/unread-count` | `notifications` | — |
 | POST | `/notifications` | `notifications` | Create a notification |
-| PATCH | `/notifications/{id}/read` | `notifications` | Mark one as read |
+| PATCH | `/notifications/{notification_id}/read` | `notifications` | Mark one as read |
 
 No versioning prefix yet (`/api/v1` is a Sprint 003 item). No authentication on any route.
 
