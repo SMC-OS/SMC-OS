@@ -1,0 +1,403 @@
+# SIMO OS — System Architecture
+
+**Status:** Canonical reference, current as of Sprint 001 completion (9 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL (planned, Sprint 002) · Turborepo/pnpm workspace
+
+This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
+
+---
+
+## 1. Overview
+
+SIMO OS is a monorepo with two independently-runnable halves:
+
+- **Backend** (`SMC-OS/app/`) — a FastAPI application, run directly (no routers-of-routers hierarchy yet beyond the two Sprint 001 modules), currently stateless (no database).
+- **Frontend** (`SMC-OS/apps/web/`) — a Next.js App Router application, the sole consumer of the backend API, styled with Tailwind v4 and a hand-built component system (no UI library).
+
+They communicate over HTTP only. The frontend never imports backend code or vice versa. `NEXT_PUBLIC_API_URL` (in `apps/web/.env.local`) is the single point of configuration for where the frontend looks for the API — defaults to `http://127.0.0.1:8000`.
+
+A third directory, `SMC-OS-Docs/`, is a separate, disconnected Turborepo used for planning documents (`VISION.md`, `BLUEPRINT.md`) and is not part of the running system.
+
+---
+
+## 2. Repository & Folder Structure
+
+### 2.1 Backend — `SMC-OS/app/`
+
+```
+app/
+├── main.py                  # FastAPI app instance, CORS, all route declarations
+│
+├── activity/                # ✅ Sprint 001 — Recent Activity feed
+│   ├── models.py            #    ActivityEvent, ActivityEventCreate, ActivityType enum
+│   ├── repository.py        #    ActivityRepository (ABC) + InMemoryActivityRepository
+│   ├── service.py           #    ActivityService — business logic, holds the singleton
+│   ├── router.py            #    APIRouter: GET/POST /activity
+│   └── seed.py               #    Sample data for a fresh install
+│
+├── notifications/            # ✅ Sprint 001 — Notification centre
+│   ├── models.py             #    Notification, NotificationCreate, NotificationType enum
+│   ├── repository.py         #    NotificationRepository (ABC) + InMemory implementation
+│   ├── service.py             #    NotificationService
+│   ├── router.py              #    APIRouter: GET/POST /notifications, PATCH .../read
+│   └── seed.py                 #    Sample data for a fresh install
+│
+├── quotes/                    # ✅ Implemented — quote calculation engine
+│   ├── models.py               #    QuoteRequest (pydantic)
+│   ├── calculator.py            #    QuoteCalculator — pricing + VAT logic
+│   ├── slab_calculator.py        #    SlabCalculator — ⚠ placeholder yield math (see §7 debt)
+│   ├── generator.py               #    QuoteGenerator — thin wrapper over calculator (see debt)
+│   ├── pdf.py                      #    PDFGenerator — writes quote.pdf to local disk
+│   └── validator.py                 #    ⬜ empty — no request validation yet
+│
+├── assistant/                        # ⚠ Partially implemented — keyword-based, not AI
+│   ├── sales.py                       #    ✅ SalesAssistant — matches material keywords
+│   ├── search.py                       #    ✅ SearchAssistant — scores material matches
+│   ├── estimator.py                     #    ✅ EstimatorAssistant — regex-based text→quote
+│   └── {construction, customer_service, #    ⬜ empty stubs — 9 files, no logic yet
+│         executive, finance, marketing,
+│         projects, purchasing, scheduling,
+│         seo, social}.py
+│
+├── brain/                             # ⚠ Partially implemented — no real AI yet
+│   ├── manager.py                      #    ✅ BrainManager — dispatches to Sales/Search only
+│   ├── router.py                        #    ✅ BrainRouter — hardcoded keyword→agent dict
+│   └── {context, memory, permissions,    #    ⬜ empty — planned for Sprint 008+
+│         planner, reasoner, state}.py
+│
+├── data/                                # ✅ Implemented — hardcoded catalogue (temporary)
+│   ├── materials.py                      #    3 materials only — real catalogue in Sprint 005
+│   ├── pricing.py                         #    Flat £/slab price per material
+│   └── services.py                         #    Static list of 4 service names
+│
+├── core/                                 # ⬜ Empty — no config/logging/lifecycle yet
+│   └── {config, events, logger, settings, utils}.py    (Sprint 003)
+│
+├── database/                             # ⬜ Empty — no persistence layer yet (Sprint 002)
+│   └── {models, database, crud}.py
+│
+└── {api, apps/dashboard, customers,       # ⬜ Empty placeholder directories reserved
+     dashboard, integrations, memory,       #    for future modules — do not assume
+     projects, voice, wake}/                #    anything lives here yet
+```
+
+**Reading the symbols:** ✅ implemented and working · ⚠ implemented but limited/temporary · ⬜ empty placeholder, not built.
+
+### 2.2 Frontend — `SMC-OS/apps/web/`
+
+```
+apps/web/
+├── app/                          # Next.js App Router — one folder per route
+│   ├── layout.tsx                 # Root layout: fonts, ThemeProvider, AppShell, anti-flash script
+│   ├── page.tsx                    # "/" — Dashboard
+│   ├── quotes/
+│   │   ├── page.tsx                 # "/quotes" — index (recent quote_created activity + CTA)
+│   │   └── new/page.tsx              # "/quotes/new" — functional quote calculator (POST /quote)
+│   ├── customers/
+│   │   ├── page.tsx                  # "/customers" — index
+│   │   └── new/page.tsx               # "/customers/new" — form, logs activity (no persistence yet)
+│   ├── projects/
+│   │   ├── page.tsx                   # "/projects" — index
+│   │   └── new/page.tsx                # "/projects/new" — form, logs activity (no persistence yet)
+│   ├── ai-assistant/page.tsx            # "/ai-assistant" — talks to POST /process
+│   └── settings/page.tsx                 # "/settings" — honest "coming soon" state
+│
+├── components/
+│   ├── ui/                        # Reusable primitives — no business logic
+│   │   ├── Card.tsx, Button.tsx, Badge.tsx, Avatar.tsx, Field.tsx (Field/Input/Select/Checkbox)
+│   │   └── icons.tsx                # Hand-authored SVG icon set (no icon library dependency)
+│   ├── layout/                     # The application shell itself
+│   │   ├── AppShell.tsx              # Top-level layout: Sidebar + Topbar + main content
+│   │   ├── Sidebar.tsx                # Collapsible desktop sidebar + mobile drawer
+│   │   ├── SidebarContext.tsx          # Collapse/mobile-open state, persisted to localStorage
+│   │   └── Topbar.tsx                   # Search trigger, theme toggle, notifications, profile menu
+│   ├── shell/                      # Shell-level features, one level above layout/
+│   │   ├── CommandPalette.tsx        # Global search (Cmd/Ctrl+K)
+│   │   ├── NotificationsPanel.tsx     # Bell dropdown, polls /notifications
+│   │   ├── UserProfileMenu.tsx         # Avatar dropdown (auth-gated items disabled pre-Sprint 003)
+│   │   ├── ComingSoon.tsx               # Shared "not built yet" state card
+│   │   └── ModuleIndexPage.tsx           # Shared index-page pattern (Quotes/Customers/Projects)
+│   ├── dashboard/                  # Dashboard-specific components
+│   │   ├── StatGrid.tsx / StatCard.tsx  # Animated stat cards, polls /dashboard
+│   │   ├── RecentActivityPanel.tsx        # Polls /activity
+│   │   ├── QuickActions.tsx                # Links to the three "new" pages
+│   │   └── DashboardStatusBar.tsx           # Loading/error/offline banner
+│   └── theme/ThemeProvider.tsx      # Dark mode context, localStorage-persisted
+│
+├── hooks/
+│   ├── usePolling.ts               # Generic 5s-interval fetch hook (the polling primitive)
+│   ├── useDashboardStats.ts / useActivity.ts / useNotifications.ts   # Thin wrappers over usePolling
+│   ├── useOnlineStatus.ts           # navigator.onLine + online/offline events
+│   ├── useCountUp.ts                 # Animated number transitions
+│   └── useClickOutside.ts             # Dropdown dismissal
+│
+├── lib/
+│   ├── api.ts                      # Single HTTP client — every backend call goes through this
+│   ├── navigation.ts                 # Single source of truth for sidebar + command palette nav
+│   ├── activity.ts                    # Icon/colour mapping per ActivityType
+│   └── utils.ts                        # cn(), formatCurrencyGBP(), formatRelativeTime()
+│
+├── types/                          # Shared TypeScript types, mirroring backend pydantic models
+│   ├── dashboard.ts, activity.ts, notification.ts, quote.ts
+│
+├── _legacy/                        # Archived, not deleted — see _legacy/README.md
+│
+└── {hooks, lib, services, styles,   # `services/`, `styles/`, `utils/` exist but are still
+     types, utils}/                    empty — reserved, nothing to document yet
+```
+
+### 2.3 Other repo contents (not part of the running app)
+
+- `SMC-OS/packages/ui/` — Turborepo starter boilerplate (Button/Card/Code), not imported by `apps/web`. Leave as-is until a decision is made to either adopt or remove it (flagged in the original architecture report as a duplicate "shared UI" system).
+- `SMC-OS/apps/web/app/smc-home-backup.tsx` and `SMC-OS/smc-home-backup.tsx` — leftover backup files, not routes (Next.js only picks up `page.tsx`). Harmless but should eventually be removed or archived.
+- `SMC-OS-Docs/` — planning-only repo, no runtime relationship to `SMC-OS`.
+
+---
+
+## 3. Backend Modules
+
+| Module | Responsibility | State |
+|---|---|---|
+| `app.main` | FastAPI app instance, CORS, route declarations, router mounting | ✅ |
+| `app.activity` | Recent Activity feed — log and list timestamped events | ✅ in-memory |
+| `app.notifications` | Notification centre — create, list, mark read | ✅ in-memory |
+| `app.quotes` | Quote pricing engine | ✅ working, ⚠ slab-yield math is a placeholder |
+| `app.data` | Hardcoded material/pricing/services catalogue | ⚠ 3 materials only |
+| `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
+| `app.brain` | Routes free text to an assistant | ⚠ hardcoded keyword dict, not AI |
+| `app.core` | Config, logging, settings, lifecycle | ⬜ Sprint 003 |
+| `app.database` | ORM models, DB session, CRUD | ⬜ Sprint 002 |
+
+### 3.1 The repository pattern (important — read before touching activity/notifications)
+
+Both `app.activity` and `app.notifications` are built as **repository → service → router**, specifically so the in-memory storage can be swapped for PostgreSQL in Sprint 002 without changing the service, router, or any frontend code:
+
+```
+ActivityRepository (ABC)              NotificationRepository (ABC)
+   └── InMemoryActivityRepository        └── InMemoryNotificationRepository
+         (Sprint 001)                          (Sprint 001)
+   └── PostgresActivityRepository        └── PostgresNotificationRepository
+         (Sprint 002 — not built yet)          (Sprint 002 — not built yet)
+```
+
+`ActivityService` and `NotificationService` depend only on the abstract interface. When Sprint 002 lands, construct the service with a Postgres-backed repository instead of the default in-memory one — everything above the repository layer is unaffected. **Any new module that needs storage before the database exists should follow this same pattern.**
+
+---
+
+## 4. Frontend Modules
+
+| Layer | Responsibility | Depends on |
+|---|---|---|
+| `app/*` (pages) | Route-level composition, one file per URL | `components/`, `hooks/`, `lib/` |
+| `components/ui` | Dumb, reusable primitives — no data fetching, no business logic | Tailwind tokens only |
+| `components/layout` | The shell itself: sidebar, topbar, collapse/mobile state | `components/ui`, `SidebarContext` |
+| `components/shell` | Shell-level features (search, notifications dropdown, profile menu, shared page patterns) | `hooks/`, `lib/api.ts` |
+| `components/dashboard` | Dashboard-specific composition | `hooks/`, `lib/`, `components/ui` |
+| `components/theme` | Dark mode state | `localStorage`, `matchMedia` |
+| `hooks/` | Data fetching (polling), UI state (online status, click-outside, count-up animation) | `lib/api.ts` |
+| `lib/api.ts` | **The only place that calls `fetch()` against the backend** | `types/` |
+| `types/` | TypeScript mirrors of backend pydantic models | — |
+
+**Rule: nothing outside `lib/api.ts` calls `fetch()` directly.** If a new module needs a new backend call, add it to `lib/api.ts` first, then consume it through a hook.
+
+---
+
+## 5. Routing
+
+### 5.1 Backend API routes
+
+| Method | Path | Module | Notes |
+|---|---|---|---|
+| GET | `/` | `main.py` | Welcome message |
+| GET | `/health` | `main.py` | Static health check (no DB to check yet) |
+| POST | `/process` | `brain` → `assistant` | Keyword-routed, not AI |
+| POST | `/quote` | `quotes` | Full pricing calculation |
+| POST | `/estimate` | `assistant.estimator` → `quotes` | Free-text → quote |
+| POST | `/quote/pdf` | `quotes` | Writes `quote.pdf` to local disk |
+| GET | `/dashboard` | `main.py` | **Still hardcoded** — not DB-backed |
+| GET | `/activity` | `activity` | Optional `?limit=` and `?type=` query params |
+| POST | `/activity` | `activity` | Log a new event |
+| GET | `/notifications` | `notifications` | Optional `?limit=` |
+| GET | `/notifications/unread-count` | `notifications` | — |
+| POST | `/notifications` | `notifications` | Create a notification |
+| PATCH | `/notifications/{id}/read` | `notifications` | Mark one as read |
+
+No versioning prefix yet (`/api/v1` is a Sprint 003 item). No authentication on any route.
+
+### 5.2 Frontend routes
+
+| Path | Page | Functional today? |
+|---|---|---|
+| `/` | Dashboard | ✅ Fully live, polls every 5s |
+| `/quotes` | Quotes index | ⚠ Shows logged activity + CTA, no persisted history yet |
+| `/quotes/new` | New Quote | ✅ Fully functional — real pricing calculation |
+| `/customers` | Customers index | ⚠ Same pattern as Quotes |
+| `/customers/new` | New Customer | ⚠ Functional form, logs activity, doesn't persist a customer record |
+| `/projects` | Projects index | ⚠ Same pattern as Quotes |
+| `/projects/new` | New Project | ⚠ Functional form, logs activity, doesn't persist a project record |
+| `/ai-assistant` | AI Assistant | ✅ Functional — calls `POST /process` |
+| `/settings` | Settings | ⬜ "Coming soon" — no auth to configure yet |
+
+---
+
+## 6. API Flow
+
+### 6.1 Dashboard polling (the core pattern — every live panel follows this shape)
+
+```
+StatGrid / RecentActivityPanel / NotificationsPanel
+        │
+        ▼
+useDashboardStats() / useActivity() / useNotifications()   (hooks/)
+        │  wraps
+        ▼
+usePolling(fetcher, { intervalMs: 5000 })                   (hooks/usePolling.ts)
+        │  calls immediately, then every 5s
+        ▼
+api.getDashboardStats() / api.getActivity() / api.getNotifications()   (lib/api.ts)
+        │  fetch(`${NEXT_PUBLIC_API_URL}/...`)
+        ▼
+FastAPI route  →  Service  →  Repository (in-memory today, Postgres in Sprint 002)
+```
+
+`usePolling` returns `{ data, status, error, refetch }`. `status` drives the loading/error UI (`DashboardStatusBar`); `useOnlineStatus()` independently tracks `navigator.onLine` so an offline banner shows even if a request hasn't failed yet.
+
+### 6.2 Quote creation flow
+
+```
+User fills the form on /quotes/new
+        │
+        ▼
+api.createQuote(QuoteRequest)  →  POST /quote
+        │
+        ▼
+QuoteCalculator.calculate()  (quotes/calculator.py, using data/materials.py + data/pricing.py)
+        │  returns QuoteResult
+        ▼
+Result rendered on the page
+        │
+        ▼
+api.logActivity({ type: "quote_created", ... })  →  POST /activity   (fire-and-forget)
+        │
+        ▼
+Shows up in RecentActivityPanel on the dashboard within 5s (next poll)
+```
+
+The Customer and Project "new" flows follow the same shape but skip the calculation step — they call `api.logActivity()` directly, since there is no customer/project persistence yet (Sprint 004/006).
+
+### 6.3 AI Assistant flow
+
+```
+User types free text on /ai-assistant
+        │
+        ▼
+api.processPrompt(text)  →  POST /process
+        │
+        ▼
+BrainManager.process()  →  BrainRouter.think()  (keyword match, not AI)
+        │
+        ├── "sales"  →  SalesAssistant.reply()
+        ├── "search" →  SearchAssistant.search()
+        └── anything else → generic {"status": "received"} stub
+        │
+        ▼
+Raw JSON response rendered on the page, with the resolved agent shown as a badge
+```
+
+---
+
+## 7. Design Principles
+
+1. **Additive backend changes only, until Sprint 003's restructuring.** New capability is added as a new module with its own router, mounted in `main.py` with `app.include_router(...)`. Existing route bodies are never edited in place unless the task is specifically about that route.
+2. **Repository pattern for anything that needs storage before the database exists.** See §3.1. This is not optional — it's the only reason Sprint 002 will be a clean swap instead of a rewrite.
+3. **Single API client.** All HTTP calls go through `lib/api.ts`. This is what makes the migration to `/api/v1`, auth headers, or a WebSocket layer a one-file change later instead of a grep-and-replace across every component.
+4. **The shell is not a page — it's infrastructure.** `AppShell`, `Sidebar`, `Topbar`, and everything under `components/shell/` exist so that a new module (e.g. Contracts, in v1.0) only needs a new folder under `app/` and a `lib/navigation.ts` entry. It should never need to touch layout code.
+5. **Honesty over fake functionality.** Where a feature isn't built yet (Customers, Projects, Settings), the UI says so explicitly — a "Coming in Sprint N" badge, not a dead button or a silently-failing form. Forms that can't persist still do something real (log to Recent Activity) rather than pretending to save.
+6. **Polling now, swappable for WebSockets later.** Every live data hook goes through the single `usePolling` primitive specifically so a future real-time layer replaces one function, not every component that displays live data.
+7. **No new dependencies without a reason.** The icon set, the `cn()` classname helper, and the dropdown/click-outside logic are all hand-rolled rather than pulling in `lucide-react`, `clsx`, or a headless UI library, because the app doesn't need them yet at this scale. Revisit this if/when the component surface grows enough to justify the dependency weight.
+8. **Archive, don't delete, until told otherwise.** Obsolete files move to `_legacy/` with a documented reason (see `apps/web/_legacy/README.md`), not `rm`. This is a standing instruction, not a one-off.
+
+---
+
+## 8. Coding Standards
+
+### 8.1 Backend (Python / FastAPI)
+
+- One module per business domain (`activity/`, `notifications/`, `quotes/`), each with `models.py` (pydantic), `service.py` (logic), `router.py` (HTTP layer). Add `repository.py` if the module needs storage before Sprint 002.
+- Route handlers stay thin — they call a service method and return its result. Business logic lives in the service, not the router.
+- Pydantic models are the single source of truth for request/response shape. The frontend's `types/*.ts` should mirror them by hand until there's a codegen step (not yet set up).
+- Enums (`ActivityType`, `NotificationType`) are `str, Enum` subclasses so they serialise cleanly to JSON and stay in sync with the frontend's TypeScript union types.
+- No bare `except:` blocks; no silent failures. If a new endpoint can fail meaningfully, raise `HTTPException` with a real status code (see `notifications/router.py`'s 404 on an unknown ID for the pattern).
+
+### 8.2 Frontend (TypeScript / React / Tailwind)
+
+- **`"use client"` only where needed** — on components that use hooks, state, or browser APIs. Static composition components (e.g. `ModuleIndexPage`'s callers) stay server components where possible.
+- **Colour via CSS variables, never hardcoded hex in components.** Every colour is one of the tokens defined in `app/globals.css` (`background`, `surface`, `foreground`, `muted`, `border`, `accent`, `success`, `warning`, `danger`, `info`) and consumed as a Tailwind utility (`bg-surface`, `text-muted`, etc.). This is what makes dark mode automatic — components never need a `dark:` variant of their own.
+- **Dark mode is class-based**, toggled on `<html>` via `ThemeProvider`, matched in CSS via the `@custom-variant dark (&:where(.dark, .dark *));` declaration in `globals.css` (Tailwind v4 has no `darkMode: "class"` config option — this is the v4-native equivalent).
+- **No inline `fetch()` in components.** Always through `lib/api.ts` → a hook.
+- **Effects only for synchronising with external systems** (browser APIs, subscriptions), never to derive state from other state — see the Sprint 001 audit for concrete examples of this rule being enforced by `eslint-plugin-react-hooks`. When an effect must set state from a browser-only API on mount, that's acceptable but should carry a comment explaining why (SSR can't read `localStorage`/`matchMedia`/`navigator.onLine`).
+- **`cn()` from `lib/utils.ts`** for conditional class names — not a new dependency.
+- **Path alias `@/*`** maps to `apps/web/` root (see `tsconfig.json`) — use it (`@/components/...`, `@/lib/...`) rather than relative `../../../` chains.
+- **One component, one file, PascalCase filename matching the export.** Hooks are camelCase `useX.ts` under `hooks/`.
+
+### 8.3 Verification bar (every sprint, before it's called done)
+
+- `tsc --noEmit` — zero errors
+- `eslint .` — zero errors, zero warnings
+- `next build` — zero errors (Google Fonts require outbound network access; irrelevant sandboxes should verify with a temporary local-font swap, not skip the check)
+- Every existing backend route smoke-tested with a real request after any backend change
+- New/changed routes smoke-tested the same way
+
+---
+
+## 9. Roadmap — Sprint 002 to Sprint 016
+
+Sprint 001 (application shell) is complete and audited — see `SPRINT-001-AUDIT.md`. Estimates are in developer-days (relative sizing, not a fixed-price quote), assuming AI-assisted development at the pace demonstrated in Sprint 001. **P0** = blocking/sequenced, **P1** = important but flexible ordering, **P2** = valuable, can slip a sprint.
+
+### v0.1 — Foundation & Stabilise (Sprint 001 ✅ done, 002–003 remaining)
+
+| Sprint | Feature | Priority | Depends on |
+|---|---|---|---|
+| **001** ✅ | Application shell, dashboard rebuild, Recent Activity + Notifications (in-memory) | P0 | — |
+| **002** | Database foundation: PostgreSQL + SQLAlchemy 2.0 + Alembic; core models (`Customer`, `Quote`, `Project`, `Material`, `User`, `ActivityLog`, `Notification`) | P0 | Sprint 001 |
+| **002** | Swap the in-memory activity/notification repositories for Postgres-backed ones — zero frontend changes, per §3.1 | P0 | Sprint 002 DB models |
+| **003** | API restructuring: split `main.py` into `APIRouter` modules under `/api/v1`; `core/config.py` via `pydantic-settings` + `.env` | P0 | Sprint 002 |
+| **003** | Error handling middleware (400/404/422 instead of raw 500s) | P0 | Sprint 003 routing |
+| **003** | Basic JWT auth, single-tenant to start — unblocks `UserProfileMenu`'s disabled items and `/settings` | P0 | Sprint 002 `User` model |
+| **003** | `pytest` + coverage on the quote calculator; basic CI (lint + test on push) | P0 | — |
+
+### v0.2 — Core Business Operations
+
+| Sprint | Feature | Priority | Depends on |
+|---|---|---|---|
+| **004** | CRM: customer list/detail/create, backed by the database — replaces `/customers/new`'s activity-log-only form with real persistence | P0 | v0.1 auth + DB |
+| **005** | Full Material Library (quartz/granite/marble/porcelain/Dekton, real supplier pricing) + accurate slab-yield calculator (replaces the "temporary estimate" in `slab_calculator.py`) | P0 | v0.1 DB |
+| **006** | AI Quotation Generator v1 (LLM-assisted text→quote extraction via the already-installed OpenAI SDK) | P1 | Sprint 005 |
+| **006** | Projects module: job pipeline (enquiry → quoted → booked → templated → fabricated → installed → complete) — replaces `/projects/new`'s activity-log-only form | P1 | Sprint 004 |
+| **007** | Invoice generator: proper PDF layout, VAT breakdown, letterhead, returned as a download (not written to local disk as today) | P1 | Sprint 005 |
+| **007** | Dashboard polish: Recent Activity reflects real DB events end-to-end | P1 | Sprints 001–007 |
+
+### v0.3 — AI Workforce & Automation
+
+| Sprint | Feature | Priority | Depends on |
+|---|---|---|---|
+| **008** | Real AI Router: replace `BrainRouter`'s keyword `dict` with LLM/embeddings-based intent classification | P0 | v0.2 complete |
+| **009** | Implement the 9 stub assistants (customer service, marketing, SEO, scheduling, finance, purchasing, construction, social, executive) | P1 | Sprint 008 |
+| **010** | AI Sales Assistant + AI Customer Support (chat-based, grounded in CRM/material data) | P1 | Sprint 009 |
+| **011** | Appointment booking + calendar integration; marketing dashboard + social scheduler; automation (lead nurture, quote-expiry reminders); Analytics v1 | P2 | Sprint 004–010 |
+
+### v1.0 — Production SaaS Platform
+
+| Sprint | Feature | Priority | Depends on |
+|---|---|---|---|
+| **012** | Multi-tenant architecture refactor (de-risked if Sprint 002 added a `tenant_id` column to every table up front) | P0 | Sprint 002 |
+| **013** | Client Portal (project tracking, documents, messaging) | P1 | Sprint 012 |
+| **014** | Contracts + digital signatures; Payment tracking (Stripe/GoCardless) | P1 | Sprint 012 |
+| **015** | Staff management + RBAC; Supplier database + purchasing workflow | P2 | Sprint 012 |
+| **016** | AI Renovation Planner / Design Assistant / Stone Visualiser (vision model + rendering); full observability; security hardening; subscription billing | P2 | Sprint 012, highest R&D risk in the roadmap |
+
+Full context on architecture decisions (ORM choice, auth strategy, multi-tenancy model, CI/CD timing) and risk mitigations behind this roadmap lives in `SIMO-OS-Architecture-Report.md`.
+
+---
+
+*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first.*
