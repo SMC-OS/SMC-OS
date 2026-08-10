@@ -32,7 +32,10 @@ _SEED_NOTIFICATIONS = [
 
 
 def seed_notifications() -> None:
+    # Sprint 002: notification_service is now backed by Postgres, so this
+    # guard is what prevents every app restart from inserting duplicate seed
+    # rows — it only seeds a genuinely empty notifications table.
     if notification_service.list_all(limit=1):
-        return
+        return  # already seeded
     for notification in _SEED_NOTIFICATIONS:
         notification_service.create(notification)

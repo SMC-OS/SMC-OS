@@ -42,7 +42,10 @@ _SEED_EVENTS = [
 
 
 def seed_activity() -> None:
+    # Sprint 002: activity_service is now backed by Postgres, so this guard
+    # is what prevents every app restart from inserting duplicate seed rows
+    # — it only seeds a genuinely empty activity_log table.
     if activity_service.list_recent(limit=1):
-        return  # already seeded (e.g. reload in dev)
+        return  # already seeded
     for event in _SEED_EVENTS:
         activity_service.log(event)

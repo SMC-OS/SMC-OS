@@ -1,6 +1,9 @@
+import uuid
 from abc import ABC, abstractmethod
 
-from app.activity.models import ActivityEvent
+from app.activity.models import ActivityEvent, ActivityType
+from app.database import crud
+from app.database.database import SessionLocal
 
 
 class ActivityRepository(ABC):
@@ -30,4 +33,42 @@ class InMemoryActivityRepository(ActivityRepository):
 
     def add(self, event: ActivityEvent) -> ActivityEvent:
         self._events.append(event)
+        return event
+
+
+class PostgresActivityRepository(ActivityRepository):
+    """Sprint 002: real persistence, behind the same interface as above.
+
+    Opens/closes its own session per call rather than taking one via FastAPI
+    dependency injection — ActivityService is constructed as a module-level
+    singleton (see service.py), not per-request, so there's no request-scoped
+    session to receive. See app/database/database.py's `get_db` for the
+    dependency-injected version future route work can use instead.
+    """
+
+    def list(self, limit: int = 20) -> list[ActivityEvent]:
+        with SessionLocal() as db:
+            rows = crud.list_activity_log(db, limit=limit)
+            return [
+                ActivityEvent(
+                    id=str(row.id),
+                    type=ActivityType(row.type),
+                    title=row.title,
+                    description=row.description,
+                    timestamp=row.timestamp,
+                )
+                for row in rows
+            ]
+
+    def add(self, event: ActivityEvent) -> ActivityEvent:
+        with SessionLocal() as db:
+            crud.create_activity_log(
+                db,
+                id=uuid.UUID(event.id),
+                tenant_id=None,
+                type=event.type.value,
+                title=event.title,
+                description=event.description,
+                timestamp=event.timestamp,
+            )
         return event

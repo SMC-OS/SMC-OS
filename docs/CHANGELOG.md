@@ -4,6 +4,27 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
+## 2026-08-10 — (uncommitted) — Sprint #002 - Database Foundation
+
+Full detail in `docs/SPRINTS/sprint-002.md`. Not yet committed — pending approval.
+
+**Backend**
+- PostgreSQL 16 + SQLAlchemy 2.0 + Alembic added. New `app/database/` module: `database.py` (engine/session/`get_db`), `models.py` (7 tables: `Customer`, `Quote`, `Project`, `Material`, `User`, `ActivityLog`, `NotificationRecord`, each with `tenant_id`), `crud.py` (helpers for `activity_log`/`notifications` only).
+- `PostgresActivityRepository` / `PostgresNotificationRepository` added and made the default for `activity_service`/`notification_service` — `app/activity/router.py` and `app/notifications/router.py` unchanged, per ADR-001. `InMemory*Repository` still present, no longer used by default.
+- `seed_activity()`/`seed_notifications()` guards (already present since Sprint 001) now do real work: they prevent duplicate seed rows across restarts against the real database.
+- **No new API routes.** `customers`, `quotes`, `projects`, `materials`, `users` tables exist with zero endpoints reading/writing them — deliberately deferred to Sprints 003–006.
+- `requirements.txt` re-encoded from UTF-16 to UTF-8 (long-standing bug, now fixed) and 3 packages added: `sqlalchemy==2.0.36`, `alembic==1.14.0`, `psycopg[binary]==3.2.3`.
+
+**Infrastructure**
+- `docker-compose.yml` (root): single `postgres:16-alpine` service for local dev, no other infrastructure.
+- `.env.example` (root, tracked) and `.env` (root, gitignored): `POSTGRES_*` values + `DATABASE_URL`.
+
+**Verified**
+- `alembic upgrade head` creates all 7 tables with `tenant_id` present on each, against a real PostgreSQL 16 instance.
+- Activity/notification repository CRUD, mark-as-read, and persistence across a backend restart all confirmed against real Postgres — no duplicate seed rows on the second startup.
+- All 7 original routes (`/`, `/health`, `/process`, `/quote`, `/estimate`, `/quote/pdf`, `/dashboard`) return unchanged response shapes.
+- Frontend `tsc --noEmit`, `eslint`, `next build` all clean — no frontend file touched this sprint.
+
 ## 2026-08-09 — `d01f07e` — docs: add example environment configuration
 
 Added `apps/web/.env.local.example` (template for `NEXT_PUBLIC_API_URL`) after fixing the `.gitignore` pattern that had been silently excluding it.

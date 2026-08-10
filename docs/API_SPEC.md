@@ -1,6 +1,6 @@
 # SIMO OS — API Specification
 
-**Status:** Reflects the actual FastAPI application as of Sprint 001 (`app/main.py` + `app/activity/` + `app/notifications/`).
+**Status:** Reflects the actual FastAPI application as of Sprint 002 (`app/main.py` + `app/activity/` + `app/notifications/`). No route paths, request shapes, or response shapes changed in Sprint 002 — the only change is that `/activity` and `/notifications` are now PostgreSQL-backed instead of in-memory (see `docs/DATABASE_SCHEMA.md`), so their data now survives a server restart.
 **Base URL (local dev):** `http://127.0.0.1:8000`
 **Versioning:** None yet. All routes are unprefixed. `/api/v1` is planned for Sprint 003.
 **Authentication:** None. Every route below is public. JWT auth is planned for Sprint 003.
@@ -117,7 +117,7 @@ Generates a PDF quote document.
 
 ## Activity routes (`app/activity/router.py`) — added Sprint 001
 
-Backed by `InMemoryActivityRepository` — data resets on every server restart. See `docs/DATABASE_SCHEMA.md` for the persistence plan.
+Backed by `PostgresActivityRepository` since Sprint 002 — data survives a server restart. `InMemoryActivityRepository` still exists in the same file but is no longer constructed by default. See `docs/DATABASE_SCHEMA.md`.
 
 ### `GET /activity`
 
@@ -151,7 +151,7 @@ Backed by `InMemoryActivityRepository` — data resets on every server restart. 
 
 ## Notification routes (`app/notifications/router.py`) — added Sprint 001
 
-Backed by `InMemoryNotificationRepository` — data resets on every server restart.
+Backed by `PostgresNotificationRepository` since Sprint 002 — data survives a server restart. `InMemoryNotificationRepository` still exists in the same file but is no longer constructed by default.
 
 ### `GET /notifications`
 
@@ -206,11 +206,11 @@ Marks one notification as read.
 | POST | `/estimate` | Initial | No |
 | POST | `/quote/pdf` | Initial | No |
 | GET | `/dashboard` | Initial | No (hardcoded) |
-| GET | `/activity` | Sprint 001 | No (in-memory) |
-| POST | `/activity` | Sprint 001 | No (in-memory) |
-| GET | `/notifications` | Sprint 001 | No (in-memory) |
-| GET | `/notifications/unread-count` | Sprint 001 | No (in-memory) |
-| POST | `/notifications` | Sprint 001 | No (in-memory) |
-| PATCH | `/notifications/{notification_id}/read` | Sprint 001 | No (in-memory) |
+| GET | `/activity` | Sprint 001 | **Yes** — Postgres (Sprint 002) |
+| POST | `/activity` | Sprint 001 | **Yes** — Postgres (Sprint 002) |
+| GET | `/notifications` | Sprint 001 | **Yes** — Postgres (Sprint 002) |
+| GET | `/notifications/unread-count` | Sprint 001 | **Yes** — Postgres (Sprint 002) |
+| POST | `/notifications` | Sprint 001 | **Yes** — Postgres (Sprint 002) |
+| PATCH | `/notifications/{notification_id}/read` | Sprint 001 | **Yes** — Postgres (Sprint 002) |
 
-No route in the system is currently backed by a real database. That lands in Sprint 002 — see `docs/ROADMAP.md`.
+The other 7 original routes remain not-DB-backed — that's unchanged Sprint 002 scope (see `docs/DATABASE_SCHEMA.md` §3 for what Sprint 002 deliberately didn't build).

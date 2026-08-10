@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: simo-os-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-simo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simo}
+      POSTGRES_DB: ${POSTGRES_DB:-simo_os}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - simo_os_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  simo_os_postgres_data:

@@ -1,10 +1,14 @@
 from app.activity.models import ActivityEvent, ActivityEventCreate, ActivityType
-from app.activity.repository import ActivityRepository, InMemoryActivityRepository
+from app.activity.repository import ActivityRepository, PostgresActivityRepository
 
 
 class ActivityService:
     def __init__(self, repository: ActivityRepository | None = None) -> None:
-        self.repository = repository or InMemoryActivityRepository()
+        # Sprint 001 defaulted this to InMemoryActivityRepository(). Sprint 002
+        # swaps the default to PostgresActivityRepository() per ADR-001 — the
+        # constructor signature, and everything above it (router, service
+        # methods), is unchanged.
+        self.repository = repository or PostgresActivityRepository()
 
     def list_recent(
         self, limit: int = 20, type: ActivityType | None = None
@@ -18,7 +22,7 @@ class ActivityService:
         return self.repository.add(ActivityEvent(**event.model_dump()))
 
 
-# Singleton used by the router. Once a real database repository exists,
-# construct this with `ActivityService(PostgresActivityRepository(...))`
-# instead — nothing else in the app needs to know.
+# Singleton used by the router. Sprint 002: now backed by Postgres by
+# default (see repository.py) — the router and every caller above this line
+# are unchanged, exactly as ADR-001 intended.
 activity_service = ActivityService()

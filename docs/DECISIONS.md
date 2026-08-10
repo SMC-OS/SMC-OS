@@ -56,7 +56,7 @@ Files identified as dead or duplicate are moved to `_legacy/` with a documented 
 `app/brain/router.py` maps literal keywords ("price", "quartz", "instagram"...) to an agent name via a Python `dict`. This is explicitly acknowledged as a stand-in, not a design decision to keep. Its eventual replacement is tracked separately as ADR-017 (PLANNED).
 
 ## ADR-010: ORM and migrations — SQLAlchemy 2.0 + Alembic
-**Status:** DECIDED-NOT-IMPLEMENTED (Sprint 002)
+**Status:** IMPLEMENTED (`app/database/database.py`, `app/database/models.py`, `alembic/`)
 
 Recommended pairing for FastAPI + PostgreSQL. Standard, well-supported, no exotic alternative considered necessary at this scale.
 
@@ -71,9 +71,9 @@ Stateless tokens were chosen over sessions so a future mobile app or client port
 Every route today is unprefixed (see `docs/API_SPEC.md`). Adding the prefix now, before any real client depends on the unversioned paths, was judged cheaper than retrofitting it later.
 
 ## ADR-013: Multi-tenancy model — row-level `tenant_id`, not separate schemas
-**Status:** DECIDED-NOT-IMPLEMENTED (`tenant_id` column planned for Sprint 002's schema; enforcement planned for Sprint 012)
+**Status:** IMPLEMENTED for the column (all 7 tables, Sprint 002); DECIDED-NOT-IMPLEMENTED for enforcement (Sprint 012)
 
-Simpler to operate at this scale than per-tenant schemas. Adding the column early (Sprint 002) even though it isn't enforced until Sprint 012 was judged cheap insurance against an expensive later migration.
+Simpler to operate at this scale than per-tenant schemas. Adding the column early (Sprint 002) even though it isn't enforced until Sprint 012 was judged cheap insurance against an expensive later migration. The column is a plain nullable UUID, not a foreign key — no `tenants` table exists yet, and nothing reads or filters by it today.
 
 ## ADR-014: Frontend data fetching — hand-rolled polling now, TanStack Query later
 **Status:** DECIDED-NOT-IMPLEMENTED (TanStack Query adoption planned for Sprint 004)
@@ -94,3 +94,13 @@ Candidates noted (Render/Railway/Fly.io for backend + managed Postgres, Vercel f
 **Status:** PLANNED (Sprint 008, per `docs/ROADMAP.md`)
 
 The *what* and *when* are scheduled — `BrainRouter` (ADR-009) is explicitly not the long-term design, and Sprint 008 is where it gets replaced. The *how* is not yet decided: whether that's LLM-based classification, embeddings-based similarity, or another approach, and which provider, has not been chosen. Distinct from DECIDED-NOT-IMPLEMENTED entries above, where the specific technical approach is already settled.
+
+## ADR-018: Local PostgreSQL via a single-service Docker Compose file
+**Status:** IMPLEMENTED (`docker-compose.yml`)
+
+One `postgres:16-alpine` service, no other infrastructure (no pgAdmin, no app container, no production deployment config). Credentials come from the root `.env` (gitignored; `.env.example` is the tracked template) via `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`/`POSTGRES_PORT`, with sensible defaults if unset. **Why:** gives every developer a reproducible local database with one command (`docker compose up -d`) without deciding anything about production hosting — ADR-016 (hosting) remains UNDECIDED and this doesn't presuppose an answer to it.
+
+## ADR-019: Postgres-backed repositories open a session per call, not via FastAPI dependency injection
+**Status:** IMPLEMENTED (`app/activity/repository.py`, `app/notifications/repository.py`)
+
+`PostgresActivityRepository`/`PostgresNotificationRepository` call `SessionLocal()` directly inside each method (`with SessionLocal() as db:`) rather than receiving a session through FastAPI's `Depends(get_db)`. **Why:** `activity_service`/`notification_service` are module-level singletons constructed once at import time (ADR-001 predates the database and this hasn't changed), not per-request objects — there is no request-scoped session available to inject into them. `app/database/database.py`'s `get_db()` dependency exists for future route-level code (Sprint 004+, once `customers`/`quotes`/`projects` get real endpoints) that isn't built around a singleton and can take a request-scoped session normally.
