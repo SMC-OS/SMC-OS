@@ -1,7 +1,10 @@
 import type { ActivityEvent, ActivityType } from "@/types/activity";
+import type { LoginResponse } from "@/types/auth";
+import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
 import type { AppNotification } from "@/types/notification";
 import type { QuoteRequest, QuoteResult } from "@/types/quote";
+import { clearToken, getToken } from "@/lib/auth-storage";
 
 /**
  * Single source of truth for the backend base URL. Reads from an env var
@@ -26,6 +29,10 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
 
+  // Sprint 004: attach the stored JWT (if any) to every call. Harmless on
+  // public routes — required on auth-gated ones like /customers.
+  const token = getToken();
+
   try {
     // Sprint 003: every backend route (except / and /health) moved under
     // /api/v1 (ADR-012) — applied once here so every api.* call site below
@@ -34,6 +41,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: {
         "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init?.headers ?? {}),
       },
     });
@@ -43,6 +51,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
+    // A 401 means the stored token is missing/invalid/expired — clear it so
+    // the next auth check on a protected page redirects to /login instead
+    // of retrying with a dead token.
+    if (res.status === 401) clearToken();
     throw new ApiError(`Request to ${path} failed with ${res.status}`, res.status);
   }
 
@@ -82,5 +94,22 @@ export const api = {
     request<Record<string, unknown> | unknown[]>("/process", {
       method: "POST",
       body: JSON.stringify({ text }),
+    }),
+
+  login: (email: string, password: string) =>
+    request<LoginResponse>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+
+  getCustomers: (limit = 20) =>
+    request<Customer[]>(`/customers?limit=${limit}`),
+
+  getCustomer: (id: string) => request<Customer>(`/customers/${id}`),
+
+  createCustomer: (customer: CustomerCreate) =>
+    request<Customer>("/customers", {
+      method: "POST",
+      body: JSON.stringify(customer),
     }),
 };

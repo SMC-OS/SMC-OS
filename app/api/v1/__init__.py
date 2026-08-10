@@ -9,7 +9,9 @@ from fastapi import APIRouter
 
 from app.api.v1.core import router as core_router
 from app.auth.router import router as auth_router
+from app.customers.router import router as customers_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(core_router)
 api_router.include_router(auth_router)
+api_router.include_router(customers_router)

@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Avatar } from "@/components/ui/Avatar";
 import { ChevronDownIcon, LogOutIcon, SettingsIcon, UserIcon } from "@/components/ui/icons";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -15,6 +17,14 @@ export function UserProfileMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, () => setOpen(false));
+  const router = useRouter();
+  const { logout } = useAuth();
+
+  function handleSignOut() {
+    logout();
+    setOpen(false);
+    router.push("/login");
+  }
 
   return (
     <div className="relative" ref={ref}>
@@ -46,7 +56,7 @@ export function UserProfileMenu() {
             type="button"
             disabled
             className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-muted opacity-60"
-            title="Authentication and profile management arrive in Sprint 003"
+            title="Profile management isn't built yet"
           >
             <UserIcon className="h-4 w-4" />
             Profile
@@ -56,7 +66,7 @@ export function UserProfileMenu() {
             type="button"
             disabled
             className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-muted opacity-60"
-            title="Coming in Sprint 003"
+            title="No account settings to configure yet"
           >
             <SettingsIcon className="h-4 w-4" />
             Settings
@@ -64,9 +74,8 @@ export function UserProfileMenu() {
 
           <button
             type="button"
-            disabled
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-muted opacity-60"
-            title="Authentication isn't implemented yet — coming in Sprint 003"
+            onClick={handleSignOut}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground hover:bg-surface-hover"
           >
             <LogOutIcon className="h-4 w-4" />
             Sign out

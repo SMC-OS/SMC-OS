@@ -1,10 +1,10 @@
 """Minimal CRUD helpers backing the Postgres-backed repositories.
 
 Sprint 002 added the operations app/activity and app/notifications need.
-Sprint 003 adds the small set app/auth needs against `users` (create,
-look up by email/id, count — for the login flow and the seed guard). No
-CRUD helpers for customers/quotes/projects/materials exist yet — no API
-surface uses those tables (see docs/DATABASE_SCHEMA.md).
+Sprint 003 added the small set app/auth needs against `users`. Sprint 004
+adds `customers` (list/get/create — app/customers/, the first real business
+data module). No CRUD helpers for quotes/projects/materials exist yet — no
+API surface uses those tables (see docs/DATABASE_SCHEMA.md).
 """
 
 import uuid
@@ -13,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database.models import ActivityLog, NotificationRecord, User
+from app.database.models import ActivityLog, Customer, NotificationRecord, User
 
 
 def create_activity_log(
@@ -121,3 +121,27 @@ def get_user_by_id(db: Session, user_id: uuid.UUID) -> User | None:
 
 def count_users(db: Session) -> int:
     return db.query(User).count()
+
+
+def create_customer(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    name: str,
+    email: str | None = None,
+    phone: str | None = None,
+) -> Customer:
+    row = Customer(id=id, name=name, email=email, phone=phone)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_customer_by_id(db: Session, customer_id: uuid.UUID) -> Customer | None:
+    return db.get(Customer, customer_id)
+
+
+def list_customers(db: Session, limit: int = 20) -> list[Customer]:
+    stmt = select(Customer).order_by(Customer.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt))

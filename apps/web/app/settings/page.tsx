@@ -14,8 +14,8 @@ export default function SettingsPage() {
 
       <ComingSoon
         title="Settings"
-        description="Authentication lands in Sprint 003, so there's no account to configure yet. Staff management and permissions follow in v1.0."
-        sprint="Sprint 003"
+        description="Login exists now, but there's no account settings to configure yet. Staff management and permissions follow in v1.0."
+        sprint="v1.0"
       />
     </div>
   );

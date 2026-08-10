@@ -1,28 +1,24 @@
 # SIMO OS — User Roles & Permissions
 
-**Status (Sprint 003): login/token issuance exists in the backend; no route enforces it yet, and the frontend still shows a hardcoded user.** `app/database/models.py`'s `User` table now has a `password_hash` column, and `POST /api/v1/auth/login` / `GET /api/v1/auth/me` are real, working endpoints (`app/auth/`) — but every other route in `docs/API_SPEC.md` remains completely public (ADR-020, a deliberate scope decision, not an oversight). The frontend has not been wired to call login — `UserProfileMenu` and `/settings` are unchanged from Sprint 001. This document describes the current state honestly, and the planned model for when enforcement and the frontend login flow actually get built.
+**Status (Sprint 004): real login works end-to-end, and one module (`customers`) actually requires it.** `POST /api/v1/auth/login` / `GET /api/v1/auth/me` (`app/auth/`, Sprint 003) are backed by a real, seeded owner account. Sprint 004 wired the frontend to them for the first time — a real `/login` page, token storage, and `/api/v1/customers/*` requiring a valid token (ADR-021). Every other route (`/api/v1/quote`, `/api/v1/activity`, `/api/v1/notifications`, etc.) remains public (ADR-020) — enforcement was applied surgically to the one module that needed it, not broadly. This document describes the current state honestly, and the planned model for what's still ahead.
 
 ---
 
 ## 1. Current state
 
-The frontend still shows a single hardcoded user in `components/shell/UserProfileMenu.tsx`:
+The frontend now has a real login flow: `apps/web/app/login/page.tsx` calls `POST /api/v1/auth/login`, stores the returned JWT (`apps/web/lib/auth-storage.ts`, localStorage), and `components/auth/AuthProvider.tsx` (a React context mirroring `ThemeProvider`'s shape) tracks whether a valid token is present. `components/shell/UserProfileMenu.tsx`'s **Sign out** is real — it clears the token and redirects to `/login`. Profile and Settings remain `disabled` — nothing new to show/configure for either yet, unrelated to this sprint.
 
-```ts
-const CURRENT_USER = { name: "Simo", role: "Owner" };
-```
+`/customers`, `/customers/new`, and `/customers/[id]` all redirect to `/login` if no valid token is present (a client-side check-on-mount guard, not Next.js middleware/SSR-level — proportionate to an internal tool with one seeded user today). `lib/api.ts`'s `request()` attaches the stored token to every backend call automatically and clears it on a `401` (treating that as "session expired," not just this one call failing).
 
-This is display-only — it is not read from a login session, not validated against anything, and not connected to the backend's new `/api/v1/auth/*` endpoints (that wiring is future work). The menu's Profile, Settings, and Sign out items are still rendered `disabled`.
+`/settings` still shows a "Coming soon" state — there's a session now, but nothing to configure with it yet.
 
-The `/settings` page still shows a "Coming soon" state rather than a working settings form.
-
-The backend side is real: `POST /api/v1/auth/login` checks a hashed password in the `users` table and issues a signed JWT; `GET /api/v1/auth/me` validates one. One owner account is seeded on startup from `.env` (`app/auth/seed.py`). But **no other route checks who's calling it** — anyone with network access can still call `/api/v1/quote`, `/api/v1/activity`, `/api/v1/notifications`, etc. without a token (ADR-020).
+**Still true:** anyone with network access can call `/api/v1/quote`, `/api/v1/activity`, `/api/v1/notifications`, `/api/v1/process`, `/api/v1/dashboard`, etc. without a token — only `/api/v1/customers/*` requires one (ADR-021).
 
 ---
 
 ## 2. Planned model (partially built)
 
-Per `docs/ROADMAP.md`, Sprint 003 delivered single-tenant JWT *machinery*. What's still ahead: wiring the frontend (`UserProfileMenu`, `/settings`) to actually call `/api/v1/auth/login`, and applying `Depends(get_current_user)` to routes once a later sprint has real per-user data worth protecting. Role-based permissions arrive in **v1.0, Sprint 015** (staff management + RBAC), once multi-tenancy (Sprint 012) exists.
+Per `docs/ROADMAP.md`, Sprint 003 delivered single-tenant JWT *machinery*; Sprint 004 is the first sprint to actually enforce it, on the one module (`customers`) that introduced real business data. Future business-data modules (quotes/projects persistence, materials) will face the same decision on a case-by-case basis, not an automatic blanket rule. Role-based permissions arrive in **v1.0, Sprint 015** (staff management + RBAC), once multi-tenancy (Sprint 012) exists.
 
 Based on the business context this system is being built for (a stone/construction company), the anticipated roles are:
 
@@ -38,4 +34,4 @@ Based on the business context this system is being built for (a stone/constructi
 
 ## 3. What to check before assuming auth is enforced
 
-If you're reading this because you're about to build something that depends on "the current user" or "permissions": `get_current_user` (`app/auth/dependencies.py`) exists and works, but it is not attached to any route outside `/api/v1/auth/me`. There are still no permissions/roles enforcement anywhere. Check `docs/API_SPEC.md`'s route table's "Auth required?" column and `docs/DECISIONS.md` ADR-020 — if a route you care about still says "No", nothing has changed since this document was written.
+If you're reading this because you're about to build something that depends on "the current user" or "permissions": `get_current_user` (`app/auth/dependencies.py`) is attached to `/api/v1/auth/me` and all of `/api/v1/customers/*` — nothing else. There are still no permissions/roles, only "has a valid token or doesn't." Check `docs/API_SPEC.md`'s route table's "Auth required?" column and `docs/DECISIONS.md` ADR-020/ADR-021 — if a route you care about still says "No", nothing has changed since this document was written.

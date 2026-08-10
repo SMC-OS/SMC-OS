@@ -1,7 +1,7 @@
 # SIMO OS — System Architecture
 
-**Status:** Canonical reference, current as of Sprint 003 completion (10 August 2026)
-**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Turborepo/pnpm workspace
+**Status:** Canonical reference, current as of Sprint 004 completion (11 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Turborepo/pnpm workspace
 
 This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
 
@@ -11,7 +11,7 @@ This document describes the system as it actually exists today — not the aspir
 
 SIMO OS is a monorepo with two independently-runnable halves:
 
-- **Backend** (`SMC-OS/app/`) — a FastAPI application. Every route except `GET /`/`GET /health` lives under `/api/v1` as of Sprint 003 (`app/api/v1/`). Persistent as of Sprint 002: `app.activity` and `app.notifications` are PostgreSQL-backed; `app.auth` (Sprint 003) adds real login/`/me` against the `users` table. 4 further tables exist (`customers`, `quotes`, `projects`, `materials`) with no API surface reading/writing them yet (Sprints 004–005).
+- **Backend** (`SMC-OS/app/`) — a FastAPI application. Every route except `GET /`/`GET /health` lives under `/api/v1` as of Sprint 003 (`app/api/v1/`). Persistent as of Sprint 002: `app.activity` and `app.notifications` are PostgreSQL-backed; `app.auth` (Sprint 003) adds real login/`/me` against the `users` table; `app.customers` (Sprint 004) adds real list/detail/create against the `customers` table — the first module with auth-enforced routes. 3 further tables exist (`quotes`, `projects`, `materials`) with no API surface reading/writing them yet (Sprints 005–006).
 - **Frontend** (`SMC-OS/apps/web/`) — a Next.js App Router application, the sole consumer of the backend API, styled with Tailwind v4 and a hand-built component system (no UI library).
 
 They communicate over HTTP only. The frontend never imports backend code or vice versa. `NEXT_PUBLIC_API_URL` (in `apps/web/.env.local`) is the single point of configuration for where the frontend looks for the API — defaults to `http://127.0.0.1:8000`.
@@ -32,13 +32,18 @@ app/
 │   ├── __init__.py          #    api_router: assembles core + auth sub-routers under /api/v1
 │   └── core.py               #    /process, /quote, /estimate, /quote/pdf, /dashboard (moved from main.py, bodies unchanged)
 │
-├── auth/                     # ✅ Sprint 003 — JWT login/me machinery (ADR-011), not applied to any other route (ADR-020)
+├── auth/                     # ✅ Sprint 003 — JWT login/me machinery (ADR-011); enforced on customers since Sprint 004 (ADR-021)
 │   ├── models.py               #    LoginRequest, TokenResponse, UserOut
 │   ├── security.py              #    bcrypt hashing, JWT encode/decode (pyjwt)
 │   ├── service.py                #    AuthService — authenticate(), create_user()
 │   ├── router.py                  #    APIRouter: POST /auth/login, GET /auth/me
-│   ├── dependencies.py             #    get_current_user — reusable, unused by other routes today
+│   ├── dependencies.py             #    get_current_user — reusable; used by app.customers (Sprint 004), no other route yet
 │   └── seed.py                      #    Seeds one owner account from .env if `users` is empty
+│
+├── customers/                # ✅ Sprint 004 — first real business-data module, auth-enforced (ADR-021)
+│   ├── models.py                #    CustomerCreate, CustomerOut
+│   ├── service.py                 #    CustomerService — list_all/get/create; create() also logs an ActivityEvent
+│   └── router.py                   #    APIRouter: GET/POST /customers, GET /customers/{id} — all Depends(get_current_user)
 │
 ├── activity/                # ✅ Sprint 001 shell, ✅ Postgres-backed since Sprint 002
 │   ├── models.py            #    ActivityEvent, ActivityEventCreate, ActivityType enum
@@ -104,14 +109,16 @@ app/
 ```
 apps/web/
 ├── app/                          # Next.js App Router — one folder per route
-│   ├── layout.tsx                 # Root layout: fonts, ThemeProvider, AppShell, anti-flash script
+│   ├── layout.tsx                 # Root layout: fonts, ThemeProvider, AuthProvider (Sprint 004), AppShell, anti-flash script
 │   ├── page.tsx                    # "/" — Dashboard
+│   ├── login/page.tsx               # "/login" — Sprint 004, real login form, redirects to /customers on success
 │   ├── quotes/
 │   │   ├── page.tsx                 # "/quotes" — index (recent quote_created activity + CTA)
 │   │   └── new/page.tsx              # "/quotes/new" — functional quote calculator (POST /quote)
 │   ├── customers/
-│   │   ├── page.tsx                  # "/customers" — index
-│   │   └── new/page.tsx               # "/customers/new" — form, logs activity (no persistence yet)
+│   │   ├── page.tsx                  # "/customers" — ✅ Sprint 004, real list from GET /api/v1/customers, auth-gated
+│   │   ├── [id]/page.tsx               # "/customers/[id]" — ✅ Sprint 004, read-only detail view
+│   │   └── new/page.tsx                 # "/customers/new" — ✅ Sprint 004, real persistence via POST /api/v1/customers
 │   ├── projects/
 │   │   ├── page.tsx                   # "/projects" — index
 │   │   └── new/page.tsx                # "/projects/new" — form, logs activity (no persistence yet)
@@ -122,6 +129,7 @@ apps/web/
 │   ├── ui/                        # Reusable primitives — no business logic
 │   │   ├── Card.tsx, Button.tsx, Badge.tsx, Avatar.tsx, Field.tsx (Field/Input/Select/Checkbox)
 │   │   └── icons.tsx                # Hand-authored SVG icon set (no icon library dependency)
+│   ├── auth/AuthProvider.tsx       # ✅ Sprint 004 — token/session context, mirrors ThemeProvider's shape
 │   ├── layout/                     # The application shell itself
 │   │   ├── AppShell.tsx              # Top-level layout: Sidebar + Topbar + main content
 │   │   ├── Sidebar.tsx                # Collapsible desktop sidebar + mobile drawer
@@ -130,9 +138,9 @@ apps/web/
 │   ├── shell/                      # Shell-level features, one level above layout/
 │   │   ├── CommandPalette.tsx        # Global search (Cmd/Ctrl+K)
 │   │   ├── NotificationsPanel.tsx     # Bell dropdown, polls /notifications
-│   │   ├── UserProfileMenu.tsx         # Avatar dropdown (auth-gated items disabled pre-Sprint 003)
+│   │   ├── UserProfileMenu.tsx         # Avatar dropdown — Sign out is real since Sprint 004; Profile/Settings still disabled
 │   │   ├── ComingSoon.tsx               # Shared "not built yet" state card
-│   │   └── ModuleIndexPage.tsx           # Shared index-page pattern (Quotes/Customers/Projects)
+│   │   └── ModuleIndexPage.tsx           # Shared index-page pattern — still used by Quotes/Projects, no longer by Customers
 │   ├── dashboard/                  # Dashboard-specific components
 │   │   ├── StatGrid.tsx / StatCard.tsx  # Animated stat cards, polls /dashboard
 │   │   ├── RecentActivityPanel.tsx        # Polls /activity
@@ -148,13 +156,15 @@ apps/web/
 │   └── useClickOutside.ts             # Dropdown dismissal
 │
 ├── lib/
-│   ├── api.ts                      # Single HTTP client — every backend call goes through this
-│   ├── navigation.ts                 # Single source of truth for sidebar + command palette nav
-│   ├── activity.ts                    # Icon/colour mapping per ActivityType
-│   └── utils.ts                        # cn(), formatCurrencyGBP(), formatRelativeTime()
+│   ├── api.ts                      # Single HTTP client — every backend call goes through this; attaches JWT since Sprint 004
+│   ├── auth-storage.ts               # ✅ Sprint 004 — plain (non-React) localStorage token wrapper, used by lib/api.ts + AuthProvider
+│   ├── navigation.ts                  # Single source of truth for sidebar + command palette nav
+│   ├── activity.ts                     # Icon/colour mapping per ActivityType
+│   └── utils.ts                         # cn(), formatCurrencyGBP(), formatRelativeTime()
 │
 ├── types/                          # Shared TypeScript types, mirroring backend pydantic models
 │   ├── dashboard.ts, activity.ts, notification.ts, quote.ts
+│   └── auth.ts, customer.ts          # ✅ Sprint 004
 │
 ├── _legacy/                        # Archived, not deleted — see _legacy/README.md
 │
@@ -183,7 +193,8 @@ apps/web/
 |---|---|---|
 | `app.main` | FastAPI app instance, CORS, exception handlers, router mounting, seeding | ✅ |
 | `app.api.v1` | Assembles every `/api/v1` route (ADR-012) | ✅ Sprint 003 |
-| `app.auth` | JWT login/`/me` — issuance + validation machinery, applied to no other route yet (ADR-020) | ✅ Sprint 003 |
+| `app.auth` | JWT login/`/me` — issuance + validation machinery, enforced on `app.customers` since Sprint 004 (ADR-021), no other route yet (ADR-020) | ✅ Sprint 003 |
+| `app.customers` | Real customer list/detail/create — first business-data module, first auth-enforced module | ✅ Sprint 004 |
 | `app.activity` | Recent Activity feed — log and list timestamped events | ✅ Postgres-backed (Sprint 002) |
 | `app.notifications` | Notification centre — create, list, mark read | ✅ Postgres-backed (Sprint 002) |
 | `app.quotes` | Quote pricing engine | ✅ working, ⚠ slab-yield math is a placeholder |
@@ -243,6 +254,9 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | POST | `/api/v1/estimate` | `assistant.estimator` → `quotes` | Free-text → quote |
 | POST | `/api/v1/quote/pdf` | `quotes` | Writes `quote.pdf` to local disk |
 | GET | `/api/v1/dashboard` | `main.py` | **Still hardcoded** — not DB-backed |
+| GET | `/api/v1/customers` | `customers` | **Auth required.** Optional `?limit=`. New in Sprint 004. |
+| POST | `/api/v1/customers` | `customers` | **Auth required.** Also logs an `ActivityEvent`. New in Sprint 004. |
+| GET | `/api/v1/customers/{customer_id}` | `customers` | **Auth required.** `404` if not found. New in Sprint 004. |
 | GET | `/api/v1/activity` | `activity` | Optional `?limit=` and `?type=` query params. Postgres-backed since Sprint 002 — survives a restart. |
 | POST | `/api/v1/activity` | `activity` | Log a new event. Postgres-backed since Sprint 002. |
 | GET | `/api/v1/notifications` | `notifications` | Optional `?limit=`. Postgres-backed since Sprint 002 — survives a restart. |
@@ -250,21 +264,23 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | POST | `/api/v1/notifications` | `notifications` | Create a notification. Postgres-backed since Sprint 002. |
 | PATCH | `/api/v1/notifications/{notification_id}/read` | `notifications` | Mark one as read. Postgres-backed since Sprint 002. |
 
-`/api/v1` versioning landed in Sprint 003 (ADR-012) — the old unprefixed paths return `404`. JWT auth exists (`/api/v1/auth/*`) but is not required by any other route yet (ADR-020) — see `docs/USER_ROLES.md`.
+`/api/v1` versioning landed in Sprint 003 (ADR-012) — the old unprefixed paths return `404`. JWT auth exists (`/api/v1/auth/*`) since Sprint 003 and is required on `/api/v1/customers/*` since Sprint 004 (ADR-021) — every other route remains public (ADR-020). See `docs/USER_ROLES.md`.
 
 ### 5.2 Frontend routes
 
 | Path | Page | Functional today? |
 |---|---|---|
 | `/` | Dashboard | ✅ Fully live, polls every 5s |
+| `/login` | Sign in | ✅ Sprint 004 — real login against `/api/v1/auth/login` |
 | `/quotes` | Quotes index | ⚠ Shows logged activity + CTA, no persisted history yet |
 | `/quotes/new` | New Quote | ✅ Fully functional — real pricing calculation |
-| `/customers` | Customers index | ⚠ Same pattern as Quotes |
-| `/customers/new` | New Customer | ⚠ Functional form, logs activity, doesn't persist a customer record |
+| `/customers` | Customers index | ✅ Sprint 004 — real list from the database, redirects to `/login` if not authenticated |
+| `/customers/[id]` | Customer detail | ✅ Sprint 004 — read-only |
+| `/customers/new` | New Customer | ✅ Sprint 004 — real persistence, redirects to the new customer's detail page |
 | `/projects` | Projects index | ⚠ Same pattern as Quotes |
 | `/projects/new` | New Project | ⚠ Functional form, logs activity, doesn't persist a project record |
 | `/ai-assistant` | AI Assistant | ✅ Functional — calls `POST /process` |
-| `/settings` | Settings | ⬜ "Coming soon" — no auth to configure yet |
+| `/settings` | Settings | ⬜ "Coming soon" — login exists now, nothing to configure with it yet |
 
 ---
 
@@ -398,7 +414,7 @@ Sprint 001 (application shell) is complete and audited — see `SPRINT-001-AUDIT
 
 | Sprint | Feature | Priority | Depends on |
 |---|---|---|---|
-| **004** | CRM: customer list/detail/create, backed by the database — replaces `/customers/new`'s activity-log-only form with real persistence | P0 | v0.1 auth + DB |
+| **004** ✅ | CRM: customer list/detail/create, backed by the database — replaces `/customers/new`'s activity-log-only form with real persistence. First auth-enforced module (ADR-021). | P0 | v0.1 auth + DB |
 | **005** | Full Material Library (quartz/granite/marble/porcelain/Dekton, real supplier pricing) + accurate slab-yield calculator (replaces the "temporary estimate" in `slab_calculator.py`) | P0 | v0.1 DB |
 | **006** | AI Quotation Generator v1 (LLM-assisted text→quote extraction via the already-installed OpenAI SDK) | P1 | Sprint 005 |
 | **006** | Projects module: job pipeline (enquiry → quoted → booked → templated → fabricated → installed → complete) — replaces `/projects/new`'s activity-log-only form | P1 | Sprint 004 |
@@ -428,4 +444,4 @@ Full context on architecture decisions (ORM choice, auth strategy, multi-tenancy
 
 ---
 
-*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 003 (10 August 2026).*
+*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 004 (11 August 2026).*

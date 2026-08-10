@@ -4,9 +4,33 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
-## 2026-08-10 — (uncommitted) — Sprint #003 — API Restructuring, JWT Auth Machinery, Tests + CI
+## 2026-08-11 — (uncommitted) — Sprint #004 — Customers (CRM), Auth Enforcement, Login UI
 
-Full detail in `docs/SPRINTS/sprint-003.md`. Not yet committed — pending approval.
+Full detail in `docs/SPRINTS/sprint-004.md`. Not yet committed — pending approval.
+
+**Backend**
+- New `app/customers/` module: `models.py` (`CustomerCreate`, `CustomerOut`), `service.py` (`CustomerService` — list/get/create; `create()` also logs a real `ActivityEvent` server-side, replacing the frontend's previous standalone call), `router.py` (`GET/POST /customers`, `GET /customers/{id}`).
+- **First auth-enforced routes**: all three `/api/v1/customers/*` routes require `Depends(get_current_user)` — the trigger ADR-020 described (real business data now exists). Every other route (`/quote`, `/activity`, `/notifications`, etc.) remains public. New ADR-021 documents this.
+- `app/database/crud.py` — `create_customer`, `get_customer_by_id`, `list_customers` added.
+- No migration needed — the `customers` table has existed since Sprint 002 with no API surface until now.
+
+**Frontend**
+- Real login for the first time: new `/login` page, `lib/auth-storage.ts` (localStorage JWT), `components/auth/AuthProvider.tsx` (context mirroring `ThemeProvider`'s shape, with an `isReady` flag to avoid a redirect race against its own mount effect). `lib/api.ts` now attaches the stored token to every call and clears it on a `401`.
+- `/customers` and `/customers/new` now use real persistence instead of activity-log-only behavior; new `/customers/[id]` read-only detail page. All three redirect to `/login` if not authenticated.
+- `UserProfileMenu`'s Sign out is now real (clears the token, redirects to `/login`). Profile/Settings remain disabled — unrelated to this sprint.
+- Stale "Sprint 003" references in `UserProfileMenu` and `/settings` updated to reflect current reality.
+
+**Tests**
+- `tests/test_customers.py` (new, 7 tests): create/list/get round trip, `401` without a token on all three routes, `404` on an unknown id, `?limit=` respected, customer creation logs a matching `ActivityEvent`. New `auth_headers` fixture in `conftest.py`, reusable by future modules.
+- Full suite: 23/23 passing against the real local Postgres.
+
+**Verified**
+- `pytest` (23/23), `tsc --noEmit`, `eslint .`, `next build` all clean.
+- Real headless-browser walkthrough (Playwright, transient dev tooling — not added as a project dependency): logged-out `/customers` → `/login` redirect, login, empty list, create a customer, redirect to its detail page with the entered data, customer appears in the list, sign out → `/login`, `/customers` redirects to `/login` again post-logout. All 7 steps confirmed working; test data cleaned up afterward.
+
+## 2026-08-10 — `195cdab` — Sprint #003 — API Restructuring, JWT Auth Machinery, Tests + CI
+
+Full detail in `docs/SPRINTS/sprint-003.md`.
 
 **Backend**
 - Every route except `GET /`/`GET /health` moved under `/api/v1` (ADR-012) — clean cutover, old unprefixed paths now `404`. New `app/api/v1/` package.

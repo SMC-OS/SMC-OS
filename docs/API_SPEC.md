@@ -1,9 +1,9 @@
 # SIMO OS — API Specification
 
-**Status:** Reflects the actual FastAPI application as of Sprint 003 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover — the old unprefixed paths are gone, not aliased) and added JWT login/`/me`. No route added in Sprint 001/002 changed its request/response shape.
+**Status:** Reflects the actual FastAPI application as of Sprint 004 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 adds the first real business-data module (`customers`) and is the first to actually **require** a token.
 **Base URL (local dev):** `http://127.0.0.1:8000`
 **Versioning:** `/api/v1` prefix on every route except `GET /` and `GET /health`, which stay unversioned as infra/health-check endpoints. Implemented Sprint 003 (ADR-012).
-**Authentication:** JWT bearer tokens exist (`POST /api/v1/auth/login`, `GET /api/v1/auth/me`) as of Sprint 003, but **no route requires one yet** — this was a deliberate scope decision (see `docs/DECISIONS.md`), not an oversight. Every route below is still callable without a token. A later sprint decides what actually needs `Depends(get_current_user)` once there's real per-user data to protect.
+**Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `GET /api/v1/auth/me`) since Sprint 003. Sprint 003 itself required no route to present one (ADR-020); Sprint 004's `/api/v1/customers/*` routes are the first to enforce it (ADR-021) — every other route below is still callable without a token.
 **CORS:** `allow_origins=["*"]`, all methods and headers allowed (`app/main.py`) — acceptable for local development only; must be restricted before any non-local deployment.
 
 ---
@@ -59,6 +59,34 @@ Static health check — does **not** check a database connection.
 **Response (401):** `{ "detail": "Could not validate credentials" }` — missing, malformed, or expired token.
 
 One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table is empty, from `.env`'s `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` — never hardcoded credentials.
+
+---
+
+## Customer routes (`app/customers/router.py`) — added Sprint 004
+
+**All three routes require `Authorization: Bearer <token>`** — the first auth-enforced module (ADR-021). `401` (`{"detail": "Could not validate credentials"}`) without a valid token.
+
+### `GET /api/v1/customers`
+
+| Query param | Type | Default |
+|---|---|---|
+| `limit` | integer | `20` |
+
+**Response** — array of `Customer`, most recent first:
+```json
+[{ "id": "...", "name": "James Okafor", "email": "james@example.com", "phone": "07123456789", "created_at": "2026-08-11T10:00:00Z" }]
+```
+
+### `GET /api/v1/customers/{customer_id}`
+
+**Response (200):** a single `Customer` (same shape as above).
+**Response (404):** `{ "detail": "Customer not found" }`.
+
+### `POST /api/v1/customers`
+
+**Request body** (`CustomerCreate`): `{ "name": "string", "email": "string | null", "phone": "string | null" }`
+
+**Response (201):** the created `Customer`. Also logs a real `ActivityEvent` (`customer_added`) server-side — the frontend no longer logs this itself (contrast with `/quotes/new`/`/projects/new`, which still do, pending their own sprints).
 
 ---
 
@@ -250,6 +278,9 @@ Marks one notification as read.
 | GET | `/health` | Initial | No | No |
 | POST | `/api/v1/auth/login` | Sprint 003 | Yes | No (issues the token) |
 | GET | `/api/v1/auth/me` | Sprint 003 | Yes | **Yes** |
+| GET | `/api/v1/customers` | Sprint 004 | Yes | **Yes** |
+| POST | `/api/v1/customers` | Sprint 004 | Yes | **Yes** |
+| GET | `/api/v1/customers/{customer_id}` | Sprint 004 | Yes | **Yes** |
 | POST | `/api/v1/process` | Initial | No | No |
 | POST | `/api/v1/quote` | Initial | No | No |
 | POST | `/api/v1/estimate` | Initial | No | No |

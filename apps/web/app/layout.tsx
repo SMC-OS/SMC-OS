@@ -1,4 +1,5 @@
 import AppShell from "../components/layout/AppShell";
+import { AuthProvider } from "../components/auth/AuthProvider";
 import { ThemeProvider } from "../components/theme/ThemeProvider";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -48,7 +49,9 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen" suppressHydrationWarning>
         <ThemeProvider>
-          <AppShell>{children}</AppShell>
+          <AuthProvider>
+            <AppShell>{children}</AppShell>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
