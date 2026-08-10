@@ -27,7 +27,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
 
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
+    // Sprint 003: every backend route (except / and /health) moved under
+    // /api/v1 (ADR-012) — applied once here so every api.* call site below
+    // stays a bare resource path, not a search-and-replace across each one.
+    res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",

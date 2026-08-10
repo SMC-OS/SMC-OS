@@ -1,7 +1,7 @@
 # SIMO OS — System Architecture
 
-**Status:** Canonical reference, current as of Sprint 002 completion (10 August 2026)
-**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · Turborepo/pnpm workspace
+**Status:** Canonical reference, current as of Sprint 003 completion (10 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Turborepo/pnpm workspace
 
 This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
 
@@ -11,7 +11,7 @@ This document describes the system as it actually exists today — not the aspir
 
 SIMO OS is a monorepo with two independently-runnable halves:
 
-- **Backend** (`SMC-OS/app/`) — a FastAPI application, run directly (no routers-of-routers hierarchy yet beyond the two Sprint 001 modules). Persistent as of Sprint 002: `app.activity` and `app.notifications` are PostgreSQL-backed; 5 further tables exist (`customers`, `quotes`, `projects`, `materials`, `users`) with no API surface reading/writing them yet (Sprints 003–005).
+- **Backend** (`SMC-OS/app/`) — a FastAPI application. Every route except `GET /`/`GET /health` lives under `/api/v1` as of Sprint 003 (`app/api/v1/`). Persistent as of Sprint 002: `app.activity` and `app.notifications` are PostgreSQL-backed; `app.auth` (Sprint 003) adds real login/`/me` against the `users` table. 4 further tables exist (`customers`, `quotes`, `projects`, `materials`) with no API surface reading/writing them yet (Sprints 004–005).
 - **Frontend** (`SMC-OS/apps/web/`) — a Next.js App Router application, the sole consumer of the backend API, styled with Tailwind v4 and a hand-built component system (no UI library).
 
 They communicate over HTTP only. The frontend never imports backend code or vice versa. `NEXT_PUBLIC_API_URL` (in `apps/web/.env.local`) is the single point of configuration for where the frontend looks for the API — defaults to `http://127.0.0.1:8000`.
@@ -26,7 +26,19 @@ A third directory, `SMC-OS-Docs/`, is a separate, disconnected Turborepo used fo
 
 ```
 app/
-├── main.py                  # FastAPI app instance, CORS, all route declarations
+├── main.py                  # FastAPI app instance, CORS, exception handlers, router mounts, seeding
+│
+├── api/v1/                  # ✅ Sprint 003 — /api/v1 route restructuring (ADR-012)
+│   ├── __init__.py          #    api_router: assembles core + auth sub-routers under /api/v1
+│   └── core.py               #    /process, /quote, /estimate, /quote/pdf, /dashboard (moved from main.py, bodies unchanged)
+│
+├── auth/                     # ✅ Sprint 003 — JWT login/me machinery (ADR-011), not applied to any other route (ADR-020)
+│   ├── models.py               #    LoginRequest, TokenResponse, UserOut
+│   ├── security.py              #    bcrypt hashing, JWT encode/decode (pyjwt)
+│   ├── service.py                #    AuthService — authenticate(), create_user()
+│   ├── router.py                  #    APIRouter: POST /auth/login, GET /auth/me
+│   ├── dependencies.py             #    get_current_user — reusable, unused by other routes today
+│   └── seed.py                      #    Seeds one owner account from .env if `users` is empty
 │
 ├── activity/                # ✅ Sprint 001 shell, ✅ Postgres-backed since Sprint 002
 │   ├── models.py            #    ActivityEvent, ActivityEventCreate, ActivityType enum
@@ -70,15 +82,17 @@ app/
 │   ├── pricing.py                         #    Flat £/slab price per material
 │   └── services.py                         #    Static list of 4 service names
 │
-├── core/                                 # ⬜ Empty — no config/logging/lifecycle yet
-│   └── {config, events, logger, settings, utils}.py    (Sprint 003)
+├── core/                                 # ✅ Sprint 003 — config + error handling
+│   ├── config.py                          #    Settings (pydantic-settings) — database_url, JWT config, seed admin creds
+│   ├── errors.py                           #    Global exception handlers: 400 (KeyError), 422 (validation), 500 (catch-all)
+│   └── {events, logger, utils}.py           #    ⬜ still empty — no lifecycle/logging module yet
 │
-├── database/                             # ✅ Sprint 002 — persistence layer
-│   ├── database.py                        #    Engine, SessionLocal, declarative Base, get_db() dependency
-│   ├── models.py                           #    Customer, Quote, Project, Material, User, ActivityLog, NotificationRecord
-│   └── crud.py                              #    CRUD helpers backing app.activity/app.notifications only (Sprint 002 scope)
+├── database/                             # ✅ Sprint 002 — persistence layer, ✅ Sprint 003 adds User CRUD
+│   ├── database.py                        #    Engine, SessionLocal, declarative Base, get_db() dependency — reads app.core.config.settings
+│   ├── models.py                           #    Customer, Quote, Project, Material, User (+ password_hash, Sprint 003), ActivityLog, NotificationRecord
+│   └── crud.py                              #    CRUD helpers: app.activity/app.notifications (Sprint 002) + app.auth's user lookups (Sprint 003)
 │
-└── {api, apps/dashboard, customers,       # ⬜ Empty placeholder directories reserved
+└── {apps/dashboard, customers,            # ⬜ Empty placeholder directories reserved
      dashboard, integrations, memory,       #    for future modules — do not assume
      projects, voice, wake}/                #    anything lives here yet
 ```
@@ -152,7 +166,7 @@ apps/web/
 
 - `SMC-OS/docker-compose.yml` — single `postgres:16-alpine` service, dev-only, no other infrastructure. Reads `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`/`POSTGRES_PORT` from the root `.env` (falls back to `simo`/`simo`/`simo_os`/`5432` if unset).
 - `SMC-OS/.env.example` — template for the backend `.env` (gitignored): the same `POSTGRES_*` values plus `DATABASE_URL`, the SQLAlchemy connection string `app/database/database.py` actually reads.
-- `SMC-OS/alembic/`, `SMC-OS/alembic.ini` — migration tooling. `alembic/env.py` imports `app.database.database.DATABASE_URL` and `app.database.models` directly, so migrations always target the same database the app does and `--autogenerate` sees every model.
+- `SMC-OS/alembic/`, `SMC-OS/alembic.ini` — migration tooling. `alembic/env.py` imports `app.core.config.settings` (Sprint 003 — previously a constant in `database.py`) and `app.database.models` directly, so migrations always target the same database the app does and `--autogenerate` sees every model.
 - Run `docker compose up -d` then `alembic upgrade head` to stand up a fresh local database.
 
 ### 2.4 Other repo contents (not part of the running app)
@@ -167,15 +181,17 @@ apps/web/
 
 | Module | Responsibility | State |
 |---|---|---|
-| `app.main` | FastAPI app instance, CORS, route declarations, router mounting | ✅ |
+| `app.main` | FastAPI app instance, CORS, exception handlers, router mounting, seeding | ✅ |
+| `app.api.v1` | Assembles every `/api/v1` route (ADR-012) | ✅ Sprint 003 |
+| `app.auth` | JWT login/`/me` — issuance + validation machinery, applied to no other route yet (ADR-020) | ✅ Sprint 003 |
 | `app.activity` | Recent Activity feed — log and list timestamped events | ✅ Postgres-backed (Sprint 002) |
 | `app.notifications` | Notification centre — create, list, mark read | ✅ Postgres-backed (Sprint 002) |
 | `app.quotes` | Quote pricing engine | ✅ working, ⚠ slab-yield math is a placeholder |
 | `app.data` | Hardcoded material/pricing/services catalogue | ⚠ 3 materials only |
 | `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
 | `app.brain` | Routes free text to an assistant | ⚠ hardcoded keyword dict, not AI |
-| `app.core` | Config, logging, settings, lifecycle | ⬜ Sprint 003 |
-| `app.database` | ORM models (7 tables), DB session, CRUD helpers | ✅ Sprint 002 — see §3.1 |
+| `app.core` | `config.py` (pydantic-settings) + `errors.py` (exception handlers) | ✅ Sprint 003 — logging/lifecycle still ⬜ |
+| `app.database` | ORM models (7 tables), DB session, CRUD helpers | ✅ Sprint 002, extended Sprint 003 — see §3.1 |
 
 ### 3.1 The repository pattern (important — read before touching activity/notifications)
 
@@ -218,21 +234,23 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 
 | Method | Path | Module | Notes |
 |---|---|---|---|
-| GET | `/` | `main.py` | Welcome message |
-| GET | `/health` | `main.py` | Static health check (no DB to check yet) |
-| POST | `/process` | `brain` → `assistant` | Keyword-routed, not AI |
-| POST | `/quote` | `quotes` | Full pricing calculation |
-| POST | `/estimate` | `assistant.estimator` → `quotes` | Free-text → quote |
-| POST | `/quote/pdf` | `quotes` | Writes `quote.pdf` to local disk |
-| GET | `/dashboard` | `main.py` | **Still hardcoded** — not DB-backed |
-| GET | `/activity` | `activity` | Optional `?limit=` and `?type=` query params. Postgres-backed since Sprint 002 — survives a restart. |
-| POST | `/activity` | `activity` | Log a new event. Postgres-backed since Sprint 002. |
-| GET | `/notifications` | `notifications` | Optional `?limit=`. Postgres-backed since Sprint 002 — survives a restart. |
-| GET | `/notifications/unread-count` | `notifications` | — |
-| POST | `/notifications` | `notifications` | Create a notification. Postgres-backed since Sprint 002. |
-| PATCH | `/notifications/{notification_id}/read` | `notifications` | Mark one as read. Postgres-backed since Sprint 002. |
+| GET | `/` | `main.py` | Welcome message — unversioned, infra endpoint |
+| GET | `/health` | `main.py` | Static health check (no DB to check yet) — unversioned, infra endpoint |
+| POST | `/api/v1/auth/login` | `auth` | Issues a JWT for a valid email/password. New in Sprint 003. |
+| GET | `/api/v1/auth/me` | `auth` | Returns the current user for a valid bearer token. New in Sprint 003. |
+| POST | `/api/v1/process` | `brain` → `assistant` | Keyword-routed, not AI |
+| POST | `/api/v1/quote` | `quotes` | Full pricing calculation. Unrecognised material now `400`, not a raw `500`. |
+| POST | `/api/v1/estimate` | `assistant.estimator` → `quotes` | Free-text → quote |
+| POST | `/api/v1/quote/pdf` | `quotes` | Writes `quote.pdf` to local disk |
+| GET | `/api/v1/dashboard` | `main.py` | **Still hardcoded** — not DB-backed |
+| GET | `/api/v1/activity` | `activity` | Optional `?limit=` and `?type=` query params. Postgres-backed since Sprint 002 — survives a restart. |
+| POST | `/api/v1/activity` | `activity` | Log a new event. Postgres-backed since Sprint 002. |
+| GET | `/api/v1/notifications` | `notifications` | Optional `?limit=`. Postgres-backed since Sprint 002 — survives a restart. |
+| GET | `/api/v1/notifications/unread-count` | `notifications` | — |
+| POST | `/api/v1/notifications` | `notifications` | Create a notification. Postgres-backed since Sprint 002. |
+| PATCH | `/api/v1/notifications/{notification_id}/read` | `notifications` | Mark one as read. Postgres-backed since Sprint 002. |
 
-No versioning prefix yet (`/api/v1` is a Sprint 003 item). No authentication on any route.
+`/api/v1` versioning landed in Sprint 003 (ADR-012) — the old unprefixed paths return `404`. JWT auth exists (`/api/v1/auth/*`) but is not required by any other route yet (ADR-020) — see `docs/USER_ROLES.md`.
 
 ### 5.2 Frontend routes
 
@@ -371,10 +389,10 @@ Sprint 001 (application shell) is complete and audited — see `SPRINT-001-AUDIT
 | **001** ✅ | Application shell, dashboard rebuild, Recent Activity + Notifications (in-memory) | P0 | — |
 | **002** ✅ | Database foundation: PostgreSQL (Docker Compose, dev) + SQLAlchemy 2.0 + Alembic; core models (`Customer`, `Quote`, `Project`, `Material`, `User`, `ActivityLog`, `NotificationRecord`), all with `tenant_id` | P0 | Sprint 001 |
 | **002** ✅ | Swap the in-memory activity/notification repositories for Postgres-backed ones — zero frontend changes, zero API surface changes, per §3.1 | P0 | Sprint 002 DB models |
-| **003** | API restructuring: split `main.py` into `APIRouter` modules under `/api/v1`; `core/config.py` via `pydantic-settings` + `.env`; CRUD endpoints for `customers`/`quotes`/`projects`/`materials`/`users` deliberately deferred to their own sprints, not added in Sprint 002 | P0 | Sprint 002 |
-| **003** | Error handling middleware (400/404/422 instead of raw 500s) | P0 | Sprint 003 routing |
-| **003** | Basic JWT auth, single-tenant to start — unblocks `UserProfileMenu`'s disabled items and `/settings` | P0 | Sprint 002 `User` model |
-| **003** | `pytest` + coverage on the quote calculator; basic CI (lint + test on push) | P0 | — |
+| **003** ✅ | API restructuring: split `main.py` into `APIRouter` modules under `/api/v1`; `core/config.py` via `pydantic-settings` + `.env`; CRUD endpoints for `customers`/`quotes`/`projects`/`materials`/`users` deliberately deferred to their own sprints, not added in Sprint 002 | P0 | Sprint 002 |
+| **003** ✅ | Error handling middleware (400/404/422 instead of raw 500s) | P0 | Sprint 003 routing |
+| **003** ✅ | Basic JWT auth machinery, single-tenant — `login`/`me` implemented, but not applied to any route yet (ADR-020) and `UserProfileMenu`/`/settings` not wired up yet | P0 | Sprint 002 `User` model |
+| **003** ✅ | `pytest` + coverage on the quote calculator and auth flow; basic CI (lint + test on push) | P0 | — |
 
 ### v0.2 — Core Business Operations
 
@@ -410,4 +428,4 @@ Full context on architecture decisions (ORM choice, auth strategy, multi-tenancy
 
 ---
 
-*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 002 (10 August 2026).*
+*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 003 (10 August 2026).*

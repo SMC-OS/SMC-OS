@@ -1,9 +1,10 @@
 """Minimal CRUD helpers backing the Postgres-backed repositories.
 
-Sprint 002 only needs the operations app/activity and app/notifications
-already perform against their in-memory repositories — no CRUD helpers for
-customers/quotes/projects/materials/users are added here, since no API
-surface uses those tables yet (see docs/SPRINTS/sprint-002.md).
+Sprint 002 added the operations app/activity and app/notifications need.
+Sprint 003 adds the small set app/auth needs against `users` (create,
+look up by email/id, count — for the login flow and the seed guard). No
+CRUD helpers for customers/quotes/projects/materials exist yet — no API
+surface uses those tables (see docs/DATABASE_SCHEMA.md).
 """
 
 import uuid
@@ -12,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database.models import ActivityLog, NotificationRecord
+from app.database.models import ActivityLog, NotificationRecord, User
 
 
 def create_activity_log(
@@ -91,3 +92,32 @@ def mark_notification_read(db: Session, notification_id: uuid.UUID) -> Notificat
     db.commit()
     db.refresh(row)
     return row
+
+
+def create_user(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    name: str,
+    email: str,
+    password_hash: str,
+    role: str | None = None,
+) -> User:
+    row = User(id=id, name=name, email=email, password_hash=password_hash, role=role)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_user_by_email(db: Session, email: str) -> User | None:
+    stmt = select(User).where(User.email == email)
+    return db.scalars(stmt).first()
+
+
+def get_user_by_id(db: Session, user_id: uuid.UUID) -> User | None:
+    return db.get(User, user_id)
+
+
+def count_users(db: Session) -> int:
+    return db.query(User).count()

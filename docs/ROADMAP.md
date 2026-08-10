@@ -10,7 +10,7 @@ Estimates are in developer-days (relative sizing, assuming AI-assisted developme
 |---|---|---|---|
 | **001** | Application shell (sidebar, topbar, search, notifications, dark mode), dashboard rebuild, Recent Activity + Notifications backend (in-memory) | P0 | ✅ **Done** — see `docs/SPRINTS/sprint-001.md` |
 | **002** | Database foundation: PostgreSQL + SQLAlchemy 2.0 + Alembic; core models (`Customer`, `Quote`, `Project`, `Material`, `User`, `ActivityLog`, `Notification`); swap the in-memory activity/notification repositories for Postgres-backed ones | P0 | ✅ **Done** (pending commit approval) — see `docs/SPRINTS/sprint-002.md` |
-| **003** | API restructuring (`/api/v1`, `core/config.py` via pydantic-settings, `.env`); error handling middleware; basic JWT auth; `pytest` + CI | P0 | ⬜ Not started |
+| **003** | API restructuring (`/api/v1`, `core/config.py` via pydantic-settings, `.env`); error handling middleware; basic JWT auth; `pytest` + CI | P0 | ✅ **Done** — see `docs/SPRINTS/sprint-003.md` |
 
 ## v0.2 — Core Business Operations
 

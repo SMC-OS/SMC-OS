@@ -1,28 +1,28 @@
 # SIMO OS — User Roles & Permissions
 
-**Status: no authentication, user accounts, or role/permission system exists in the codebase today.** There is no `User` model (`app/database/models.py` is empty), no login endpoint, no session or token handling, and no authorisation check on any route — every endpoint listed in `docs/API_SPEC.md` is completely public. This document describes the current placeholder state honestly, and the planned model for when auth is actually built. Nothing below "Planned" should be treated as working.
+**Status (Sprint 003): login/token issuance exists in the backend; no route enforces it yet, and the frontend still shows a hardcoded user.** `app/database/models.py`'s `User` table now has a `password_hash` column, and `POST /api/v1/auth/login` / `GET /api/v1/auth/me` are real, working endpoints (`app/auth/`) — but every other route in `docs/API_SPEC.md` remains completely public (ADR-020, a deliberate scope decision, not an oversight). The frontend has not been wired to call login — `UserProfileMenu` and `/settings` are unchanged from Sprint 001. This document describes the current state honestly, and the planned model for when enforcement and the frontend login flow actually get built.
 
 ---
 
 ## 1. Current state
 
-The frontend shows a single hardcoded user in `components/shell/UserProfileMenu.tsx`:
+The frontend still shows a single hardcoded user in `components/shell/UserProfileMenu.tsx`:
 
 ```ts
 const CURRENT_USER = { name: "Simo", role: "Owner" };
 ```
 
-This is display-only — it is not read from a login session (none exists), not validated against anything, and not connected to any backend concept of a user. The menu's Profile, Settings, and Sign out items are rendered `disabled`, each with a tooltip explaining that authentication isn't implemented yet.
+This is display-only — it is not read from a login session, not validated against anything, and not connected to the backend's new `/api/v1/auth/*` endpoints (that wiring is future work). The menu's Profile, Settings, and Sign out items are still rendered `disabled`.
 
-The `/settings` page similarly shows an honest "Coming in Sprint 003" state rather than a working settings form, because there is no account to configure.
+The `/settings` page still shows a "Coming soon" state rather than a working settings form.
 
-No backend route checks who's calling it. Anyone with network access to the API can call any endpoint, including creating quotes, activity events, and notifications.
+The backend side is real: `POST /api/v1/auth/login` checks a hashed password in the `users` table and issues a signed JWT; `GET /api/v1/auth/me` validates one. One owner account is seeded on startup from `.env` (`app/auth/seed.py`). But **no other route checks who's calling it** — anyone with network access can still call `/api/v1/quote`, `/api/v1/activity`, `/api/v1/notifications`, etc. without a token (ADR-020).
 
 ---
 
-## 2. Planned model (not yet built)
+## 2. Planned model (partially built)
 
-Per `docs/ROADMAP.md`, authentication arrives in **Sprint 003** (single-tenant JWT auth, unblocking the disabled `UserProfileMenu` items and a real `/settings` page) and role-based permissions arrive in **v1.0, Sprint 015** (staff management + RBAC), once multi-tenancy (Sprint 012) exists.
+Per `docs/ROADMAP.md`, Sprint 003 delivered single-tenant JWT *machinery*. What's still ahead: wiring the frontend (`UserProfileMenu`, `/settings`) to actually call `/api/v1/auth/login`, and applying `Depends(get_current_user)` to routes once a later sprint has real per-user data worth protecting. Role-based permissions arrive in **v1.0, Sprint 015** (staff management + RBAC), once multi-tenancy (Sprint 012) exists.
 
 Based on the business context this system is being built for (a stone/construction company), the anticipated roles are:
 
@@ -36,6 +36,6 @@ Based on the business context this system is being built for (a stone/constructi
 
 ---
 
-## 3. What to check before assuming auth exists
+## 3. What to check before assuming auth is enforced
 
-If you're reading this because you're about to build something that depends on "the current user" or "permissions": there is no current user and there are no permissions. Check `app/core/config.py` and `app/database/models.py` — if they're still empty, none of this has changed since this document was written.
+If you're reading this because you're about to build something that depends on "the current user" or "permissions": `get_current_user` (`app/auth/dependencies.py`) exists and works, but it is not attached to any route outside `/api/v1/auth/me`. There are still no permissions/roles enforcement anywhere. Check `docs/API_SPEC.md`'s route table's "Auth required?" column and `docs/DECISIONS.md` ADR-020 — if a route you care about still says "No", nothing has changed since this document was written.

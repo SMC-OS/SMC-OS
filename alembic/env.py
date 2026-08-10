@@ -6,18 +6,20 @@ from sqlalchemy import pool
 from alembic import context
 
 # Sprint 002: point Alembic at SIMO OS's real models and DATABASE_URL.
-# Importing app.database.database triggers its load_dotenv() call and
-# resolves DATABASE_URL exactly the same way the running app does — one
-# source of truth for the connection string, not a second copy of it.
+# Sprint 003: DATABASE_URL now comes from app.core.config.settings (the same
+# Settings instance the running app reads) instead of a module-level
+# constant in database.py — one source of truth for the connection string,
+# not a second copy of it.
 # Importing app.database.models registers every table on Base.metadata so
 # `alembic revision --autogenerate` can see them.
-from app.database.database import DATABASE_URL, Base
+from app.core.config import settings
+from app.database.database import Base
 from app.database import models  # noqa: F401  (import needed for its side effect)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

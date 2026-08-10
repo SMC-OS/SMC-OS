@@ -1,21 +1,13 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from app.brain.manager import BrainManager
-from app.quotes.calculator import QuoteCalculator
-from app.quotes.generator import QuoteGenerator
-from app.quotes.models import QuoteRequest
-from app.assistant.estimator import EstimatorAssistant
-from app.quotes.pdf import PDFGenerator
 from fastapi.middleware.cors import CORSMiddleware
 
-# Sprint 001: Recent Activity + Notifications for the dashboard shell.
-# Both are additive — no existing route below is modified.
 from app.activity.router import router as activity_router
 from app.activity.seed import seed_activity
+from app.api.v1 import api_router
+from app.auth.seed import seed_users
+from app.core.errors import register_exception_handlers
 from app.notifications.router import router as notifications_router
 from app.notifications.seed import seed_notifications
-
-estimator = EstimatorAssistant()
 
 app = FastAPI(
     title="Simo OS",
@@ -31,15 +23,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(activity_router)
-app.include_router(notifications_router)
+register_exception_handlers(app)
+
+# Sprint 003: every route below (except / and /health, which stay
+# unversioned as infra/health-check endpoints) is mounted under /api/v1
+# (ADR-012). activity/notifications keep their own router.py untouched
+# (ADR-002) — the prefix is applied here, at mount time.
+app.include_router(api_router)
+app.include_router(activity_router, prefix="/api/v1")
+app.include_router(notifications_router, prefix="/api/v1")
 
 seed_activity()
 seed_notifications()
-
-manager = BrainManager()
-
-calculator = QuoteCalculator()
+seed_users()
 
 
 @app.get("/")
@@ -49,52 +45,9 @@ def root():
         "status": "running"
     }
 
+
 @app.get("/health")
 def health():
     return {
         "status": "healthy"
     }
-class Prompt(BaseModel):
-    text: str
-
-
-@app.post("/process")
-def process(prompt: Prompt):
-    return manager.process(prompt.text)
-
-@app.post("/quote")
-def create_quote(request: QuoteRequest):
-    return calculator.calculate(request)
-
-@app.post("/estimate")
-def estimate(prompt: Prompt):
-
-    request = estimator.parse(prompt.text)
-
-    quote = QuoteRequest(**request)
-
-    return calculator.calculate(quote)
-
-@app.post("/quote/pdf")
-def create_pdf(request: QuoteRequest):
-
-    quote = QuoteGenerator().generate(request)
-
-    pdf = PDFGenerator().create(quote)
-
-    return {
-        "pdf": pdf,
-        "quote": quote
-    }
-
-@app.get("/dashboard")
-def dashboard():
-
-    return {
-        "quotes_today": 12,
-        "revenue": 8420,
-        "customers": 327,
-        "projects": 18
-    }
-   
-

@@ -4,9 +4,30 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
-## 2026-08-10 — (uncommitted) — Sprint #002 - Database Foundation
+## 2026-08-10 — (uncommitted) — Sprint #003 — API Restructuring, JWT Auth Machinery, Tests + CI
 
-Full detail in `docs/SPRINTS/sprint-002.md`. Not yet committed — pending approval.
+Full detail in `docs/SPRINTS/sprint-003.md`. Not yet committed — pending approval.
+
+**Backend**
+- Every route except `GET /`/`GET /health` moved under `/api/v1` (ADR-012) — clean cutover, old unprefixed paths now `404`. New `app/api/v1/` package.
+- `app/core/config.py` — pydantic-settings `Settings`, the single source for `DATABASE_URL`, JWT config, and seed-admin credentials. `app/database/database.py` and `alembic/env.py` now read from it instead of a direct `python-dotenv` read.
+- `app/core/errors.py` — global exception handlers: unrecognised `/api/v1/quote` material now returns `400` instead of a raw `500` (the bug documented in `docs/API_SPEC.md` since Sprint 001), validation errors return a clean `422` body, anything else returns a logged, non-leaking `500`.
+- `app/auth/` — JWT login/`/me` machinery (ADR-011): `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `bcrypt` password hashing, a reusable `get_current_user` dependency. **Not applied to any other route this sprint** — a deliberate scope decision (ADR-020), not an oversight. One owner account seeded on startup from `.env` if `users` is empty.
+- `users.password_hash` column added (migration `07dceec1beaf`), safe as a `NOT NULL` add since the table had 0 rows.
+- New dependencies: `pydantic-settings`, `pyjwt`, `bcrypt`, `pytest`.
+
+**Frontend**
+- `apps/web/lib/api.ts` — every call now goes to `/api/v1/...` (one-line change in the shared `request()` helper, not per call site). No other frontend file touched — the login UI itself (wiring `UserProfileMenu`/`/settings`) is explicitly deferred, not part of this sprint's scope.
+
+**Tests + CI**
+- `pytest` suite: quote calculator math + the `400` fix, full login/`/me` flow (success, wrong password, missing/garbage token), route-mount smoke tests confirming the `/api/v1` cutover and that old paths are gone. 16 tests, all passing against the real local Postgres.
+- `.github/workflows/ci.yml` — new: backend job (Postgres service container, `alembic upgrade head`, `pytest`), frontend job (`pnpm lint`, `check-types`, `build`).
+
+**Also fixed:** this changelog previously listed Sprint 002 as "(uncommitted) — pending approval" even though it had already been committed as `4929ff3` — a documentation lag caught during Sprint 003's investigation phase, corrected below.
+
+## 2026-08-10 — `4929ff3` — Sprint #002 — Database Foundation
+
+Full detail in `docs/SPRINTS/sprint-002.md`.
 
 **Backend**
 - PostgreSQL 16 + SQLAlchemy 2.0 + Alembic added. New `app/database/` module: `database.py` (engine/session/`get_db`), `models.py` (7 tables: `Customer`, `Quote`, `Project`, `Material`, `User`, `ActivityLog`, `NotificationRecord`, each with `tenant_id`), `crud.py` (helpers for `activity_log`/`notifications` only).

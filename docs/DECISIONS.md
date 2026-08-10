@@ -61,14 +61,14 @@ Files identified as dead or duplicate are moved to `_legacy/` with a documented 
 Recommended pairing for FastAPI + PostgreSQL. Standard, well-supported, no exotic alternative considered necessary at this scale.
 
 ## ADR-011: Auth strategy — JWT bearer tokens, not server-side sessions
-**Status:** DECIDED-NOT-IMPLEMENTED (Sprint 003)
+**Status:** IMPLEMENTED (Sprint 003 — `app/auth/`)
 
-Stateless tokens were chosen over sessions so a future mobile app or client portal doesn't need a rework to authenticate. No token issuance, validation, or user model exists yet.
+Stateless tokens were chosen over sessions so a future mobile app or client portal doesn't need a rework to authenticate. `POST /api/v1/auth/login` issues an `HS256` JWT (`sub`=user id, `exp`), `GET /api/v1/auth/me` validates one via `app/auth/dependencies.py`'s `get_current_user`. Passwords are `bcrypt`-hashed in the new `users.password_hash` column. See ADR-020 for the scope decision on where this is actually enforced.
 
 ## ADR-012: API versioning — `/api/v1` prefix
-**Status:** DECIDED-NOT-IMPLEMENTED (Sprint 003)
+**Status:** IMPLEMENTED (Sprint 003)
 
-Every route today is unprefixed (see `docs/API_SPEC.md`). Adding the prefix now, before any real client depends on the unversioned paths, was judged cheaper than retrofitting it later.
+Every route except `GET /`/`GET /health` (kept unversioned as infra/health-check endpoints) now lives under `/api/v1` (see `docs/API_SPEC.md`). Cutover was clean, not dual-mounted — the old unprefixed paths return `404` — because only the frontend consumes this API and there was no external client to break.
 
 ## ADR-013: Multi-tenancy model — row-level `tenant_id`, not separate schemas
 **Status:** IMPLEMENTED for the column (all 7 tables, Sprint 002); DECIDED-NOT-IMPLEMENTED for enforcement (Sprint 012)
@@ -103,4 +103,9 @@ One `postgres:16-alpine` service, no other infrastructure (no pgAdmin, no app co
 ## ADR-019: Postgres-backed repositories open a session per call, not via FastAPI dependency injection
 **Status:** IMPLEMENTED (`app/activity/repository.py`, `app/notifications/repository.py`)
 
-`PostgresActivityRepository`/`PostgresNotificationRepository` call `SessionLocal()` directly inside each method (`with SessionLocal() as db:`) rather than receiving a session through FastAPI's `Depends(get_db)`. **Why:** `activity_service`/`notification_service` are module-level singletons constructed once at import time (ADR-001 predates the database and this hasn't changed), not per-request objects — there is no request-scoped session available to inject into them. `app/database/database.py`'s `get_db()` dependency exists for future route-level code (Sprint 004+, once `customers`/`quotes`/`projects` get real endpoints) that isn't built around a singleton and can take a request-scoped session normally.
+`PostgresActivityRepository`/`PostgresNotificationRepository` call `SessionLocal()` directly inside each method (`with SessionLocal() as db:`) rather than receiving a session through FastAPI's `Depends(get_db)`. **Why:** `activity_service`/`notification_service` are module-level singletons constructed once at import time (ADR-001 predates the database and this hasn't changed), not per-request objects — there is no request-scoped session available to inject into them. `app/database/database.py`'s `get_db()` dependency exists for future route-level code (Sprint 004+, once `customers`/`quotes`/`projects` get real endpoints) that isn't built around a singleton and can take a request-scoped session normally. `app/auth/` (Sprint 003) is the first module to actually use it, per ADR-011.
+
+## ADR-020: Sprint 003 auth ships as machinery only — no existing route is gated by it
+**Status:** IMPLEMENTED (Sprint 003)
+
+`get_current_user` (`app/auth/dependencies.py`) is a working, reusable FastAPI dependency, but it is not attached to any of the routes in `docs/API_SPEC.md` — `/api/v1/quote`, `/api/v1/activity`, `/api/v1/notifications`, etc. all remain fully public. **Why:** deliberate scope decision made with the person building this before Sprint 003 started. There's no real per-user data yet (Sprint 004's CRM is the first module that will have any), so protecting today's routes would mean the frontend needs an `Authorization` header on every call with only one seeded user to test against, for no actual data-isolation benefit. Enforcement is deferred to whichever future sprint first has something worth protecting.
