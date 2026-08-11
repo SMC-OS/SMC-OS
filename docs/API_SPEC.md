@@ -1,9 +1,9 @@
 # SIMO OS — API Specification
 
-**Status:** Reflects the actual FastAPI application as of Sprint 004 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 adds the first real business-data module (`customers`) and is the first to actually **require** a token.
+**Status:** Reflects the actual FastAPI application as of Sprint 006 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 adds the second (`projects`) plus its status-update endpoint, the first write beyond create in this API.
 **Base URL (local dev):** `http://127.0.0.1:8000`
 **Versioning:** `/api/v1` prefix on every route except `GET /` and `GET /health`, which stay unversioned as infra/health-check endpoints. Implemented Sprint 003 (ADR-012).
-**Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `GET /api/v1/auth/me`) since Sprint 003. Sprint 003 itself required no route to present one (ADR-020); Sprint 004's `/api/v1/customers/*` routes are the first to enforce it (ADR-021) — every other route below is still callable without a token.
+**Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `GET /api/v1/auth/me`) since Sprint 003. Sprint 003 itself required no route to present one (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021) and `/api/v1/projects/*` (Sprint 006) are the only routes that enforce it — every other route below is still callable without a token.
 **CORS:** `allow_origins=["*"]`, all methods and headers allowed (`app/main.py`) — acceptable for local development only; must be restricted before any non-local deployment.
 
 ---
@@ -86,7 +86,47 @@ One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table
 
 **Request body** (`CustomerCreate`): `{ "name": "string", "email": "string | null", "phone": "string | null" }`
 
-**Response (201):** the created `Customer`. Also logs a real `ActivityEvent` (`customer_added`) server-side — the frontend no longer logs this itself (contrast with `/quotes/new`/`/projects/new`, which still do, pending their own sprints).
+**Response (201):** the created `Customer`. Also logs a real `ActivityEvent` (`customer_added`) server-side — the frontend no longer logs this itself (contrast with `/quotes/new`, which still does, pending its own future sprint).
+
+---
+
+## Project routes (`app/projects/router.py`) — added Sprint 006
+
+**All four routes require `Authorization: Bearer <token>`** — the second auth-enforced module (same reasoning as customers, ADR-021/ADR-022).
+
+### `GET /api/v1/projects`
+
+| Query param | Type | Default |
+|---|---|---|
+| `limit` | integer | `20` |
+
+**Response** — array of `Project`, most recent first:
+```json
+[{ "id": "...", "name": "Riverside Kitchen Renovation", "customer_id": "...", "notes": null, "status": "enquiry", "created_at": "2026-08-11T10:00:00Z" }]
+```
+
+### `GET /api/v1/projects/{project_id}`
+
+**Response (200):** a single `Project`.
+**Response (404):** `{ "detail": "Project not found" }`.
+
+### `POST /api/v1/projects`
+
+**Request body** (`ProjectCreate`): `{ "name": "string", "customer_id": "uuid | null", "notes": "string | null" }`
+
+**Response (201):** the created `Project`, `status` defaulted to `"enquiry"`. Also logs a real `ActivityEvent` (`project_created`) server-side, same pattern as customer creation — the frontend no longer logs this itself.
+
+### `PATCH /api/v1/projects/{project_id}/status`
+
+Advances (or otherwise sets) a project's stage in the job pipeline. This is the **only** update endpoint in the project — no general-purpose edit, matching the Customers precedent (list/detail/create) except for this one functionally-necessary exception: a "job pipeline" is meaningless without a way to move a project between stages.
+
+**Request body** (`ProjectStatusUpdate`): `{ "status": "<ProjectStatus>" }`
+
+`ProjectStatus` values, in pipeline order: `enquiry`, `quoted`, `booked`, `templated`, `fabricated`, `installed`, `complete`. Any value is accepted in any order — the API doesn't enforce moving forward-only; the frontend's detail page only ever offers the single next stage, but the endpoint itself doesn't restrict it.
+
+**Response (200):** the updated `Project`.
+**Response (404):** `{ "detail": "Project not found" }`.
+**Response (422):** pydantic enum validation — a `status` value outside the 7 listed above.
 
 ---
 
@@ -283,6 +323,10 @@ Marks one notification as read.
 | GET | `/api/v1/customers` | Sprint 004 | Yes | **Yes** |
 | POST | `/api/v1/customers` | Sprint 004 | Yes | **Yes** |
 | GET | `/api/v1/customers/{customer_id}` | Sprint 004 | Yes | **Yes** |
+| GET | `/api/v1/projects` | Sprint 006 | Yes | **Yes** |
+| POST | `/api/v1/projects` | Sprint 006 | Yes | **Yes** |
+| GET | `/api/v1/projects/{project_id}` | Sprint 006 | Yes | **Yes** |
+| PATCH | `/api/v1/projects/{project_id}/status` | Sprint 006 | Yes | **Yes** |
 | POST | `/api/v1/process` | Initial | No | No |
 | POST | `/api/v1/quote` | Initial | No | No |
 | POST | `/api/v1/estimate` | Initial | No | No |

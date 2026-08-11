@@ -3,6 +3,7 @@ import type { LoginResponse } from "@/types/auth";
 import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
 import type { AppNotification } from "@/types/notification";
+import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
 import type { QuoteRequest, QuoteResult } from "@/types/quote";
 import { clearToken, getToken } from "@/lib/auth-storage";
 
@@ -111,5 +112,21 @@ export const api = {
     request<Customer>("/customers", {
       method: "POST",
       body: JSON.stringify(customer),
+    }),
+
+  getProjects: (limit = 20) => request<Project[]>(`/projects?limit=${limit}`),
+
+  getProject: (id: string) => request<Project>(`/projects/${id}`),
+
+  createProject: (project: ProjectCreate) =>
+    request<Project>("/projects", {
+      method: "POST",
+      body: JSON.stringify(project),
+    }),
+
+  updateProjectStatus: (id: string, projectStatus: ProjectStatus) =>
+    request<Project>(`/projects/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: projectStatus }),
     }),
 };

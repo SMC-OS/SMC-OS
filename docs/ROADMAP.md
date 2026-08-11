@@ -18,7 +18,8 @@ Estimates are in developer-days (relative sizing, assuming AI-assisted developme
 |---|---|---|---|
 | **004** | CRM: customer list/detail/create, backed by the database | P0 | ✅ **Done** — see `docs/SPRINTS/sprint-004.md` |
 | **005** | Full Material Library + accurate slab-yield calculator (replaces the placeholder in `quotes/slab_calculator.py`) | P0 | ✅ **Done** — see `docs/SPRINTS/sprint-005.md` |
-| **006** | AI Quotation Generator v1 (LLM-assisted text→quote); Projects module job pipeline | P1 | ⬜ Not started |
+| **006** | Projects module: job pipeline (enquiry → quoted → booked → templated → fabricated → installed → complete), backed by the database, second auth-enforced module | P1 | ✅ **Done** — see `docs/SPRINTS/sprint-006.md` |
+| **TBD** | AI Quotation Generator v1 (LLM-assisted text→quote via the already-installed OpenAI SDK) — **split out of Sprint 006** and deferred to its own future sprint: no `OPENAI_API_KEY` configured anywhere in this project, and real usage costs money per request, so it needs a deliberate go-ahead rather than bundling it in silently | P1 | ⬜ Not started |
 | **007** | Invoice generator (proper PDF, VAT breakdown, downloadable); dashboard polish (Recent Activity reflects real DB events) | P1 | ⬜ Not started |
 
 ## v0.3 — AI Workforce & Automation

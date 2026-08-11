@@ -1,22 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
-import { Badge } from "@/components/ui/Badge";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
-import { Field, Input } from "@/components/ui/Field";
-import { CheckCircleIcon } from "@/components/ui/icons";
+import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
+import type { Customer } from "@/types/customer";
 
 export default function NewProjectPage() {
+  const router = useRouter();
+  const { isAuthenticated, isReady } = useAuth();
+
   const [name, setName] = useState("");
-  const [customer, setCustomer] = useState("");
+  const [customerId, setCustomerId] = useState("");
   const [notes, setNotes] = useState("");
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (!isReady) return;
+    if (!isAuthenticated) {
+      router.replace("/login");
+      return;
+    }
+    api.getCustomers().then(setCustomers).catch(() => {});
+  }, [isReady, isAuthenticated, router]);
+
+  if (!isReady || !isAuthenticated) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,17 +39,14 @@ export default function NewProjectPage() {
     setError(null);
 
     try {
-      await api.logActivity({
-        type: "project_created",
-        title: "Project started",
-        description: [name, customer && `for ${customer}`, notes]
-          .filter(Boolean)
-          .join(" — "),
+      const project = await api.createProject({
+        name,
+        customer_id: customerId || null,
+        notes: notes || null,
       });
-      setDone(true);
+      router.push(`/projects/${project.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
-    } finally {
       setSubmitting(false);
     }
   }
@@ -52,77 +64,49 @@ export default function NewProjectPage() {
 
       <Card>
         <CardContent>
-          {done ? (
-            <div className="flex flex-col items-start gap-3 py-2">
-              <CheckCircleIcon className="h-8 w-8 text-success" />
-              <p className="text-sm font-medium text-foreground">
-                Logged to Recent Activity.
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <Field label="Project name" htmlFor="name">
+              <Input
+                id="name"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Riverside Kitchen Renovation"
+              />
+            </Field>
+            <Field label="Customer (optional)" htmlFor="customer">
+              <Select
+                id="customer"
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+              >
+                <option value="">— No customer linked —</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Notes" htmlFor="notes">
+              <Input
+                id="notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Optional"
+              />
+            </Field>
+
+            {error && (
+              <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+                {error}
               </p>
-              <p className="text-sm text-muted">
-                The full job pipeline (enquiry &rarr; quoted &rarr; booked
-                &rarr; templated &rarr; fabricated &rarr; installed &rarr;
-                complete) ships in Sprint 006. For now this shows up on the
-                dashboard so the team can see it happened.
-              </p>
-              <div className="flex gap-2">
-                <Link href="/">
-                  <Button variant="outline">Back to dashboard</Button>
-                </Link>
-                <Button
-                  onClick={() => {
-                    setDone(false);
-                    setName("");
-                    setCustomer("");
-                    setNotes("");
-                  }}
-                >
-                  Add another
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <Field label="Project name" htmlFor="name">
-                <Input
-                  id="name"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Riverside Kitchen Renovation"
-                />
-              </Field>
-              <Field label="Customer" htmlFor="customer">
-                <Input
-                  id="customer"
-                  value={customer}
-                  onChange={(e) => setCustomer(e.target.value)}
-                  placeholder="e.g. Chen family"
-                />
-              </Field>
-              <Field label="Notes" htmlFor="notes">
-                <Input
-                  id="notes"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Optional"
-                />
-              </Field>
+            )}
 
-              {error && (
-                <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
-                  {error}
-                </p>
-              )}
-
-              <Badge tone="info" className="w-fit">
-                Not saved as a permanent record yet — full Projects module lands in Sprint 006
-              </Badge>
-
-              <Button type="submit" disabled={submitting}>
-                {submitting ? "Saving…" : "Save project"}
-              </Button>
-            </form>
-          )}
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Saving…" : "Save project"}
+            </Button>
+          </form>
         </CardContent>
       </Card>
     </div>

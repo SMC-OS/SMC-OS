@@ -2,10 +2,11 @@
 
 Sprint 002 added the operations app/activity and app/notifications need.
 Sprint 003 added the small set app/auth needs against `users`. Sprint 004
-added `customers` (app/customers/). Sprint 005 adds `materials`
-(app/materials/) — read internally by quotes/assistants, no API surface of
-its own. No CRUD helpers for quotes/projects exist yet (see
-docs/DATABASE_SCHEMA.md).
+added `customers` (app/customers/). Sprint 005 added `materials`
+(app/materials/) — internal only, no API surface of its own. Sprint 006
+adds `projects` (app/projects/), including a status-update helper — the
+first CRUD write beyond create/list/get. No CRUD helpers for `quotes`
+exist yet (see docs/DATABASE_SCHEMA.md).
 """
 
 import uuid
@@ -14,7 +15,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.database.models import ActivityLog, Customer, Material, NotificationRecord, User
+from app.database.models import ActivityLog, Customer, Material, NotificationRecord, Project, User
 
 
 def create_activity_log(
@@ -189,3 +190,38 @@ def get_material_by_name_and_thickness(db: Session, name: str, thickness: str) -
 
 def count_materials(db: Session) -> int:
     return db.query(Material).count()
+
+
+def create_project(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    name: str,
+    customer_id: uuid.UUID | None,
+    notes: str | None,
+    status: str,
+) -> Project:
+    row = Project(id=id, name=name, customer_id=customer_id, notes=notes, status=status)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_project_by_id(db: Session, project_id: uuid.UUID) -> Project | None:
+    return db.get(Project, project_id)
+
+
+def list_projects(db: Session, limit: int = 20) -> list[Project]:
+    stmt = select(Project).order_by(Project.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt))
+
+
+def update_project_status(db: Session, project_id: uuid.UUID, status: str) -> Project | None:
+    row = db.get(Project, project_id)
+    if row is None:
+        return None
+    row.status = status
+    db.commit()
+    db.refresh(row)
+    return row

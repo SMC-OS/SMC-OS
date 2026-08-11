@@ -4,9 +4,37 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
-## 2026-08-11 — (uncommitted) — Sprint #005 — Full Material Library + Accurate Slab-Yield Calculator
+## 2026-08-11 — (uncommitted) — Sprint #006 — Projects Module (Job Pipeline)
 
-Full detail in `docs/SPRINTS/sprint-005.md`. Not yet committed — pending approval.
+Full detail in `docs/SPRINTS/sprint-006.md`. Not yet committed — pending approval.
+
+**Scope note:** Sprint 006 originally bundled "AI Quotation Generator v1" with the Projects module. No `OPENAI_API_KEY` is configured anywhere in this project and real LLM calls cost real money per request, so the AI generator was split out and deferred to its own future sprint — this entry covers Projects only.
+
+**Backend**
+- New `app/projects/` module: `models.py` (`ProjectStatus` — 7-stage pipeline enum, `ProjectCreate`, `ProjectOut`, `ProjectStatusUpdate`), `service.py` (`ProjectService` — list/get/create/update_status; `create()` logs a real `ActivityEvent`, same pattern Sprint 004 established for customers), `router.py` (4 routes, all `Depends(get_current_user)` — the second auth-enforced module, ADR-022).
+- **First update-beyond-create endpoint in the API:** `PATCH /api/v1/projects/{id}/status`. A deliberate, narrow exception to the Customers precedent (list/detail/create only) — a job pipeline is meaningless without a way to move a project between stages.
+- Migration `786f58ce4406` adds `status` (`String`, `NOT NULL`, default `"enquiry"`) to `projects` — safe, the table had 0 rows.
+- `app/database/crud.py` — `create_project`, `get_project_by_id`, `list_projects`, `update_project_status` added.
+
+**Frontend**
+- New `apps/web/types/project.ts`, `apps/web/lib/projects.ts` (status label/Badge-tone mapping).
+- `apps/web/lib/api.ts` — `getProjects`, `getProject`, `createProject`, `updateProjectStatus` added.
+- `/projects` and `/projects/new` now use real persistence instead of activity-log-only behavior; new `/projects/[id]` detail page with an "Advance to \<next stage\>" control. `/projects/new`'s customer field is now a `<select>` populated from real customers (`api.getCustomers()`), replacing free text — a natural consequence of Sprint 004's CRM existing.
+
+**Tests**
+- `tests/test_projects.py` (new, 10 tests): create/list/get round trip, default status, status advance + reflected on GET, invalid status → `422`, `401` on all 4 routes without a token, `404` on an unknown id (GET and PATCH), activity logged on create, `customer_id` round-trips.
+- Full suite: 40/40 passing against the real local Postgres.
+
+**Also fixed:** a stray manual smoke-test row (`user_login`/"smoke test"/"x") left in `activity_log` since Sprint 003's very first verification pass, and a genuine gap in `tests/test_customers.py`-style cleanup that this sprint's own test briefly reproduced (a linked test customer's `ActivityEvent` wasn't being deleted) — both cleaned up, `activity_log`'s real baseline is 6 rows, not the 7 this changelog's Sprints 004/005 entries assumed.
+
+**Verified**
+- `pytest` (40/40), `tsc --noEmit`, `eslint .`, `next build` all clean.
+- Manual smoke test: full pipeline walk (enquiry → ... → complete) via `PATCH .../status`, invalid stage → `422`, no token → `401`.
+- Real headless-browser walkthrough (Playwright, transient dev tooling): login → create a customer → create a project linked to it → detail page shows correct name/status/customer/notes → advance to "Quoted" → list reflects the updated stage. No console errors. Test data cleaned up afterward, dev server stopped.
+
+## 2026-08-11 — `6d8d241` — Sprint #005 — Full Material Library + Accurate Slab-Yield Calculator
+
+Full detail in `docs/SPRINTS/sprint-005.md`.
 
 **Backend**
 - New `app/materials/` module (`service.py`, `seed.py`) — the `materials` table (unused since Sprint 002) is now real and seeded with ~30 rows: 15 named materials across 5 categories (quartz, granite, marble, porcelain, Dekton), each in 20mm and 30mm. **Internal only** — no `/api/v1/materials` route (confirmed scope decision); consumed by `/api/v1/quote`, `/api/v1/estimate`, `/api/v1/process`.
