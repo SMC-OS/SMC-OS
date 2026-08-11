@@ -4,9 +4,36 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
-## 2026-08-11 — (uncommitted) — Sprint #004 — Customers (CRM), Auth Enforcement, Login UI
+## 2026-08-11 — (uncommitted) — Sprint #005 — Full Material Library + Accurate Slab-Yield Calculator
 
-Full detail in `docs/SPRINTS/sprint-004.md`. Not yet committed — pending approval.
+Full detail in `docs/SPRINTS/sprint-005.md`. Not yet committed — pending approval.
+
+**Backend**
+- New `app/materials/` module (`service.py`, `seed.py`) — the `materials` table (unused since Sprint 002) is now real and seeded with ~30 rows: 15 named materials across 5 categories (quartz, granite, marble, porcelain, Dekton), each in 20mm and 30mm. **Internal only** — no `/api/v1/materials` route (confirmed scope decision); consumed by `/api/v1/quote`, `/api/v1/estimate`, `/api/v1/process`.
+- **Honesty note, carried into the sprint doc:** this is a reference catalogue an operator edits to match real supplier costs, not sourced from a live supplier feed.
+- `app/quotes/slab_calculator.py` — replaced the Sprint 001 placeholder (`if total_length > 3.2: slabs = 2 else 1`) with a real area-based formula: standard 650mm depth, a documented 15% wastage allowance, and named constants for island/waterfall/splashback/upstand extras. Still an estimate, not a fabrication-grade nesting optimizer.
+- **Thickness-aware pricing** (a real bug fix that fell out of this work): `thickness` was collected on every quote request since Sprint 001 and silently ignored in pricing. `QuoteCalculator` now looks up `(material, thickness)`, so 30mm genuinely costs more than 20mm for the first time.
+- `db: Session` threaded through `QuoteCalculator`, `QuoteGenerator`, `SalesAssistant`, `SearchAssistant`, `BrainManager`, and the `/process`/`/quote`/`/estimate`/`/quote/pdf` routes — the one genuinely invasive part of this sprint, five files changing signature to reach the now-database-backed catalogue.
+- Error handling unchanged: a missing `(material, thickness)` combination still raises `KeyError`, still caught by Sprint 003's existing global handler, still `400`. No new exception type introduced.
+- `app/data/materials.py`/`pricing.py` — superseded, left in place (ADR-008), no longer imported anywhere.
+
+**Frontend**
+- `apps/web/types/quote.ts` — `MATERIAL_OPTIONS` expanded from 3 to 15 entries, mirroring the new seeded catalogue (hand-kept in sync, same convention as before — no new API call, per the internal-only decision).
+
+**Tests**
+- `tests/test_materials.py` (new, 5 tests): catalogue covers all 5 roadmap categories, case-insensitive lookup, unknown combination returns `None`, thickness variants priced differently.
+- `tests/test_quotes.py`: updated for the new `db` fixture; added cases for thickness-based pricing and slab count scaling with job size.
+- New `db` fixture in `conftest.py`, reusable by future modules.
+- Full suite: 30/30 passing against the real local Postgres.
+
+**Verified**
+- `pytest` (30/30), `tsc --noEmit`, `eslint .`, `next build` all clean.
+- Manual smoke test: `/api/v1/quote` 20mm vs 30mm pricing on the same material, unrecognised material/thickness still `400`, `/api/v1/process` sales/search paths work against the new catalogue.
+- Real headless-browser walkthrough (Playwright, transient dev tooling): `/quotes/new`'s material dropdown shows all 15 entries; a real quote (30mm Absolute Black, 4.2m run, island) calculated correctly end-to-end — verified the exact area/slab-count/price math by hand against the formula. Test data cleaned up afterward.
+
+## 2026-08-11 — `2f23d21` — Sprint #004 — Customers (CRM), Auth Enforcement, Login UI
+
+Full detail in `docs/SPRINTS/sprint-004.md`.
 
 **Backend**
 - New `app/customers/` module: `models.py` (`CustomerCreate`, `CustomerOut`), `service.py` (`CustomerService` — list/get/create; `create()` also logs a real `ActivityEvent` server-side, replacing the frontend's previous standalone call), `router.py` (`GET/POST /customers`, `GET /customers/{id}`).

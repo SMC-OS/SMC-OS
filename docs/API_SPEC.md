@@ -115,8 +115,8 @@ Calculates a full quote from structured input. This is the real pricing engine (
 | Field | Type | Required | Default |
 |---|---|---|---|
 | `customer` | string | yes | — |
-| `material` | string | yes | — (must match a key in `app/data/pricing.py`, case-insensitive) |
-| `thickness` | string | yes | — |
+| `material` | string | yes | — must match a seeded material name (`app/materials/seed.py`), case-insensitive |
+| `thickness` | string | yes | — Sprint 005: now actually affects `price_per_slab` (looked up as `(material, thickness)`); previously collected but ignored |
 | `kitchen_length` | float | yes | — |
 | `island` | boolean | no | `false` |
 | `waterfall` | integer | no | `0` |
@@ -137,7 +137,9 @@ Calculates a full quote from structured input. This is the real pricing engine (
 }
 ```
 
-**Fixed in Sprint 003:** an unrecognised `material` value now returns a real `400` (`{ "detail": "Unrecognised value: '...'" }`) via a global exception handler (`app/core/errors.py`), instead of an unhandled `KeyError` surfacing as a raw `500`.
+**Fixed in Sprint 003, still true after Sprint 005's database-backed catalogue:** an unrecognised `material`/`thickness` combination returns a real `400` (`{ "detail": "Unrecognised value: '...'" }`) via a global exception handler (`app/core/errors.py`) — the lookup changed from a dict subscript to a DB query, but it still raises the same `KeyError` on a miss, so the handler needed no changes.
+
+**Sprint 005 — slab count is now a real formula**, not a placeholder: depth, wastage allowance, and island/waterfall/splashback/upstand extras all factor into `slabs`. See `docs/SPRINTS/sprint-005.md` for the exact constants and their documented assumptions.
 
 ### `POST /api/v1/estimate`
 

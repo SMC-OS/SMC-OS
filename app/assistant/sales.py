@@ -1,22 +1,28 @@
-from app.data.materials import MATERIALS
-from app.data.pricing import PRICES
+from sqlalchemy.orm import Session
+
 from app.data.services import SERVICES
+from app.materials.service import material_service
 
 
 class SalesAssistant:
 
-    def reply(self, text: str):
+    def reply(self, db: Session, text: str):
 
         text = text.lower()
 
-        for material in MATERIALS:
+        for material in material_service.list_all(db):
 
-            if material in text:
+            if material.name.lower() in text:
 
                 return {
-                    "material": material.title(),
-                    "price": f"£{PRICES[material]}",
-                    "details": MATERIALS[material],
+                    "material": material.name,
+                    "price": f"£{material.price}",
+                    "details": {
+                        "category": material.category,
+                        "thickness": material.thickness,
+                        "slab_size": material.slab_size,
+                        "finish": material.finish,
+                    },
                     "includes": SERVICES
                 }
 

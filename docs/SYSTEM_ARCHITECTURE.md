@@ -1,7 +1,7 @@
 # SIMO OS — System Architecture
 
-**Status:** Canonical reference, current as of Sprint 004 completion (11 August 2026)
-**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Turborepo/pnpm workspace
+**Status:** Canonical reference, current as of Sprint 005 completion (11 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Turborepo/pnpm workspace
 
 This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
 
@@ -61,8 +61,8 @@ app/
 │
 ├── quotes/                    # ✅ Implemented — quote calculation engine
 │   ├── models.py               #    QuoteRequest (pydantic)
-│   ├── calculator.py            #    QuoteCalculator — pricing + VAT logic
-│   ├── slab_calculator.py        #    SlabCalculator — ⚠ placeholder yield math (see §7 debt)
+│   ├── calculator.py            #    QuoteCalculator — pricing + VAT logic; takes db, looks up (material, thickness)
+│   ├── slab_calculator.py        #    ✅ Sprint 005 — real area-based yield formula, documented constants (was a placeholder)
 │   ├── generator.py               #    QuoteGenerator — thin wrapper over calculator (see debt)
 │   ├── pdf.py                      #    PDFGenerator — writes quote.pdf to local disk
 │   └── validator.py                 #    ⬜ empty — no request validation yet
@@ -82,10 +82,13 @@ app/
 │   └── {context, memory, permissions,    #    ⬜ empty — planned for Sprint 008+
 │         planner, reasoner, state}.py
 │
-├── data/                                # ✅ Implemented — hardcoded catalogue (temporary)
-│   ├── materials.py                      #    3 materials only — real catalogue in Sprint 005
-│   ├── pricing.py                         #    Flat £/slab price per material
-│   └── services.py                         #    Static list of 4 service names
+├── materials/                            # ✅ Sprint 005 — database-backed catalogue, internal only
+│   ├── service.py                         #    MaterialService — list_all, get_by_name_and_thickness
+│   └── seed.py                             #    Seeds ~30 rows (5 categories x ~3 materials x 2 thicknesses) if empty
+│
+├── data/                                # ⚠ Superseded by app/materials/ (Sprint 005) — no longer imported
+│   ├── materials.py, pricing.py           #    Left in place per ADR-008, not deleted
+│   └── services.py                         #    Still live — static list of 4 service names, unrelated to materials
 │
 ├── core/                                 # ✅ Sprint 003 — config + error handling
 │   ├── config.py                          #    Settings (pydantic-settings) — database_url, JWT config, seed admin creds
@@ -197,8 +200,9 @@ apps/web/
 | `app.customers` | Real customer list/detail/create — first business-data module, first auth-enforced module | ✅ Sprint 004 |
 | `app.activity` | Recent Activity feed — log and list timestamped events | ✅ Postgres-backed (Sprint 002) |
 | `app.notifications` | Notification centre — create, list, mark read | ✅ Postgres-backed (Sprint 002) |
-| `app.quotes` | Quote pricing engine | ✅ working, ⚠ slab-yield math is a placeholder |
-| `app.data` | Hardcoded material/pricing/services catalogue | ⚠ 3 materials only |
+| `app.quotes` | Quote pricing engine | ✅ working; slab-yield is a real formula since Sprint 005 |
+| `app.materials` | Database-backed material catalogue (list, lookup by name+thickness) | ✅ Sprint 005 — internal only, no route |
+| `app.data` | `services.py` (still live); `materials.py`/`pricing.py` superseded by `app.materials` | ⚠ mixed — see §2.1 |
 | `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
 | `app.brain` | Routes free text to an assistant | ⚠ hardcoded keyword dict, not AI |
 | `app.core` | `config.py` (pydantic-settings) + `errors.py` (exception handlers) | ✅ Sprint 003 — logging/lifecycle still ⬜ |
@@ -250,7 +254,7 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | POST | `/api/v1/auth/login` | `auth` | Issues a JWT for a valid email/password. New in Sprint 003. |
 | GET | `/api/v1/auth/me` | `auth` | Returns the current user for a valid bearer token. New in Sprint 003. |
 | POST | `/api/v1/process` | `brain` → `assistant` | Keyword-routed, not AI |
-| POST | `/api/v1/quote` | `quotes` | Full pricing calculation. Unrecognised material now `400`, not a raw `500`. |
+| POST | `/api/v1/quote` | `quotes` | Full pricing calculation, thickness-aware since Sprint 005. Unrecognised material/thickness `400`, not a raw `500`. |
 | POST | `/api/v1/estimate` | `assistant.estimator` → `quotes` | Free-text → quote |
 | POST | `/api/v1/quote/pdf` | `quotes` | Writes `quote.pdf` to local disk |
 | GET | `/api/v1/dashboard` | `main.py` | **Still hardcoded** — not DB-backed |
@@ -415,7 +419,7 @@ Sprint 001 (application shell) is complete and audited — see `SPRINT-001-AUDIT
 | Sprint | Feature | Priority | Depends on |
 |---|---|---|---|
 | **004** ✅ | CRM: customer list/detail/create, backed by the database — replaces `/customers/new`'s activity-log-only form with real persistence. First auth-enforced module (ADR-021). | P0 | v0.1 auth + DB |
-| **005** | Full Material Library (quartz/granite/marble/porcelain/Dekton, real supplier pricing) + accurate slab-yield calculator (replaces the "temporary estimate" in `slab_calculator.py`) | P0 | v0.1 DB |
+| **005** ✅ | Full Material Library (quartz/granite/marble/porcelain/Dekton, reference pricing — see `docs/SPRINTS/sprint-005.md` for the "not a live supplier feed" caveat) + accurate slab-yield calculator (real area-based formula, replaces the placeholder in `slab_calculator.py`) | P0 | v0.1 DB |
 | **006** | AI Quotation Generator v1 (LLM-assisted text→quote extraction via the already-installed OpenAI SDK) | P1 | Sprint 005 |
 | **006** | Projects module: job pipeline (enquiry → quoted → booked → templated → fabricated → installed → complete) — replaces `/projects/new`'s activity-log-only form | P1 | Sprint 004 |
 | **007** | Invoice generator: proper PDF layout, VAT breakdown, letterhead, returned as a download (not written to local disk as today) | P1 | Sprint 005 |
@@ -444,4 +448,4 @@ Full context on architecture decisions (ORM choice, auth strategy, multi-tenancy
 
 ---
 
-*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 004 (11 August 2026).*
+*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 005 (11 August 2026).*

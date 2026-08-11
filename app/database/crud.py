@@ -2,18 +2,19 @@
 
 Sprint 002 added the operations app/activity and app/notifications need.
 Sprint 003 added the small set app/auth needs against `users`. Sprint 004
-adds `customers` (list/get/create — app/customers/, the first real business
-data module). No CRUD helpers for quotes/projects/materials exist yet — no
-API surface uses those tables (see docs/DATABASE_SCHEMA.md).
+added `customers` (app/customers/). Sprint 005 adds `materials`
+(app/materials/) — read internally by quotes/assistants, no API surface of
+its own. No CRUD helpers for quotes/projects exist yet (see
+docs/DATABASE_SCHEMA.md).
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.database.models import ActivityLog, Customer, NotificationRecord, User
+from app.database.models import ActivityLog, Customer, Material, NotificationRecord, User
 
 
 def create_activity_log(
@@ -145,3 +146,46 @@ def get_customer_by_id(db: Session, customer_id: uuid.UUID) -> Customer | None:
 def list_customers(db: Session, limit: int = 20) -> list[Customer]:
     stmt = select(Customer).order_by(Customer.created_at.desc()).limit(limit)
     return list(db.scalars(stmt))
+
+
+def create_material(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    name: str,
+    category: str | None,
+    thickness: str | None,
+    slab_size: str | None,
+    finish: str | None,
+    price: float | None,
+) -> Material:
+    row = Material(
+        id=id,
+        name=name,
+        category=category,
+        thickness=thickness,
+        slab_size=slab_size,
+        finish=finish,
+        price=price,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_materials(db: Session) -> list[Material]:
+    stmt = select(Material).order_by(Material.category, Material.name, Material.thickness)
+    return list(db.scalars(stmt))
+
+
+def get_material_by_name_and_thickness(db: Session, name: str, thickness: str) -> Material | None:
+    stmt = select(Material).where(
+        func.lower(Material.name) == name.lower(),
+        func.lower(Material.thickness) == thickness.lower(),
+    )
+    return db.scalars(stmt).first()
+
+
+def count_materials(db: Session) -> int:
+    return db.query(Material).count()

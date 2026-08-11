@@ -78,7 +78,7 @@ export default function NewQuotePage() {
         </h1>
         <p className="mt-1 text-sm text-muted">
           Calculated live by the existing quote engine (POST /quote) — pricing
-          uses today&rsquo;s 3-material catalogue.
+          uses the full material catalogue, thickness included.
         </p>
       </div>
 

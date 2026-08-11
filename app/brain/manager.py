@@ -1,3 +1,5 @@
+from sqlalchemy.orm import Session
+
 from app.brain.router import BrainRouter
 from app.assistant.sales import SalesAssistant
 
@@ -10,16 +12,16 @@ class BrainManager:
         self.sales = SalesAssistant()
         self.search = SearchAssistant()
 
-    def process(self, text: str):
+    def process(self, db: Session, text: str):
 
         agent = self.router.think(text)
         print(repr(agent))
 
         if agent == "sales":
-            return self.sales.reply(text)
- 
+            return self.sales.reply(db, text)
+
         if agent == "search":
-            return self.search.search(text)
+            return self.search.search(db, text)
 
         return {
             "agent": agent,

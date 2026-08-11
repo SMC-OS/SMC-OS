@@ -1,18 +1,19 @@
 # SIMO OS — Database Schema
 
-**Status: schema implemented as of Sprint 002; API surface growing sprint by sprint.** PostgreSQL 16, SQLAlchemy 2.0 declarative models (`app/database/models.py`), Alembic migrations (`alembic/`), and a real engine/session layer (`app/database/database.py`) all exist. All 7 tables below were created by the initial migration with a live `tenant_id` column each. `users` (Sprint 003) and `customers` (Sprint 004) now have real, working API surfaces alongside `activity_log`/`notifications` (Sprint 001–002) — `quotes`, `projects`, and `materials` remain schema-only, deferred to Sprints 005–006.
+**Status: schema implemented as of Sprint 002; API surface growing sprint by sprint.** PostgreSQL 16, SQLAlchemy 2.0 declarative models (`app/database/models.py`), Alembic migrations (`alembic/`), and a real engine/session layer (`app/database/database.py`) all exist. All 7 tables below were created by the initial migration with a live `tenant_id` column each. `users` (Sprint 003) and `customers` (Sprint 004) have real HTTP API surfaces; `materials` (Sprint 005) is real and seeded but **internal-only** — read by `/api/v1/quote`, `/api/v1/estimate`, `/api/v1/process`, not exposed as its own route (a confirmed scope decision, not an oversight). `quotes` and `projects` remain schema-only, deferred to Sprint 006.
 
 ---
 
 ## 1. What actually holds data today
 
-### 1.1 Hardcoded catalogue (`app/data/`) — unchanged by Sprint 002
+### 1.1 Hardcoded catalogue (`app/data/`) — superseded by Sprint 005, `services.py` still live
 
-Plain Python dictionaries, edited by hand, imported directly into `quotes/calculator.py`, `assistant/sales.py`, and `assistant/search.py`. Not migrated to the `materials` table yet — that's Sprint 005 (real supplier pricing, not just a schema move).
+- `materials.py`, `pricing.py` — the original 3-entry hardcoded dicts. **Superseded as of Sprint 005** by the database-backed catalogue (`app/materials/`, §1.4) — no longer imported anywhere, left in place per ADR-008 (archive, don't delete without approval) rather than deleted.
+- `services.py` — `SERVICES: list[str]`, 4 static service names. Still live — a genuinely static company service list, not per-material data, so it wasn't part of the Sprint 005 move.
 
-- `materials.py` — `MATERIALS: dict[str, {category, thickness, slab_size, finish}]`. Exactly 3 entries today: `calacatta gold`, `calacatta oro`, `nero marquina`.
-- `pricing.py` — `PRICES: dict[str, float]`, one flat £-per-slab figure per material.
-- `services.py` — `SERVICES: list[str]`, 4 static service names.
+### 1.4 Material catalogue (`app/materials/`) — database-backed since Sprint 005
+
+`MaterialService` (`app/materials/service.py`) reads the `materials` table directly (no repository interface — that pattern is for the pre-database era, per ADR-001/ADR-019; `app/materials/` follows `app/customers/`'s precedent). Seeded on startup (`app/materials/seed.py`, guarded like every other seed) with ~30 rows: 15 named materials across the 5 roadmap categories (quartz, granite, marble, porcelain, Dekton), each in 20mm and 30mm (the 30mm price is the 20mm price × a documented markup constant, not hand-picked per row). **This is an illustrative reference catalogue, not sourced from a live supplier feed** — no such data source exists in this project; see `docs/SPRINTS/sprint-005.md` for the full caveat. Consumed internally by `quotes/calculator.py`, `assistant/sales.py`, `assistant/search.py` — no `/api/v1/materials` route exists (confirmed scope decision).
 
 ### 1.2 PostgreSQL-backed repositories (`app/activity/`, `app/notifications/`) — Postgres since Sprint 002
 
@@ -36,7 +37,7 @@ Every table below exists in PostgreSQL as of Sprint 002's migration (`alembic/ve
 | `customers` | `id` (UUID, PK), `tenant_id` (UUID, nullable), `name`, `email`, `phone`, `created_at` | **Live** — `GET/POST /api/v1/customers`, `GET /api/v1/customers/{id}` (Sprint 004, auth-required) |
 | `quotes` | `id`, `tenant_id`, `customer_id` (FK → `customers.id`), `material`, `thickness`, `kitchen_length`, `island`, `waterfall`, `splashback`, `upstands`, `postcode`, `price_per_slab`, `price_before_vat`, `vat`, `total`, `created_at` | None — quote calculation still happens via `POST /quote` with no persistence |
 | `projects` | `id`, `tenant_id`, `customer_id` (FK → `customers.id`), `name`, `notes`, `created_at` | None — Sprint 006 |
-| `materials` | `id`, `tenant_id`, `name`, `category`, `thickness`, `slab_size`, `finish`, `price`, `created_at` | None — Sprint 005 |
+| `materials` | `id`, `tenant_id`, `name`, `category`, `thickness`, `slab_size`, `finish`, `price`, `created_at` | **Live internally** — seeded, read by `/api/v1/quote`/`/estimate`/`/process` (Sprint 005); no dedicated route |
 | `users` | `id`, `tenant_id`, `name`, `email` (unique), `role`, `created_at` | None — Sprint 003 (auth) |
 | `activity_log` | `id`, `tenant_id`, `type`, `title`, `description`, `timestamp` | **Live** — `GET/POST /activity` |
 | `notifications` | `id`, `tenant_id`, `title`, `message`, `type`, `read`, `timestamp` | **Live** — `GET/POST /notifications`, `GET /notifications/unread-count`, `PATCH /notifications/{notification_id}/read` |
@@ -47,7 +48,7 @@ Every table below exists in PostgreSQL as of Sprint 002's migration (`alembic/ve
 
 ## 3. What Sprint 002 deliberately did not build
 
-Explicit decision (see `docs/DECISIONS.md` and `docs/SPRINTS/sprint-002.md`): no new CRUD API endpoints for any of the 5 new tables. The database foundation and models exist; the API surface reading/writing them arrives with each table's own sprint (`customers` → Sprint 004 ✅, `quotes`/`projects` → Sprint 006, `materials` → Sprint 005, `users` → Sprint 003's auth work ✅). `app/database/crud.py` now has helpers for `activity_log`/`notifications` (Sprint 002), `users` (Sprint 003), and `customers` (Sprint 004) — still no generic CRUD for `quotes`/`projects`/`materials`.
+Explicit decision (see `docs/DECISIONS.md` and `docs/SPRINTS/sprint-002.md`): no new CRUD API endpoints for any of the 5 new tables. The database foundation and models exist; the API surface reading/writing them arrives with each table's own sprint (`customers` → Sprint 004 ✅, `materials` → Sprint 005 ✅ internal-only, `quotes`/`projects` → Sprint 006, `users` → Sprint 003's auth work ✅). `app/database/crud.py` now has helpers for `activity_log`/`notifications` (Sprint 002), `users` (Sprint 003), `customers` (Sprint 004), and `materials` (Sprint 005) — still no generic CRUD for `quotes`/`projects`.
 
 ## 4. Local development setup
 

@@ -17,7 +17,7 @@ Estimates are in developer-days (relative sizing, assuming AI-assisted developme
 | Sprint | Feature | Priority | Status |
 |---|---|---|---|
 | **004** | CRM: customer list/detail/create, backed by the database | P0 | ✅ **Done** — see `docs/SPRINTS/sprint-004.md` |
-| **005** | Full Material Library + accurate slab-yield calculator (replaces the placeholder in `quotes/slab_calculator.py`) | P0 | ⬜ Not started |
+| **005** | Full Material Library + accurate slab-yield calculator (replaces the placeholder in `quotes/slab_calculator.py`) | P0 | ✅ **Done** — see `docs/SPRINTS/sprint-005.md` |
 | **006** | AI Quotation Generator v1 (LLM-assisted text→quote); Projects module job pipeline | P1 | ⬜ Not started |
 | **007** | Invoice generator (proper PDF, VAT breakdown, downloadable); dashboard polish (Recent Activity reflects real DB events) | P1 | ⬜ Not started |
 

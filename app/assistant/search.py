@@ -1,37 +1,42 @@
-from app.data.materials import MATERIALS
-from app.data.pricing import PRICES
+from sqlalchemy.orm import Session
+
+from app.materials.service import material_service
 
 
 class SearchAssistant:
 
-    def search(self, text: str):
+    def search(self, db: Session, text: str):
 
         text = text.lower()
 
         results = []
 
-        for material, info in MATERIALS.items():
+        for material in material_service.list_all(db):
 
             score = 0
 
-            if material in text:
+            if material.name.lower() in text:
                 score += 5
 
-            if info["category"].lower() in text:
+            if material.category and material.category.lower() in text:
                 score += 2
 
-            if info["finish"].lower() in text:
+            if material.finish and material.finish.lower() in text:
                 score += 1
 
-            for thickness in info["thickness"]:
-                if thickness.lower() in text:
-                    score += 1
+            if material.thickness and material.thickness.lower() in text:
+                score += 1
 
             if score > 0:
                 results.append({
-                    "material": material.title(),
-                    "price": PRICES[material],
-                    "details": info,
+                    "material": material.name,
+                    "price": material.price,
+                    "details": {
+                        "category": material.category,
+                        "thickness": material.thickness,
+                        "slab_size": material.slab_size,
+                        "finish": material.finish,
+                    },
                     "score": score
                 })
 

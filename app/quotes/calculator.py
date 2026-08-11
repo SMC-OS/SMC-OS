@@ -1,14 +1,25 @@
+from sqlalchemy.orm import Session
+
+from app.materials.service import material_service
 from app.quotes.slab_calculator import SlabCalculator
-from app.data.pricing import PRICES
 
 
 class QuoteCalculator:
 
-    def calculate(self, quote):
+    def calculate(self, db: Session, quote):
 
-        base_price = PRICES[quote.material.lower()]
+        material = material_service.get_by_name_and_thickness(
+            db, quote.material, quote.thickness
+        )
+        if material is None:
+            # Sprint 003's global KeyError -> 400 handler (app/core/errors.py)
+            # already exists for exactly this "unrecognised value" case, so
+            # this reuses that seam rather than introducing a new one.
+            raise KeyError(f"{quote.material} ({quote.thickness})")
 
-        slabs = SlabCalculator().calculate(quote)
+        base_price = material.price
+
+        slabs = SlabCalculator().calculate(quote, material)
 
         material_price = base_price * slabs
 

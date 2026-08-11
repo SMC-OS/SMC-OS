@@ -6,6 +6,7 @@ from app.activity.seed import seed_activity
 from app.api.v1 import api_router
 from app.auth.seed import seed_users
 from app.core.errors import register_exception_handlers
+from app.materials.seed import seed_materials
 from app.notifications.router import router as notifications_router
 from app.notifications.seed import seed_notifications
 
@@ -36,6 +37,7 @@ app.include_router(notifications_router, prefix="/api/v1")
 seed_activity()
 seed_notifications()
 seed_users()
+seed_materials()
 
 
 @app.get("/")
