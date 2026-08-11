@@ -1,7 +1,7 @@
 # SIMO OS — System Architecture
 
-**Status:** Canonical reference, current as of Sprint 006 completion (11 August 2026)
-**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Turborepo/pnpm workspace
+**Status:** Canonical reference, current as of Sprint 007 completion (11 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · Turborepo/pnpm workspace
 
 This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
 
@@ -11,7 +11,7 @@ This document describes the system as it actually exists today — not the aspir
 
 SIMO OS is a monorepo with two independently-runnable halves:
 
-- **Backend** (`SMC-OS/app/`) — a FastAPI application. Every route except `GET /`/`GET /health` lives under `/api/v1` as of Sprint 003 (`app/api/v1/`). Persistent as of Sprint 002: `app.activity` and `app.notifications` are PostgreSQL-backed; `app.auth` (Sprint 003) adds real login/`/me` against the `users` table; `app.customers` (Sprint 004) and `app.projects` (Sprint 006) are auth-enforced business-data modules; `app.materials` (Sprint 005) is real but internal-only, no route. Only `quotes` remains schema-only — the "AI Quotation Generator v1" roadmap item that might change that was deferred out of Sprint 006 (no OpenAI API key configured, real usage costs money).
+- **Backend** (`SMC-OS/app/`) — a FastAPI application. Every route except `GET /`/`GET /health` lives under `/api/v1` as of Sprint 003 (`app/api/v1/`). Persistent as of Sprint 002: `app.activity` and `app.notifications` are PostgreSQL-backed; `app.auth` (Sprint 003) adds real login/`/me` against the `users` table; `app.customers` (Sprint 004), `app.projects` (Sprint 006), and `app.quotes` (Sprint 007) are auth-enforced business-data modules; `app.materials` (Sprint 005) is real but internal-only, no route. All 7 tables from Sprint 002 are now genuinely in use — "AI Quotation Generator v1" is the one still-unbuilt roadmap item, deferred out of Sprint 006/007 (no OpenAI API key configured, real usage costs money).
 - **Frontend** (`SMC-OS/apps/web/`) — a Next.js App Router application, the sole consumer of the backend API, styled with Tailwind v4 and a hand-built component system (no UI library).
 
 They communicate over HTTP only. The frontend never imports backend code or vice versa. `NEXT_PUBLIC_API_URL` (in `apps/web/.env.local`) is the single point of configuration for where the frontend looks for the API — defaults to `http://127.0.0.1:8000`.
@@ -64,13 +64,15 @@ app/
 │   ├── router.py              #    APIRouter: GET/POST /notifications, PATCH .../read
 │   └── seed.py                 #    Sample data for a fresh install — guarded, only seeds an empty table
 │
-├── quotes/                    # ✅ Implemented — quote calculation engine
-│   ├── models.py               #    QuoteRequest (pydantic)
-│   ├── calculator.py            #    QuoteCalculator — pricing + VAT logic; takes db, looks up (material, thickness)
-│   ├── slab_calculator.py        #    ✅ Sprint 005 — real area-based yield formula, documented constants (was a placeholder)
-│   ├── generator.py               #    QuoteGenerator — thin wrapper over calculator (see debt)
-│   ├── pdf.py                      #    PDFGenerator — writes quote.pdf to local disk
-│   └── validator.py                 #    ⬜ empty — no request validation yet
+├── quotes/                    # ✅ Sprint 007 — persisted, auth-enforced, third such module (ADR-023)
+│   ├── models.py               #    QuoteRequest (+ optional customer_id, Sprint 007), QuoteOut
+│   ├── calculator.py            #    QuoteCalculator — pure pricing + VAT logic; takes db, looks up (material, thickness)
+│   ├── slab_calculator.py        #    Real area-based yield formula, documented constants (Sprint 005)
+│   ├── service.py                 #    ✅ Sprint 007 — QuoteService: persists every calculate(), logs an ActivityEvent
+│   ├── router.py                   #    ✅ Sprint 007 — GET /quotes, GET /quotes/{id}, GET /quotes/{id}/invoice
+│   ├── pdf.py                       #    ✅ Sprint 007, rewritten — letterhead + VAT table, io.BytesIO, real download
+│   ├── generator.py                  #    ⚠ Superseded by service.py (Sprint 007) — no longer imported, kept per ADR-008
+│   └── validator.py                   #    ⬜ empty — no request validation yet
 │
 ├── assistant/                        # ⚠ Partially implemented — keyword-based, not AI
 │   ├── sales.py                       #    ✅ SalesAssistant — matches material keywords
@@ -209,7 +211,7 @@ apps/web/
 | `app.projects` | Real project list/detail/create + status pipeline — second auth-enforced module, first update endpoint beyond create | ✅ Sprint 006 |
 | `app.activity` | Recent Activity feed — log and list timestamped events | ✅ Postgres-backed (Sprint 002) |
 | `app.notifications` | Notification centre — create, list, mark read | ✅ Postgres-backed (Sprint 002) |
-| `app.quotes` | Quote pricing engine | ✅ working; slab-yield is a real formula since Sprint 005 |
+| `app.quotes` | Quote pricing engine + persistence + downloadable invoices — third auth-enforced module (GET/browsing routes only; POST /quote and /estimate stay public) | ✅ Sprint 007 |
 | `app.materials` | Database-backed material catalogue (list, lookup by name+thickness) | ✅ Sprint 005 — internal only, no route |
 | `app.data` | `services.py` (still live); `materials.py`/`pricing.py` superseded by `app.materials` | ⚠ mixed — see §2.1 |
 | `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
@@ -263,10 +265,12 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | POST | `/api/v1/auth/login` | `auth` | Issues a JWT for a valid email/password. New in Sprint 003. |
 | GET | `/api/v1/auth/me` | `auth` | Returns the current user for a valid bearer token. New in Sprint 003. |
 | POST | `/api/v1/process` | `brain` → `assistant` | Keyword-routed, not AI |
-| POST | `/api/v1/quote` | `quotes` | Full pricing calculation, thickness-aware since Sprint 005. Unrecognised material/thickness `400`, not a raw `500`. |
-| POST | `/api/v1/estimate` | `assistant.estimator` → `quotes` | Free-text → quote |
-| POST | `/api/v1/quote/pdf` | `quotes` | Writes `quote.pdf` to local disk |
-| GET | `/api/v1/dashboard` | `main.py` | **Still hardcoded** — not DB-backed |
+| POST | `/api/v1/quote` | `quotes` | Full pricing calculation, thickness-aware since Sprint 005, **persists since Sprint 007**. Unrecognised material/thickness `400`, not a raw `500`. |
+| POST | `/api/v1/estimate` | `assistant.estimator` → `quotes` | Free-text → quote, persists since Sprint 007 |
+| GET | `/api/v1/quotes` | `quotes` | **Auth required.** Optional `?limit=`. New in Sprint 007. |
+| GET | `/api/v1/quotes/{quote_id}` | `quotes` | **Auth required.** `404` if not found. New in Sprint 007. |
+| GET | `/api/v1/quotes/{quote_id}/invoice` | `quotes` | **Auth required.** Real downloadable PDF. New in Sprint 007 — replaces the removed `/quote/pdf`. |
+| GET | `/api/v1/dashboard` | `main.py` | **Real numbers since Sprint 007** — was hardcoded |
 | GET | `/api/v1/customers` | `customers` | **Auth required.** Optional `?limit=`. New in Sprint 004. |
 | POST | `/api/v1/customers` | `customers` | **Auth required.** Also logs an `ActivityEvent`. New in Sprint 004. |
 | GET | `/api/v1/customers/{customer_id}` | `customers` | **Auth required.** `404` if not found. New in Sprint 004. |
@@ -281,7 +285,7 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | POST | `/api/v1/notifications` | `notifications` | Create a notification. Postgres-backed since Sprint 002. |
 | PATCH | `/api/v1/notifications/{notification_id}/read` | `notifications` | Mark one as read. Postgres-backed since Sprint 002. |
 
-`/api/v1` versioning landed in Sprint 003 (ADR-012) — the old unprefixed paths return `404`. JWT auth exists (`/api/v1/auth/*`) since Sprint 003 and is required on `/api/v1/customers/*` (Sprint 004, ADR-021) and `/api/v1/projects/*` (Sprint 006, ADR-022) — every other route remains public (ADR-020). See `docs/USER_ROLES.md`.
+`/api/v1` versioning landed in Sprint 003 (ADR-012) — the old unprefixed paths return `404`. JWT auth exists (`/api/v1/auth/*`) since Sprint 003 and is required on `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), and `/api/v1/quotes/*` (Sprint 007, ADR-023) — `POST /api/v1/quote`/`/estimate` deliberately stay public, every other route remains public too (ADR-020). See `docs/USER_ROLES.md`.
 
 ### 5.2 Frontend routes
 
@@ -289,8 +293,9 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 |---|---|---|
 | `/` | Dashboard | ✅ Fully live, polls every 5s |
 | `/login` | Sign in | ✅ Sprint 004 — real login against `/api/v1/auth/login` |
-| `/quotes` | Quotes index | ⚠ Shows logged activity + CTA, no persisted history yet |
-| `/quotes/new` | New Quote | ✅ Fully functional — real pricing calculation |
+| `/quotes` | Quotes index | ✅ Sprint 007 — real list from the database, redirects to `/login` if not authenticated |
+| `/quotes/[id]` | Quote detail | ✅ Sprint 007 — full price breakdown, linked customer, Download Invoice |
+| `/quotes/new` | New Quote | ✅ Real pricing calculation, persists, optional customer link, Download Invoice once calculated (public — matches `POST /quote`'s auth posture; download itself needs sign-in) |
 | `/customers` | Customers index | ✅ Sprint 004 — real list from the database, redirects to `/login` if not authenticated |
 | `/customers/[id]` | Customer detail | ✅ Sprint 004 — read-only |
 | `/customers/new` | New Customer | ✅ Sprint 004 — real persistence, redirects to the new customer's detail page |
@@ -324,28 +329,30 @@ FastAPI route  →  Service  →  Repository (Postgres-backed as of Sprint 002)
 
 `usePolling` returns `{ data, status, error, refetch }`. `status` drives the loading/error UI (`DashboardStatusBar`); `useOnlineStatus()` independently tracks `navigator.onLine` so an offline banner shows even if a request hasn't failed yet.
 
-### 6.2 Quote creation flow
+### 6.2 Quote creation flow (Sprint 007 — persistence moved server-side)
 
 ```
-User fills the form on /quotes/new
+User fills the form on /quotes/new (optionally links a real customer)
         │
         ▼
 api.createQuote(QuoteRequest)  →  POST /quote
         │
         ▼
-QuoteCalculator.calculate()  (quotes/calculator.py, using data/materials.py + data/pricing.py)
-        │  returns QuoteResult
+QuoteService.create()  (quotes/service.py)
+        │  ├─ QuoteCalculator.calculate()  (pure pricing, uses app.materials)
+        │  ├─ crud.create_quote(...)        persists the row
+        │  └─ activity_service.log(...)      logs a real ActivityEvent server-side
         ▼
-Result rendered on the page
+QuoteResult (+ id, created_at) rendered on the page
         │
         ▼
-api.logActivity({ type: "quote_created", ... })  →  POST /activity   (fire-and-forget)
+Shows up in RecentActivityPanel within 5s (next poll) — no frontend logActivity() call anymore
         │
         ▼
-Shows up in RecentActivityPanel on the dashboard within 5s (next poll)
+"Download Invoice" → api.downloadInvoice(id) → GET /api/v1/quotes/{id}/invoice (auth required) → real PDF
 ```
 
-The Customer and Project "new" flows follow the same shape but skip the calculation step — they call `api.logActivity()` directly, since there is no customer/project persistence yet (Sprint 004/006).
+The Customer and Project "new" flows follow the same server-side-logging shape (Sprint 004/006) — this sprint brought Quotes in line with them, the last of the three to move off frontend-side `logActivity()`.
 
 ### 6.3 AI Assistant flow
 
@@ -436,8 +443,8 @@ Sprint 001 (application shell) is complete and audited — see `SPRINT-001-AUDIT
 | **005** ✅ | Full Material Library (quartz/granite/marble/porcelain/Dekton, reference pricing — see `docs/SPRINTS/sprint-005.md` for the "not a live supplier feed" caveat) + accurate slab-yield calculator (real area-based formula, replaces the placeholder in `slab_calculator.py`) | P0 | v0.1 DB |
 | **006** ⬜ | AI Quotation Generator v1 (LLM-assisted text→quote extraction via the already-installed OpenAI SDK) — **deferred**, not part of Sprint 006 as actually delivered: no `OPENAI_API_KEY` configured, real usage costs money, tracked as its own future sprint | P1 | Sprint 005 |
 | **006** ✅ | Projects module: job pipeline (enquiry → quoted → booked → templated → fabricated → installed → complete) — replaces `/projects/new`'s activity-log-only form. Second auth-enforced module (ADR-022), first update-beyond-create endpoint. | P1 | Sprint 004 |
-| **007** | Invoice generator: proper PDF layout, VAT breakdown, letterhead, returned as a download (not written to local disk as today) | P1 | Sprint 005 |
-| **007** | Dashboard polish: Recent Activity reflects real DB events end-to-end | P1 | Sprints 001–007 |
+| **007** ✅ | Invoice generator: proper PDF layout, VAT breakdown, letterhead, returned as a real download (`GET /api/v1/quotes/{id}/invoice`, not written to local disk). Required persisting quotes for the first time — the `quotes` table's original purpose, finally used. Third auth-enforced module (ADR-023). | P1 | Sprint 005 |
+| **007** ✅ | Dashboard polish: all 4 stat cards computed from real data (`customers`/`projects` counts, `quotes_today`, all-time `revenue`) — previously hardcoded | P1 | Sprints 001–007 |
 
 ### v0.3 — AI Workforce & Automation
 
@@ -462,4 +469,4 @@ Full context on architecture decisions (ORM choice, auth strategy, multi-tenancy
 
 ---
 
-*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 006 (11 August 2026).*
+*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 007 (11 August 2026).*

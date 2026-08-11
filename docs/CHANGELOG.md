@@ -4,9 +4,37 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
-## 2026-08-11 — (uncommitted) — Sprint #006 — Projects Module (Job Pipeline)
+## 2026-08-11 — (uncommitted) — Sprint #007 — Real Quote Persistence, Downloadable Invoices, Real Dashboard Stats
 
-Full detail in `docs/SPRINTS/sprint-006.md`. Not yet committed — pending approval.
+Full detail in `docs/SPRINTS/sprint-007.md`. Not yet committed — pending approval.
+
+**Backend**
+- Quotes are persisted for the first time: `app/quotes/service.py` (new) wraps the existing pure `QuoteCalculator`, saves every result to the `quotes` table (empty since Sprint 002), and logs a real `ActivityEvent` server-side. Both `POST /api/v1/quote` and `POST /api/v1/estimate` go through this one seam.
+- New `app/quotes/router.py` — `GET /quotes`, `GET /quotes/{id}`, `GET /quotes/{id}/invoice`, all `Depends(get_current_user)` — the **third auth-enforced module** (ADR-023). Deliberately asymmetric: creating a quote (`POST /quote`/`/estimate`) stays public — only *browsing* what's already calculated is gated.
+- `POST /api/v1/quote/pdf` **removed** — replaced by `GET /api/v1/quotes/{id}/invoice`, which downloads a real PDF for an already-persisted quote instead of calculating-and-writing-to-disk in one call.
+- `app/quotes/pdf.py` rewritten: proper letterhead, a real VAT breakdown table, generated to `io.BytesIO()` (not `quote.pdf` on local disk) and returned as a real HTTP file download.
+- `GET /api/v1/dashboard` now computes all four numbers for real (previously hardcoded): `customers`/`projects` are row counts, `quotes_today` counts today's quotes, `revenue` sums `quotes.total` all-time.
+- `QuoteRequest` gains an optional `customer_id` — the `quotes` table only supports linking via FK, not a free-text name, so `/quotes/new` gets a customer picker (same UX Sprint 006 added to `/projects/new`). `customer` (free text) stays required for `/estimate`'s sake, but is only ever echoed in the response, never stored, unless linked.
+- `app/quotes/generator.py` superseded (no longer imported), left in place per ADR-008.
+
+**Frontend**
+- `/quotes` and new `/quotes/[id]` — real list/detail, same pattern as customers/projects; both auth-gated (matching the new `GET /api/v1/quotes/*` requirement). `/quotes/new` itself stays public (matches `POST /quote`), but its "Download Invoice" button only renders when signed in.
+- `apps/web/lib/api.ts` — `downloadInvoice()` added: fetches the PDF as a blob and triggers a real browser download (no new dependency).
+- `/quotes/new`'s frontend `api.logActivity()` call removed — the backend logs it now, same as customers/projects.
+
+**Tests**
+- `tests/test_quotes_api.py` (new, 9 tests) + `tests/test_dashboard.py` (new, 1 test): persistence round trip, `401`/`404` behavior, invoice PDF content-type/disposition/magic-bytes, activity logged, `customer_id` round-trips, old `/quote/pdf` route confirmed gone, dashboard numbers move after creating real records.
+- `tests/test_quotes.py`'s existing pure-calculator unit tests untouched — persistence is a layer above the calculator, not inside it.
+- Full suite: 50/50 passing against the real local Postgres.
+
+**Verified**
+- `pytest` (50/50), `tsc --noEmit`, `eslint .`, `next build` all clean.
+- Manually inspected a generated invoice PDF (rendered, not just byte-checked) — letterhead, VAT breakdown table, and totals all correct.
+- Real headless-browser walkthrough (Playwright, transient dev tooling): login → create a customer → calculate a quote linked to it → invoice downloads as a real PDF (captured via Playwright's download event, magic bytes verified) → quotes list shows it → detail page shows the linked customer and full breakdown → dashboard's stat cards reflect the new counts/revenue. No console errors. Test data cleaned up afterward, dev server stopped.
+
+## 2026-08-11 — `dc9736e` — Sprint #006 — Projects Module (Job Pipeline)
+
+Full detail in `docs/SPRINTS/sprint-006.md`.
 
 **Scope note:** Sprint 006 originally bundled "AI Quotation Generator v1" with the Projects module. No `OPENAI_API_KEY` is configured anywhere in this project and real LLM calls cost real money per request, so the AI generator was split out and deferred to its own future sprint — this entry covers Projects only.
 

@@ -11,9 +11,11 @@ from app.api.v1.core import router as core_router
 from app.auth.router import router as auth_router
 from app.customers.router import router as customers_router
 from app.projects.router import router as projects_router
+from app.quotes.router import router as quotes_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(core_router)
 api_router.include_router(auth_router)
 api_router.include_router(customers_router)
 api_router.include_router(projects_router)
+api_router.include_router(quotes_router)

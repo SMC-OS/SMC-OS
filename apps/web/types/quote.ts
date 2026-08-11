@@ -36,6 +36,10 @@ export interface QuoteRequest {
   splashback: boolean;
   upstands: boolean;
   postcode?: string;
+  // Sprint 007: optional link to a real customer record. `customer` (free
+  // text) stays required — the quotes table has no name column, only this
+  // FK, so an unlinked quote's name lives only in the calculated response.
+  customer_id?: string | null;
 }
 
 export interface QuoteResult {
@@ -46,4 +50,29 @@ export interface QuoteResult {
   price_before_vat: number;
   vat: number;
   total: number;
+  // Sprint 007: present once the quote is persisted.
+  id: string;
+  customer_id?: string | null;
+  created_at: string;
+}
+
+/** Shape returned by GET /api/v1/quotes and GET /api/v1/quotes/{id} —
+ * the persisted row, not the freshly-calculated response (no `customer`
+ * name or `slabs`, since neither is a column on `quotes`). */
+export interface Quote {
+  id: string;
+  customer_id: string | null;
+  material: string;
+  thickness: string;
+  kitchen_length: number;
+  island: boolean;
+  waterfall: number;
+  splashback: boolean;
+  upstands: boolean;
+  postcode: string | null;
+  price_per_slab: number;
+  price_before_vat: number;
+  vat: number;
+  total: number;
+  created_at: string;
 }

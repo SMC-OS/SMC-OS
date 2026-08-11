@@ -1,0 +1,81 @@
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session
+
+from app.auth.dependencies import get_current_user
+from app.customers.service import customer_service
+from app.database import crud
+from app.database.database import get_db
+from app.quotes.pdf import PDFGenerator
+
+router = APIRouter(
+    prefix="/quotes", tags=["quotes"], dependencies=[Depends(get_current_user)]
+)
+
+
+def _serialize(quote) -> dict:
+    return {
+        "id": quote.id,
+        "customer_id": quote.customer_id,
+        "material": quote.material,
+        "thickness": quote.thickness,
+        "kitchen_length": quote.kitchen_length,
+        "island": quote.island,
+        "waterfall": quote.waterfall,
+        "splashback": quote.splashback,
+        "upstands": quote.upstands,
+        "postcode": quote.postcode,
+        "price_per_slab": quote.price_per_slab,
+        "price_before_vat": quote.price_before_vat,
+        "vat": quote.vat,
+        "total": quote.total,
+        "created_at": quote.created_at,
+    }
+
+
+@router.get("")
+def list_quotes(limit: int = 20, db: Session = Depends(get_db)):
+    return [_serialize(q) for q in crud.list_quotes(db, limit=limit)]
+
+
+@router.get("/{quote_id}")
+def get_quote(quote_id: uuid.UUID, db: Session = Depends(get_db)):
+    quote = crud.get_quote_by_id(db, quote_id)
+    if quote is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    return _serialize(quote)
+
+
+@router.get("/{quote_id}/invoice")
+def download_invoice(quote_id: uuid.UUID, db: Session = Depends(get_db)):
+    quote = crud.get_quote_by_id(db, quote_id)
+    if quote is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+
+    customer_name = "No customer linked"
+    if quote.customer_id is not None:
+        customer = customer_service.get(db, quote.customer_id)
+        if customer is not None:
+            customer_name = customer.name
+
+    pdf_bytes = PDFGenerator().create(
+        {
+            "id": quote.id,
+            "customer": customer_name,
+            "material": quote.material,
+            "thickness": quote.thickness,
+            "price_before_vat": quote.price_before_vat,
+            "vat": quote.vat,
+            "total": quote.total,
+            "created_at": quote.created_at,
+        }
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="invoice-{str(quote.id)[:8]}.pdf"'
+        },
+    )

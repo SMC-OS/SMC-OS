@@ -1,17 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { formatCurrencyGBP } from "@/lib/utils";
 import { MATERIAL_OPTIONS, THICKNESS_OPTIONS, type QuoteResult } from "@/types/quote";
+import type { Customer } from "@/types/customer";
 
 const initialForm = {
   customer: "",
+  customerId: "",
   material: MATERIAL_OPTIONS[0] as string,
   thickness: THICKNESS_OPTIONS[0] as string,
   kitchen_length: "",
@@ -23,10 +26,30 @@ const initialForm = {
 };
 
 export default function NewQuotePage() {
+  const { isAuthenticated } = useAuth();
   const [form, setForm] = useState(initialForm);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<QuoteResult | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    // Sign-in isn't required to calculate a quote (POST /quote is public,
+    // matching the existing engine), but linking a customer needs the
+    // customer list, which is auth-gated — only fetch it if signed in.
+    api.getCustomers().then(setCustomers).catch(() => {});
+  }, [isAuthenticated]);
+
+  function handleCustomerSelect(customerId: string) {
+    const selected = customers.find((c) => c.id === customerId);
+    setForm((f) => ({
+      ...f,
+      customerId,
+      customer: selected ? selected.name : f.customer,
+    }));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,6 +60,7 @@ export default function NewQuotePage() {
     try {
       const quote = await api.createQuote({
         customer: form.customer || "Unknown",
+        customer_id: form.customerId || null,
         material: form.material,
         thickness: form.thickness,
         kitchen_length: Number(form.kitchen_length) || 0,
@@ -47,23 +71,25 @@ export default function NewQuotePage() {
         postcode: form.postcode || undefined,
       });
 
+      // Sprint 007: the backend now logs this itself (app/quotes/service.py)
+      // — no separate frontend api.logActivity() call needed anymore.
       setResult(quote);
-
-      // Surface this in Recent Activity on the dashboard — same backend
-      // endpoint the dashboard already polls.
-      api
-        .logActivity({
-          type: "quote_created",
-          title: `New quote created`,
-          description: `${quote.customer} — ${quote.material}, ${formatCurrencyGBP(quote.total)}`,
-        })
-        .catch(() => {
-          /* non-critical: the quote itself already succeeded */
-        });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleDownload() {
+    if (!result) return;
+    setDownloading(true);
+    try {
+      await api.downloadInvoice(result.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not download the invoice.");
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -77,8 +103,8 @@ export default function NewQuotePage() {
           New Quote
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Calculated live by the existing quote engine (POST /quote) — pricing
-          uses the full material catalogue, thickness included.
+          Calculated live by the existing quote engine (POST /quote) — saved
+          as a real quote record, invoice downloadable once calculated.
         </p>
       </div>
 
@@ -94,6 +120,27 @@ export default function NewQuotePage() {
                 placeholder="e.g. Sarah Whitfield"
               />
             </Field>
+
+            {isAuthenticated && customers.length > 0 && (
+              <Field
+                label="Link to existing customer (optional)"
+                htmlFor="customerId"
+                className="sm:col-span-2"
+              >
+                <Select
+                  id="customerId"
+                  value={form.customerId}
+                  onChange={(e) => handleCustomerSelect(e.target.value)}
+                >
+                  <option value="">— Not linked —</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
 
             <Field label="Material" htmlFor="material">
               <Select
@@ -223,6 +270,21 @@ export default function NewQuotePage() {
                 {formatCurrencyGBP(result.total)}
               </dd>
             </dl>
+
+            <div className="mt-4 border-t border-border pt-4">
+              {isAuthenticated ? (
+                <Button onClick={handleDownload} disabled={downloading} variant="outline">
+                  {downloading ? "Downloading…" : "Download Invoice"}
+                </Button>
+              ) : (
+                <p className="text-sm text-muted">
+                  <Link href="/login" className="text-accent hover:underline">
+                    Sign in
+                  </Link>{" "}
+                  to download the invoice.
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

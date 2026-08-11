@@ -1,6 +1,6 @@
 # SIMO OS — Database Schema
 
-**Status: schema implemented as of Sprint 002; API surface growing sprint by sprint.** PostgreSQL 16, SQLAlchemy 2.0 declarative models (`app/database/models.py`), Alembic migrations (`alembic/`), and a real engine/session layer (`app/database/database.py`) all exist. All 7 tables below were created by the initial migration with a live `tenant_id` column each. `users` (Sprint 003), `customers` (Sprint 004), and `projects` (Sprint 006) have real HTTP API surfaces; `materials` (Sprint 005) is real and seeded but **internal-only** — read by `/api/v1/quote`, `/api/v1/estimate`, `/api/v1/process`, not exposed as its own route (a confirmed scope decision, not an oversight). `quotes` remains schema-only.
+**Status: all 7 tables are real and in active use as of Sprint 007.** PostgreSQL 16, SQLAlchemy 2.0 declarative models (`app/database/models.py`), Alembic migrations (`alembic/`), and a real engine/session layer (`app/database/database.py`) all exist. `users` (Sprint 003), `customers` (Sprint 004), `projects` (Sprint 006), and `quotes` (Sprint 007) have real HTTP API surfaces; `materials` (Sprint 005) is real and seeded but **internal-only** — read by `/api/v1/quote`, `/api/v1/estimate`, `/api/v1/process`, not exposed as its own route (a confirmed scope decision, not an oversight).
 
 ---
 
@@ -22,9 +22,11 @@ Both are built behind a repository interface (`ActivityRepository`, `Notificatio
 - **`ActivityEvent`** (pydantic, `app/activity/models.py`) ↔ **`activity_log`** (SQLAlchemy, `app/database/models.py`): `id`, `type`, `title`, `description`, `timestamp` — direct 1:1 mapping, `str(uuid.UUID) ↔ uuid.UUID` for the id.
 - **`Notification`** (pydantic, `app/notifications/models.py`) ↔ **`notifications`** table, modelled as `NotificationRecord` in SQLAlchemy (named differently to avoid a class name collision with the pydantic model) — same direct mapping.
 
-### 1.3 Request/response models with no storage at all (`app/quotes/models.py`) — unchanged by Sprint 002
+### 1.3 Quote persistence (`app/quotes/`) — database-backed since Sprint 007
 
-`QuoteRequest` is a pydantic model used purely to validate and shape an incoming request — it is calculated against and returned in the response, never saved anywhere. A `quotes` table exists (§2) but nothing writes to it yet; every quote the system calculates is still gone the moment the response is sent, unless the frontend logs it as an `ActivityEvent`.
+Previously: `QuoteRequest` was calculated against and returned in the response, never saved — every quote was gone the moment the response was sent. **As of Sprint 007**, `QuoteService.create()` (`app/quotes/service.py`) wraps the existing pure `QuoteCalculator` and persists every result via `crud.create_quote(...)`, for both `POST /api/v1/quote` and `POST /api/v1/estimate` (one seam, not two copies). It also logs a real `ActivityEvent` server-side, same pattern as customers/projects.
+
+**Important asymmetry, by schema design, not a bug:** `QuoteRequest.customer` (free-text name) is required and still works standalone — `/estimate`'s regex path has no way to resolve a real customer — but the `quotes` table has **no text name column**, only `customer_id` (FK). An unlinked quote's customer name exists only in the calculated HTTP response, never in the database row. Linking a real customer (`customer_id`, optional) is the only way a quote's customer is retrievable later, e.g. from `GET /api/v1/quotes/{id}` or its downloadable invoice.
 
 ### 1.5 Job pipeline (`app/projects/`) — database-backed since Sprint 006
 
@@ -39,7 +41,7 @@ Every table below exists in PostgreSQL as of Sprint 002's migration (`alembic/ve
 | Table | Columns | API surface today |
 |---|---|---|
 | `customers` | `id` (UUID, PK), `tenant_id` (UUID, nullable), `name`, `email`, `phone`, `created_at` | **Live** — `GET/POST /api/v1/customers`, `GET /api/v1/customers/{id}` (Sprint 004, auth-required) |
-| `quotes` | `id`, `tenant_id`, `customer_id` (FK → `customers.id`), `material`, `thickness`, `kitchen_length`, `island`, `waterfall`, `splashback`, `upstands`, `postcode`, `price_per_slab`, `price_before_vat`, `vat`, `total`, `created_at` | None — quote calculation still happens via `POST /quote` with no persistence |
+| `quotes` | `id`, `tenant_id`, `customer_id` (FK → `customers.id`), `material`, `thickness`, `kitchen_length`, `island`, `waterfall`, `splashback`, `upstands`, `postcode`, `price_per_slab`, `price_before_vat`, `vat`, `total`, `created_at` | **Live** — `POST /api/v1/quote`/`/estimate` persist (public); `GET /api/v1/quotes`, `GET /api/v1/quotes/{id}`, `GET /api/v1/quotes/{id}/invoice` (Sprint 007, auth-required) |
 | `projects` | `id`, `tenant_id`, `customer_id` (FK → `customers.id`), `name`, `notes`, `status` (Sprint 006), `created_at` | **Live** — `GET/POST /api/v1/projects`, `GET /api/v1/projects/{id}`, `PATCH /api/v1/projects/{id}/status` (Sprint 006, auth-required) |
 | `materials` | `id`, `tenant_id`, `name`, `category`, `thickness`, `slab_size`, `finish`, `price`, `created_at` | **Live internally** — seeded, read by `/api/v1/quote`/`/estimate`/`/process` (Sprint 005); no dedicated route |
 | `users` | `id`, `tenant_id`, `name`, `email` (unique), `role`, `created_at` | None — Sprint 003 (auth) |
@@ -50,9 +52,9 @@ Every table below exists in PostgreSQL as of Sprint 002's migration (`alembic/ve
 
 ---
 
-## 3. What Sprint 002 deliberately did not build
+## 3. What Sprint 002 deliberately did not build (now fully closed out, Sprint 007)
 
-Explicit decision (see `docs/DECISIONS.md` and `docs/SPRINTS/sprint-002.md`): no new CRUD API endpoints for any of the 5 new tables. The database foundation and models exist; the API surface reading/writing them arrives with each table's own sprint (`customers` → Sprint 004 ✅, `materials` → Sprint 005 ✅ internal-only, `projects` → Sprint 006 ✅, `users` → Sprint 003's auth work ✅). `quotes` remains the only one with no API surface — AI Quotation Generator, which might change that, was deferred out of Sprint 006 (no `OPENAI_API_KEY` configured, real usage costs money — see `docs/SPRINTS/sprint-006.md`). `app/database/crud.py` now has helpers for `activity_log`/`notifications` (Sprint 002), `users` (Sprint 003), `customers` (Sprint 004), `materials` (Sprint 005), and `projects` including its status-update (Sprint 006).
+Explicit decision (see `docs/DECISIONS.md` and `docs/SPRINTS/sprint-002.md`): no new CRUD API endpoints for any of the 5 new tables at the time. The API surface reading/writing them arrived with each table's own sprint: `customers` → Sprint 004 ✅, `materials` → Sprint 005 ✅ internal-only, `projects` → Sprint 006 ✅, `quotes` → Sprint 007 ✅, `users` → Sprint 003's auth work ✅. All 5 are now real. `app/database/crud.py` has helpers for every table: `activity_log`/`notifications` (Sprint 002), `users` (Sprint 003), `customers` (Sprint 004), `materials` (Sprint 005), `projects` including its status-update (Sprint 006), and `quotes` including the two aggregate helpers backing `/api/v1/dashboard` (Sprint 007).
 
 ## 4. Local development setup
 

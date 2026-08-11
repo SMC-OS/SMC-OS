@@ -1,26 +1,65 @@
-from reportlab.platypus import SimpleDocTemplate
-from reportlab.platypus import Paragraph
+"""Invoice PDF generation (Sprint 007).
+
+Rewritten from the Sprint 001 stub: proper letterhead, a real VAT
+breakdown table, generated to an in-memory buffer (not quote.pdf on local
+disk) so it can be returned directly as a downloadable HTTP response —
+see app/quotes/router.py's GET /quotes/{id}/invoice.
+"""
+
+import io
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
 
 class PDFGenerator:
-
-    def create(self, quote):
-
-        pdf = SimpleDocTemplate("quote.pdf")
-    
-
+    def create(self, invoice: dict) -> bytes:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            topMargin=20 * mm,
+            bottomMargin=20 * mm,
+        )
         styles = getSampleStyleSheet()
-
         story = []
 
-        story.append(Paragraph("SIMO MARBLE & CONSTRUCTION LTD", styles["Heading1"]))
+        # Letterhead
+        story.append(Paragraph("SIMO MARBLE &amp; CONSTRUCTION LTD", styles["Heading1"]))
+        story.append(Paragraph("Unit 4, Riverside Trade Park, London", styles["Normal"]))
+        story.append(Spacer(1, 12))
+        story.append(Paragraph(f"Invoice for Quote #{str(invoice['id'])[:8]}", styles["Heading2"]))
+        story.append(Paragraph(f"Date: {invoice['created_at']:%d %B %Y}", styles["Normal"]))
+        story.append(Paragraph(f"Customer: {invoice['customer']}", styles["Normal"]))
+        story.append(Spacer(1, 16))
 
-        story.append(Paragraph(f"Customer: {quote['customer']}", styles["Normal"]))
+        # VAT breakdown table
+        rows = [
+            ["Description", "Amount"],
+            [f"{invoice['material']} ({invoice['thickness']})", f"£{invoice['price_before_vat']:,.2f}"],
+            ["VAT (20%)", f"£{invoice['vat']:,.2f}"],
+            ["Total", f"£{invoice['total']:,.2f}"],
+        ]
+        table = Table(rows, colWidths=[110 * mm, 50 * mm])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                    ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+                    ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        story.append(table)
 
-        story.append(Paragraph(f"Material: {quote['material']}", styles["Normal"]))
-
-        story.append(Paragraph(f"Total: £{quote['total']}", styles["Heading2"]))
-
-        pdf.build(story)
-
-        return "quote.pdf"
+        doc.build(story)
+        return buffer.getvalue()

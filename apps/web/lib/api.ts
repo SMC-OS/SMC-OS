@@ -4,7 +4,7 @@ import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
 import type { AppNotification } from "@/types/notification";
 import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
-import type { QuoteRequest, QuoteResult } from "@/types/quote";
+import type { Quote, QuoteRequest, QuoteResult } from "@/types/quote";
 import { clearToken, getToken } from "@/lib/auth-storage";
 
 /**
@@ -129,4 +129,42 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ status: projectStatus }),
     }),
+
+  getQuotes: (limit = 20) => request<Quote[]>(`/quotes?limit=${limit}`),
+
+  getQuote: (id: string) => request<Quote>(`/quotes/${id}`),
+
+  // Sprint 007: not JSON, so this bypasses request() and triggers a real
+  // browser download directly — fetch the PDF as a blob, point a synthetic
+  // <a download> at an object URL, click it, clean up.
+  downloadInvoice: async (id: string): Promise<void> => {
+    const token = getToken();
+    let res: Response;
+
+    try {
+      res = await fetch(`${API_BASE_URL}/api/v1/quotes/${id}/invoice`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch {
+      throw new ApiError(`Could not reach the API at /quotes/${id}/invoice`, 0);
+    }
+
+    if (!res.ok) {
+      if (res.status === 401) clearToken();
+      throw new ApiError(
+        `Request to /quotes/${id}/invoice failed with ${res.status}`,
+        res.status
+      );
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `invoice-${id.slice(0, 8)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

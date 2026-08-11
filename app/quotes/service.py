@@ -1,0 +1,64 @@
+"""QuoteService — the persistence seam Sprint 007 adds on top of the
+existing pure QuoteCalculator/SlabCalculator. Every caller of a calculated
+quote (POST /quote, POST /estimate) goes through here now, so persistence
+and activity-logging happen once, not duplicated per route. Route-level
+pattern (get_db() directly), same as app/customers/, app/projects/,
+app/materials/ (ADR-019) — no repository interface, that pattern was for
+the pre-database era (ADR-001).
+"""
+
+import uuid
+
+from sqlalchemy.orm import Session
+
+from app.activity.models import ActivityEventCreate, ActivityType
+from app.activity.service import activity_service
+from app.database import crud
+from app.quotes.calculator import QuoteCalculator
+from app.quotes.models import QuoteRequest
+
+
+class QuoteService:
+    def __init__(self) -> None:
+        self.calculator = QuoteCalculator()
+
+    def create(self, db: Session, quote: QuoteRequest) -> dict:
+        result = self.calculator.calculate(db, quote)
+
+        row = crud.create_quote(
+            db,
+            id=uuid.uuid4(),
+            customer_id=quote.customer_id,
+            material=quote.material,
+            thickness=quote.thickness,
+            kitchen_length=quote.kitchen_length,
+            island=quote.island,
+            waterfall=quote.waterfall,
+            splashback=quote.splashback,
+            upstands=quote.upstands,
+            postcode=quote.postcode,
+            price_per_slab=result["price_per_slab"],
+            price_before_vat=result["price_before_vat"],
+            vat=result["vat"],
+            total=result["total"],
+        )
+
+        # Sprint 004/006 established this pattern: the backend logs its own
+        # ActivityEvent, replacing a standalone frontend call.
+        activity_service.log(
+            ActivityEventCreate(
+                type=ActivityType.QUOTE_CREATED,
+                title="New quote created",
+                description=f"{quote.customer} — {quote.material}, £{result['total']:,.2f}",
+            )
+        )
+
+        return {
+            **result,
+            "id": row.id,
+            "customer_id": row.customer_id,
+            "created_at": row.created_at,
+        }
+
+
+quote_service = QuoteService()

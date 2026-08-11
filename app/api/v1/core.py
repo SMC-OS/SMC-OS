@@ -1,8 +1,11 @@
-"""The original main.py routes (/process, /quote, /estimate, /quote/pdf,
-/dashboard), moved under /api/v1 for Sprint 003 (ADR-012). Sprint 005 adds
-db: Session = Depends(get_db) to every route that reaches the now
-database-backed material catalogue (everything except /dashboard, which
-stays hardcoded).
+"""The original main.py routes (/process, /quote, /estimate, /dashboard),
+moved under /api/v1 for Sprint 003 (ADR-012). Sprint 005 added db: Session
+= Depends(get_db) to reach the database-backed material catalogue. Sprint
+007: /quote and /estimate now persist via quote_service (not the bare
+calculator), /quote/pdf is removed (replaced by GET /api/v1/quotes/{id}/
+invoice, which downloads a real PDF for an already-persisted quote — see
+app/quotes/router.py), and /dashboard computes real numbers instead of
+returning hardcoded ones.
 """
 
 from fastapi import APIRouter, Depends
@@ -11,16 +14,14 @@ from sqlalchemy.orm import Session
 
 from app.assistant.estimator import EstimatorAssistant
 from app.brain.manager import BrainManager
+from app.database import crud
 from app.database.database import get_db
-from app.quotes.calculator import QuoteCalculator
-from app.quotes.generator import QuoteGenerator
 from app.quotes.models import QuoteRequest
-from app.quotes.pdf import PDFGenerator
+from app.quotes.service import quote_service
 
 router = APIRouter(tags=["core"])
 
 manager = BrainManager()
-calculator = QuoteCalculator()
 estimator = EstimatorAssistant()
 
 
@@ -35,28 +36,21 @@ def process(prompt: Prompt, db: Session = Depends(get_db)):
 
 @router.post("/quote")
 def create_quote(request: QuoteRequest, db: Session = Depends(get_db)):
-    return calculator.calculate(db, request)
+    return quote_service.create(db, request)
 
 
 @router.post("/estimate")
 def estimate(prompt: Prompt, db: Session = Depends(get_db)):
     request = estimator.parse(prompt.text)
     quote = QuoteRequest(**request)
-    return calculator.calculate(db, quote)
-
-
-@router.post("/quote/pdf")
-def create_pdf(request: QuoteRequest, db: Session = Depends(get_db)):
-    quote = QuoteGenerator().generate(db, request)
-    pdf = PDFGenerator().create(quote)
-    return {"pdf": pdf, "quote": quote}
+    return quote_service.create(db, quote)
 
 
 @router.get("/dashboard")
-def dashboard():
+def dashboard(db: Session = Depends(get_db)):
     return {
-        "quotes_today": 12,
-        "revenue": 8420,
-        "customers": 327,
-        "projects": 18,
+        "quotes_today": crud.count_quotes_today(db),
+        "revenue": crud.sum_quotes_revenue(db),
+        "customers": crud.count_customers(db),
+        "projects": crud.count_projects(db),
     }

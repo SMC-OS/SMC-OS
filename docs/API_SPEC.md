@@ -1,9 +1,9 @@
 # SIMO OS — API Specification
 
-**Status:** Reflects the actual FastAPI application as of Sprint 006 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 adds the second (`projects`) plus its status-update endpoint, the first write beyond create in this API.
+**Status:** Reflects the actual FastAPI application as of Sprint 007 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 adds the third (`quotes`) and, for the first time, actually persists a calculated quote.
 **Base URL (local dev):** `http://127.0.0.1:8000`
 **Versioning:** `/api/v1` prefix on every route except `GET /` and `GET /health`, which stay unversioned as infra/health-check endpoints. Implemented Sprint 003 (ADR-012).
-**Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `GET /api/v1/auth/me`) since Sprint 003. Sprint 003 itself required no route to present one (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021) and `/api/v1/projects/*` (Sprint 006) are the only routes that enforce it — every other route below is still callable without a token.
+**Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `GET /api/v1/auth/me`) since Sprint 003. Sprint 003 itself required no route to present one (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), and `/api/v1/quotes/*` (Sprint 007, ADR-023) enforce it. `POST /api/v1/quote` and `POST /api/v1/estimate` deliberately stay public — every other route below is still callable without a token.
 **CORS:** `allow_origins=["*"]`, all methods and headers allowed (`app/main.py`) — acceptable for local development only; must be restricted before any non-local deployment.
 
 ---
@@ -86,7 +86,7 @@ One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table
 
 **Request body** (`CustomerCreate`): `{ "name": "string", "email": "string | null", "phone": "string | null" }`
 
-**Response (201):** the created `Customer`. Also logs a real `ActivityEvent` (`customer_added`) server-side — the frontend no longer logs this itself (contrast with `/quotes/new`, which still does, pending its own future sprint).
+**Response (201):** the created `Customer`. Also logs a real `ActivityEvent` (`customer_added`) server-side — the frontend no longer logs this itself. (As of Sprint 007, `/quotes/new` follows the same pattern too — see the Quote routes section below.)
 
 ---
 
@@ -130,6 +130,35 @@ Advances (or otherwise sets) a project's stage in the job pipeline. This is the 
 
 ---
 
+## Quote routes (`app/quotes/router.py`) — added Sprint 007
+
+**All three routes require `Authorization: Bearer <token>`** — the third auth-enforced module (ADR-023). Quotes themselves are created via `POST /api/v1/quote` (below, still public) — these routes are for browsing/downloading what's already been calculated.
+
+### `GET /api/v1/quotes`
+
+| Query param | Type | Default |
+|---|---|---|
+| `limit` | integer | `20` |
+
+**Response** — array of the persisted `quotes` row shape, most recent first. Note this is **not** the same shape `POST /api/v1/quote` returns — there's no `customer` name or `slabs` count, since neither is a column on `quotes` (see `docs/DATABASE_SCHEMA.md` for why):
+```json
+[{ "id": "...", "customer_id": "...", "material": "Calacatta Gold", "thickness": "20mm", "kitchen_length": 3.5, "island": false, "waterfall": 0, "splashback": false, "upstands": false, "postcode": null, "price_per_slab": 2650, "price_before_vat": 5300, "vat": 1060.0, "total": 6360.0, "created_at": "2026-08-11T10:00:00Z" }]
+```
+
+### `GET /api/v1/quotes/{quote_id}`
+
+**Response (200):** a single quote, same shape as above.
+**Response (404):** `{ "detail": "Quote not found" }`.
+
+### `GET /api/v1/quotes/{quote_id}/invoice`
+
+Generates and returns a real downloadable PDF invoice for an already-persisted quote — `app/quotes/pdf.py`, rewritten this sprint with a letterhead and a proper VAT breakdown table (material/thickness line, VAT, total), built in-memory (`io.BytesIO`), not written to local disk.
+
+**Response (200):** `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="invoice-<id>.pdf"`, raw PDF bytes.
+**Response (404):** `{ "detail": "Quote not found" }`.
+
+---
+
 ## Core routes (`app/api/v1/core.py`) — moved under `/api/v1` in Sprint 003, bodies unchanged
 
 ### `POST /api/v1/process`
@@ -148,23 +177,24 @@ Routes free text to an assistant via `BrainManager` → `BrainRouter`. The route
 
 ### `POST /api/v1/quote`
 
-Calculates a full quote from structured input. This is the real pricing engine (`app/quotes/calculator.py`).
+Calculates a full quote from structured input **and persists it** (Sprint 007 — `app/quotes/service.py`, wrapping the pricing engine in `app/quotes/calculator.py`). Deliberately stays public — matches the original engine's contract, and `/estimate`'s free-text path has no way to authenticate a caller either.
 
 **Request body** (`QuoteRequest`, `app/quotes/models.py`)
 
 | Field | Type | Required | Default |
 |---|---|---|---|
-| `customer` | string | yes | — |
+| `customer` | string | yes | — free-text name; **not** stored on the persisted row (no such column — see `docs/DATABASE_SCHEMA.md`), only echoed back in this response |
 | `material` | string | yes | — must match a seeded material name (`app/materials/seed.py`), case-insensitive |
-| `thickness` | string | yes | — Sprint 005: now actually affects `price_per_slab` (looked up as `(material, thickness)`); previously collected but ignored |
+| `thickness` | string | yes | — actually affects `price_per_slab` (looked up as `(material, thickness)`) since Sprint 005 |
 | `kitchen_length` | float | yes | — |
 | `island` | boolean | no | `false` |
 | `waterfall` | integer | no | `0` |
 | `splashback` | boolean | no | `false` |
 | `upstands` | boolean | no | `false` |
 | `postcode` | string \| null | no | `null` |
+| `customer_id` | uuid \| null | no | `null` — Sprint 007: optionally links a real `customers` row, persisted on the `quotes` row |
 
-**Response**
+**Response** — the calculated result plus persistence metadata:
 ```json
 {
   "customer": "Sarah Whitfield",
@@ -173,17 +203,22 @@ Calculates a full quote from structured input. This is the real pricing engine (
   "price_per_slab": 2650,
   "price_before_vat": 5300,
   "vat": 1060.0,
-  "total": 6360.0
+  "total": 6360.0,
+  "id": "59b2b3af-bd39-4439-8a39-204b68c7e615",
+  "customer_id": null,
+  "created_at": "2026-08-11T10:00:00Z"
 }
 ```
 
+Also logs a real `ActivityEvent` (`quote_created`) server-side — the frontend no longer logs this itself, same pattern Sprint 004/006 established for customers/projects.
+
 **Fixed in Sprint 003, still true after Sprint 005's database-backed catalogue:** an unrecognised `material`/`thickness` combination returns a real `400` (`{ "detail": "Unrecognised value: '...'" }`) via a global exception handler (`app/core/errors.py`) — the lookup changed from a dict subscript to a DB query, but it still raises the same `KeyError` on a miss, so the handler needed no changes.
 
-**Sprint 005 — slab count is now a real formula**, not a placeholder: depth, wastage allowance, and island/waterfall/splashback/upstand extras all factor into `slabs`. See `docs/SPRINTS/sprint-005.md` for the exact constants and their documented assumptions.
+**Sprint 005 — slab count is a real formula**, not a placeholder: depth, wastage allowance, and island/waterfall/splashback/upstand extras all factor into `slabs`. See `docs/SPRINTS/sprint-005.md` for the exact constants and their documented assumptions.
 
 ### `POST /api/v1/estimate`
 
-Free-text → quote. Parses a natural-language description with regex/keyword matching (`app/assistant/estimator.py` — not AI), builds a `QuoteRequest`, then calls the same calculation logic as `/api/v1/quote`. Same `400` behaviour on an unrecognised material.
+Free-text → quote. Parses a natural-language description with regex/keyword matching (`app/assistant/estimator.py` — not AI), builds a `QuoteRequest`, then persists via the same `quote_service` as `/api/v1/quote`. Same `400` behaviour on an unrecognised material, same response shape.
 
 **Request**
 ```json
@@ -192,31 +227,25 @@ Free-text → quote. Parses a natural-language description with regex/keyword ma
 
 **Response** — same shape as `POST /api/v1/quote`.
 
-### `POST /api/v1/quote/pdf`
-
-Generates a PDF quote document.
-
-**Request body** — same `QuoteRequest` shape as `POST /api/v1/quote`.
-
-**Response**
-```json
-{ "pdf": "quote.pdf", "quote": { /* calculated quote, same shape as POST /api/v1/quote */ } }
-```
-
-**Known limitation (unchanged):** the PDF is written to `quote.pdf` on the server's local disk (overwritten on every call) rather than returned as a downloadable file or stored per-quote. Not wired into the frontend yet.
-
 ### `GET /api/v1/dashboard`
 
-**Returns hardcoded, static numbers — not database-backed.** No query parameters affect the response.
+**Sprint 007 — all four numbers are now real**, computed from the database (previously hardcoded). No auth required (consistent with `/activity`), no query parameters.
 
 ```json
 {
-  "quotes_today": 12,
-  "revenue": 8420,
-  "customers": 327,
-  "projects": 18
+  "quotes_today": 3,
+  "revenue": 18420.0,
+  "customers": 12,
+  "projects": 4
 }
 ```
+
+| Field | Source |
+|---|---|
+| `quotes_today` | `count(quotes)` where `created_at` is today |
+| `revenue` | `sum(quotes.total)` — all-time, distinct from `quotes_today` by design |
+| `customers` | `count(customers)` |
+| `projects` | `count(projects)` |
 
 ---
 
@@ -327,11 +356,13 @@ Marks one notification as read.
 | POST | `/api/v1/projects` | Sprint 006 | Yes | **Yes** |
 | GET | `/api/v1/projects/{project_id}` | Sprint 006 | Yes | **Yes** |
 | PATCH | `/api/v1/projects/{project_id}/status` | Sprint 006 | Yes | **Yes** |
+| GET | `/api/v1/quotes` | Sprint 007 | Yes | **Yes** |
+| GET | `/api/v1/quotes/{quote_id}` | Sprint 007 | Yes | **Yes** |
+| GET | `/api/v1/quotes/{quote_id}/invoice` | Sprint 007 | Yes | **Yes** |
 | POST | `/api/v1/process` | Initial | No | No |
-| POST | `/api/v1/quote` | Initial | No | No |
-| POST | `/api/v1/estimate` | Initial | No | No |
-| POST | `/api/v1/quote/pdf` | Initial | No | No |
-| GET | `/api/v1/dashboard` | Initial | No (hardcoded) | No |
+| POST | `/api/v1/quote` | Initial | Yes — Postgres (Sprint 007) | No |
+| POST | `/api/v1/estimate` | Initial | Yes — Postgres (Sprint 007) | No |
+| GET | `/api/v1/dashboard` | Initial | Yes — Postgres (Sprint 007) | No |
 | GET | `/api/v1/activity` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
 | POST | `/api/v1/activity` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
 | GET | `/api/v1/notifications` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
@@ -339,4 +370,4 @@ Marks one notification as read.
 | POST | `/api/v1/notifications` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
 | PATCH | `/api/v1/notifications/{notification_id}/read` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
 
-The old unprefixed paths (`/quote`, `/activity`, `/notifications`, etc.) all return `404` as of Sprint 003 — confirmed via `tests/test_health.py`.
+The old unprefixed paths (`/quote`, `/activity`, `/notifications`, etc.) all return `404` as of Sprint 003 — confirmed via `tests/test_health.py`. `POST /api/v1/quote/pdf` (Sprint 001–006) was **removed** in Sprint 007, not kept alongside the new flow — replaced by `GET /api/v1/quotes/{id}/invoice`, which downloads a real PDF for an already-persisted quote instead of calculating-and-writing-to-disk in one call.
