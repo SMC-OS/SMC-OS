@@ -56,6 +56,24 @@ export interface QuoteResult {
   created_at: string;
 }
 
+/** AI Quotation Generator v1 — extraction only, never pricing. Every
+ * field is optional except the boolean/int flags: incompleteness must be
+ * visible, not silently defaulted. Deliberately has no price-shaped field
+ * anywhere — the AI never computes money (see docs/DECISIONS.md ADR-024). */
+export interface AIQuoteDraft {
+  customer: string | null;
+  material: string | null;
+  material_raw: string | null;
+  thickness: string | null;
+  kitchen_length: number | null;
+  island: boolean;
+  waterfall: number;
+  splashback: boolean;
+  upstands: boolean;
+  postcode: string | null;
+  warnings: string[];
+}
+
 /** Shape returned by GET /api/v1/quotes and GET /api/v1/quotes/{id} —
  * the persisted row, not the freshly-calculated response (no `customer`
  * name or `slabs`, since neither is a column on `quotes`). */

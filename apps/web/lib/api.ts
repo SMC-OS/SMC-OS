@@ -4,7 +4,7 @@ import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
 import type { AppNotification } from "@/types/notification";
 import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
-import type { Quote, QuoteRequest, QuoteResult } from "@/types/quote";
+import type { AIQuoteDraft, Quote, QuoteRequest, QuoteResult } from "@/types/quote";
 import { clearToken, getToken } from "@/lib/auth-storage";
 
 /**
@@ -128,6 +128,14 @@ export const api = {
     request<Project>(`/projects/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status: projectStatus }),
+    }),
+
+  // AI Quotation Generator v1: extraction only, pre-fills the manual form
+  // for human review — never auto-submitted, never priced by the AI.
+  generateQuoteDraft: (text: string) =>
+    request<AIQuoteDraft>("/quotes/ai-draft", {
+      method: "POST",
+      body: JSON.stringify({ text }),
     }),
 
   getQuotes: (limit = 20) => request<Quote[]>(`/quotes?limit=${limit}`),

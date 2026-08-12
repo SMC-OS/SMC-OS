@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
@@ -33,6 +34,14 @@ export default function NewQuotePage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<QuoteResult | null>(null);
   const [downloading, setDownloading] = useState(false);
+
+  // AI Quotation Generator v1 — separate state from the manual form's
+  // submitting/error, so an AI failure is never confused with a
+  // calculation failure, and the manual form stays usable regardless.
+  const [aiText, setAiText] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiWarnings, setAiWarnings] = useState<string[]>([]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -81,6 +90,43 @@ export default function NewQuotePage() {
     }
   }
 
+  async function handleGenerateDraft() {
+    setAiLoading(true);
+    setAiError(null);
+    setAiWarnings([]);
+
+    try {
+      const draft = await api.generateQuoteDraft(aiText);
+
+      // Pre-fills the existing manual form — never auto-submitted, never
+      // priced here. The user reviews every field below before calculating.
+      setForm((f) => ({
+        ...f,
+        customer: draft.customer ?? f.customer,
+        material: draft.material ?? f.material,
+        thickness: draft.thickness ?? f.thickness,
+        kitchen_length:
+          draft.kitchen_length !== null ? String(draft.kitchen_length) : f.kitchen_length,
+        island: draft.island,
+        waterfall: String(draft.waterfall),
+        splashback: draft.splashback,
+        upstands: draft.upstands,
+        postcode: draft.postcode ?? f.postcode,
+      }));
+      setAiWarnings(draft.warnings);
+    } catch (err) {
+      setAiError(
+        err instanceof ApiError
+          ? err.status === 503
+            ? "AI quotation drafting is not configured yet."
+            : err.message
+          : "Something went wrong."
+      );
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   async function handleDownload() {
     if (!result) return;
     setDownloading(true);
@@ -107,6 +153,52 @@ export default function NewQuotePage() {
           as a real quote record, invoice downloadable once calculated.
         </p>
       </div>
+
+      {isAuthenticated && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>✨ Draft with AI</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <p className="mb-3 text-sm text-muted">
+              Describe the job in plain text — this only pre-fills the form
+              below for you to review. It never submits or prices anything.
+            </p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <textarea
+                className="h-20 flex-1 rounded-lg border border-border bg-background p-3 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent"
+                value={aiText}
+                onChange={(e) => setAiText(e.target.value)}
+                placeholder="e.g. 3.5m kitchen in calacatta gold with an island, customer Sarah Whitfield"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleGenerateDraft}
+                disabled={aiLoading || !aiText.trim()}
+              >
+                {aiLoading ? "Generating…" : "Generate Draft"}
+              </Button>
+            </div>
+
+            {aiError && (
+              <p className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+                {aiError}
+              </p>
+            )}
+
+            {aiWarnings.length > 0 && (
+              <div className="mt-3 flex flex-col gap-1.5">
+                {aiWarnings.map((w) => (
+                  <Badge key={w} tone="warning" className="w-fit">
+                    {w}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent>

@@ -28,5 +28,12 @@ class Settings(BaseSettings):
     seed_admin_email: str = "owner@simo-os.local"
     seed_admin_password: str = "change-me-on-first-login"
 
+    # AI Quotation Generator v1 — optional. The app runs fully normally with
+    # both unset; app/quotes/ai_draft.py's AIDraftService only ever
+    # constructs an OpenAI client lazily, on first real use, and only if
+    # openai_api_key is set. Never required, never a startup dependency.
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+
 
 settings = Settings()

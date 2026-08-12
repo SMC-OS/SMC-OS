@@ -3,10 +3,14 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
+from app.activity.models import ActivityEventCreate, ActivityType
+from app.activity.service import activity_service
 from app.auth.dependencies import get_current_user
 from app.customers.service import customer_service
 from app.database import crud
 from app.database.database import get_db
+from app.quotes.ai_draft import AIDraftError, AIDraftUnavailable, ai_draft_service
+from app.quotes.ai_models import AIDraftRequest, AIQuoteDraft
 from app.quotes.pdf import PDFGenerator
 
 router = APIRouter(
@@ -79,3 +83,30 @@ def download_invoice(quote_id: uuid.UUID, db: Session = Depends(get_db)):
             "Content-Disposition": f'attachment; filename="invoice-{str(quote.id)[:8]}.pdf"'
         },
     )
+
+
+@router.post("/ai-draft", response_model=AIQuoteDraft)
+def generate_ai_draft(data: AIDraftRequest, db: Session = Depends(get_db)):
+    """AI Quotation Generator v1 — extraction only, never pricing (see
+    app/quotes/ai_draft.py's docstring). Persists nothing to `quotes`; the
+    only side effect is one ActivityEvent, same as the seed data has
+    previewed since Sprint 001."""
+    try:
+        draft = ai_draft_service.generate(db, data.text)
+    except AIDraftUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except AIDraftError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI provider request failed. Try again or fill the form manually.",
+        )
+
+    activity_service.log(
+        ActivityEventCreate(
+            type=ActivityType.AI_REQUEST,
+            title="AI Estimator request processed",
+            description=data.text[:200],
+        )
+    )
+
+    return draft
