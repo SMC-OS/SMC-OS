@@ -1,5 +1,5 @@
 import type { ActivityEvent, ActivityType } from "@/types/activity";
-import type { LoginResponse } from "@/types/auth";
+import type { AuthUser, LoginResponse, SignupRequest } from "@/types/auth";
 import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
 import type { AppNotification } from "@/types/notification";
@@ -102,6 +102,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+
+  // Sprint 009 — creates a new company workspace + its first (Owner) user,
+  // returns the same shape as login so the caller can sign the new owner
+  // straight in.
+  signup: (data: SignupRequest) =>
+    request<LoginResponse>("/auth/signup", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getMe: () => request<AuthUser>("/auth/me"),
 
   getCustomers: (limit = 20) =>
     request<Customer[]>(`/customers?limit=${limit}`),

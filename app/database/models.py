@@ -2,8 +2,12 @@
 
 Sprint 002 — see docs/DATABASE_SCHEMA.md §2 for the source pydantic models
 and informal shapes these are drawn from, and docs/DECISIONS.md ADR-013 for
-why every table below carries a `tenant_id` column that isn't enforced yet
-(no tenants table exists, so it's a plain nullable UUID column, not a FK).
+why every table below carries a `tenant_id` column that isn't enforced yet.
+
+Sprint 008 added the `Tenant` table itself and converted every `tenant_id`
+column from a bare nullable UUID into a real `ForeignKey("tenants.id")` —
+still nullable, still unenforced by any query. See ADR-025. Enforcement
+(every query filtering by the caller's tenant) is Sprint 012, not this one.
 
 These are the first real database models in the project. Columns are a
 starting point, not a finalised schema — revisit foreign keys, indexes, and
@@ -22,11 +26,32 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database.database import Base
 
 
+class Tenant(Base):
+    """A company/workspace using SIMO OS. Sprint 008 — schema only, no
+    enforcement: the 7 tables below gain a real FK to this table but every
+    existing row (and every query in every existing module) is untouched.
+    See docs/DECISIONS.md ADR-025 for the full reasoning and what's
+    deliberately deferred to Sprint 009 (tenant-aware auth) and Sprint 012
+    (isolation enforcement).
+    """
+
+    __tablename__ = "tenants"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="active")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Customer(Base):
     __tablename__ = "customers"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -39,7 +64,9 @@ class Quote(Base):
     __tablename__ = "quotes"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+    )
     customer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True
     )
@@ -65,7 +92,9 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+    )
     customer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True
     )
@@ -81,7 +110,9 @@ class Material(Base):
     __tablename__ = "materials"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     category: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -97,7 +128,12 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Sprint 009 — the first tenant_id column to actually become NOT NULL
+    # (migration c28dd4348080); every user belongs to exactly one tenant.
+    # The other 6 tables' tenant_id columns stay nullable until Sprint 012.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
@@ -118,7 +154,9 @@ class ActivityLog(Base):
     __tablename__ = "activity_log"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+    )
 
     type: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
@@ -138,7 +176,9 @@ class NotificationRecord(Base):
     __tablename__ = "notifications"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+    )
 
     title: Mapped[str] = mapped_column(String, nullable=False)
     message: Mapped[str] = mapped_column(String, nullable=False)

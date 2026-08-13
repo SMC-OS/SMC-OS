@@ -10,10 +10,12 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input } from "@/components/ui/Field";
 import { ApiError } from "@/lib/api";
 
-export default function LoginPage() {
+export default function SignupPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { signup } = useAuth();
 
+  const [companyName, setCompanyName] = useState("");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -25,12 +27,12 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      await login(email, password);
+      await signup({ company_name: companyName, name, email, password });
       router.push("/customers");
     } catch (err) {
       setError(
-        err instanceof ApiError && err.status === 401
-          ? "Incorrect email or password."
+        err instanceof ApiError && err.status === 409
+          ? "An account with that email already exists."
           : "Something went wrong."
       );
     } finally {
@@ -42,25 +44,43 @@ export default function LoginPage() {
     <div className="mx-auto max-w-sm">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Sign in
+          Create your company workspace
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Sign in with your SIMO OS account.
+          Set up SIMO OS for your company in a minute.
         </p>
       </div>
 
       <Card>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <Field label="Company name" htmlFor="companyName">
+              <Input
+                id="companyName"
+                required
+                autoFocus
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="Acme Stoneworks"
+              />
+            </Field>
+            <Field label="Your name" htmlFor="name">
+              <Input
+                id="name"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Jane Doe"
+              />
+            </Field>
             <Field label="Email" htmlFor="email">
               <Input
                 id="email"
                 type="email"
                 required
-                autoFocus
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="owner@simo-os.local"
+                placeholder="jane@acmestoneworks.com"
               />
             </Field>
             <Field label="Password" htmlFor="password">
@@ -80,16 +100,16 @@ export default function LoginPage() {
             )}
 
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Signing in…" : "Sign in"}
+              {submitting ? "Creating workspace…" : "Create workspace"}
             </Button>
           </form>
         </CardContent>
       </Card>
 
       <p className="mt-4 text-center text-sm text-muted">
-        Don&apos;t have a company workspace yet?{" "}
-        <Link href="/signup" className="text-accent hover:underline">
-          Create one
+        Already have an account?{" "}
+        <Link href="/login" className="text-accent hover:underline">
+          Sign in
         </Link>
       </p>
     </div>

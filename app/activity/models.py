@@ -18,6 +18,7 @@ class ActivityType(str, Enum):
     INVOICE_GENERATED = "invoice_generated"
     AI_REQUEST = "ai_request"
     USER_LOGIN = "user_login"
+    TENANT_CREATED = "tenant_created"
 
 
 class ActivityEventCreate(BaseModel):

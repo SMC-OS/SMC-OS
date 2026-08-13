@@ -1,9 +1,15 @@
-"""get_current_user — reusable FastAPI dependency for future sprints.
+"""get_current_user — reusable FastAPI dependency.
 
 Not applied to any existing route in Sprint 003 (confirmed scope decision —
-see docs/DECISIONS.md). Provided so a later sprint can attach it to routes
-with Depends(get_current_user) once there's real per-user data worth
-protecting.
+see docs/DECISIONS.md). Sprint 004/006/007/008 attach it to routes with
+Depends(get_current_user) once there's real per-user data worth protecting.
+
+Sprint 009 — the token now must carry a `tenant_id` claim (not just `sub`).
+A token missing it (i.e. any token issued before this sprint) is rejected
+the same way a missing/invalid token is — a clean cutover, not a dual-mode
+shim (see app/auth/security.py's docstring). The DB row fetched below is
+still the actual source of truth for `user.tenant_id`; the claim is only
+validated for shape here, not substituted for the DB value.
 """
 
 import uuid
@@ -32,9 +38,10 @@ def get_current_user(
     if token is None:
         raise credentials_error
     try:
-        user_id = decode_access_token(token)
-        user_uuid = uuid.UUID(user_id)
-    except (jwt.PyJWTError, ValueError):
+        payload = decode_access_token(token)
+        user_uuid = uuid.UUID(payload["sub"])
+        uuid.UUID(payload["tenant_id"])  # present and well-formed; DB row is authoritative
+    except (jwt.PyJWTError, ValueError, KeyError):
         raise credentials_error
 
     user = crud.get_user_by_id(db, user_uuid)

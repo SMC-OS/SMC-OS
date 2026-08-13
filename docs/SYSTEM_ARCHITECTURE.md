@@ -1,7 +1,7 @@
 # SIMO OS — System Architecture
 
-**Status:** Canonical reference, current as of Sprint 007 completion (11 August 2026)
-**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · Turborepo/pnpm workspace
+**Status:** Canonical reference, current as of Sprint 009 completion (13 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · AI Quotation Generator v1 (`d306c99`) · Tenants table + CRUD, schema only (Sprint 008) · Tenant-aware authentication + signup (Sprint 009) · Turborepo/pnpm workspace
 
 This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
 
@@ -11,7 +11,7 @@ This document describes the system as it actually exists today — not the aspir
 
 SIMO OS is a monorepo with two independently-runnable halves:
 
-- **Backend** (`SMC-OS/app/`) — a FastAPI application. Every route except `GET /`/`GET /health` lives under `/api/v1` as of Sprint 003 (`app/api/v1/`). Persistent as of Sprint 002: `app.activity` and `app.notifications` are PostgreSQL-backed; `app.auth` (Sprint 003) adds real login/`/me` against the `users` table; `app.customers` (Sprint 004), `app.projects` (Sprint 006), and `app.quotes` (Sprint 007) are auth-enforced business-data modules; `app.materials` (Sprint 005) is real but internal-only, no route. All 7 tables from Sprint 002 are now genuinely in use — "AI Quotation Generator v1" is the one still-unbuilt roadmap item, deferred out of Sprint 006/007 (no OpenAI API key configured, real usage costs money).
+- **Backend** (`SMC-OS/app/`) — a FastAPI application. Every route except `GET /`/`GET /health` lives under `/api/v1` as of Sprint 003 (`app/api/v1/`). Persistent as of Sprint 002: `app.activity` and `app.notifications` are PostgreSQL-backed; `app.auth` (Sprint 003) adds real login/`/me` against the `users` table; `app.customers` (Sprint 004), `app.projects` (Sprint 006), `app.quotes` (Sprint 007), and `app.tenants` (Sprint 008) are auth-enforced modules (though `tenants`' auth is the existing single-tenant gate, not tenant-scoped auth — see ADR-025); `app.materials` (Sprint 005) is real but internal-only, no route. All 7 Sprint-002 tables are genuinely in use, plus the 8th (`tenants`, Sprint 008). AI Quotation Generator v1 (`app.quotes.ai_draft`) shipped after Sprint 007, ships dark without an `OPENAI_API_KEY`.
 - **Frontend** (`SMC-OS/apps/web/`) — a Next.js App Router application, the sole consumer of the backend API, styled with Tailwind v4 and a hand-built component system (no UI library).
 
 They communicate over HTTP only. The frontend never imports backend code or vice versa. `NEXT_PUBLIC_API_URL` (in `apps/web/.env.local`) is the single point of configuration for where the frontend looks for the API — defaults to `http://127.0.0.1:8000`.
@@ -32,13 +32,13 @@ app/
 │   ├── __init__.py          #    api_router: assembles core + auth sub-routers under /api/v1
 │   └── core.py               #    /process, /quote, /estimate, /quote/pdf, /dashboard (moved from main.py, bodies unchanged)
 │
-├── auth/                     # ✅ Sprint 003 — JWT login/me machinery (ADR-011); enforced on customers since Sprint 004 (ADR-021)
-│   ├── models.py               #    LoginRequest, TokenResponse, UserOut
-│   ├── security.py              #    bcrypt hashing, JWT encode/decode (pyjwt)
-│   ├── service.py                #    AuthService — authenticate(), create_user()
-│   ├── router.py                  #    APIRouter: POST /auth/login, GET /auth/me
-│   ├── dependencies.py             #    get_current_user — reusable; used by app.customers (Sprint 004), no other route yet
-│   └── seed.py                      #    Seeds one owner account from .env if `users` is empty
+├── auth/                     # ✅ Sprint 003 — JWT login/me machinery (ADR-011); tenant-aware since Sprint 009 (ADR-026)
+│   ├── models.py               #    LoginRequest, SignupRequest (Sprint 009), TokenResponse, UserOut (+tenant_id/tenant_name, Sprint 009)
+│   ├── security.py              #    bcrypt hashing, JWT encode/decode (pyjwt) — payload gains tenant_id (Sprint 009)
+│   ├── service.py                #    AuthService — authenticate(), create_user(), signup() (Sprint 009), build_user_out()
+│   ├── router.py                  #    APIRouter: POST /auth/signup (Sprint 009), POST /auth/login, GET /auth/me
+│   ├── dependencies.py             #    get_current_user — requires tenant_id claim since Sprint 009; used by customers/projects/quotes/tenants
+│   └── seed.py                      #    Seeds one owner account (+ its Default Workspace tenant, Sprint 009) via AuthService.signup() if `users` is empty
 │
 ├── customers/                # ✅ Sprint 004 — first real business-data module, auth-enforced (ADR-021)
 │   ├── models.py                #    CustomerCreate, CustomerOut
@@ -63,6 +63,11 @@ app/
 │   ├── service.py             #    NotificationService
 │   ├── router.py              #    APIRouter: GET/POST /notifications, PATCH .../read
 │   └── seed.py                 #    Sample data for a fresh install — guarded, only seeds an empty table
+│
+├── tenants/                    # ✅ Sprint 008 — tenants table + CRUD, schema/plumbing only (ADR-025)
+│   ├── models.py                #    TenantCreate, TenantOut
+│   ├── service.py                 #    TenantService — list_all/get/create; auto-slugifies, logs an ActivityEvent
+│   └── router.py                   #    APIRouter: GET/POST /tenants, GET /tenants/{id} — Depends(get_current_user), NOT tenant-scoped auth
 │
 ├── quotes/                    # ✅ Sprint 007 — persisted, auth-enforced, third such module (ADR-023)
 │   ├── models.py               #    QuoteRequest (+ optional customer_id, Sprint 007), QuoteOut
@@ -206,13 +211,14 @@ apps/web/
 |---|---|---|
 | `app.main` | FastAPI app instance, CORS, exception handlers, router mounting, seeding | ✅ |
 | `app.api.v1` | Assembles every `/api/v1` route (ADR-012) | ✅ Sprint 003 |
-| `app.auth` | JWT login/`/me` — issuance + validation machinery, enforced on `app.customers` (Sprint 004, ADR-021) and `app.projects` (Sprint 006, ADR-022), no other route (ADR-020) | ✅ Sprint 003 |
+| `app.auth` | JWT signup/login/`/me` — issuance + validation, enforced on `app.customers`/`app.projects`/`app.quotes`/`app.tenants`. Tenant-aware since Sprint 009 (ADR-026): every user belongs to a tenant, JWT carries `tenant_id`, old-shape tokens rejected | ✅ Sprint 003, tenant-aware Sprint 009 |
 | `app.customers` | Real customer list/detail/create — first business-data module, first auth-enforced module | ✅ Sprint 004 |
 | `app.projects` | Real project list/detail/create + status pipeline — second auth-enforced module, first update endpoint beyond create | ✅ Sprint 006 |
 | `app.activity` | Recent Activity feed — log and list timestamped events | ✅ Postgres-backed (Sprint 002) |
 | `app.notifications` | Notification centre — create, list, mark read | ✅ Postgres-backed (Sprint 002) |
-| `app.quotes` | Quote pricing engine + persistence + downloadable invoices — third auth-enforced module (GET/browsing routes only; POST /quote and /estimate stay public) | ✅ Sprint 007 |
+| `app.quotes` | Quote pricing engine + persistence + downloadable invoices — third auth-enforced module (GET/browsing routes only; POST /quote and /estimate stay public); also hosts AI Quotation Generator v1 (`ai_draft.py`) | ✅ Sprint 007 (+ AI draft, `d306c99`) |
 | `app.materials` | Database-backed material catalogue (list, lookup by name+thickness) | ✅ Sprint 005 — internal only, no route |
+| `app.tenants` | `tenants` table CRUD (list/get/create) — schema/plumbing only, not yet tied to auth or data isolation | ✅ Sprint 008 |
 | `app.data` | `services.py` (still live); `materials.py`/`pricing.py` superseded by `app.materials` | ⚠ mixed — see §2.1 |
 | `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
 | `app.brain` | Routes free text to an assistant | ⚠ hardcoded keyword dict, not AI |
@@ -262,8 +268,9 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 |---|---|---|---|
 | GET | `/` | `main.py` | Welcome message — unversioned, infra endpoint |
 | GET | `/health` | `main.py` | Static health check (no DB to check yet) — unversioned, infra endpoint |
-| POST | `/api/v1/auth/login` | `auth` | Issues a JWT for a valid email/password. New in Sprint 003. |
-| GET | `/api/v1/auth/me` | `auth` | Returns the current user for a valid bearer token. New in Sprint 003. |
+| POST | `/api/v1/auth/signup` | `auth` | Creates a new tenant + its first (Owner) user, returns a token. New in Sprint 009. |
+| POST | `/api/v1/auth/login` | `auth` | Issues a JWT for a valid email/password — payload now carries `tenant_id` (Sprint 009). New in Sprint 003. |
+| GET | `/api/v1/auth/me` | `auth` | Returns the current user (+ tenant) for a valid bearer token. New in Sprint 003, tenant fields Sprint 009. |
 | POST | `/api/v1/process` | `brain` → `assistant` | Keyword-routed, not AI |
 | POST | `/api/v1/quote` | `quotes` | Full pricing calculation, thickness-aware since Sprint 005, **persists since Sprint 007**. Unrecognised material/thickness `400`, not a raw `500`. |
 | POST | `/api/v1/estimate` | `assistant.estimator` → `quotes` | Free-text → quote, persists since Sprint 007 |
@@ -278,6 +285,9 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | POST | `/api/v1/projects` | `projects` | **Auth required.** Defaults `status="enquiry"`, logs an `ActivityEvent`. New in Sprint 006. |
 | GET | `/api/v1/projects/{project_id}` | `projects` | **Auth required.** `404` if not found. New in Sprint 006. |
 | PATCH | `/api/v1/projects/{project_id}/status` | `projects` | **Auth required.** `404`/`422` as documented. The first update-beyond-create endpoint. New in Sprint 006. |
+| GET | `/api/v1/tenants` | `tenants` | **Auth required** (existing single-tenant gate, not tenant-scoped). Optional `?limit=`. New in Sprint 008. |
+| POST | `/api/v1/tenants` | `tenants` | **Auth required.** Auto-slugifies `name` if `slug` omitted. Logs an `ActivityEvent`. New in Sprint 008. |
+| GET | `/api/v1/tenants/{tenant_id}` | `tenants` | **Auth required.** `404` if not found. New in Sprint 008. |
 | GET | `/api/v1/activity` | `activity` | Optional `?limit=` and `?type=` query params. Postgres-backed since Sprint 002 — survives a restart. |
 | POST | `/api/v1/activity` | `activity` | Log a new event. Postgres-backed since Sprint 002. |
 | GET | `/api/v1/notifications` | `notifications` | Optional `?limit=`. Postgres-backed since Sprint 002 — survives a restart. |
@@ -292,7 +302,8 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | Path | Page | Functional today? |
 |---|---|---|
 | `/` | Dashboard | ✅ Fully live, polls every 5s |
-| `/login` | Sign in | ✅ Sprint 004 — real login against `/api/v1/auth/login` |
+| `/login` | Sign in | ✅ Sprint 004 — real login against `/api/v1/auth/login`. Links to `/signup`. |
+| `/signup` | Create workspace | ✅ Sprint 009 — company name + owner details, creates a tenant via `/api/v1/auth/signup`, signs the new owner in |
 | `/quotes` | Quotes index | ✅ Sprint 007 — real list from the database, redirects to `/login` if not authenticated |
 | `/quotes/[id]` | Quote detail | ✅ Sprint 007 — full price breakdown, linked customer, Download Invoice |
 | `/quotes/new` | New Quote | ✅ Real pricing calculation, persists, optional customer link, Download Invoice once calculated (public — matches `POST /quote`'s auth posture; download itself needs sign-in) |
@@ -469,4 +480,4 @@ Full context on architecture decisions (ORM choice, auth strategy, multi-tenancy
 
 ---
 
-*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 007 (11 August 2026).*
+*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 009 (13 August 2026). Note: §9's Sprint 008–016 sequence below reflects the pre-SaaS-replan draft and has not yet been reconciled with the newer Phase 1–9 roadmap agreed separately — that reconciliation is an explicit future decision, not done as part of Sprint 008 or 009.*

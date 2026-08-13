@@ -1,9 +1,9 @@
 # SIMO OS — API Specification
 
-**Status:** Reflects the actual FastAPI application as of Sprint 007 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 adds the third (`quotes`) and, for the first time, actually persists a calculated quote.
+**Status:** Reflects the actual FastAPI application as of Sprint 009 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/tenants/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 added the third (`quotes`) and, for the first time, actually persisted a calculated quote; Sprint 008 added `tenants` — schema/CRUD only, not yet tied to authentication; **Sprint 009 makes authentication itself tenant-aware** — every user belongs to a tenant, the JWT carries `tenant_id`, and `POST /api/v1/auth/signup` creates a new company workspace (see ADR-026). Still **not** tenant data isolation — no query in any business-data module filters by tenant yet (Sprint 012).
 **Base URL (local dev):** `http://127.0.0.1:8000`
 **Versioning:** `/api/v1` prefix on every route except `GET /` and `GET /health`, which stay unversioned as infra/health-check endpoints. Implemented Sprint 003 (ADR-012).
-**Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `GET /api/v1/auth/me`) since Sprint 003. Sprint 003 itself required no route to present one (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), and `/api/v1/quotes/*` (Sprint 007, ADR-023) enforce it. `POST /api/v1/quote` and `POST /api/v1/estimate` deliberately stay public — every other route below is still callable without a token.
+**Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/me`) since Sprint 003 (signup added Sprint 009). Every token carries a `tenant_id` claim since Sprint 009 (ADR-026) — a token issued before that sprint is rejected (`401`), not silently accepted. Sprint 003 itself required no route to present a token (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), `/api/v1/quotes/*` (Sprint 007, ADR-023), and `/api/v1/tenants/*` (Sprint 008) enforce it. `POST /api/v1/quote` and `POST /api/v1/estimate` deliberately stay public — every other route below is still callable without a token.
 **CORS:** `allow_origins=["*"]`, all methods and headers allowed (`app/main.py`) — acceptable for local development only; must be restricted before any non-local deployment.
 
 ---
@@ -31,7 +31,19 @@ Static health check — does **not** check a database connection.
 
 ---
 
-## Auth routes (`app/auth/router.py`) — added Sprint 003
+## Auth routes (`app/auth/router.py`) — added Sprint 003, tenant-aware since Sprint 009
+
+### `POST /api/v1/auth/signup` — added Sprint 009
+
+Creates a brand-new company workspace (`Tenant`) and its first user (`role="Owner"`), then signs them in — same response shape as `/login`. Email availability is checked before any row is written, so a duplicate email never leaves an orphaned tenant.
+
+**Request body** (`SignupRequest`)
+```json
+{ "company_name": "Acme Stoneworks", "name": "Jane Doe", "email": "jane@acmestoneworks.com", "password": "..." }
+```
+
+**Response (201)** (`TokenResponse`) — same shape as `/login`, see below.
+**Response (409):** `{ "detail": "Email already registered" }`
 
 ### `POST /api/v1/auth/login`
 
@@ -45,9 +57,14 @@ Static health check — does **not** check a database connection.
 {
   "access_token": "eyJ...",
   "token_type": "bearer",
-  "user": { "id": "...", "name": "Simo", "email": "owner@simo-os.local", "role": "Owner" }
+  "user": {
+    "id": "...", "name": "Simo", "email": "owner@simo-os.local", "role": "Owner",
+    "tenant_id": "...", "tenant_name": "Default Workspace"
+  }
 }
 ```
+
+`access_token`'s JWT payload is `{"sub": "<user id>", "tenant_id": "<tenant id>", "exp": ...}` since Sprint 009 (ADR-026) — previously just `{"sub": ..., "exp": ...}`.
 
 **Response (401):** `{ "detail": "Incorrect email or password" }`
 
@@ -55,10 +72,10 @@ Static health check — does **not** check a database connection.
 
 `Authorization: Bearer <token>` header required.
 
-**Response (200)** (`UserOut`): `{ "id": "...", "name": "...", "email": "...", "role": "..." }`
-**Response (401):** `{ "detail": "Could not validate credentials" }` — missing, malformed, or expired token.
+**Response (200)** (`UserOut`): `{ "id": "...", "name": "...", "email": "...", "role": "...", "tenant_id": "...", "tenant_name": "..." }`
+**Response (401):** `{ "detail": "Could not validate credentials" }` — missing, malformed, expired token, **or a token missing the `tenant_id` claim** (i.e. any token issued before Sprint 009 — a clean cutover, not a dual-mode shim).
 
-One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table is empty, from `.env`'s `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` — never hardcoded credentials.
+One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table is empty, from `.env`'s `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` — never hardcoded credentials. Since Sprint 009 this goes through the same `AuthService.signup()` path as a real signup, giving the seeded owner a real "Default Workspace" tenant instead of special-cased logic.
 
 ---
 
@@ -156,6 +173,34 @@ Generates and returns a real downloadable PDF invoice for an already-persisted q
 
 **Response (200):** `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="invoice-<id>.pdf"`, raw PDF bytes.
 **Response (404):** `{ "detail": "Quote not found" }`.
+
+---
+
+## Tenant routes (`app/tenants/router.py`) — added Sprint 008
+
+**All three routes require `Authorization: Bearer <token>`** — reusing the existing single-tenant auth gate (same `get_current_user` dependency as `customers`/`projects`/`quotes`), *not* tenant-scoped authentication. This module is schema/CRUD scaffolding — see `docs/DECISIONS.md` ADR-025 for what it deliberately doesn't do yet (no route or query anywhere is filtered by tenant).
+
+### `GET /api/v1/tenants`
+
+| Query param | Type | Default |
+|---|---|---|
+| `limit` | integer | `20` |
+
+**Response** — array of `Tenant`, most recent first:
+```json
+[{ "id": "...", "name": "Smoke Test Stoneworks", "slug": "smoke-test-stoneworks", "status": "active", "created_at": "2026-08-13T00:00:00Z" }]
+```
+
+### `GET /api/v1/tenants/{tenant_id}`
+
+**Response (200):** a single `Tenant` (same shape as above).
+**Response (404):** `{ "detail": "Tenant not found" }`.
+
+### `POST /api/v1/tenants`
+
+**Request body** (`TenantCreate`): `{ "name": "string", "slug": "string | null" }` — `slug` is auto-generated from `name` if omitted (lowercased, hyphenated), with a random-suffix retry on a collision.
+
+**Response (201):** the created `Tenant`, `status` defaulted to `"active"`. Also logs a real `ActivityEvent` (`tenant_created`) server-side, same pattern as customers/projects/quotes.
 
 ---
 
@@ -260,7 +305,7 @@ Backed by `PostgresActivityRepository` since Sprint 002 — data survives a serv
 | `limit` | integer | `20` | Max events returned, most recent first |
 | `type` | `ActivityType` \| omitted | none | Filter to one event type |
 
-`ActivityType` values: `quote_created`, `customer_added`, `project_created`, `invoice_generated`, `ai_request`, `user_login`.
+`ActivityType` values: `quote_created`, `customer_added`, `project_created`, `invoice_generated`, `ai_request`, `user_login`, `tenant_created` (Sprint 008).
 
 **Response** — array of `ActivityEvent`:
 ```json
@@ -347,7 +392,8 @@ Marks one notification as read.
 |---|---|---|---|---|
 | GET | `/` | Initial | No | No |
 | GET | `/health` | Initial | No | No |
-| POST | `/api/v1/auth/login` | Sprint 003 | Yes | No (issues the token) |
+| POST | `/api/v1/auth/signup` | Sprint 009 | Yes | No (issues the token) |
+| POST | `/api/v1/auth/login` | Sprint 003 (tenant-aware since Sprint 009) | Yes | No (issues the token) |
 | GET | `/api/v1/auth/me` | Sprint 003 | Yes | **Yes** |
 | GET | `/api/v1/customers` | Sprint 004 | Yes | **Yes** |
 | POST | `/api/v1/customers` | Sprint 004 | Yes | **Yes** |
@@ -359,6 +405,9 @@ Marks one notification as read.
 | GET | `/api/v1/quotes` | Sprint 007 | Yes | **Yes** |
 | GET | `/api/v1/quotes/{quote_id}` | Sprint 007 | Yes | **Yes** |
 | GET | `/api/v1/quotes/{quote_id}/invoice` | Sprint 007 | Yes | **Yes** |
+| GET | `/api/v1/tenants` | Sprint 008 | Yes | **Yes** (existing single-tenant gate) |
+| POST | `/api/v1/tenants` | Sprint 008 | Yes | **Yes** (existing single-tenant gate) |
+| GET | `/api/v1/tenants/{tenant_id}` | Sprint 008 | Yes | **Yes** (existing single-tenant gate) |
 | POST | `/api/v1/process` | Initial | No | No |
 | POST | `/api/v1/quote` | Initial | Yes — Postgres (Sprint 007) | No |
 | POST | `/api/v1/estimate` | Initial | Yes — Postgres (Sprint 007) | No |

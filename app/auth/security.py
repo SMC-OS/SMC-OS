@@ -2,6 +2,15 @@
 
 Sprint 003 — basic JWT auth (ADR-011). Uses bcrypt directly rather than
 passlib, which has known compatibility issues with modern bcrypt releases.
+
+Sprint 009 — the token payload gains a `tenant_id` claim (docs/DECISIONS.md
+new ADR). This is a clean-cutover shape change, not a backwards-compatible
+one: any token issued before this sprint has no `tenant_id` claim and is
+rejected by app/auth/dependencies.py's get_current_user, same "old shape
+just stops working, no dual-mode shim" precedent as ADR-012's /api/v1
+cutover. The DB row (`users.tenant_id`) remains the actual source of truth
+for which tenant a user belongs to — the claim is carried for cheap access
+without a DB round-trip, not trusted over the DB.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -20,13 +29,17 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, tenant_id: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    payload = {"sub": subject, "exp": expire}
+    payload = {"sub": subject, "tenant_id": tenant_id, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> str:
-    """Returns the `sub` (user id) claim. Raises jwt.PyJWTError if invalid/expired."""
-    payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    return payload["sub"]
+def decode_access_token(token: str) -> dict:
+    """Returns the full decoded payload (`sub`, `tenant_id`, `exp`).
+
+    Raises jwt.PyJWTError if invalid/expired. Sprint 009 — previously
+    returned just the `sub` string; now returns the whole payload since
+    app/auth/dependencies.py needs `tenant_id` too.
+    """
+    return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])

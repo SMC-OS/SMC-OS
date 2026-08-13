@@ -7,7 +7,8 @@ added `customers` (app/customers/). Sprint 005 added `materials`
 added `projects` (app/projects/), including a status-update helper. Sprint
 007 adds `quotes` (app/quotes/) — the last of the 7 tables to get real
 CRUD, plus two aggregate helpers (count_quotes_today, sum_quotes_revenue)
-backing the now-real /api/v1/dashboard.
+backing the now-real /api/v1/dashboard. Sprint 008 adds `tenants`
+(app/tenants/) — schema/CRUD only, no query above filters by tenant yet.
 """
 
 import uuid
@@ -23,6 +24,7 @@ from app.database.models import (
     NotificationRecord,
     Project,
     Quote,
+    Tenant,
     User,
 )
 
@@ -109,12 +111,15 @@ def create_user(
     db: Session,
     *,
     id: uuid.UUID,
+    tenant_id: uuid.UUID,
     name: str,
     email: str,
     password_hash: str,
     role: str | None = None,
 ) -> User:
-    row = User(id=id, name=name, email=email, password_hash=password_hash, role=role)
+    row = User(
+        id=id, tenant_id=tenant_id, name=name, email=email, password_hash=password_hash, role=role
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -300,3 +305,32 @@ def count_quotes_today(db: Session) -> int:
 def sum_quotes_revenue(db: Session) -> float:
     total = db.query(func.sum(Quote.total)).scalar()
     return float(total) if total is not None else 0.0
+
+
+def create_tenant(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    name: str,
+    slug: str,
+    status: str = "active",
+) -> Tenant:
+    row = Tenant(id=id, name=name, slug=slug, status=status)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_tenant_by_id(db: Session, tenant_id: uuid.UUID) -> Tenant | None:
+    return db.get(Tenant, tenant_id)
+
+
+def get_tenant_by_slug(db: Session, slug: str) -> Tenant | None:
+    stmt = select(Tenant).where(Tenant.slug == slug)
+    return db.scalars(stmt).first()
+
+
+def list_tenants(db: Session, limit: int = 20) -> list[Tenant]:
+    stmt = select(Tenant).order_by(Tenant.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt))
