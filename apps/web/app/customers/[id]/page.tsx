@@ -51,6 +51,7 @@ export default function CustomerDetailPage() {
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
   function loadPortalLinks(customerId: string) {
+    setLinksError(null);
     api
       .getPortalLinks(customerId)
       .then(setPortalLinks)
