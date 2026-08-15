@@ -13,15 +13,21 @@ def test_health(client):
 
 
 def test_dashboard_under_v1(client):
-    assert client.get("/api/v1/dashboard").status_code == 200
+    # Sprint 012 (ADR-029): now auth-gated — 401 (not 404) still proves the
+    # route is mounted under /api/v1, which is all this smoke test checks.
+    assert client.get("/api/v1/dashboard").status_code == 401
 
 
 def test_activity_under_v1(client):
-    assert client.get("/api/v1/activity").status_code == 200
+    # Sprint 012 (ADR-029): now auth-gated — 401 (not 404) still proves the
+    # route is mounted under /api/v1, which is all this smoke test checks.
+    assert client.get("/api/v1/activity").status_code == 401
 
 
 def test_notifications_under_v1(client):
-    assert client.get("/api/v1/notifications").status_code == 200
+    # Sprint 012 (ADR-029): now auth-gated — 401 (not 404) still proves the
+    # route is mounted under /api/v1, which is all this smoke test checks.
+    assert client.get("/api/v1/notifications").status_code == 401
 
 
 def test_old_unprefixed_business_routes_are_gone(client):

@@ -91,7 +91,8 @@ def test_ai_draft_successful_extraction(client, auth_headers):
         assert body["island"] is True
         assert body["warnings"] == []
 
-        activity = client.get("/api/v1/activity?limit=50").json()
+        # Sprint 012: /activity now requires auth and is tenant-scoped.
+        activity = client.get("/api/v1/activity?limit=50", headers=auth_headers).json()
         descriptions = [e["description"] for e in activity]
         assert TEST_TEXT in descriptions
     finally:

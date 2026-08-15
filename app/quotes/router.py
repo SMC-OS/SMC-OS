@@ -9,6 +9,7 @@ from app.auth.dependencies import get_current_user
 from app.customers.service import customer_service
 from app.database import crud
 from app.database.database import get_db
+from app.database.models import User
 from app.quotes.ai_draft import AIDraftError, AIDraftUnavailable, ai_draft_service
 from app.quotes.ai_models import AIDraftRequest, AIQuoteDraft
 from app.quotes.pdf import PDFGenerator
@@ -39,27 +40,37 @@ def _serialize(quote) -> dict:
 
 
 @router.get("")
-def list_quotes(limit: int = 20, db: Session = Depends(get_db)):
-    return [_serialize(q) for q in crud.list_quotes(db, limit=limit)]
+def list_quotes(
+    limit: int = 20, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    return [_serialize(q) for q in crud.list_quotes(db, current_user.tenant_id, limit=limit)]
 
 
 @router.get("/{quote_id}")
-def get_quote(quote_id: uuid.UUID, db: Session = Depends(get_db)):
-    quote = crud.get_quote_by_id(db, quote_id)
+def get_quote(
+    quote_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    quote = crud.get_quote_by_id(db, quote_id, current_user.tenant_id)
     if quote is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
     return _serialize(quote)
 
 
 @router.get("/{quote_id}/invoice")
-def download_invoice(quote_id: uuid.UUID, db: Session = Depends(get_db)):
-    quote = crud.get_quote_by_id(db, quote_id)
+def download_invoice(
+    quote_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    quote = crud.get_quote_by_id(db, quote_id, current_user.tenant_id)
     if quote is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
 
     customer_name = "No customer linked"
     if quote.customer_id is not None:
-        customer = customer_service.get(db, quote.customer_id)
+        customer = customer_service.get(db, quote.customer_id, tenant_id=current_user.tenant_id)
         if customer is not None:
             customer_name = customer.name
 
@@ -86,7 +97,11 @@ def download_invoice(quote_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/ai-draft", response_model=AIQuoteDraft)
-def generate_ai_draft(data: AIDraftRequest, db: Session = Depends(get_db)):
+def generate_ai_draft(
+    data: AIDraftRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """AI Quotation Generator v1 — extraction only, never pricing (see
     app/quotes/ai_draft.py's docstring). Persists nothing to `quotes`; the
     only side effect is one ActivityEvent, same as the seed data has
@@ -106,7 +121,8 @@ def generate_ai_draft(data: AIDraftRequest, db: Session = Depends(get_db)):
             type=ActivityType.AI_REQUEST,
             title="AI Estimator request processed",
             description=data.text[:200],
-        )
+        ),
+        tenant_id=current_user.tenant_id,
     )
 
     return draft

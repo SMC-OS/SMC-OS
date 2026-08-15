@@ -1,3 +1,5 @@
+import uuid
+
 from app.activity.models import ActivityEvent, ActivityEventCreate, ActivityType
 from app.activity.repository import ActivityRepository, PostgresActivityRepository
 
@@ -11,15 +13,15 @@ class ActivityService:
         self.repository = repository or PostgresActivityRepository()
 
     def list_recent(
-        self, limit: int = 20, type: ActivityType | None = None
+        self, tenant_id: uuid.UUID, limit: int = 20, type: ActivityType | None = None
     ) -> list[ActivityEvent]:
-        events = self.repository.list(limit=limit if type is None else 1000)
+        events = self.repository.list(tenant_id=tenant_id, limit=limit if type is None else 1000)
         if type is not None:
             events = [e for e in events if e.type == type]
         return events[:limit]
 
-    def log(self, event: ActivityEventCreate) -> ActivityEvent:
-        return self.repository.add(ActivityEvent(**event.model_dump()))
+    def log(self, event: ActivityEventCreate, tenant_id: uuid.UUID | None = None) -> ActivityEvent:
+        return self.repository.add(ActivityEvent(**event.model_dump()), tenant_id=tenant_id)
 
 
 # Singleton used by the router. Sprint 002: now backed by Postgres by

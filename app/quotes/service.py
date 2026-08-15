@@ -18,16 +18,35 @@ from app.quotes.calculator import QuoteCalculator
 from app.quotes.models import QuoteRequest
 
 
+class CustomerNotFoundError(Exception):
+    """Raised by create() when quote.customer_id is set, the caller is
+    authenticated (tenant_id is not None), and that customer doesn't
+    belong to the caller's own tenant (Sprint 012, ADR-029) — otherwise a
+    quote could be linked to another tenant's customer by guessing/knowing
+    its id. Anonymous calls (tenant_id=None, ADR-023's public /quote and
+    /estimate) skip this check: there's no tenant to validate ownership
+    against, and the resulting quote is itself tenant_id=None — invisible
+    to every tenant's authenticated browsing routes either way."""
+
+
 class QuoteService:
     def __init__(self) -> None:
         self.calculator = QuoteCalculator()
 
-    def create(self, db: Session, quote: QuoteRequest) -> dict:
+    def create(self, db: Session, quote: QuoteRequest, tenant_id: uuid.UUID | None = None) -> dict:
+        if (
+            quote.customer_id is not None
+            and tenant_id is not None
+            and crud.get_customer_by_id(db, quote.customer_id, tenant_id) is None
+        ):
+            raise CustomerNotFoundError(quote.customer_id)
+
         result = self.calculator.calculate(db, quote)
 
         row = crud.create_quote(
             db,
             id=uuid.uuid4(),
+            tenant_id=tenant_id,
             customer_id=quote.customer_id,
             material=quote.material,
             thickness=quote.thickness,
@@ -50,7 +69,8 @@ class QuoteService:
                 type=ActivityType.QUOTE_CREATED,
                 title="New quote created",
                 description=f"{quote.customer} — {quote.material}, £{result['total']:,.2f}",
-            )
+            ),
+            tenant_id=tenant_id,
         )
 
         return {

@@ -19,6 +19,13 @@ meaningfully restrict yet. Shipped as inert machinery — same "ship it,
 prove it doesn't break anything, enforce later" shape as this file's own
 Sprint 003 -> Sprint 004 history. See docs/DECISIONS.md's new ADR and
 docs/SPRINTS/sprint-010.md.
+
+Sprint 012 (ADR-029) — adds get_current_user_optional, used only by
+POST /api/v1/quote and /estimate (app/api/v1/core.py), which stay
+deliberately public (ADR-023) but now tag a created Quote with the
+caller's tenant_id when a valid token happens to be present. Unlike
+get_current_user, a missing/invalid/expired token is not an error here —
+it just means "anonymous," returning None instead of raising 401.
 """
 
 import uuid
@@ -58,6 +65,26 @@ def get_current_user(
     if user is None:
         raise credentials_error
     return user
+
+
+def get_current_user_optional(
+    token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)
+) -> User | None:
+    """Like get_current_user, but never raises — a missing, malformed, or
+    expired token just means "anonymous" (returns None) rather than a 401.
+
+    Only for routes that are genuinely allowed to be called without auth
+    but want to opportunistically attribute the action to a tenant when a
+    valid token happens to be presented (Sprint 012, ADR-029)."""
+    if token is None:
+        return None
+    try:
+        payload = decode_access_token(token)
+        user_uuid = uuid.UUID(payload["sub"])
+        uuid.UUID(payload["tenant_id"])
+    except (jwt.PyJWTError, ValueError, KeyError):
+        return None
+    return crud.get_user_by_id(db, user_uuid)
 
 
 def require_role(*allowed_roles: UserRole):

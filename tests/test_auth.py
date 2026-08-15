@@ -7,7 +7,7 @@ from sqlalchemy import delete
 from app.auth.service import auth_service
 from app.core.config import settings
 from app.database.database import SessionLocal
-from app.database.models import Tenant, User
+from app.database.models import ActivityLog, Tenant, User
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -19,11 +19,21 @@ SIGNUP_EMAIL = "pytest-signup-test@example.invalid"
 SIGNUP_COMPANY = "Pytest Signup Co"
 
 
+def _delete_tenant_and_its_activity(db, *, name: str) -> None:
+    # Sprint 012: TenantService.create() now logs a real ActivityLog row
+    # against the new tenant's own id (ADR-029) — must be deleted before
+    # the Tenant row or the FK constraint (ADR-025) rejects the delete.
+    tenant = db.query(Tenant).filter(Tenant.name == name).first()
+    if tenant is not None:
+        db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+        db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+
+
 def _cleanup_signup():
     db = SessionLocal()
     try:
         db.execute(delete(User).where(User.email == SIGNUP_EMAIL))
-        db.execute(delete(Tenant).where(Tenant.name == SIGNUP_COMPANY))
+        _delete_tenant_and_its_activity(db, name=SIGNUP_COMPANY)
         db.commit()
     finally:
         db.close()
@@ -34,7 +44,7 @@ def test_user():
     db = SessionLocal()
     try:
         db.execute(delete(User).where(User.email == TEST_EMAIL))
-        db.execute(delete(Tenant).where(Tenant.name == TEST_TENANT_NAME))
+        _delete_tenant_and_its_activity(db, name=TEST_TENANT_NAME)
         db.commit()
         tenant = tenant_service.create(db, TenantCreate(name=TEST_TENANT_NAME))
         user = auth_service.create_user(
@@ -48,7 +58,7 @@ def test_user():
         yield user
     finally:
         db.execute(delete(User).where(User.email == TEST_EMAIL))
-        db.execute(delete(Tenant).where(Tenant.name == TEST_TENANT_NAME))
+        _delete_tenant_and_its_activity(db, name=TEST_TENANT_NAME)
         db.commit()
         db.close()
 

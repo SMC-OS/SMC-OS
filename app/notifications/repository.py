@@ -12,32 +12,45 @@ class NotificationRepository(ABC):
     Same pattern as `app.activity.repository`: swap the in-memory
     implementation for a PostgreSQL-backed one later without touching
     the service, router, or frontend.
+
+    Sprint 012 (ADR-029) — `list()`/`mark_read()` now require `tenant_id`:
+    every caller is an authenticated route reading/mutating its own
+    tenant's notifications. `add()` keeps `tenant_id` optional (`None`
+    default) — seed rows have no tenant.
     """
 
     @abstractmethod
-    def list(self, limit: int = 50) -> list[Notification]: ...
+    def list(self, tenant_id: uuid.UUID, limit: int = 50) -> list[Notification]: ...
 
     @abstractmethod
-    def add(self, notification: Notification) -> Notification: ...
+    def add(
+        self, notification: Notification, tenant_id: uuid.UUID | None = None
+    ) -> Notification: ...
 
     @abstractmethod
-    def mark_read(self, notification_id: str) -> Notification | None: ...
+    def mark_read(self, notification_id: str, tenant_id: uuid.UUID) -> Notification | None: ...
 
 
 class InMemoryNotificationRepository(NotificationRepository):
+    """Not used by default (see service.py) and has no tenant_id field on
+    the stored Notification — tenant_id is accepted for interface parity
+    but has nothing to filter/tag against."""
+
     def __init__(self) -> None:
         self._notifications: list[Notification] = []
 
-    def list(self, limit: int = 50) -> list[Notification]:
+    def list(self, tenant_id: uuid.UUID, limit: int = 50) -> list[Notification]:
         return sorted(
             self._notifications, key=lambda n: n.timestamp, reverse=True
         )[:limit]
 
-    def add(self, notification: Notification) -> Notification:
+    def add(
+        self, notification: Notification, tenant_id: uuid.UUID | None = None
+    ) -> Notification:
         self._notifications.append(notification)
         return notification
 
-    def mark_read(self, notification_id: str) -> Notification | None:
+    def mark_read(self, notification_id: str, tenant_id: uuid.UUID) -> Notification | None:
         for notification in self._notifications:
             if notification.id == notification_id:
                 notification.read = True
@@ -53,9 +66,9 @@ class PostgresNotificationRepository(NotificationRepository):
     so there's no request-scoped session to receive here.
     """
 
-    def list(self, limit: int = 50) -> list[Notification]:
+    def list(self, tenant_id: uuid.UUID, limit: int = 50) -> list[Notification]:
         with SessionLocal() as db:
-            rows = crud.list_notifications(db, limit=limit)
+            rows = crud.list_notifications(db, tenant_id, limit=limit)
             return [
                 Notification(
                     id=str(row.id),
@@ -68,12 +81,14 @@ class PostgresNotificationRepository(NotificationRepository):
                 for row in rows
             ]
 
-    def add(self, notification: Notification) -> Notification:
+    def add(
+        self, notification: Notification, tenant_id: uuid.UUID | None = None
+    ) -> Notification:
         with SessionLocal() as db:
             crud.create_notification(
                 db,
                 id=uuid.UUID(notification.id),
-                tenant_id=None,
+                tenant_id=tenant_id,
                 title=notification.title,
                 message=notification.message,
                 type=notification.type.value,
@@ -82,7 +97,7 @@ class PostgresNotificationRepository(NotificationRepository):
             )
         return notification
 
-    def mark_read(self, notification_id: str) -> Notification | None:
+    def mark_read(self, notification_id: str, tenant_id: uuid.UUID) -> Notification | None:
         try:
             parsed_id = uuid.UUID(notification_id)
         except ValueError:
@@ -92,7 +107,7 @@ class PostgresNotificationRepository(NotificationRepository):
             # raised, it just returned None.
             return None
         with SessionLocal() as db:
-            row = crud.mark_notification_read(db, parsed_id)
+            row = crud.mark_notification_read(db, parsed_id, tenant_id)
             if row is None:
                 return None
             return Notification(

@@ -13,25 +13,35 @@ class ActivityRepository(ABC):
     once the database lands (Sprint 002) — `ActivityService`, the router, and
     the frontend do not need to change, because they only depend on this
     interface, not the storage mechanism behind it.
+
+    Sprint 012 (ADR-029) — `list()` now requires `tenant_id`: every caller is
+    an authenticated route reading its own tenant's feed. `add()` keeps
+    `tenant_id` optional (`None` default) — seed rows and events logged from
+    an anonymous /quote or /estimate call have no tenant.
     """
 
     @abstractmethod
-    def list(self, limit: int = 20) -> list[ActivityEvent]: ...
+    def list(self, tenant_id: uuid.UUID, limit: int = 20) -> list[ActivityEvent]: ...
 
     @abstractmethod
-    def add(self, event: ActivityEvent) -> ActivityEvent: ...
+    def add(self, event: ActivityEvent, tenant_id: uuid.UUID | None = None) -> ActivityEvent: ...
 
 
 class InMemoryActivityRepository(ActivityRepository):
-    """Temporary process-memory store. Resets on server restart."""
+    """Temporary process-memory store. Resets on server restart.
+
+    Not used by default (see service.py) and has no tenant_id field on the
+    stored ActivityEvent — tenant_id is accepted for interface parity but
+    has nothing to filter/tag against.
+    """
 
     def __init__(self) -> None:
         self._events: list[ActivityEvent] = []
 
-    def list(self, limit: int = 20) -> list[ActivityEvent]:
+    def list(self, tenant_id: uuid.UUID, limit: int = 20) -> list[ActivityEvent]:
         return sorted(self._events, key=lambda e: e.timestamp, reverse=True)[:limit]
 
-    def add(self, event: ActivityEvent) -> ActivityEvent:
+    def add(self, event: ActivityEvent, tenant_id: uuid.UUID | None = None) -> ActivityEvent:
         self._events.append(event)
         return event
 
@@ -46,9 +56,9 @@ class PostgresActivityRepository(ActivityRepository):
     dependency-injected version future route work can use instead.
     """
 
-    def list(self, limit: int = 20) -> list[ActivityEvent]:
+    def list(self, tenant_id: uuid.UUID, limit: int = 20) -> list[ActivityEvent]:
         with SessionLocal() as db:
-            rows = crud.list_activity_log(db, limit=limit)
+            rows = crud.list_activity_log(db, tenant_id, limit=limit)
             return [
                 ActivityEvent(
                     id=str(row.id),
@@ -60,12 +70,12 @@ class PostgresActivityRepository(ActivityRepository):
                 for row in rows
             ]
 
-    def add(self, event: ActivityEvent) -> ActivityEvent:
+    def add(self, event: ActivityEvent, tenant_id: uuid.UUID | None = None) -> ActivityEvent:
         with SessionLocal() as db:
             crud.create_activity_log(
                 db,
                 id=uuid.UUID(event.id),
-                tenant_id=None,
+                tenant_id=tenant_id,
                 type=event.type.value,
                 title=event.title,
                 description=event.description,

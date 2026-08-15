@@ -1,7 +1,7 @@
 # SIMO OS — System Architecture
 
-**Status:** Canonical reference, current as of Sprint 011 completion (14 August 2026)
-**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · AI Quotation Generator v1 (`d306c99`) · Tenants table + CRUD, schema only (Sprint 008) · Tenant-aware authentication + signup (Sprint 009) · Role enum + permission-checking machinery, unenforced (Sprint 010) · Staff invitations, first `require_role()`-gated route (Sprint 011) · Turborepo/pnpm workspace
+**Status:** Canonical reference, current as of Sprint 012 completion (15 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · AI Quotation Generator v1 (`d306c99`) · Tenants table + CRUD, schema only (Sprint 008) · Tenant-aware authentication + signup (Sprint 009) · Role enum + permission-checking machinery, unenforced (Sprint 010) · Staff invitations, first `require_role()`-gated route (Sprint 011) · Tenant data isolation enforced across every business-data module (Sprint 012, ADR-029) · Turborepo/pnpm workspace
 
 This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
 
@@ -278,28 +278,28 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | POST | `/api/v1/auth/login` | `auth` | Issues a JWT for a valid email/password — payload now carries `tenant_id` (Sprint 009). New in Sprint 003. |
 | GET | `/api/v1/auth/me` | `auth` | Returns the current user (+ tenant) for a valid bearer token. New in Sprint 003, tenant fields Sprint 009. |
 | POST | `/api/v1/process` | `brain` → `assistant` | Keyword-routed, not AI |
-| POST | `/api/v1/quote` | `quotes` | Full pricing calculation, thickness-aware since Sprint 005, **persists since Sprint 007**. Unrecognised material/thickness `400`, not a raw `500`. |
+| POST | `/api/v1/quote` | `quotes` | Full pricing calculation, thickness-aware since Sprint 005, **persists since Sprint 007**. Unrecognised material/thickness `400`, not a raw `500`. Stays public (ADR-023); since Sprint 012 (ADR-029), a valid token optionally tags the quote with the caller's tenant, otherwise it's created tenant-less (invisible to every tenant's browsing routes). A given `customer_id` must belong to the caller's own tenant when authenticated — `404` otherwise. |
 | POST | `/api/v1/estimate` | `assistant.estimator` → `quotes` | Free-text → quote, persists since Sprint 007 |
 | GET | `/api/v1/quotes` | `quotes` | **Auth required.** Optional `?limit=`. New in Sprint 007. |
 | GET | `/api/v1/quotes/{quote_id}` | `quotes` | **Auth required.** `404` if not found. New in Sprint 007. |
 | GET | `/api/v1/quotes/{quote_id}/invoice` | `quotes` | **Auth required.** Real downloadable PDF. New in Sprint 007 — replaces the removed `/quote/pdf`. |
-| GET | `/api/v1/dashboard` | `main.py` | **Real numbers since Sprint 007** — was hardcoded |
-| GET | `/api/v1/customers` | `customers` | **Auth required.** Optional `?limit=`. New in Sprint 004. |
+| GET | `/api/v1/dashboard` | `main.py` | **Auth required since Sprint 012** (was fully public). Real numbers since Sprint 007, now the caller's own tenant's numbers only (ADR-029). |
+| GET | `/api/v1/customers` | `customers` | **Auth required, tenant-scoped since Sprint 012 (ADR-029).** Optional `?limit=`. New in Sprint 004. |
 | POST | `/api/v1/customers` | `customers` | **Auth required.** Also logs an `ActivityEvent`. New in Sprint 004. |
-| GET | `/api/v1/customers/{customer_id}` | `customers` | **Auth required.** `404` if not found. New in Sprint 004. |
-| GET | `/api/v1/projects` | `projects` | **Auth required.** Optional `?limit=`. New in Sprint 006. |
-| POST | `/api/v1/projects` | `projects` | **Auth required.** Defaults `status="enquiry"`, logs an `ActivityEvent`. New in Sprint 006. |
-| GET | `/api/v1/projects/{project_id}` | `projects` | **Auth required.** `404` if not found. New in Sprint 006. |
-| PATCH | `/api/v1/projects/{project_id}/status` | `projects` | **Auth required.** `404`/`422` as documented. The first update-beyond-create endpoint. New in Sprint 006. |
-| GET | `/api/v1/tenants` | `tenants` | **Auth required** (existing single-tenant gate, not tenant-scoped). Optional `?limit=`. New in Sprint 008. |
-| POST | `/api/v1/tenants` | `tenants` | **Auth required.** Auto-slugifies `name` if `slug` omitted. Logs an `ActivityEvent`. New in Sprint 008. |
-| GET | `/api/v1/tenants/{tenant_id}` | `tenants` | **Auth required.** `404` if not found. New in Sprint 008. |
-| GET | `/api/v1/activity` | `activity` | Optional `?limit=` and `?type=` query params. Postgres-backed since Sprint 002 — survives a restart. |
-| POST | `/api/v1/activity` | `activity` | Log a new event. Postgres-backed since Sprint 002. |
-| GET | `/api/v1/notifications` | `notifications` | Optional `?limit=`. Postgres-backed since Sprint 002 — survives a restart. |
-| GET | `/api/v1/notifications/unread-count` | `notifications` | — |
-| POST | `/api/v1/notifications` | `notifications` | Create a notification. Postgres-backed since Sprint 002. |
-| PATCH | `/api/v1/notifications/{notification_id}/read` | `notifications` | Mark one as read. Postgres-backed since Sprint 002. |
+| GET | `/api/v1/customers/{customer_id}` | `customers` | **Auth required, tenant-scoped since Sprint 012.** `404` if not found or not the caller's tenant. New in Sprint 004. |
+| GET | `/api/v1/projects` | `projects` | **Auth required, tenant-scoped since Sprint 012 (ADR-029).** Optional `?limit=`. New in Sprint 006. |
+| POST | `/api/v1/projects` | `projects` | **Auth required.** Defaults `status="enquiry"`, logs an `ActivityEvent`. `customer_id` (if given) must belong to the caller's own tenant — `404` otherwise (ADR-029). New in Sprint 006. |
+| GET | `/api/v1/projects/{project_id}` | `projects` | **Auth required, tenant-scoped since Sprint 012.** `404` if not found or not the caller's tenant. New in Sprint 006. |
+| PATCH | `/api/v1/projects/{project_id}/status` | `projects` | **Auth required, tenant-scoped since Sprint 012.** `404`/`422` as documented. The first update-beyond-create endpoint. New in Sprint 006. |
+| GET | `/api/v1/tenants` | `tenants` | **Auth required.** Since Sprint 012 (ADR-029), returns only the caller's own tenant — previously returned every tenant in the system, a cross-tenant leak. Optional `?limit=` (accepted, unused). New in Sprint 008. |
+| POST | `/api/v1/tenants` | `tenants` | **Auth required.** Auto-slugifies `name` if `slug` omitted. Logs an `ActivityEvent`. Creates an unlinked tenant — the caller's own `tenant_id` doesn't change (audited, unchanged behavior, ADR-029). New in Sprint 008. |
+| GET | `/api/v1/tenants/{tenant_id}` | `tenants` | **Auth required, tenant-scoped since Sprint 012.** `404` unless `tenant_id` is the caller's own. New in Sprint 008. |
+| GET | `/api/v1/activity` | `activity` | **Auth required, tenant-scoped since Sprint 012 (ADR-029)** — previously fully public. Optional `?limit=` and `?type=` query params. Postgres-backed since Sprint 002 — survives a restart. |
+| POST | `/api/v1/activity` | `activity` | **Auth required since Sprint 012.** Log a new event, tagged with the caller's tenant. Postgres-backed since Sprint 002. |
+| GET | `/api/v1/notifications` | `notifications` | **Auth required, tenant-scoped since Sprint 012 (ADR-029)** — previously fully public. Optional `?limit=`. Postgres-backed since Sprint 002 — survives a restart. |
+| GET | `/api/v1/notifications/unread-count` | `notifications` | **Auth required since Sprint 012.** Scoped to the caller's tenant. |
+| POST | `/api/v1/notifications` | `notifications` | **Auth required since Sprint 012.** Create a notification, tagged with the caller's tenant. Postgres-backed since Sprint 002. |
+| PATCH | `/api/v1/notifications/{notification_id}/read` | `notifications` | **Auth required, tenant-scoped since Sprint 012.** `404` if not found or not the caller's tenant. Postgres-backed since Sprint 002. |
 
 `/api/v1` versioning landed in Sprint 003 (ADR-012) — the old unprefixed paths return `404`. JWT auth exists (`/api/v1/auth/*`) since Sprint 003 and is required on `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), and `/api/v1/quotes/*` (Sprint 007, ADR-023) — `POST /api/v1/quote`/`/estimate` deliberately stay public, every other route remains public too (ADR-020). See `docs/USER_ROLES.md`.
 

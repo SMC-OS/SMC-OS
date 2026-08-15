@@ -1,3 +1,5 @@
+import uuid
+
 from app.notifications.models import Notification, NotificationCreate
 from app.notifications.repository import NotificationRepository, PostgresNotificationRepository
 
@@ -10,17 +12,21 @@ class NotificationService:
         # (router, service methods), is unchanged.
         self.repository = repository or PostgresNotificationRepository()
 
-    def list_all(self, limit: int = 50) -> list[Notification]:
-        return self.repository.list(limit=limit)
+    def list_all(self, tenant_id: uuid.UUID, limit: int = 50) -> list[Notification]:
+        return self.repository.list(tenant_id=tenant_id, limit=limit)
 
-    def unread_count(self) -> int:
-        return len([n for n in self.repository.list(limit=1000) if not n.read])
+    def unread_count(self, tenant_id: uuid.UUID) -> int:
+        return len(
+            [n for n in self.repository.list(tenant_id=tenant_id, limit=1000) if not n.read]
+        )
 
-    def create(self, notification: NotificationCreate) -> Notification:
-        return self.repository.add(Notification(**notification.model_dump()))
+    def create(
+        self, notification: NotificationCreate, tenant_id: uuid.UUID | None = None
+    ) -> Notification:
+        return self.repository.add(Notification(**notification.model_dump()), tenant_id=tenant_id)
 
-    def mark_read(self, notification_id: str) -> Notification | None:
-        return self.repository.mark_read(notification_id)
+    def mark_read(self, notification_id: str, tenant_id: uuid.UUID) -> Notification | None:
+        return self.repository.mark_read(notification_id, tenant_id=tenant_id)
 
 
 # Singleton used by the router. Sprint 002: now backed by Postgres by

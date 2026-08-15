@@ -57,7 +57,8 @@ def test_create_project_logs_activity(client, auth_headers):
         client.post(
             "/api/v1/projects", json={"name": TEST_NAME}, headers=auth_headers
         )
-        r = client.get("/api/v1/activity?limit=50")
+        # Sprint 012: /activity now requires auth and is tenant-scoped.
+        r = client.get("/api/v1/activity?limit=50", headers=auth_headers)
         descriptions = [e["description"] for e in r.json()]
         assert TEST_NAME in descriptions
     finally:
@@ -144,3 +145,71 @@ def test_projects_routes_require_auth(client):
         ).status_code
         == 401
     )
+
+
+# --- Sprint 012 (ADR-029): cross-tenant isolation ---------------------------
+
+
+def test_project_not_visible_to_other_tenant(
+    client, auth_headers, other_tenant_auth_headers, created_project
+):
+    r = client.get("/api/v1/projects", headers=other_tenant_auth_headers)
+    assert r.status_code == 200
+    names = [p["name"] for p in r.json()]
+    assert TEST_NAME not in names
+
+
+def test_get_project_cross_tenant_returns_404(
+    client, auth_headers, other_tenant_auth_headers, created_project
+):
+    r = client.get(
+        f"/api/v1/projects/{created_project['id']}", headers=other_tenant_auth_headers
+    )
+    assert r.status_code == 404
+
+
+def test_update_status_cross_tenant_returns_404_and_does_not_mutate(
+    client, auth_headers, other_tenant_auth_headers, created_project
+):
+    # The write-path check: Tenant B must not be able to advance Tenant A's
+    # project by guessing/knowing its id.
+    r = client.patch(
+        f"/api/v1/projects/{created_project['id']}/status",
+        json={"status": "quoted"},
+        headers=other_tenant_auth_headers,
+    )
+    assert r.status_code == 404
+
+    # Confirm it genuinely wasn't mutated — still "enquiry" for its actual
+    # owner.
+    r2 = client.get(f"/api/v1/projects/{created_project['id']}", headers=auth_headers)
+    assert r2.json()["status"] == "enquiry"
+
+
+def test_create_project_with_other_tenants_customer_id_returns_404(
+    client, auth_headers, other_tenant_auth_headers
+):
+    """Relationship-bypass check (ADR-029): linking a project to a
+    customer_id belonging to a different tenant must be rejected, not
+    silently allowed — otherwise a project record could reference another
+    tenant's customer despite every id-based lookup being tenant-scoped."""
+    _cleanup()
+    try:
+        their_customer = client.post(
+            "/api/v1/customers",
+            json={"name": TEST_CUSTOMER_NAME},
+            headers=other_tenant_auth_headers,
+        ).json()
+
+        r = client.post(
+            "/api/v1/projects",
+            json={"name": TEST_NAME, "customer_id": their_customer["id"]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+
+        # And no project was created at all as a side effect.
+        mine = client.get("/api/v1/projects", headers=auth_headers).json()
+        assert not any(p["name"] == TEST_NAME for p in mine)
+    finally:
+        _cleanup()

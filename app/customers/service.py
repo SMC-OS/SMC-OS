@@ -17,15 +17,20 @@ from app.database.models import Customer
 
 
 class CustomerService:
-    def list_all(self, db: Session, limit: int = 20) -> list[Customer]:
-        return crud.list_customers(db, limit=limit)
+    def list_all(self, db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[Customer]:
+        return crud.list_customers(db, tenant_id, limit=limit)
 
-    def get(self, db: Session, customer_id: uuid.UUID) -> Customer | None:
-        return crud.get_customer_by_id(db, customer_id)
+    def get(self, db: Session, customer_id: uuid.UUID, tenant_id: uuid.UUID) -> Customer | None:
+        return crud.get_customer_by_id(db, customer_id, tenant_id)
 
-    def create(self, db: Session, data: CustomerCreate) -> Customer:
+    def create(self, db: Session, data: CustomerCreate, tenant_id: uuid.UUID) -> Customer:
         customer = crud.create_customer(
-            db, id=uuid.uuid4(), name=data.name, email=data.email, phone=data.phone
+            db,
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            name=data.name,
+            email=data.email,
+            phone=data.phone,
         )
         # Sprint 004: the backend now logs this itself, replacing the
         # frontend's previous standalone api.logActivity() call — creation
@@ -35,7 +40,8 @@ class CustomerService:
                 type=ActivityType.CUSTOMER_ADDED,
                 title="New customer added",
                 description=customer.name,
-            )
+            ),
+            tenant_id=tenant_id,
         )
         return customer
 

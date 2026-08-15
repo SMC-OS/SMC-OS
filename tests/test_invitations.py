@@ -18,7 +18,7 @@ from sqlalchemy import delete
 from app.auth.service import auth_service
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import Invitation, Tenant, User
+from app.database.models import ActivityLog, Invitation, Tenant, User
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -37,6 +37,12 @@ def _cleanup():
         emails = [OWNER_EMAIL, STAFF_EMAIL, INVITEE_EMAIL, EXPIRED_INVITEE_EMAIL, ALREADY_USER_EMAIL]
         db.execute(delete(Invitation).where(Invitation.email.in_(emails)))
         db.execute(delete(User).where(User.email.in_(emails)))
+        # Sprint 012: TenantService.create() now logs a real ActivityLog row
+        # against the new tenant's own id (ADR-029) — must be deleted before
+        # the Tenant row or the FK constraint (ADR-025) rejects the delete.
+        tenant = db.query(Tenant).filter(Tenant.name == TENANT_NAME).first()
+        if tenant is not None:
+            db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
         db.execute(delete(Tenant).where(Tenant.name == TENANT_NAME))
         db.commit()
     finally:
@@ -129,40 +135,21 @@ def test_revoke_unknown_invitation_returns_404(client, owner_headers):
     assert r.status_code == 404
 
 
-def test_revoke_cross_tenant_invitation_returns_404(client, owner_headers):
+def test_revoke_cross_tenant_invitation_returns_404(
+    client, owner_headers, other_tenant_auth_headers
+):
     """A second tenant's Owner must not be able to revoke this tenant's
     invitation — and the failure must read identically to "doesn't exist"
-    (404, not 403), per ADR-028's cross-tenant-lookup-leak reasoning."""
+    (404, not 403), per ADR-028's cross-tenant-lookup-leak reasoning.
+
+    Sprint 012: reuses the shared other_tenant_auth_headers fixture
+    (tests/conftest.py) instead of hand-rolling a second tenant/owner here
+    — same isolation guarantee, one fewer place that has to remember to
+    delete a tenant's ActivityLog row before the tenant itself (ADR-029)."""
     created = client.post("/api/v1/invitations", json={"email": INVITEE_EMAIL}, headers=owner_headers).json()
 
-    other_tenant_name = "Pytest Invitations Other Tenant"
-    other_email = "pytest-invitations-other-owner@example.invalid"
-    db = SessionLocal()
-    try:
-        db.execute(delete(User).where(User.email == other_email))
-        db.execute(delete(Tenant).where(Tenant.name == other_tenant_name))
-        db.commit()
-        other_tenant = tenant_service.create(db, TenantCreate(name=other_tenant_name))
-        auth_service.create_user(
-            db, tenant_id=other_tenant.id, name="Other Owner", email=other_email, password=PASSWORD, role="Owner"
-        )
-    finally:
-        db.close()
-
-    try:
-        login = client.post("/api/v1/auth/login", json={"email": other_email, "password": PASSWORD})
-        other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-
-        r = client.delete(f"/api/v1/invitations/{created['id']}", headers=other_headers)
-        assert r.status_code == 404
-    finally:
-        db = SessionLocal()
-        try:
-            db.execute(delete(User).where(User.email == other_email))
-            db.execute(delete(Tenant).where(Tenant.name == other_tenant_name))
-            db.commit()
-        finally:
-            db.close()
+    r = client.delete(f"/api/v1/invitations/{created['id']}", headers=other_tenant_auth_headers)
+    assert r.status_code == 404
 
 
 def test_get_invitation_by_token_public(client, owner_headers):

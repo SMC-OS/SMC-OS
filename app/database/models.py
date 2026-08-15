@@ -49,8 +49,9 @@ class Customer(Base):
     __tablename__ = "customers"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Sprint 012 — indexed: every query is now filtered by tenant_id (ADR-029).
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
     )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -64,8 +65,12 @@ class Quote(Base):
     __tablename__ = "quotes"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Sprint 012 — indexed: every query is now filtered by tenant_id (ADR-029).
+    # Stays nullable: POST /api/v1/quote and /estimate remain deliberately
+    # public (ADR-023) — an anonymous quote is created with tenant_id=NULL
+    # and is visible to no tenant's authenticated browsing routes.
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
     )
     customer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True
@@ -92,8 +97,9 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Sprint 012 — indexed: every query is now filtered by tenant_id (ADR-029).
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
     )
     customer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True
@@ -187,8 +193,12 @@ class ActivityLog(Base):
     __tablename__ = "activity_log"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Sprint 012 — indexed: every query is now filtered by tenant_id (ADR-029).
+    # Stays nullable: seed rows and events logged from an anonymous /quote or
+    # /estimate call have no tenant and are visible to no tenant's activity
+    # feed — see ADR-029.
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
     )
 
     type: Mapped[str] = mapped_column(String, nullable=False)
@@ -209,8 +219,11 @@ class NotificationRecord(Base):
     __tablename__ = "notifications"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Sprint 012 — indexed: every query is now filtered by tenant_id (ADR-029).
+    # Stays nullable: seed rows have no tenant and are visible to no tenant's
+    # notification feed — see ADR-029.
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
     )
 
     title: Mapped[str] = mapped_column(String, nullable=False)

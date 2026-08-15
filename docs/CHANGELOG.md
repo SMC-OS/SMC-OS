@@ -4,6 +4,29 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
+## 2026-08-15 — (uncommitted) — Sprint #012 — Tenant Data Isolation Enforcement
+
+Full detail in `docs/DECISIONS.md` ADR-029.
+
+**Backend**
+- `app/database/crud.py`: `customers`/`projects`/`quotes`/`activity_log`/`notifications` functions now require (or, for the `create_*` helpers on `quotes`/`activity_log`/`notifications`, accept optional) `tenant_id` and filter/check ownership by it.
+- `app/customers/`, `app/projects/`, `app/quotes/`, `app/tenants/`: every route now scopes its query by `current_user.tenant_id`; a cross-tenant id reads as `404`, matching ADR-028's precedent.
+- `app/activity/router.py` and `app/notifications/router.py` gained `Depends(get_current_user)` for the first time — previously fully public, now auth-required and tenant-scoped.
+- `GET /api/v1/dashboard` (`app/api/v1/core.py`) is now auth-required and returns only the caller's tenant's counts.
+- `app/auth/dependencies.py`: new `get_current_user_optional` — lets `POST /api/v1/quote`/`/estimate` stay public (ADR-023) while opportunistically tagging the created quote with the caller's tenant when a valid token is presented.
+- `app/tenants/router.py`: `GET /tenants` and `GET /tenants/{id}` now return only the caller's own tenant — previously returned every tenant in the system, a pre-existing cross-tenant leak this sprint closes.
+- `app/projects/service.py` and `app/quotes/service.py`: new `CustomerNotFoundError`, raised when a supplied `customer_id` doesn't belong to the caller's own tenant — closes a relationship-level bypass that id-scoping alone didn't cover.
+- Migration `a8d91098a01e`: adds a plain index on `tenant_id` for `customers`, `quotes`, `projects`, `activity_log`, and `notifications` (additive-only, no column/nullability change).
+
+**Tests**
+- New `tests/test_activity.py` and `tests/test_notifications.py` (no test file existed for either module before).
+- Cross-tenant isolation tests added across `tests/test_customers.py`, `tests/test_projects.py`, `tests/test_quotes_api.py`, `tests/test_tenants.py`, `tests/test_activity.py`, `tests/test_notifications.py`, `tests/test_dashboard.py`, `tests/test_invitations.py` — plus a relationship-bypass test each for projects and quotes (an authenticated `customer_id` belonging to a different tenant is rejected with `404`).
+- `tests/conftest.py`: new `other_tenant_auth_headers` fixture — signs up a genuinely separate tenant/owner so cross-tenant tests have two real tenants to assert isolation between.
+- Fixed a test-only bug (not an app bug): several cleanup helpers deleted a `Tenant` row before the `ActivityLog` rows that now correctly FK-reference it under the tenant's own id, raising a `ForeignKeyViolation` in teardown.
+- Full suite: 115/115 passing.
+
+**Verified:** `pytest` (115/115), `tsc --noEmit` (frontend, clean), `eslint` (clean, cached — no frontend files changed), `next build` (clean, cached), clean Alembic `downgrade -1` / `upgrade head` round-trip.
+
 ## 2026-08-11 — (uncommitted) — Sprint #007 — Real Quote Persistence, Downloadable Invoices, Real Dashboard Stats
 
 Full detail in `docs/SPRINTS/sprint-007.md`. Not yet committed — pending approval.

@@ -11,6 +11,15 @@ backing the now-real /api/v1/dashboard. Sprint 008 adds `tenants`
 (app/tenants/) — schema/CRUD only, no query above filters by tenant yet.
 Sprint 011 adds `invitations` (app/invitations/) — the first table that
 lets a tenant have more than one user.
+
+Sprint 012 (ADR-029) — every customers/projects/quotes/activity_log/
+notifications function below now takes a required `tenant_id` (except the
+`create_*` helpers for quotes/activity_log/notifications, which keep it
+optional — an anonymous /quote|/estimate call or a seed row has no
+tenant) and filters/checks ownership by it. `materials` stays unfiltered
+by design (shared reference catalogue, not tenant-owned data — see
+docs/DECISIONS.md ADR-029). `tenants`/`invitations` CRUD is unchanged
+(already correctly scoped or scoped at the router, respectively).
 """
 
 import uuid
@@ -56,8 +65,13 @@ def create_activity_log(
     return row
 
 
-def list_activity_log(db: Session, limit: int = 20) -> list[ActivityLog]:
-    stmt = select(ActivityLog).order_by(ActivityLog.timestamp.desc()).limit(limit)
+def list_activity_log(db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[ActivityLog]:
+    stmt = (
+        select(ActivityLog)
+        .where(ActivityLog.tenant_id == tenant_id)
+        .order_by(ActivityLog.timestamp.desc())
+        .limit(limit)
+    )
     return list(db.scalars(stmt))
 
 
@@ -91,8 +105,15 @@ def create_notification(
     return row
 
 
-def list_notifications(db: Session, limit: int = 50) -> list[NotificationRecord]:
-    stmt = select(NotificationRecord).order_by(NotificationRecord.timestamp.desc()).limit(limit)
+def list_notifications(
+    db: Session, tenant_id: uuid.UUID, limit: int = 50
+) -> list[NotificationRecord]:
+    stmt = (
+        select(NotificationRecord)
+        .where(NotificationRecord.tenant_id == tenant_id)
+        .order_by(NotificationRecord.timestamp.desc())
+        .limit(limit)
+    )
     return list(db.scalars(stmt))
 
 
@@ -100,8 +121,13 @@ def count_notifications(db: Session) -> int:
     return db.query(NotificationRecord).count()
 
 
-def mark_notification_read(db: Session, notification_id: uuid.UUID) -> NotificationRecord | None:
-    row = db.get(NotificationRecord, notification_id)
+def mark_notification_read(
+    db: Session, notification_id: uuid.UUID, tenant_id: uuid.UUID
+) -> NotificationRecord | None:
+    stmt = select(NotificationRecord).where(
+        NotificationRecord.id == notification_id, NotificationRecord.tenant_id == tenant_id
+    )
+    row = db.scalars(stmt).first()
     if row is None:
         return None
     row.read = True
@@ -146,28 +172,35 @@ def create_customer(
     db: Session,
     *,
     id: uuid.UUID,
+    tenant_id: uuid.UUID,
     name: str,
     email: str | None = None,
     phone: str | None = None,
 ) -> Customer:
-    row = Customer(id=id, name=name, email=email, phone=phone)
+    row = Customer(id=id, tenant_id=tenant_id, name=name, email=email, phone=phone)
     db.add(row)
     db.commit()
     db.refresh(row)
     return row
 
 
-def get_customer_by_id(db: Session, customer_id: uuid.UUID) -> Customer | None:
-    return db.get(Customer, customer_id)
+def get_customer_by_id(db: Session, customer_id: uuid.UUID, tenant_id: uuid.UUID) -> Customer | None:
+    stmt = select(Customer).where(Customer.id == customer_id, Customer.tenant_id == tenant_id)
+    return db.scalars(stmt).first()
 
 
-def list_customers(db: Session, limit: int = 20) -> list[Customer]:
-    stmt = select(Customer).order_by(Customer.created_at.desc()).limit(limit)
+def list_customers(db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[Customer]:
+    stmt = (
+        select(Customer)
+        .where(Customer.tenant_id == tenant_id)
+        .order_by(Customer.created_at.desc())
+        .limit(limit)
+    )
     return list(db.scalars(stmt))
 
 
-def count_customers(db: Session) -> int:
-    return db.query(Customer).count()
+def count_customers(db: Session, tenant_id: uuid.UUID) -> int:
+    return db.query(Customer).filter(Customer.tenant_id == tenant_id).count()
 
 
 def create_material(
@@ -217,33 +250,45 @@ def create_project(
     db: Session,
     *,
     id: uuid.UUID,
+    tenant_id: uuid.UUID,
     name: str,
     customer_id: uuid.UUID | None,
     notes: str | None,
     status: str,
 ) -> Project:
-    row = Project(id=id, name=name, customer_id=customer_id, notes=notes, status=status)
+    row = Project(
+        id=id, tenant_id=tenant_id, name=name, customer_id=customer_id, notes=notes, status=status
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
     return row
 
 
-def get_project_by_id(db: Session, project_id: uuid.UUID) -> Project | None:
-    return db.get(Project, project_id)
+def get_project_by_id(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> Project | None:
+    stmt = select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
+    return db.scalars(stmt).first()
 
 
-def list_projects(db: Session, limit: int = 20) -> list[Project]:
-    stmt = select(Project).order_by(Project.created_at.desc()).limit(limit)
+def list_projects(db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[Project]:
+    stmt = (
+        select(Project)
+        .where(Project.tenant_id == tenant_id)
+        .order_by(Project.created_at.desc())
+        .limit(limit)
+    )
     return list(db.scalars(stmt))
 
 
-def count_projects(db: Session) -> int:
-    return db.query(Project).count()
+def count_projects(db: Session, tenant_id: uuid.UUID) -> int:
+    return db.query(Project).filter(Project.tenant_id == tenant_id).count()
 
 
-def update_project_status(db: Session, project_id: uuid.UUID, status: str) -> Project | None:
-    row = db.get(Project, project_id)
+def update_project_status(
+    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, status: str
+) -> Project | None:
+    stmt = select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
+    row = db.scalars(stmt).first()
     if row is None:
         return None
     row.status = status
@@ -256,6 +301,7 @@ def create_quote(
     db: Session,
     *,
     id: uuid.UUID,
+    tenant_id: uuid.UUID | None,
     customer_id: uuid.UUID | None,
     material: str,
     thickness: str,
@@ -272,6 +318,7 @@ def create_quote(
 ) -> Quote:
     row = Quote(
         id=id,
+        tenant_id=tenant_id,
         customer_id=customer_id,
         material=material,
         thickness=thickness,
@@ -292,21 +339,31 @@ def create_quote(
     return row
 
 
-def get_quote_by_id(db: Session, quote_id: uuid.UUID) -> Quote | None:
-    return db.get(Quote, quote_id)
+def get_quote_by_id(db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID) -> Quote | None:
+    stmt = select(Quote).where(Quote.id == quote_id, Quote.tenant_id == tenant_id)
+    return db.scalars(stmt).first()
 
 
-def list_quotes(db: Session, limit: int = 20) -> list[Quote]:
-    stmt = select(Quote).order_by(Quote.created_at.desc()).limit(limit)
+def list_quotes(db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[Quote]:
+    stmt = (
+        select(Quote)
+        .where(Quote.tenant_id == tenant_id)
+        .order_by(Quote.created_at.desc())
+        .limit(limit)
+    )
     return list(db.scalars(stmt))
 
 
-def count_quotes_today(db: Session) -> int:
-    return db.query(Quote).filter(func.date(Quote.created_at) == date.today()).count()
+def count_quotes_today(db: Session, tenant_id: uuid.UUID) -> int:
+    return (
+        db.query(Quote)
+        .filter(Quote.tenant_id == tenant_id, func.date(Quote.created_at) == date.today())
+        .count()
+    )
 
 
-def sum_quotes_revenue(db: Session) -> float:
-    total = db.query(func.sum(Quote.total)).scalar()
+def sum_quotes_revenue(db: Session, tenant_id: uuid.UUID) -> float:
+    total = db.query(func.sum(Quote.total)).filter(Quote.tenant_id == tenant_id).scalar()
     return float(total) if total is not None else 0.0
 
 

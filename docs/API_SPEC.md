@@ -1,9 +1,9 @@
 # SIMO OS — API Specification
 
-**Status:** Reflects the actual FastAPI application as of Sprint 011 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/tenants/` + `app/invitations/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 added the third (`quotes`) and, for the first time, actually persisted a calculated quote; Sprint 008 added `tenants` — schema/CRUD only, not yet tied to authentication; Sprint 009 made authentication itself tenant-aware — every user belongs to a tenant, the JWT carries `tenant_id`, and `POST /api/v1/auth/signup` creates a new company workspace (see ADR-026). Sprint 010 formalized `role` as a real enum (`UserRole`) and added a `require_role()` permission dependency (ADR-027) — machinery only, not attached to any route. **Sprint 011 adds `invitations` (ADR-028): an Owner can invite a Staff teammate by email, and `require_role(UserRole.OWNER)` is attached to a route for the first time** — `POST`/`GET`/`DELETE /api/v1/invitations*` require the caller to be an Owner; the token-view/accept routes stay public since the invitee has no account yet. Still **not** tenant data isolation — no query in any business-data module filters by tenant yet (Sprint 012).
+**Status:** Reflects the actual FastAPI application as of Sprint 012 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/tenants/` + `app/invitations/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 added the third (`quotes`) and, for the first time, actually persisted a calculated quote; Sprint 008 added `tenants` — schema/CRUD only, not yet tied to authentication; Sprint 009 made authentication itself tenant-aware — every user belongs to a tenant, the JWT carries `tenant_id`, and `POST /api/v1/auth/signup` creates a new company workspace (see ADR-026). Sprint 010 formalized `role` as a real enum (`UserRole`) and added a `require_role()` permission dependency (ADR-027) — machinery only, not attached to any route. Sprint 011 adds `invitations` (ADR-028): an Owner can invite a Staff teammate by email, and `require_role(UserRole.OWNER)` is attached to a route for the first time. **Sprint 012 (ADR-029) enforces tenant data isolation across every business-data module** — `customers`, `projects`, `quotes`, `activity`, `notifications`, and `dashboard` now filter every query by the caller's `tenant_id`; `activity` and `notifications` gained auth for the first time (previously fully public); `tenants` list/detail now return only the caller's own tenant (previously leaked every tenant in the system). `materials` stays a shared, unfiltered reference catalogue by design.
 **Base URL (local dev):** `http://127.0.0.1:8000`
 **Versioning:** `/api/v1` prefix on every route except `GET /` and `GET /health`, which stay unversioned as infra/health-check endpoints. Implemented Sprint 003 (ADR-012).
-**Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/me`) since Sprint 003 (signup added Sprint 009). Every token carries a `tenant_id` claim since Sprint 009 (ADR-026) — a token issued before that sprint is rejected (`401`), not silently accepted. Sprint 003 itself required no route to present a token (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), `/api/v1/quotes/*` (Sprint 007, ADR-023), and `/api/v1/tenants/*` (Sprint 008) enforce it. `POST /api/v1/quote` and `POST /api/v1/estimate` deliberately stay public — every other route below is still callable without a token.
+**Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/me`) since Sprint 003 (signup added Sprint 009). Every token carries a `tenant_id` claim since Sprint 009 (ADR-026) — a token issued before that sprint is rejected (`401`), not silently accepted. Sprint 003 itself required no route to present a token (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), `/api/v1/quotes/*` (Sprint 007, ADR-023), `/api/v1/tenants/*` (Sprint 008), and — since Sprint 012 (ADR-029) — `/api/v1/activity*`, `/api/v1/notifications*`, and `GET /api/v1/dashboard` all enforce it. `POST /api/v1/quote` and `POST /api/v1/estimate` deliberately stay public (ADR-023); since Sprint 012, a valid token optionally tags the created quote with the caller's tenant via `get_current_user_optional` — called with no token, the quote is still created, just tenant-less.
 **CORS:** `allow_origins=["*"]`, all methods and headers allowed (`app/main.py`) — acceptable for local development only; must be restricted before any non-local deployment.
 
 ---
@@ -83,7 +83,7 @@ One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table
 
 ## Customer routes (`app/customers/router.py`) — added Sprint 004
 
-**All three routes require `Authorization: Bearer <token>`** — the first auth-enforced module (ADR-021). `401` (`{"detail": "Could not validate credentials"}`) without a valid token.
+**All three routes require `Authorization: Bearer <token>`** — the first auth-enforced module (ADR-021). `401` (`{"detail": "Could not validate credentials"}`) without a valid token. **Tenant-scoped since Sprint 012 (ADR-029):** every query filters by the caller's own `tenant_id` — a customer created by one tenant is invisible to every other tenant's list, and a cross-tenant `{customer_id}` 404s identically to an unknown one.
 
 ### `GET /api/v1/customers`
 
@@ -99,7 +99,7 @@ One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table
 ### `GET /api/v1/customers/{customer_id}`
 
 **Response (200):** a single `Customer` (same shape as above).
-**Response (404):** `{ "detail": "Customer not found" }`.
+**Response (404):** `{ "detail": "Customer not found" }` — also returned (not `403`) for a customer belonging to a different tenant (ADR-029).
 
 ### `POST /api/v1/customers`
 
@@ -111,7 +111,7 @@ One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table
 
 ## Project routes (`app/projects/router.py`) — added Sprint 006
 
-**All four routes require `Authorization: Bearer <token>`** — the second auth-enforced module (same reasoning as customers, ADR-021/ADR-022).
+**All four routes require `Authorization: Bearer <token>`** — the second auth-enforced module (same reasoning as customers, ADR-021/ADR-022). **Tenant-scoped since Sprint 012 (ADR-029):** every query filters by the caller's own `tenant_id`, including the status-update write path — previously any authenticated user of any tenant could advance any other tenant's project by guessing/knowing its id.
 
 ### `GET /api/v1/projects`
 
@@ -127,13 +127,14 @@ One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table
 ### `GET /api/v1/projects/{project_id}`
 
 **Response (200):** a single `Project`.
-**Response (404):** `{ "detail": "Project not found" }`.
+**Response (404):** `{ "detail": "Project not found" }` — also returned (not `403`) for a project belonging to a different tenant (ADR-029).
 
 ### `POST /api/v1/projects`
 
 **Request body** (`ProjectCreate`): `{ "name": "string", "customer_id": "uuid | null", "notes": "string | null" }`
 
 **Response (201):** the created `Project`, `status` defaulted to `"enquiry"`. Also logs a real `ActivityEvent` (`project_created`) server-side, same pattern as customer creation — the frontend no longer logs this itself.
+**Response (404):** `{ "detail": "Customer not found" }` — since Sprint 012 (ADR-029), a non-null `customer_id` must belong to the caller's own tenant, or the project isn't created at all.
 
 ### `PATCH /api/v1/projects/{project_id}/status`
 
@@ -144,14 +145,14 @@ Advances (or otherwise sets) a project's stage in the job pipeline. This is the 
 `ProjectStatus` values, in pipeline order: `enquiry`, `quoted`, `booked`, `templated`, `fabricated`, `installed`, `complete`. Any value is accepted in any order — the API doesn't enforce moving forward-only; the frontend's detail page only ever offers the single next stage, but the endpoint itself doesn't restrict it.
 
 **Response (200):** the updated `Project`.
-**Response (404):** `{ "detail": "Project not found" }`.
+**Response (404):** `{ "detail": "Project not found" }` — also returned (not `403`) for a project belonging to a different tenant (ADR-029) — the write is rejected before any mutation happens.
 **Response (422):** pydantic enum validation — a `status` value outside the 7 listed above.
 
 ---
 
 ## Quote routes (`app/quotes/router.py`) — added Sprint 007
 
-**All three routes require `Authorization: Bearer <token>`** — the third auth-enforced module (ADR-023). Quotes themselves are created via `POST /api/v1/quote` (below, still public) — these routes are for browsing/downloading what's already been calculated.
+**All three routes require `Authorization: Bearer <token>`** — the third auth-enforced module (ADR-023). Quotes themselves are created via `POST /api/v1/quote` (below, still public) — these routes are for browsing/downloading what's already been calculated. **Tenant-scoped since Sprint 012 (ADR-029):** every query filters by the caller's own `tenant_id`; a quote created anonymously (no token presented to `POST /quote`) has no tenant and is invisible here to every caller.
 
 ### `GET /api/v1/quotes`
 
@@ -167,42 +168,44 @@ Advances (or otherwise sets) a project's stage in the job pipeline. This is the 
 ### `GET /api/v1/quotes/{quote_id}`
 
 **Response (200):** a single quote, same shape as above.
-**Response (404):** `{ "detail": "Quote not found" }`.
+**Response (404):** `{ "detail": "Quote not found" }` — also returned (not `403`) for a quote belonging to a different tenant, or one with no tenant at all (ADR-029).
 
 ### `GET /api/v1/quotes/{quote_id}/invoice`
 
 Generates and returns a real downloadable PDF invoice for an already-persisted quote — `app/quotes/pdf.py`, rewritten this sprint with a letterhead and a proper VAT breakdown table (material/thickness line, VAT, total), built in-memory (`io.BytesIO`), not written to local disk.
 
 **Response (200):** `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="invoice-<id>.pdf"`, raw PDF bytes.
-**Response (404):** `{ "detail": "Quote not found" }`.
+**Response (404):** `{ "detail": "Quote not found" }` — also returned (not `403`) for a quote belonging to a different tenant (ADR-029).
 
 ---
 
-## Tenant routes (`app/tenants/router.py`) — added Sprint 008
+## Tenant routes (`app/tenants/router.py`) — added Sprint 008, list/detail scoped Sprint 012
 
-**All three routes require `Authorization: Bearer <token>`** — reusing the existing single-tenant auth gate (same `get_current_user` dependency as `customers`/`projects`/`quotes`), *not* tenant-scoped authentication. This module is schema/CRUD scaffolding — see `docs/DECISIONS.md` ADR-025 for what it deliberately doesn't do yet (no route or query anywhere is filtered by tenant).
+**All three routes require `Authorization: Bearer <token>`.** GET (list) and GET/{id} were audited in Sprint 012 (ADR-029): before that sprint they returned **every** tenant in the system (name/slug/status) to any authenticated caller — a real cross-tenant leak. Both now return only the caller's own tenant.
 
 ### `GET /api/v1/tenants`
 
 | Query param | Type | Default |
 |---|---|---|
-| `limit` | integer | `20` |
+| `limit` | integer | `20` — accepted but unused since Sprint 012; the response is always the caller's own tenant, at most one row |
 
-**Response** — array of `Tenant`, most recent first:
+**Response** — an array containing exactly the caller's own `Tenant` (or empty if somehow absent):
 ```json
 [{ "id": "...", "name": "Smoke Test Stoneworks", "slug": "smoke-test-stoneworks", "status": "active", "created_at": "2026-08-13T00:00:00Z" }]
 ```
 
 ### `GET /api/v1/tenants/{tenant_id}`
 
-**Response (200):** a single `Tenant` (same shape as above).
-**Response (404):** `{ "detail": "Tenant not found" }`.
+**Response (200):** the caller's own `Tenant` (same shape as above) — only if `tenant_id` matches the caller's own.
+**Response (404):** `{ "detail": "Tenant not found" }` — also returned (not `403`) for any `tenant_id` that isn't the caller's own, including a real, existing tenant (ADR-029, ADR-028's cross-tenant-lookup-leak precedent).
 
 ### `POST /api/v1/tenants`
 
 **Request body** (`TenantCreate`): `{ "name": "string", "slug": "string | null" }` — `slug` is auto-generated from `name` if omitted (lowercased, hyphenated), with a random-suffix retry on a collision.
 
-**Response (201):** the created `Tenant`, `status` defaulted to `"active"`. Also logs a real `ActivityEvent` (`tenant_created`) server-side, same pattern as customers/projects/quotes.
+**Response (201):** the created `Tenant`, `status` defaulted to `"active"`. Also logs a real `ActivityEvent` (`tenant_created`) server-side, tagged with the *new* tenant's own id, same pattern as customers/projects/quotes.
+
+Creates a brand-new, **unlinked** tenant — the caller's own `tenant_id` doesn't change, and the caller has no special access to the tenant they just created (it's invisible via `GET /tenants*` to them too, same as any other tenant that isn't their own). Audited in Sprint 012 (ADR-029) and left unchanged: this doesn't read or expose any other tenant's data, so it isn't an isolation leak — whether this route should still be reachable at all now that `POST /api/v1/auth/signup` is the real workspace-creation path is a separate, explicitly deferred question.
 
 ---
 
@@ -278,7 +281,7 @@ Routes free text to an assistant via `BrainManager` → `BrainRouter`. The route
 
 ### `POST /api/v1/quote`
 
-Calculates a full quote from structured input **and persists it** (Sprint 007 — `app/quotes/service.py`, wrapping the pricing engine in `app/quotes/calculator.py`). Deliberately stays public — matches the original engine's contract, and `/estimate`'s free-text path has no way to authenticate a caller either.
+Calculates a full quote from structured input **and persists it** (Sprint 007 — `app/quotes/service.py`, wrapping the pricing engine in `app/quotes/calculator.py`). Deliberately stays public — matches the original engine's contract, and `/estimate`'s free-text path has no way to authenticate a caller either. **Since Sprint 012 (ADR-029):** if a valid `Authorization: Bearer <token>` is presented, the persisted quote is tagged with that caller's `tenant_id` and becomes visible via their `GET /api/v1/quotes`; called with no token (or an invalid/expired one), the quote is still created and this response is unchanged, but the row has no tenant and is invisible to every tenant's browsing routes.
 
 **Request body** (`QuoteRequest`, `app/quotes/models.py`)
 
@@ -293,7 +296,7 @@ Calculates a full quote from structured input **and persists it** (Sprint 007 �
 | `splashback` | boolean | no | `false` |
 | `upstands` | boolean | no | `false` |
 | `postcode` | string \| null | no | `null` |
-| `customer_id` | uuid \| null | no | `null` — Sprint 007: optionally links a real `customers` row, persisted on the `quotes` row |
+| `customer_id` | uuid \| null | no | `null` — Sprint 007: optionally links a real `customers` row, persisted on the `quotes` row. Since Sprint 012, if the caller is authenticated, this id must belong to their own tenant or the request `404`s (`{ "detail": "Customer not found" }`) with nothing persisted; an anonymous call skips this check (no tenant to validate against). |
 
 **Response** — the calculated result plus persistence metadata:
 ```json
@@ -330,7 +333,7 @@ Free-text → quote. Parses a natural-language description with regex/keyword ma
 
 ### `GET /api/v1/dashboard`
 
-**Sprint 007 — all four numbers are now real**, computed from the database (previously hardcoded). No auth required (consistent with `/activity`), no query parameters.
+**Sprint 007 — all four numbers are now real**, computed from the database (previously hardcoded). **`Authorization: Bearer <token>` required since Sprint 012 (ADR-029)** — this route had no auth at all before this sprint; the four numbers below are now the caller's own tenant's counts, not global ones. No query parameters.
 
 ```json
 {
@@ -350,9 +353,9 @@ Free-text → quote. Parses a natural-language description with regex/keyword ma
 
 ---
 
-## Activity routes (`app/activity/router.py`) — added Sprint 001, mounted under `/api/v1` in Sprint 003
+## Activity routes (`app/activity/router.py`) — added Sprint 001, mounted under `/api/v1` in Sprint 003, auth + tenant-scoped Sprint 012
 
-Backed by `PostgresActivityRepository` since Sprint 002 — data survives a server restart. Router body unchanged since Sprint 001 (ADR-002); only its mount prefix changed.
+Backed by `PostgresActivityRepository` since Sprint 002 — data survives a server restart. **`Authorization: Bearer <token>` required since Sprint 012 (ADR-029)** — both routes had no auth at all before this sprint. Every event is now scoped to the caller's tenant: `GET` only returns events logged under the caller's own `tenant_id`, and `POST` tags the new event with it. A seed-data event or one logged from an anonymous `POST /api/v1/quote`/`/estimate` call has no tenant and is invisible here to every caller.
 
 ### `GET /api/v1/activity`
 
@@ -384,9 +387,9 @@ Backed by `PostgresActivityRepository` since Sprint 002 — data survives a serv
 
 ---
 
-## Notification routes (`app/notifications/router.py`) — added Sprint 001, mounted under `/api/v1` in Sprint 003
+## Notification routes (`app/notifications/router.py`) — added Sprint 001, mounted under `/api/v1` in Sprint 003, auth + tenant-scoped Sprint 012
 
-Backed by `PostgresNotificationRepository` since Sprint 002 — data survives a server restart. Router body unchanged since Sprint 001; only its mount prefix changed.
+Backed by `PostgresNotificationRepository` since Sprint 002 — data survives a server restart. **`Authorization: Bearer <token>` required since Sprint 012 (ADR-029)** — all four routes had no auth at all before this sprint. Every notification is now scoped to the caller's tenant, including the mark-as-read write path: marking a different tenant's notification as read `404`s rather than mutating it.
 
 ### `GET /api/v1/notifications`
 
@@ -426,7 +429,7 @@ Backed by `PostgresNotificationRepository` since Sprint 002 — data survives a 
 Marks one notification as read.
 
 - **Response (200):** the updated `Notification`.
-- **Response (404):** `{ "detail": "Notification not found" }`.
+- **Response (404):** `{ "detail": "Notification not found" }` — also returned (not `403`) for a notification belonging to a different tenant (ADR-029); nothing is mutated.
 
 ---
 
@@ -461,23 +464,23 @@ Marks one notification as read.
 | GET | `/api/v1/quotes` | Sprint 007 | Yes | **Yes** |
 | GET | `/api/v1/quotes/{quote_id}` | Sprint 007 | Yes | **Yes** |
 | GET | `/api/v1/quotes/{quote_id}/invoice` | Sprint 007 | Yes | **Yes** |
-| GET | `/api/v1/tenants` | Sprint 008 | Yes | **Yes** (existing single-tenant gate) |
+| GET | `/api/v1/tenants` | Sprint 008 | Yes | **Yes** — own tenant only (Sprint 012) |
 | POST | `/api/v1/tenants` | Sprint 008 | Yes | **Yes** (existing single-tenant gate) |
-| GET | `/api/v1/tenants/{tenant_id}` | Sprint 008 | Yes | **Yes** (existing single-tenant gate) |
+| GET | `/api/v1/tenants/{tenant_id}` | Sprint 008 | Yes | **Yes** — own tenant only (Sprint 012) |
 | POST | `/api/v1/invitations` | Sprint 011 | Yes | **Yes** (`require_role(OWNER)`) |
 | GET | `/api/v1/invitations` | Sprint 011 | Yes | **Yes** (`require_role(OWNER)`) |
 | DELETE | `/api/v1/invitations/{invitation_id}` | Sprint 011 | Yes | **Yes** (`require_role(OWNER)`) |
 | GET | `/api/v1/invitations/token/{token}` | Sprint 011 | Yes | No (invitee has no account yet) |
 | POST | `/api/v1/invitations/token/{token}/accept` | Sprint 011 | Yes | No (issues the token) |
 | POST | `/api/v1/process` | Initial | No | No |
-| POST | `/api/v1/quote` | Initial | Yes — Postgres (Sprint 007) | No |
-| POST | `/api/v1/estimate` | Initial | Yes — Postgres (Sprint 007) | No |
-| GET | `/api/v1/dashboard` | Initial | Yes — Postgres (Sprint 007) | No |
-| GET | `/api/v1/activity` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
-| POST | `/api/v1/activity` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
-| GET | `/api/v1/notifications` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
-| GET | `/api/v1/notifications/unread-count` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
-| POST | `/api/v1/notifications` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
-| PATCH | `/api/v1/notifications/{notification_id}/read` | Sprint 001 | Yes — Postgres (Sprint 002) | No |
+| POST | `/api/v1/quote` | Initial | Yes — Postgres (Sprint 007) | No — optional since Sprint 012 (tags tenant if presented) |
+| POST | `/api/v1/estimate` | Initial | Yes — Postgres (Sprint 007) | No — optional since Sprint 012 (tags tenant if presented) |
+| GET | `/api/v1/dashboard` | Initial | Yes — Postgres (Sprint 007) | **Yes** (Sprint 012) |
+| GET | `/api/v1/activity` | Sprint 001 | Yes — Postgres (Sprint 002) | **Yes** (Sprint 012) |
+| POST | `/api/v1/activity` | Sprint 001 | Yes — Postgres (Sprint 002) | **Yes** (Sprint 012) |
+| GET | `/api/v1/notifications` | Sprint 001 | Yes — Postgres (Sprint 002) | **Yes** (Sprint 012) |
+| GET | `/api/v1/notifications/unread-count` | Sprint 001 | Yes — Postgres (Sprint 002) | **Yes** (Sprint 012) |
+| POST | `/api/v1/notifications` | Sprint 001 | Yes — Postgres (Sprint 002) | **Yes** (Sprint 012) |
+| PATCH | `/api/v1/notifications/{notification_id}/read` | Sprint 001 | Yes — Postgres (Sprint 002) | **Yes** (Sprint 012) |
 
 The old unprefixed paths (`/quote`, `/activity`, `/notifications`, etc.) all return `404` as of Sprint 003 — confirmed via `tests/test_health.py`. `POST /api/v1/quote/pdf` (Sprint 001–006) was **removed** in Sprint 007, not kept alongside the new flow — replaced by `GET /api/v1/quotes/{id}/invoice`, which downloads a real PDF for an already-persisted quote instead of calculating-and-writing-to-disk in one call.

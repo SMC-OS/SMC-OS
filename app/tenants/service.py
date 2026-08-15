@@ -53,7 +53,8 @@ class TenantService:
                 type=ActivityType.TENANT_CREATED,
                 title="New company workspace created",
                 description=tenant.name,
-            )
+            ),
+            tenant_id=tenant.id,
         )
         return tenant
 
