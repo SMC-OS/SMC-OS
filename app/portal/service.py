@@ -25,6 +25,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.activity.models import ActivityEventCreate, ActivityType
+from app.activity.service import activity_service
 from app.core.config import settings
 from app.database import crud
 from app.database.models import Customer, PortalLink, Project, Quote, Tenant
@@ -48,7 +50,8 @@ class PortalService:
         self, db: Session, *, tenant_id: uuid.UUID, created_by_user_id: uuid.UUID, customer_id: uuid.UUID
     ) -> tuple[PortalLink, str]:
         """Returns (row, raw_token)."""
-        if crud.get_customer_by_id(db, customer_id, tenant_id) is None:
+        customer = crud.get_customer_by_id(db, customer_id, tenant_id)
+        if customer is None:
             raise CustomerNotFoundError(customer_id)
 
         raw_token = secrets.token_urlsafe(32)
@@ -64,6 +67,20 @@ class PortalService:
             token_hash=token_hash,
             expires_at=expires_at,
         )
+
+        # Sprint 014 — every other creation flow (customers/projects/quotes/
+        # tenants) logs an ActivityEvent; portal links didn't. Revoking
+        # deliberately does not log, matching revoke_invitation()'s
+        # create-only-logs precedent.
+        activity_service.log(
+            ActivityEventCreate(
+                type=ActivityType.PORTAL_LINK_CREATED,
+                title="Portal link shared",
+                description=customer.name,
+            ),
+            tenant_id=tenant_id,
+        )
+
         return row, raw_token
 
     def get_link_by_token(self, db: Session, token: str) -> PortalLink | None:

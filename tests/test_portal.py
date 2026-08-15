@@ -360,3 +360,37 @@ def test_portal_cross_tenant_isolation(
             db.commit()
         finally:
             db.close()
+
+
+# --- Sprint 014: portal link creation logs activity ------------------------
+
+
+def test_create_portal_link_logs_activity(client, auth_headers, created_customer):
+    # created_customer's own setup already logs a "customer_added" event
+    # with the same description (the customer's name) — filter by
+    # ?type=portal_link_created so this test actually exercises the new
+    # logging call, not just any pre-existing activity row.
+    client.post(
+        "/api/v1/portal-links", json={"customer_id": created_customer["id"]}, headers=auth_headers
+    )
+
+    r = client.get(
+        "/api/v1/activity?limit=50&type=portal_link_created", headers=auth_headers
+    )
+    events = r.json()
+    assert any(e["description"] == TEST_CUSTOMER_NAME for e in events)
+    assert all(e["title"] == "Portal link shared" for e in events)
+
+
+def test_create_portal_link_activity_not_visible_to_other_tenant(
+    client, auth_headers, other_tenant_auth_headers, created_customer
+):
+    client.post(
+        "/api/v1/portal-links", json={"customer_id": created_customer["id"]}, headers=auth_headers
+    )
+
+    r = client.get(
+        "/api/v1/activity?limit=50&type=portal_link_created", headers=other_tenant_auth_headers
+    )
+    events = r.json()
+    assert not any(e["description"] == TEST_CUSTOMER_NAME for e in events)

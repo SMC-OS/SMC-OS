@@ -19,6 +19,7 @@ class ActivityType(str, Enum):
     AI_REQUEST = "ai_request"
     USER_LOGIN = "user_login"
     TENANT_CREATED = "tenant_created"
+    PORTAL_LINK_CREATED = "portal_link_created"
 
 
 class ActivityEventCreate(BaseModel):
