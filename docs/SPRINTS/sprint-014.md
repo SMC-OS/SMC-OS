@@ -6,10 +6,10 @@
 
 `docs/ROADMAP.md`'s v1.0 table lists Sprint 014 as "Contracts + digital signatures; Payment tracking (Stripe/GoCardless)." That line is stale — `sprint-013.md` and `sprint-008.md` both already flag the roadmap's Sprint 008–016 table as a pre-SaaS-replan draft that actual sprint numbering diverged from long ago. Nothing in this sprint (or any sprint since the replan) touches contracts, signatures, or payments, and that original scope remains entirely unaddressed and unscheduled under any sprint number — reconciling the roadmap table itself stays a separate, out-of-scope documentation decision, not touched here.
 
-Sprint 014 instead closes the two items `sprint-013.md`'s "Follow-up items raised, not part of Sprint 013 scope" section named explicitly:
+Sprint 014 closes two related gaps: the one item `sprint-013.md`'s "Follow-up items raised, not part of Sprint 013 scope" section named explicitly, plus a second gap found during this sprint's own planning:
 
-1. Portal link creation didn't log an `ActivityEvent` — every other creation flow (customers/projects/quotes/tenants) does.
-2. The `GET`/`DELETE /api/v1/portal-links` routes shipped in Sprint 013 with no frontend consumer.
+1. Portal link creation didn't log an `ActivityEvent` — every other creation flow (customers/projects/quotes/tenants) does. (Found during this sprint's planning, not named in `sprint-013.md`.)
+2. The `GET`/`DELETE /api/v1/portal-links` routes shipped in Sprint 013 with no frontend consumer. (Named explicitly in `sprint-013.md`'s follow-up list.)
 
 This was confirmed with the user during planning (`docs/superpowers/specs/2026-08-15-sprint-014-portal-followups-design.md`), including the explicit decision that Sprint 014 = finishing this in-flight portal follow-up work, not the roadmap's stale Contracts+Payments line.
 

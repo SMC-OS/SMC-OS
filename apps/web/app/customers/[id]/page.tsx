@@ -228,7 +228,7 @@ export default function CustomerDetailPage() {
               </p>
             )}
 
-            {!linksError && portalLinks && portalLinks.length > 0 && (
+            {portalLinks && portalLinks.length > 0 && (
               <div className="mt-4 border-t border-border pt-4">
                 <p className="mb-2 text-xs font-medium text-muted">
                   Links can only be copied when first created — this list is for

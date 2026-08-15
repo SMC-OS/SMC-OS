@@ -8,7 +8,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 Full detail in `docs/SPRINTS/sprint-014.md`.
 
-**Scope note:** `docs/ROADMAP.md`'s Sprint 014 line ("Contracts + digital signatures; Payment tracking") is stale, same as flagged in prior sprints' docs — this sprint instead closes the two follow-ups `sprint-013.md` explicitly named: no activity logging on portal link creation, and no frontend list/revoke UI for the already-shipped `GET`/`DELETE /portal-links` routes. The roadmap's original Sprint 014 scope remains unaddressed and unscheduled.
+**Scope note:** `docs/ROADMAP.md`'s Sprint 014 line ("Contracts + digital signatures; Payment tracking") is stale, same as flagged in prior sprints' docs — this sprint instead closes the follow-up item `sprint-013.md` explicitly named (no frontend list/revoke UI for the already-shipped `GET`/`DELETE /portal-links` routes) plus a related gap found during this sprint's planning (portal link creation wasn't logging an `ActivityEvent`, unlike every other creation flow). The roadmap's original Sprint 014 scope remains unaddressed and unscheduled.
 
 **Backend**
 - `ActivityType.PORTAL_LINK_CREATED` added (`app/activity/models.py`); `PortalService.create_link()` now calls `activity_service.log()` after row creation — title "Portal link shared", description = customer name. Revoke deliberately does not log, matching `revoke_invitation()`'s precedent.
