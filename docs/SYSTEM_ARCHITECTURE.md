@@ -1,7 +1,7 @@
 # SIMO OS — System Architecture
 
-**Status:** Canonical reference, current as of Sprint 012 completion (15 August 2026)
-**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · AI Quotation Generator v1 (`d306c99`) · Tenants table + CRUD, schema only (Sprint 008) · Tenant-aware authentication + signup (Sprint 009) · Role enum + permission-checking machinery, unenforced (Sprint 010) · Staff invitations, first `require_role()`-gated route (Sprint 011) · Tenant data isolation enforced across every business-data module (Sprint 012, ADR-029) · Turborepo/pnpm workspace
+**Status:** Canonical reference, current as of Sprint 013 completion (15 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · AI Quotation Generator v1 (`d306c99`) · Tenants table + CRUD, schema only (Sprint 008) · Tenant-aware authentication + signup (Sprint 009) · Role enum + permission-checking machinery, unenforced (Sprint 010) · Staff invitations, first `require_role()`-gated route (Sprint 011) · Tenant data isolation enforced across every business-data module (Sprint 012, ADR-029) · Read-only client portal, no `users` row (Sprint 013, ADR-030) · Turborepo/pnpm workspace
 
 This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
 
@@ -73,6 +73,11 @@ app/
 │   ├── models.py                 #    InvitationCreate, InvitationOut, InvitationCreateOut (+raw token), InvitationPublicOut, AcceptInvitationRequest
 │   ├── service.py                  #    InvitationService — create/list/revoke/accept; opaque token hashed (sha256) before persisting; derive_status() computes "expired" at read time
 │   └── router.py                    #    APIRouter: POST/GET /invitations, DELETE /invitations/{id} — Depends(require_role(OWNER)); GET/POST /invitations/token/{token}[/accept] — public
+│
+├── portal/                    # ✅ Sprint 013 — read-only client portal, no users row (ADR-030)
+│   ├── models.py                #    PortalLinkCreate, PortalLinkOut, PortalLinkCreateOut (+raw token), PortalProjectOut, PortalQuoteOut, PortalPublicOut
+│   ├── service.py                 #    PortalService — create_link/list_links/revoke_link/get_public_view; same hashed-token convention as invitations, but reusable (no "accepted" state); CustomerNotFoundError enforces tenant ownership of customer_id
+│   └── router.py                   #    APIRouter: POST/GET /portal-links, DELETE /portal-links/{id} — Depends(get_current_user), any role, NOT Owner-only; GET /portal-links/token/{token} — public
 │
 ├── quotes/                    # ✅ Sprint 007 — persisted, auth-enforced, third such module (ADR-023)
 │   ├── models.py               #    QuoteRequest (+ optional customer_id, Sprint 007), QuoteOut
@@ -225,6 +230,7 @@ apps/web/
 | `app.materials` | Database-backed material catalogue (list, lookup by name+thickness) | ✅ Sprint 005 — internal only, no route |
 | `app.tenants` | `tenants` table CRUD (list/get/create) — schema/plumbing only, not yet tied to auth or data isolation | ✅ Sprint 008 |
 | `app.invitations` | Staff invitations — create/list/revoke (Owner-only, `require_role`) + public token-view/accept. First module letting a tenant have >1 user; reuses `app.auth.service.auth_service.create_user()` | ✅ Sprint 011 |
+| `app.portal` | Read-only client portal — create/list/revoke a reusable per-customer link (any tenant user, not Owner-only) + public token-view. No `users` row, no login; tenant-scoped from the start (ADR-029/030) | ✅ Sprint 013 |
 | `app.data` | `services.py` (still live); `materials.py`/`pricing.py` superseded by `app.materials` | ⚠ mixed — see §2.1 |
 | `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
 | `app.brain` | Routes free text to an assistant | ⚠ hardcoded keyword dict, not AI |
@@ -314,7 +320,8 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | `/quotes/[id]` | Quote detail | ✅ Sprint 007 — full price breakdown, linked customer, Download Invoice |
 | `/quotes/new` | New Quote | ✅ Real pricing calculation, persists, optional customer link, Download Invoice once calculated (public — matches `POST /quote`'s auth posture; download itself needs sign-in) |
 | `/customers` | Customers index | ✅ Sprint 004 — real list from the database, redirects to `/login` if not authenticated |
-| `/customers/[id]` | Customer detail | ✅ Sprint 004 — read-only |
+| `/customers/[id]` | Customer detail | ✅ Sprint 004 — read-only, plus (Sprint 013) a "Client portal" card to generate/copy a read-only portal link |
+| `/portal/[token]` | Client portal | ✅ Sprint 013 — public, no auth: a customer's own projects/quotes via `GET /api/v1/portal-links/token/{token}` — same fetch/loading/status-conditional shell as `/invite/[token]`, no form |
 | `/customers/new` | New Customer | ✅ Sprint 004 — real persistence, redirects to the new customer's detail page |
 | `/projects` | Projects index | ✅ Sprint 006 — real list, stage Badge per row, redirects to `/login` if not authenticated |
 | `/projects/[id]` | Project detail | ✅ Sprint 006 — shows linked customer/notes, "Advance to \<next stage\>" control |

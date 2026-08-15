@@ -6,10 +6,21 @@ import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Avatar } from "@/components/ui/Avatar";
-import { Card, CardContent } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Customer } from "@/types/customer";
+import type { PortalLinkCreateOut } from "@/types/portal";
+
+function formatDate(isoTimestamp: string): string {
+  return new Date(isoTimestamp).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
@@ -17,6 +28,13 @@ export default function CustomerDetailPage() {
   const { isAuthenticated, isReady } = useAuth();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Sprint 013 — share a read-only client portal link. Any authenticated
+  // tenant user can generate one (not Owner-only, unlike team invites).
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [createdLink, setCreatedLink] = useState<PortalLinkCreateOut | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
     if (!isReady) return;
@@ -37,6 +55,32 @@ export default function CustomerDetailPage() {
   }, [isReady, isAuthenticated, router, params.id]);
 
   if (!isReady || !isAuthenticated) return null;
+
+  function portalLink(token: string): string {
+    return `${window.location.origin}/portal/${token}`;
+  }
+
+  async function handleCreatePortalLink() {
+    if (!customer) return;
+    setCreatingLink(true);
+    setLinkError(null);
+    setLinkCopied(false);
+
+    try {
+      const link = await api.createPortalLink(customer.id);
+      setCreatedLink(link);
+    } catch (err) {
+      setLinkError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setCreatingLink(false);
+    }
+  }
+
+  async function handleCopyPortalLink() {
+    if (!createdLink) return;
+    await navigator.clipboard.writeText(portalLink(createdLink.token));
+    setLinkCopied(true);
+  }
 
   return (
     <div className="mx-auto max-w-xl">
@@ -87,6 +131,53 @@ export default function CustomerDetailPage() {
                 </dd>
               </div>
             </dl>
+          </CardContent>
+        </Card>
+      )}
+
+      {customer && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Client portal</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-muted">
+              Share a read-only link so {customer.name} can check the status of
+              their own projects and quotes — no account needed.
+            </p>
+            <Button type="button" onClick={handleCreatePortalLink} disabled={creatingLink}>
+              {creatingLink ? "Generating…" : "Generate portal link"}
+            </Button>
+
+            {linkError && (
+              <p className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+                {linkError}
+              </p>
+            )}
+
+            {createdLink && (
+              <div className="mt-4 rounded-lg border border-border bg-background p-3">
+                <p className="text-sm text-foreground">
+                  Portal link created. It expires {formatDate(createdLink.expires_at)}.
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <Input
+                    readOnly
+                    value={portalLink(createdLink.token)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleCopyPortalLink}
+                  >
+                    {linkCopied ? "Copied" : "Copy link"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

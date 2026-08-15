@@ -34,6 +34,7 @@ from app.database.models import (
     Invitation,
     Material,
     NotificationRecord,
+    PortalLink,
     Project,
     Quote,
     Tenant,
@@ -460,3 +461,78 @@ def update_invitation_status(db: Session, invitation_id: uuid.UUID, status: str)
     db.commit()
     db.refresh(row)
     return row
+
+
+def create_portal_link(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    customer_id: uuid.UUID,
+    created_by_user_id: uuid.UUID,
+    token_hash: str,
+    expires_at: datetime,
+    status: str = "active",
+) -> PortalLink:
+    row = PortalLink(
+        id=id,
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        created_by_user_id=created_by_user_id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        status=status,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_portal_link_by_id(db: Session, portal_link_id: uuid.UUID) -> PortalLink | None:
+    return db.get(PortalLink, portal_link_id)
+
+
+def get_portal_link_by_token_hash(db: Session, token_hash: str) -> PortalLink | None:
+    stmt = select(PortalLink).where(PortalLink.token_hash == token_hash)
+    return db.scalars(stmt).first()
+
+
+def list_portal_links(
+    db: Session, tenant_id: uuid.UUID, customer_id: uuid.UUID | None = None
+) -> list[PortalLink]:
+    stmt = select(PortalLink).where(PortalLink.tenant_id == tenant_id)
+    if customer_id is not None:
+        stmt = stmt.where(PortalLink.customer_id == customer_id)
+    stmt = stmt.order_by(PortalLink.created_at.desc())
+    return list(db.scalars(stmt))
+
+
+def update_portal_link_status(db: Session, portal_link_id: uuid.UUID, status: str) -> PortalLink | None:
+    row = db.get(PortalLink, portal_link_id)
+    if row is None:
+        return None
+    row.status = status
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_projects_by_customer(
+    db: Session, tenant_id: uuid.UUID, customer_id: uuid.UUID
+) -> list[Project]:
+    stmt = (
+        select(Project)
+        .where(Project.tenant_id == tenant_id, Project.customer_id == customer_id)
+        .order_by(Project.created_at.desc())
+    )
+    return list(db.scalars(stmt))
+
+
+def list_quotes_by_customer(db: Session, tenant_id: uuid.UUID, customer_id: uuid.UUID) -> list[Quote]:
+    stmt = (
+        select(Quote)
+        .where(Quote.tenant_id == tenant_id, Quote.customer_id == customer_id)
+        .order_by(Quote.created_at.desc())
+    )
+    return list(db.scalars(stmt))

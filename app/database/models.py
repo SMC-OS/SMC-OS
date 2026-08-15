@@ -182,6 +182,39 @@ class Invitation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PortalLink(Base):
+    """A reusable, revocable link letting one customer view their own
+    projects/quotes with no account (Sprint 013, ADR-030). Same opaque
+    hashed-token convention as Invitation (token_hash, unique, never the
+    recoverable secret) but NOT single-use: status is "active" | "revoked"
+    only — there is no "accepted" state, since an active link is meant to
+    be opened repeatedly until the Owner/Staff revokes it or it expires.
+    "expired" is derived at read time from expires_at, same as
+    Invitation's, never stored. No relationship() (repo convention) —
+    tenant_id/customer_id/created_by_user_id are plain FK columns,
+    resolved via explicit crud lookups.
+    """
+
+    __tablename__ = "portal_links"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False
+    )
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False
+    )
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="active")
+
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ActivityLog(Base):
     """Table-ification of app/activity/models.py's ActivityEvent.
 

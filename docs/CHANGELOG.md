@@ -4,6 +4,31 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
+## 2026-08-15 — (uncommitted) — Sprint #013 — Read-Only Client Portal
+
+Full detail in `docs/DECISIONS.md` ADR-030 and `docs/SPRINTS/sprint-013.md`.
+
+**Scope note:** `docs/ROADMAP.md`'s Sprint 013 bundles tracking + documents + messaging under "Client Portal." This sprint deliberately covers tracking only, matching every prior sprint's one-capability-per-sprint cadence — documents and messaging remain unstarted, their own future sprints.
+
+**Backend**
+- New `app/portal/` module (`models.py`/`service.py`/`router.py`) — reuses `app/invitations/`'s exact hashed-token mechanism (`secrets.token_urlsafe(32)` + SHA-256, hash-only persistence) but reusable, not single-use: `PortalLink.status` is `"active"|"revoked"` only, no accept step.
+- `POST /api/v1/portal-links` (any authenticated tenant user, not Owner-only), `GET /api/v1/portal-links`, `DELETE /api/v1/portal-links/{id}` (all tenant-scoped, cross-tenant → `404`), and public `GET /api/v1/portal-links/token/{token}`.
+- `customer_id` must resolve under the caller's own tenant at creation time (`CustomerNotFoundError`, reusing Sprint 012's relationship-linkage-bypass pattern) — `404` otherwise.
+- `app/database/models.py`: new `PortalLink` table. `app/database/crud.py`: `create_portal_link`, `get_portal_link_by_id`/`by_token_hash`, `list_portal_links`, `update_portal_link_status`, `list_projects_by_customer`, `list_quotes_by_customer`.
+- Migration `880e12adf384`: adds `portal_links` (additive-only new table).
+- `app/core/config.py`: `portal_link_expire_days` (default 90 — deliberately longer than `invitation_expire_days`'s 7).
+
+**Frontend**
+- New public page `apps/web/app/portal/[token]/page.tsx` — the fetch/loading/error/status-conditional shell from `apps/web/app/invite/[token]/page.tsx`, minus the entire account-creation form (no `users` row, no login).
+- `apps/web/app/customers/[id]/page.tsx`: new "Client portal" card to generate and copy a portal link, modeled on `apps/web/app/settings/page.tsx`'s invitation UI.
+- New `apps/web/types/portal.ts`; `apps/web/lib/api.ts` gains `createPortalLink`/`getPortalLinks`/`revokePortalLink`/`getPortalByToken`.
+
+**Tests**
+- New `tests/test_portal.py` (15 tests): creation/list/revoke, relationship-linkage-bypass (`customer_id` from another tenant → `404`), full cross-tenant isolation, reusability (same token fetched twice, no state change — the key difference from `Invitation.accept`), revoked/expired-reads-as-such-with-no-data.
+- Full suite: 130/130 passing.
+
+**Verified:** `pytest` (130/130), `alembic upgrade head` clean (autogenerate detected only the new table, no drift), `tsc --noEmit`/`eslint`/`next build` all clean (`/portal/[token]` compiles as a new route).
+
 ## 2026-08-15 — (uncommitted) — Sprint #012 — Tenant Data Isolation Enforcement
 
 Full detail in `docs/DECISIONS.md` ADR-029.

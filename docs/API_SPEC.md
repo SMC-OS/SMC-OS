@@ -1,6 +1,6 @@
 # SIMO OS — API Specification
 
-**Status:** Reflects the actual FastAPI application as of Sprint 012 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/tenants/` + `app/invitations/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 added the third (`quotes`) and, for the first time, actually persisted a calculated quote; Sprint 008 added `tenants` — schema/CRUD only, not yet tied to authentication; Sprint 009 made authentication itself tenant-aware — every user belongs to a tenant, the JWT carries `tenant_id`, and `POST /api/v1/auth/signup` creates a new company workspace (see ADR-026). Sprint 010 formalized `role` as a real enum (`UserRole`) and added a `require_role()` permission dependency (ADR-027) — machinery only, not attached to any route. Sprint 011 adds `invitations` (ADR-028): an Owner can invite a Staff teammate by email, and `require_role(UserRole.OWNER)` is attached to a route for the first time. **Sprint 012 (ADR-029) enforces tenant data isolation across every business-data module** — `customers`, `projects`, `quotes`, `activity`, `notifications`, and `dashboard` now filter every query by the caller's `tenant_id`; `activity` and `notifications` gained auth for the first time (previously fully public); `tenants` list/detail now return only the caller's own tenant (previously leaked every tenant in the system). `materials` stays a shared, unfiltered reference catalogue by design.
+**Status:** Reflects the actual FastAPI application as of Sprint 013 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/tenants/` + `app/invitations/` + `app/portal/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 added the third (`quotes`) and, for the first time, actually persisted a calculated quote; Sprint 008 added `tenants` — schema/CRUD only, not yet tied to authentication; Sprint 009 made authentication itself tenant-aware — every user belongs to a tenant, the JWT carries `tenant_id`, and `POST /api/v1/auth/signup` creates a new company workspace (see ADR-026). Sprint 010 formalized `role` as a real enum (`UserRole`) and added a `require_role()` permission dependency (ADR-027) — machinery only, not attached to any route. Sprint 011 adds `invitations` (ADR-028): an Owner can invite a Staff teammate by email, and `require_role(UserRole.OWNER)` is attached to a route for the first time. **Sprint 012 (ADR-029) enforces tenant data isolation across every business-data module** — `customers`, `projects`, `quotes`, `activity`, `notifications`, and `dashboard` now filter every query by the caller's `tenant_id`; `activity` and `notifications` gained auth for the first time (previously fully public); `tenants` list/detail now return only the caller's own tenant (previously leaked every tenant in the system). `materials` stays a shared, unfiltered reference catalogue by design. **Sprint 013 (ADR-030) adds `portal` — a read-only client portal:** any authenticated tenant user can generate a reusable, revocable link letting one customer view their own projects/quotes with no account, no login, no `users` row.
 **Base URL (local dev):** `http://127.0.0.1:8000`
 **Versioning:** `/api/v1` prefix on every route except `GET /` and `GET /health`, which stay unversioned as infra/health-check endpoints. Implemented Sprint 003 (ADR-012).
 **Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/me`) since Sprint 003 (signup added Sprint 009). Every token carries a `tenant_id` claim since Sprint 009 (ADR-026) — a token issued before that sprint is rejected (`401`), not silently accepted. Sprint 003 itself required no route to present a token (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), `/api/v1/quotes/*` (Sprint 007, ADR-023), `/api/v1/tenants/*` (Sprint 008), and — since Sprint 012 (ADR-029) — `/api/v1/activity*`, `/api/v1/notifications*`, and `GET /api/v1/dashboard` all enforce it. `POST /api/v1/quote` and `POST /api/v1/estimate` deliberately stay public (ADR-023); since Sprint 012, a valid token optionally tags the created quote with the caller's tenant via `get_current_user_optional` — called with no token, the quote is still created, just tenant-less.
@@ -263,6 +263,67 @@ Creates the `Staff` user (via `app.auth.service.auth_service.create_user()`, the
 
 ---
 
+## Portal routes (`app/portal/router.py`) — added Sprint 013 (ADR-030)
+
+Read-only client portal: a customer views their own projects/quotes with no account, no login, no `users` row. Token design mirrors `app/invitations/router.py` exactly (opaque `secrets.token_urlsafe(32)`, SHA-256-hashed at rest) with one behavioral difference: **a portal link is reusable, not single-use** — there is no `"accepted"` status and no accept step; every `GET` against an `"active"`, unexpired token just re-reads the current data. `POST`/`GET`/`DELETE /api/v1/portal-links*` require `Authorization: Bearer <token>` but, unlike invitations, are **not** `require_role(OWNER)`-gated — sharing a project link with a customer is routine Staff work, not a tenant-control decision. The one `/token/{token}` route is deliberately public.
+
+### `POST /api/v1/portal-links`
+
+Creates a reusable portal link for one customer. Returns the one-time raw token; it is never retrievable again after this response (only its SHA-256 hash is persisted).
+
+**Request body** (`PortalLinkCreate`): `{ "customer_id": "uuid" }`
+
+**Response (201)** (`PortalLinkCreateOut`):
+```json
+{
+  "id": "...", "tenant_id": "...", "customer_id": "...", "created_by_user_id": "...",
+  "status": "active", "expires_at": "2026-11-13T07:02:30Z", "created_at": "2026-08-15T07:02:30Z",
+  "token": "<one-time raw token, only ever returned here>"
+}
+```
+**Response (404):** `{ "detail": "Customer not found" }` — `customer_id` must belong to the caller's own tenant (ADR-029's relationship-linkage-bypass check, same pattern as `POST /api/v1/projects`).
+
+### `GET /api/v1/portal-links`
+
+| Query param | Type | Default |
+|---|---|---|
+| `customer_id` | uuid \| null | none — no filter, lists every link for the caller's tenant |
+
+**Response** — array of `PortalLinkOut` (same shape as `POST`'s response, minus `token`), most recent first, scoped to the caller's tenant. `status` reflects `"expired"` for a still-`"active"` row whose `expires_at` has passed, derived at read time (never written back — see ADR-030).
+
+### `DELETE /api/v1/portal-links/{portal_link_id}`
+
+Revokes a portal link — the customer's link stops working immediately (subsequent `GET /token/{token}` calls read as `"revoked"`, no data).
+
+**Response (200):** the updated `PortalLinkOut` (`status: "revoked"`).
+**Response (404):** `{ "detail": "Portal link not found" }` — also returned (not `403`) for a link belonging to a different tenant, so a cross-tenant lookup can't confirm another tenant's link exists.
+
+### `GET /api/v1/portal-links/token/{token}` — public, no auth
+
+What the customer sees. **Always `200`, even for a revoked or expired link** — `status` tells the story, `projects`/`quotes` are simply empty then (same "shape, not an error, carries the state" convention `InvitationPublicOut` uses). No internal ids, no customer email/phone — identity is confirmed by possession of the link, not by echoing PII back. `notes` on a project is deliberately excluded (may hold internal staff remarks).
+
+**Response (200)** (`PortalPublicOut`):
+```json
+{
+  "status": "active",
+  "tenant_name": "Acme Stoneworks",
+  "customer_name": "Sarah Whitfield",
+  "expires_at": "2026-11-13T07:02:30Z",
+  "projects": [{ "id": "...", "name": "Riverside Kitchen Renovation", "status": "quoted", "created_at": "..." }],
+  "quotes": [{ "id": "...", "material": "Calacatta Gold", "thickness": "20mm", "kitchen_length": 3.5, "price_before_vat": 5300, "vat": 1060.0, "total": 6360.0, "created_at": "..." }]
+}
+```
+**Response (404):** `{ "detail": "Portal link not found" }` — unknown token only; a revoked/expired *known* token still returns `200` (see above).
+
+### `GET /api/v1/portal-links/token/{token}/invoice/{quote_id}` — public, no auth
+
+Downloads the same PDF invoice `GET /api/v1/quotes/{quote_id}/invoice` produces, reusing `app/quotes/pdf.py` — only reachable via a valid, **active** (not expired/revoked) link, and only for a quote belonging to that link's own `customer_id`, not merely its tenant (a portal link scoped to one customer must not surface a different customer's invoice, even within the same tenant).
+
+**Response (200):** `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="invoice-<id>.pdf"`, raw PDF bytes.
+**Response (404):** `{ "detail": "Invoice not found" }` — unknown token, an inactive (expired/revoked) token, an unknown `quote_id`, or a quote belonging to a different customer/tenant. All four cases return the identical response, so a caller can't distinguish "bad token" from "not your quote."
+
+---
+
 ## Core routes (`app/api/v1/core.py`) — moved under `/api/v1` in Sprint 003, bodies unchanged
 
 ### `POST /api/v1/process`
@@ -472,6 +533,11 @@ Marks one notification as read.
 | DELETE | `/api/v1/invitations/{invitation_id}` | Sprint 011 | Yes | **Yes** (`require_role(OWNER)`) |
 | GET | `/api/v1/invitations/token/{token}` | Sprint 011 | Yes | No (invitee has no account yet) |
 | POST | `/api/v1/invitations/token/{token}/accept` | Sprint 011 | Yes | No (issues the token) |
+| POST | `/api/v1/portal-links` | Sprint 013 | Yes | **Yes** (any tenant user, not Owner-only) |
+| GET | `/api/v1/portal-links` | Sprint 013 | Yes | **Yes** |
+| DELETE | `/api/v1/portal-links/{portal_link_id}` | Sprint 013 | Yes | **Yes** |
+| GET | `/api/v1/portal-links/token/{token}` | Sprint 013 | Yes | No (customer has no account) |
+| GET | `/api/v1/portal-links/token/{token}/invoice/{quote_id}` | Sprint 013 | Yes | No (customer has no account) |
 | POST | `/api/v1/process` | Initial | No | No |
 | POST | `/api/v1/quote` | Initial | Yes — Postgres (Sprint 007) | No — optional since Sprint 012 (tags tenant if presented) |
 | POST | `/api/v1/estimate` | Initial | Yes — Postgres (Sprint 007) | No — optional since Sprint 012 (tags tenant if presented) |

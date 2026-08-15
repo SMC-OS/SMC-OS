@@ -9,6 +9,7 @@ import type {
   InvitationPublicOut,
 } from "@/types/invitation";
 import type { AppNotification } from "@/types/notification";
+import type { PortalLinkCreateOut, PortalLinkOut, PortalPublicOut } from "@/types/portal";
 import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
 import type { AIQuoteDraft, Quote, QuoteRequest, QuoteResult } from "@/types/quote";
 import { clearToken, getToken } from "@/lib/auth-storage";
@@ -153,6 +154,61 @@ export const api = {
       method: "POST",
       body: JSON.stringify(customer),
     }),
+
+  // Sprint 013 — any authenticated tenant user, not Owner-only (sharing a
+  // project link with a customer is routine work, unlike inviting a
+  // teammate).
+  createPortalLink: (customerId: string) =>
+    request<PortalLinkCreateOut>("/portal-links", {
+      method: "POST",
+      body: JSON.stringify({ customer_id: customerId }),
+    }),
+
+  getPortalLinks: (customerId?: string) =>
+    request<PortalLinkOut[]>(
+      `/portal-links${customerId ? `?customer_id=${customerId}` : ""}`
+    ),
+
+  revokePortalLink: (id: string) =>
+    request<PortalLinkOut>(`/portal-links/${id}`, { method: "DELETE" }),
+
+  // Public — no token required, the customer has no account.
+  getPortalByToken: (token: string) =>
+    request<PortalPublicOut>(`/portal-links/token/${token}`),
+
+  // Public — same blob-download pattern as downloadInvoice, but keyed by
+  // the portal token instead of a bearer token (the customer has neither).
+  downloadPortalInvoice: async (token: string, quoteId: string): Promise<void> => {
+    let res: Response;
+
+    try {
+      res = await fetch(
+        `${API_BASE_URL}/api/v1/portal-links/token/${token}/invoice/${quoteId}`
+      );
+    } catch {
+      throw new ApiError(
+        `Could not reach the API at /portal-links/token/${token}/invoice/${quoteId}`,
+        0
+      );
+    }
+
+    if (!res.ok) {
+      throw new ApiError(
+        `Request to /portal-links/token/${token}/invoice/${quoteId} failed with ${res.status}`,
+        res.status
+      );
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `invoice-${quoteId.slice(0, 8)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 
   getProjects: (limit = 20) => request<Project[]>(`/projects?limit=${limit}`),
 

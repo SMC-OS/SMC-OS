@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # style as the JWT `exp` claim below (not a DB server_default).
     invitation_expire_days: int = 7
 
+    # Sprint 013 — customer portal links expire this many days after
+    # creation, computed the same Python-side way as invitation_expire_days.
+    # Deliberately much longer: an invitation is a one-time "join now"
+    # prompt, a portal link is meant to stay usable for roughly the
+    # duration of a job so a customer can keep checking status.
+    portal_link_expire_days: int = 90
+
     # AI Quotation Generator v1 — optional. The app runs fully normally with
     # both unset; app/quotes/ai_draft.py's AIDraftService only ever
     # constructs an OpenAI client lazily, on first real use, and only if
