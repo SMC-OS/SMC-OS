@@ -6,13 +6,20 @@ import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Avatar } from "@/components/ui/Avatar";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Customer } from "@/types/customer";
-import type { PortalLinkCreateOut } from "@/types/portal";
+import type { PortalLinkCreateOut, PortalLinkOut } from "@/types/portal";
+
+const PORTAL_LINK_STATUS_TONE: Record<string, "success" | "neutral" | "warning"> = {
+  active: "success",
+  revoked: "neutral",
+  expired: "warning",
+};
 
 function formatDate(isoTimestamp: string): string {
   return new Date(isoTimestamp).toLocaleDateString(undefined, {
@@ -36,6 +43,22 @@ export default function CustomerDetailPage() {
   const [createdLink, setCreatedLink] = useState<PortalLinkCreateOut | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
 
+  // Sprint 014 — existing links, so staff can see and revoke what's
+  // already been shared. GET/DELETE /portal-links existed since Sprint
+  // 013 but had no frontend consumer until now.
+  const [portalLinks, setPortalLinks] = useState<PortalLinkOut[] | null>(null);
+  const [linksError, setLinksError] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  function loadPortalLinks(customerId: string) {
+    api
+      .getPortalLinks(customerId)
+      .then(setPortalLinks)
+      .catch((err) =>
+        setLinksError(err instanceof ApiError ? err.message : "Something went wrong.")
+      );
+  }
+
   useEffect(() => {
     if (!isReady) return;
     if (!isAuthenticated) {
@@ -44,7 +67,10 @@ export default function CustomerDetailPage() {
     }
     api
       .getCustomer(params.id)
-      .then(setCustomer)
+      .then((c) => {
+        setCustomer(c);
+        loadPortalLinks(c.id);
+      })
       .catch((err) =>
         setError(
           err instanceof ApiError && err.status === 404
@@ -69,6 +95,7 @@ export default function CustomerDetailPage() {
     try {
       const link = await api.createPortalLink(customer.id);
       setCreatedLink(link);
+      loadPortalLinks(customer.id);
     } catch (err) {
       setLinkError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -80,6 +107,21 @@ export default function CustomerDetailPage() {
     if (!createdLink) return;
     await navigator.clipboard.writeText(portalLink(createdLink.token));
     setLinkCopied(true);
+  }
+
+  async function handleRevokePortalLink(id: string) {
+    if (!customer) return;
+    setRevokingId(id);
+    setLinksError(null);
+
+    try {
+      await api.revokePortalLink(id);
+      loadPortalLinks(customer.id);
+    } catch (err) {
+      setLinksError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setRevokingId(null);
+    }
   }
 
   return (
@@ -176,6 +218,47 @@ export default function CustomerDetailPage() {
                     {linkCopied ? "Copied" : "Copy link"}
                   </Button>
                 </div>
+              </div>
+            )}
+
+            {linksError && (
+              <p className="mt-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+                {linksError}
+              </p>
+            )}
+
+            {!linksError && portalLinks && portalLinks.length > 0 && (
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="mb-2 text-xs font-medium text-muted">
+                  Links can only be copied when first created — this list is for
+                  checking status and revoking, not retrieving the URL again.
+                </p>
+                <ul className="divide-y divide-border">
+                  {portalLinks.map((link) => (
+                    <li key={link.id} className="flex items-center gap-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-muted">
+                          Created {formatDate(link.created_at)} · Expires{" "}
+                          {formatDate(link.expires_at)}
+                        </p>
+                      </div>
+                      <Badge tone={PORTAL_LINK_STATUS_TONE[link.status] ?? "neutral"}>
+                        {link.status}
+                      </Badge>
+                      {link.status === "active" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={revokingId === link.id}
+                          onClick={() => handleRevokePortalLink(link.id)}
+                        >
+                          {revokingId === link.id ? "Revoking…" : "Revoke"}
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </CardContent>
