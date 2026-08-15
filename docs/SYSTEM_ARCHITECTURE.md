@@ -76,7 +76,7 @@ app/
 │
 ├── portal/                    # ✅ Sprint 013 — read-only client portal, no users row (ADR-030)
 │   ├── models.py                #    PortalLinkCreate, PortalLinkOut, PortalLinkCreateOut (+raw token), PortalProjectOut, PortalQuoteOut, PortalPublicOut
-│   ├── service.py                 #    PortalService — create_link/list_links/revoke_link/get_public_view; same hashed-token convention as invitations, but reusable (no "accepted" state); CustomerNotFoundError enforces tenant ownership of customer_id
+│   ├── service.py                 #    PortalService — create_link/list_links/revoke_link/get_public_view; same hashed-token convention as invitations, but reusable (no "accepted" state); CustomerNotFoundError enforces tenant ownership of customer_id; create_link() logs an ActivityEvent (Sprint 014) — revoke deliberately does not
 │   └── router.py                   #    APIRouter: POST/GET /portal-links, DELETE /portal-links/{id} — Depends(get_current_user), any role, NOT Owner-only; GET /portal-links/token/{token} — public
 │
 ├── quotes/                    # ✅ Sprint 007 — persisted, auth-enforced, third such module (ADR-023)
@@ -320,7 +320,7 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | `/quotes/[id]` | Quote detail | ✅ Sprint 007 — full price breakdown, linked customer, Download Invoice |
 | `/quotes/new` | New Quote | ✅ Real pricing calculation, persists, optional customer link, Download Invoice once calculated (public — matches `POST /quote`'s auth posture; download itself needs sign-in) |
 | `/customers` | Customers index | ✅ Sprint 004 — real list from the database, redirects to `/login` if not authenticated |
-| `/customers/[id]` | Customer detail | ✅ Sprint 004 — read-only, plus (Sprint 013) a "Client portal" card to generate/copy a read-only portal link |
+| `/customers/[id]` | Customer detail | ✅ Sprint 004 — read-only, plus (Sprint 013) a "Client portal" card to generate/copy a read-only portal link, plus (Sprint 014) that same card now lists existing links with status and lets staff revoke an active one |
 | `/portal/[token]` | Client portal | ✅ Sprint 013 — public, no auth: a customer's own projects/quotes via `GET /api/v1/portal-links/token/{token}` — same fetch/loading/status-conditional shell as `/invite/[token]`, no form |
 | `/customers/new` | New Customer | ✅ Sprint 004 — real persistence, redirects to the new customer's detail page |
 | `/projects` | Projects index | ✅ Sprint 006 — real list, stage Badge per row, redirects to `/login` if not authenticated |

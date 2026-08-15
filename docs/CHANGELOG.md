@@ -4,6 +4,26 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
+## 2026-08-15 — (uncommitted) — Sprint #014 — Portal Link Activity Logging + Management UI
+
+Full detail in `docs/SPRINTS/sprint-014.md`.
+
+**Scope note:** `docs/ROADMAP.md`'s Sprint 014 line ("Contracts + digital signatures; Payment tracking") is stale, same as flagged in prior sprints' docs — this sprint instead closes the two follow-ups `sprint-013.md` explicitly named: no activity logging on portal link creation, and no frontend list/revoke UI for the already-shipped `GET`/`DELETE /portal-links` routes. The roadmap's original Sprint 014 scope remains unaddressed and unscheduled.
+
+**Backend**
+- `ActivityType.PORTAL_LINK_CREATED` added (`app/activity/models.py`); `PortalService.create_link()` now calls `activity_service.log()` after row creation — title "Portal link shared", description = customer name. Revoke deliberately does not log, matching `revoke_invitation()`'s precedent.
+- No new routes, no migration — `ActivityLog.type` is a plain `String` column, confirmed no schema change was needed.
+
+**Frontend**
+- `apps/web/app/customers/[id]/page.tsx`'s "Client portal" card gained a list of existing links (created/expires dates, status `Badge`, Revoke button on active links), consuming the pre-existing Sprint 013 `getPortalLinks`/`revokePortalLink` client methods.
+- One fix-round: `loadPortalLinks` now clears a stale `linksError` at the top of the function, so a prior failed load no longer hides a subsequent successful one.
+
+**Tests**
+- New in `tests/test_portal.py` (2 tests): `test_create_portal_link_logs_activity`, `test_create_portal_link_activity_not_visible_to_other_tenant` (real cross-tenant isolation check, ADR-029 convention).
+- Full suite: 136/136 passing.
+
+**Verified:** `pytest` (136/136, run twice), `pnpm lint` (0 errors/warnings), `pnpm build` (TypeScript clean, 15 routes, same as Sprint 013 baseline), `alembic check` ("No new upgrade operations detected"), and a manual smoke test against the real running app (uvicorn + local Postgres) confirming create → list → revoke and single-log-on-create behavior. UI Badge/list rendering was verified via diff-level review and a clean `next build`, not a literal browser check.
+
 ## 2026-08-15 — (uncommitted) — Sprint #013 — Read-Only Client Portal
 
 Full detail in `docs/DECISIONS.md` ADR-030 and `docs/SPRINTS/sprint-013.md`.
