@@ -79,6 +79,11 @@ app/
 │   ├── service.py                 #    PortalService — create_link/list_links/revoke_link/get_public_view; same hashed-token convention as invitations, but reusable (no "accepted" state); CustomerNotFoundError enforces tenant ownership of customer_id; create_link() logs an ActivityEvent (Sprint 014) — revoke deliberately does not
 │   └── router.py                   #    APIRouter: POST/GET /portal-links, DELETE /portal-links/{id} — Depends(get_current_user), any role, NOT Owner-only; GET /portal-links/token/{token} — public
 │
+├── users/                     # ✅ Sprint 015 — team management: list team, deactivate a teammate (ADR-031)
+│   ├── models.py                #    TeamMemberOut (named to avoid colliding with app.auth.models.UserOut)
+│   ├── service.py                 #    UserManagementService — list_users/deactivate_user; soft-deactivate only (users.is_active), never a row delete; CannotDeactivateSelfError (409); UserNotFoundError (404) for unknown-or-cross-tenant, same error for both
+│   └── router.py                   #    APIRouter: GET /users, POST /users/{id}/deactivate — Depends(require_role(OWNER)), second real attachment point after app.invitations; deactivation logs an ActivityEvent
+│
 ├── quotes/                    # ✅ Sprint 007 — persisted, auth-enforced, third such module (ADR-023)
 │   ├── models.py               #    QuoteRequest (+ optional customer_id, Sprint 007), QuoteOut
 │   ├── calculator.py            #    QuoteCalculator — pure pricing + VAT logic; takes db, looks up (material, thickness)
@@ -149,7 +154,7 @@ apps/web/
 │   │   ├── [id]/page.tsx                # "/projects/[id]" — ✅ Sprint 006, detail + "Advance to <next stage>" control
 │   │   └── new/page.tsx                  # "/projects/new" — ✅ Sprint 006, real persistence, customer <select>, POST /api/v1/projects
 │   ├── ai-assistant/page.tsx            # "/ai-assistant" — talks to POST /process
-│   └── settings/page.tsx                 # "/settings" — honest "coming soon" state
+│   └── settings/page.tsx                 # "/settings" — real content, not a placeholder (exact sprint undocumented, predates Sprint 013); Sprint 015 adds a "Team" card
 │
 ├── components/
 │   ├── ui/                        # Reusable primitives — no business logic
@@ -231,6 +236,7 @@ apps/web/
 | `app.tenants` | `tenants` table CRUD (list/get/create) — schema/plumbing only, not yet tied to auth or data isolation | ✅ Sprint 008 |
 | `app.invitations` | Staff invitations — create/list/revoke (Owner-only, `require_role`) + public token-view/accept. First module letting a tenant have >1 user; reuses `app.auth.service.auth_service.create_user()` | ✅ Sprint 011 |
 | `app.portal` | Read-only client portal — create/list/revoke a reusable per-customer link (any tenant user, not Owner-only) + public token-view. No `users` row, no login; tenant-scoped from the start (ADR-029/030) | ✅ Sprint 013 |
+| `app.users` | Team management — list a tenant's users, deactivate a Staff member's access (Owner-only, `require_role`). Soft-deactivation only, no row delete; deactivation also ends that user's already-issued token on its next request (`get_current_user`) | ✅ Sprint 015 |
 | `app.data` | `services.py` (still live); `materials.py`/`pricing.py` superseded by `app.materials` | ⚠ mixed — see §2.1 |
 | `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
 | `app.brain` | Routes free text to an assistant | ⚠ hardcoded keyword dict, not AI |
@@ -327,7 +333,7 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | `/projects/[id]` | Project detail | ✅ Sprint 006 — shows linked customer/notes, "Advance to \<next stage\>" control |
 | `/projects/new` | New Project | ✅ Sprint 006 — real persistence, optional customer link via `<select>`, redirects to the new project's detail page |
 | `/ai-assistant` | AI Assistant | ✅ Functional — calls `POST /process` |
-| `/settings` | Settings | ⬜ "Coming soon" — login exists now, nothing to configure with it yet |
+| `/settings` | Settings | ✅ real content, not a placeholder: "Invite a teammate" + "Pending & past invitations" cards (Owner-only) — added prior to Sprint 013, exact sprint undocumented (sprint-010.md/sprint-011.md/sprint-012.md's own records each state no frontend UI shipped in those sprints). Sprint 015 adds a "Team" card, placed first: lists teammates with role/active-status Badges and a Deactivate button (Owner-only; hidden on the caller's own row) |
 
 ---
 

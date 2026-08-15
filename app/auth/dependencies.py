@@ -26,6 +26,14 @@ deliberately public (ADR-023) but now tag a created Quote with the
 caller's tenant_id when a valid token happens to be present. Unlike
 get_current_user, a missing/invalid/expired token is not an error here —
 it just means "anonymous," returning None instead of raising 401.
+
+Sprint 015 (docs/DECISIONS.md ADR-031) — get_current_user now also rejects
+a token whose user has been deactivated (is_active = False), with the same
+generic "Could not validate credentials" 401 — no detail leak distinguishing
+"deactivated" from "invalid/expired." This costs no extra query: the row is
+already fetched below. The first sprint where another user's action (an
+Owner deactivating them) can end a Staff user's already-issued, unexpired
+session mid-flight — previously only natural token expiry did.
 """
 
 import uuid
@@ -62,7 +70,7 @@ def get_current_user(
         raise credentials_error
 
     user = crud.get_user_by_id(db, user_uuid)
-    if user is None:
+    if user is None or not user.is_active:
         raise credentials_error
     return user
 

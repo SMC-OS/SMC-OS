@@ -324,6 +324,29 @@ Downloads the same PDF invoice `GET /api/v1/quotes/{quote_id}/invoice` produces,
 
 ---
 
+## User management routes (`app/users/router.py`) — added Sprint 015 (ADR-031)
+
+Team management: an Owner can list their tenant's team and deactivate a Staff member's access. Both routes require `Authorization: Bearer <token>` **and** an `Owner` role (`require_role(UserRole.OWNER)`) — `403` (`{"detail": "Insufficient permissions"}`) for a valid token belonging to a `Staff` user, same as `/api/v1/invitations*`. Deactivation is soft — `users.is_active` flips to `false`, the row is never deleted (ADR-031) — and it does **not** cascade to that user's portal links, which keep working.
+
+### `GET /api/v1/users`
+
+Lists every user in the caller's own tenant.
+
+**Response (200)** — array of `TeamMemberOut`:
+```json
+[{ "id": "...", "name": "Sarah Whitfield", "email": "sarah@acme.test", "role": "Owner", "is_active": true, "created_at": "2026-08-15T07:02:30Z" }]
+```
+
+### `POST /api/v1/users/{user_id}/deactivate`
+
+Deactivates a teammate's access. Logs an `ActivityEvent` (`team_member_deactivated`) on success.
+
+**Response (200)** (`TeamMemberOut`): the updated row, `is_active: false`.
+**Response (409):** `{ "detail": "You cannot deactivate your own account." }` — self-deactivation, checked before any lookup.
+**Response (404):** `{ "detail": "User not found" }` — unknown `user_id`, or one belonging to a different tenant (same response for both, so a cross-tenant lookup can't confirm another tenant's user exists — ADR-028 precedent).
+
+---
+
 ## Core routes (`app/api/v1/core.py`) — moved under `/api/v1` in Sprint 003, bodies unchanged
 
 ### `POST /api/v1/process`
@@ -538,6 +561,8 @@ Marks one notification as read.
 | DELETE | `/api/v1/portal-links/{portal_link_id}` | Sprint 013 | Yes | **Yes** |
 | GET | `/api/v1/portal-links/token/{token}` | Sprint 013 | Yes | No (customer has no account) |
 | GET | `/api/v1/portal-links/token/{token}/invoice/{quote_id}` | Sprint 013 | Yes | No (customer has no account) |
+| GET | `/api/v1/users` | Sprint 015 | Yes | **Yes** (`require_role(OWNER)`) |
+| POST | `/api/v1/users/{user_id}/deactivate` | Sprint 015 | Yes | **Yes** (`require_role(OWNER)`) |
 | POST | `/api/v1/process` | Initial | No | No |
 | POST | `/api/v1/quote` | Initial | Yes — Postgres (Sprint 007) | No — optional since Sprint 012 (tags tenant if presented) |
 | POST | `/api/v1/estimate` | Initial | Yes — Postgres (Sprint 007) | No — optional since Sprint 012 (tags tenant if presented) |

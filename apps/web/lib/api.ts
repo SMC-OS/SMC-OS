@@ -12,6 +12,7 @@ import type { AppNotification } from "@/types/notification";
 import type { PortalLinkCreateOut, PortalLinkOut, PortalPublicOut } from "@/types/portal";
 import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
 import type { AIQuoteDraft, Quote, QuoteRequest, QuoteResult } from "@/types/quote";
+import type { TeamMemberOut } from "@/types/user";
 import { clearToken, getToken } from "@/lib/auth-storage";
 
 /**
@@ -133,6 +134,13 @@ export const api = {
 
   revokeInvitation: (id: string) =>
     request<InvitationOut>(`/invitations/${id}`, { method: "DELETE" }),
+
+  // Sprint 015 — Owner-only (require_role(OWNER) server-side; a Staff
+  // caller gets a 403 handled by the caller, same as invitations).
+  getUsers: () => request<TeamMemberOut[]>("/users"),
+
+  deactivateUser: (id: string) =>
+    request<TeamMemberOut>(`/users/${id}/deactivate`, { method: "POST" }),
 
   // Public — no token required, the invitee has no account yet.
   getInvitationByToken: (token: string) =>

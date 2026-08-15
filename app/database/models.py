@@ -151,6 +151,13 @@ class User(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    # Sprint 015 (docs/DECISIONS.md ADR-031) — soft-deactivation. An Owner
+    # can revoke a teammate's access without deleting the row (Invitation.
+    # invited_by_user_id / PortalLink.created_by_user_id are NOT NULL FKs to
+    # this table, so deletion would break historical rows). See
+    # app/users/service.py and app/auth/dependencies.py's get_current_user.
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+
 
 class Invitation(Base):
     """A pending offer to join a tenant as a Staff user. Sprint 011 — the

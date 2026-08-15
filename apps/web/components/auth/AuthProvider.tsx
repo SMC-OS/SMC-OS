@@ -20,6 +20,11 @@ interface AuthContextValue {
   // Sprint 011 — "Owner" | "Staff" | null, used to gate the invitations UI
   // client-side (the server enforces this for real via require_role()).
   role: string | null;
+  // Sprint 015 — the signed-in user's own id, used to hide a "manage this
+  // person" action on their own row (e.g. the Team list's Deactivate
+  // button) — the server enforces the real rule (CannotDeactivateSelfError)
+  // regardless of what the UI shows.
+  userId: string | null;
   login: (email: string, password: string) => Promise<void>;
   signup: (data: SignupRequest) => Promise<void>;
   // Sprint 011 — accepting a Staff invitation signs the new user straight
@@ -35,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [tenantName, setTenantName] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     // One-time sync from a browser-only API (localStorage isn't available
@@ -56,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((me) => {
         setTenantName(me.tenant_name);
         setRole(me.role);
+        setUserId(me.id);
       })
       .catch(() => setIsAuthenticated(false))
       .finally(() => setIsReady(true));
@@ -67,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(true);
     setTenantName(response.user.tenant_name);
     setRole(response.user.role);
+    setUserId(response.user.id);
   }
 
   async function signup(data: SignupRequest) {
@@ -75,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(true);
     setTenantName(response.user.tenant_name);
     setRole(response.user.role);
+    setUserId(response.user.id);
   }
 
   async function acceptInvite(token: string, data: AcceptInvitationRequest) {
@@ -83,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(true);
     setTenantName(response.user.tenant_name);
     setRole(response.user.role);
+    setUserId(response.user.id);
   }
 
   function logout() {
@@ -90,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
     setTenantName(null);
     setRole(null);
+    setUserId(null);
   }
 
   return (
@@ -99,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isReady,
         tenantName,
         role,
+        userId,
         login,
         signup,
         acceptInvite,

@@ -169,6 +169,21 @@ def count_users(db: Session) -> int:
     return db.query(User).count()
 
 
+def list_users_by_tenant(db: Session, tenant_id: uuid.UUID) -> list[User]:
+    stmt = select(User).where(User.tenant_id == tenant_id).order_by(User.created_at)
+    return list(db.scalars(stmt))
+
+
+def update_user_active(db: Session, user_id: uuid.UUID, is_active: bool) -> User | None:
+    row = db.get(User, user_id)
+    if row is None:
+        return None
+    row.is_active = is_active
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def create_customer(
     db: Session,
     *,

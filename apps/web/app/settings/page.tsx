@@ -11,6 +11,7 @@ import { Field, Input } from "@/components/ui/Field";
 import { PlusIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
 import type { InvitationCreateOut, InvitationOut } from "@/types/invitation";
+import type { TeamMemberOut } from "@/types/user";
 
 const STATUS_TONE: Record<string, "info" | "success" | "neutral" | "warning"> = {
   pending: "info",
@@ -29,10 +30,14 @@ function formatDate(isoTimestamp: string): string {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { isAuthenticated, isReady, role } = useAuth();
+  const { isAuthenticated, isReady, role, userId } = useAuth();
 
   const [invitations, setInvitations] = useState<InvitationOut[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+
+  const [teamMembers, setTeamMembers] = useState<TeamMemberOut[] | null>(null);
+  const [teamError, setTeamError] = useState<string | null>(null);
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
 
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -51,13 +56,25 @@ export default function SettingsPage() {
       );
   }
 
+  function loadTeam() {
+    api
+      .getUsers()
+      .then(setTeamMembers)
+      .catch((err) =>
+        setTeamError(err instanceof ApiError ? err.message : "Something went wrong.")
+      );
+  }
+
   useEffect(() => {
     if (!isReady) return;
     if (!isAuthenticated) {
       router.replace("/login");
       return;
     }
-    if (isOwner) loadInvitations();
+    if (isOwner) {
+      loadInvitations();
+      loadTeam();
+    }
   }, [isReady, isAuthenticated, isOwner, router]);
 
   if (!isReady || !isAuthenticated) return null;
@@ -94,6 +111,19 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleDeactivate(id: string) {
+    setDeactivatingId(id);
+    setTeamError(null);
+    try {
+      await api.deactivateUser(id);
+      loadTeam();
+    } catch (err) {
+      setTeamError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setDeactivatingId(null);
+    }
+  }
+
   function inviteLink(token: string): string {
     return `${window.location.origin}/invite/${token}`;
   }
@@ -127,6 +157,47 @@ export default function SettingsPage() {
 
       {isOwner && (
         <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Team</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {teamError && <p className="p-5 text-sm text-danger">{teamError}</p>}
+              {teamMembers === null && !teamError && (
+                <p className="p-5 text-center text-sm text-muted">Loading…</p>
+              )}
+              {teamMembers && teamMembers.length > 0 && (
+                <ul className="divide-y divide-border">
+                  {teamMembers.map((member) => (
+                    <li key={member.id} className="flex items-center gap-3 px-5 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {member.name}
+                        </p>
+                        <p className="truncate text-xs text-muted">{member.email}</p>
+                      </div>
+                      <Badge tone="neutral">{member.role}</Badge>
+                      <Badge tone={member.is_active ? "success" : "neutral"}>
+                        {member.is_active ? "active" : "inactive"}
+                      </Badge>
+                      {member.is_active && member.id !== userId && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={deactivatingId === member.id}
+                          onClick={() => handleDeactivate(member.id)}
+                        >
+                          {deactivatingId === member.id ? "Deactivating…" : "Deactivate"}
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Invite a teammate</CardTitle>

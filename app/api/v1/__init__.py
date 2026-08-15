@@ -15,6 +15,7 @@ from app.portal.router import router as portal_router
 from app.projects.router import router as projects_router
 from app.quotes.router import router as quotes_router
 from app.tenants.router import router as tenants_router
+from app.users.router import router as users_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(core_router)
@@ -25,3 +26,4 @@ api_router.include_router(portal_router)
 api_router.include_router(projects_router)
 api_router.include_router(quotes_router)
 api_router.include_router(tenants_router)
+api_router.include_router(users_router)

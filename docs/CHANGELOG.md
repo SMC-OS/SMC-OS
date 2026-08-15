@@ -4,6 +4,28 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
+## 2026-08-15 — (uncommitted) — Sprint #015 — Team Management (View Team, Deactivate a Teammate)
+
+Full detail in `docs/DECISIONS.md` ADR-031 and `docs/SPRINTS/sprint-015.md`.
+
+**Scope note:** `docs/USER_ROLES.md` names an open permission-matrix gap — deciding which routes should require `OWNER` specifically (tenant settings? billing? removing a teammate?) — and this sprint resolves the "removing a teammate" example. `docs/ROADMAP.md`'s literal Sprint 015 line ("Staff management + RBAC; Supplier database + purchasing workflow") is stale: RBAC shipped in Sprint 010–011, four sprint-numbers early. The roadmap's Supplier/Purchasing line remains entirely unaddressed; `docs/ROADMAP.md` not touched.
+
+**Backend**
+- Migration `dae9516f388b`: `users.is_active BOOLEAN NOT NULL DEFAULT true` (additive-only).
+- New `app/users/` module — `GET /api/v1/users` (list team), `POST /api/v1/users/{id}/deactivate`, both `require_role(UserRole.OWNER)`-gated. Soft-deactivation, not row deletion (`Invitation.invited_by_user_id`/`PortalLink.created_by_user_id` are `NOT NULL` FKs to `users.id`). Self-deactivation blocked at the service layer (409); cross-tenant lookups → 404. Deactivation logs a new `ActivityType.TEAM_MEMBER_DEACTIVATED` event.
+- `app/auth/dependencies.py`: `get_current_user` now also rejects a deactivated user's token (401, same generic message as an invalid token) — no extra query, the row is already fetched. A deactivated teammate's portal links deliberately keep working — no cascade-revoke.
+
+**Frontend**
+- `apps/web/app/settings/page.tsx` gains a "Team" card (first, above "Invite a teammate"): teammates with role/active-status `Badge`s, a Deactivate button on active rows other than the caller's own.
+- `AuthProvider` gains `userId` (mount effect, login, signup, acceptInvite; cleared on logout) so the UI can hide the self-deactivate action — the server enforces the real rule regardless.
+- New `apps/web/types/user.ts`; `apps/web/lib/api.ts` gains `getUsers()`/`deactivateUser(id)`.
+
+**Tests**
+- New `tests/test_users.py` (9 tests): list-team success/role-gated, deactivate flips `is_active` + logs activity, activity isolation, self-deactivate 409, unknown/cross-tenant deactivate 404, portal link survives deactivation (no cascade), deactivated user's existing token rejected (401).
+- Full suite: 145/145 passing.
+
+**Verified:** `pytest` (145/145: 136 pre-existing + 9 new), `alembic check` ("No new upgrade operations detected"), a clean `downgrade -1`/`upgrade head` round-trip, `pnpm lint` (0 errors/warnings), `pnpm build` (TypeScript clean, 15 routes, same as Sprint 014 baseline), `git diff --check` (clean), and a manual smoke test against the real running app (uvicorn + local Postgres) confirming list/deactivate/403/401/409/no-cascade end-to-end.
+
 ## 2026-08-15 — (uncommitted) — Sprint #014 — Portal Link Activity Logging + Management UI
 
 Full detail in `docs/SPRINTS/sprint-014.md`.
