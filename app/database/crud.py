@@ -9,6 +9,8 @@ added `projects` (app/projects/), including a status-update helper. Sprint
 CRUD, plus two aggregate helpers (count_quotes_today, sum_quotes_revenue)
 backing the now-real /api/v1/dashboard. Sprint 008 adds `tenants`
 (app/tenants/) — schema/CRUD only, no query above filters by tenant yet.
+Sprint 011 adds `invitations` (app/invitations/) — the first table that
+lets a tenant have more than one user.
 """
 
 import uuid
@@ -20,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.database.models import (
     ActivityLog,
     Customer,
+    Invitation,
     Material,
     NotificationRecord,
     Project,
@@ -334,3 +337,69 @@ def get_tenant_by_slug(db: Session, slug: str) -> Tenant | None:
 def list_tenants(db: Session, limit: int = 20) -> list[Tenant]:
     stmt = select(Tenant).order_by(Tenant.created_at.desc()).limit(limit)
     return list(db.scalars(stmt))
+
+
+def create_invitation(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    invited_by_user_id: uuid.UUID,
+    email: str,
+    role: str,
+    token_hash: str,
+    expires_at: datetime,
+    status: str = "pending",
+) -> Invitation:
+    row = Invitation(
+        id=id,
+        tenant_id=tenant_id,
+        invited_by_user_id=invited_by_user_id,
+        email=email,
+        role=role,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        status=status,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_invitation_by_id(db: Session, invitation_id: uuid.UUID) -> Invitation | None:
+    return db.get(Invitation, invitation_id)
+
+
+def get_invitation_by_token_hash(db: Session, token_hash: str) -> Invitation | None:
+    stmt = select(Invitation).where(Invitation.token_hash == token_hash)
+    return db.scalars(stmt).first()
+
+
+def list_invitations(
+    db: Session, tenant_id: uuid.UUID, status: str | None = None, limit: int = 50
+) -> list[Invitation]:
+    stmt = select(Invitation).where(Invitation.tenant_id == tenant_id)
+    if status is not None:
+        stmt = stmt.where(Invitation.status == status)
+    stmt = stmt.order_by(Invitation.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt))
+
+
+def get_pending_invitation(db: Session, tenant_id: uuid.UUID, email: str) -> Invitation | None:
+    stmt = select(Invitation).where(
+        Invitation.tenant_id == tenant_id,
+        Invitation.email == email,
+        Invitation.status == "pending",
+    )
+    return db.scalars(stmt).first()
+
+
+def update_invitation_status(db: Session, invitation_id: uuid.UUID, status: str) -> Invitation | None:
+    row = db.get(Invitation, invitation_id)
+    if row is None:
+        return None
+    row.status = status
+    db.commit()
+    db.refresh(row)
+    return row

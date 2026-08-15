@@ -9,13 +9,17 @@ Sprint 009 — every user now belongs to a tenant. `signup()` creates the
 Tenant (reusing app.tenants.service.tenant_service, not duplicating its
 slugify logic) and the first User (role="Owner") together; `create_user()`
 requires a tenant_id, no longer optional.
+
+Sprint 010 — `role` is now UserRole, a real enum (app/auth/models.py),
+not a free string. `signup()` always assigns UserRole.OWNER; there is
+still no path that creates a Staff user (Sprint 011's invitations).
 """
 
 import uuid
 
 from sqlalchemy.orm import Session
 
-from app.auth.models import SignupRequest, UserOut
+from app.auth.models import SignupRequest, UserOut, UserRole
 from app.auth.security import hash_password, verify_password
 from app.database import crud
 from app.database.models import Tenant, User
@@ -73,7 +77,7 @@ class AuthService:
             name=data.name,
             email=data.email,
             password=data.password,
-            role="Owner",
+            role=UserRole.OWNER.value,
         )
         return tenant, user
 

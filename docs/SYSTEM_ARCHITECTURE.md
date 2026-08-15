@@ -1,7 +1,7 @@
 # SIMO OS — System Architecture
 
-**Status:** Canonical reference, current as of Sprint 009 completion (13 August 2026)
-**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · AI Quotation Generator v1 (`d306c99`) · Tenants table + CRUD, schema only (Sprint 008) · Tenant-aware authentication + signup (Sprint 009) · Turborepo/pnpm workspace
+**Status:** Canonical reference, current as of Sprint 011 completion (14 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · AI Quotation Generator v1 (`d306c99`) · Tenants table + CRUD, schema only (Sprint 008) · Tenant-aware authentication + signup (Sprint 009) · Role enum + permission-checking machinery, unenforced (Sprint 010) · Staff invitations, first `require_role()`-gated route (Sprint 011) · Turborepo/pnpm workspace
 
 This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
 
@@ -32,12 +32,12 @@ app/
 │   ├── __init__.py          #    api_router: assembles core + auth sub-routers under /api/v1
 │   └── core.py               #    /process, /quote, /estimate, /quote/pdf, /dashboard (moved from main.py, bodies unchanged)
 │
-├── auth/                     # ✅ Sprint 003 — JWT login/me machinery (ADR-011); tenant-aware since Sprint 009 (ADR-026)
-│   ├── models.py               #    LoginRequest, SignupRequest (Sprint 009), TokenResponse, UserOut (+tenant_id/tenant_name, Sprint 009)
+├── auth/                     # ✅ Sprint 003 — JWT login/me machinery (ADR-011); tenant-aware since Sprint 009 (ADR-026); role machinery since Sprint 010 (ADR-027), first enforced Sprint 011 (ADR-028)
+│   ├── models.py               #    LoginRequest, SignupRequest (Sprint 009), TokenResponse, UserOut (+tenant_id/tenant_name, Sprint 009), UserRole enum (Sprint 010)
 │   ├── security.py              #    bcrypt hashing, JWT encode/decode (pyjwt) — payload gains tenant_id (Sprint 009)
-│   ├── service.py                #    AuthService — authenticate(), create_user(), signup() (Sprint 009), build_user_out()
+│   ├── service.py                #    AuthService — authenticate(), create_user(), signup() (Sprint 009), build_user_out(); create_user() reused by app.invitations (Sprint 011)
 │   ├── router.py                  #    APIRouter: POST /auth/signup (Sprint 009), POST /auth/login, GET /auth/me
-│   ├── dependencies.py             #    get_current_user — requires tenant_id claim since Sprint 009; used by customers/projects/quotes/tenants
+│   ├── dependencies.py             #    get_current_user — requires tenant_id claim since Sprint 009; used by customers/projects/quotes/tenants. require_role() (Sprint 010) — attached to app.invitations since Sprint 011 (ADR-028), its first real route
 │   └── seed.py                      #    Seeds one owner account (+ its Default Workspace tenant, Sprint 009) via AuthService.signup() if `users` is empty
 │
 ├── customers/                # ✅ Sprint 004 — first real business-data module, auth-enforced (ADR-021)
@@ -68,6 +68,11 @@ app/
 │   ├── models.py                #    TenantCreate, TenantOut
 │   ├── service.py                 #    TenantService — list_all/get/create; auto-slugifies, logs an ActivityEvent
 │   └── router.py                   #    APIRouter: GET/POST /tenants, GET /tenants/{id} — Depends(get_current_user), NOT tenant-scoped auth
+│
+├── invitations/                # ✅ Sprint 011 — Staff invitations, first tenant with >1 user (ADR-028)
+│   ├── models.py                 #    InvitationCreate, InvitationOut, InvitationCreateOut (+raw token), InvitationPublicOut, AcceptInvitationRequest
+│   ├── service.py                  #    InvitationService — create/list/revoke/accept; opaque token hashed (sha256) before persisting; derive_status() computes "expired" at read time
+│   └── router.py                    #    APIRouter: POST/GET /invitations, DELETE /invitations/{id} — Depends(require_role(OWNER)); GET/POST /invitations/token/{token}[/accept] — public
 │
 ├── quotes/                    # ✅ Sprint 007 — persisted, auth-enforced, third such module (ADR-023)
 │   ├── models.py               #    QuoteRequest (+ optional customer_id, Sprint 007), QuoteOut
@@ -211,7 +216,7 @@ apps/web/
 |---|---|---|
 | `app.main` | FastAPI app instance, CORS, exception handlers, router mounting, seeding | ✅ |
 | `app.api.v1` | Assembles every `/api/v1` route (ADR-012) | ✅ Sprint 003 |
-| `app.auth` | JWT signup/login/`/me` — issuance + validation, enforced on `app.customers`/`app.projects`/`app.quotes`/`app.tenants`. Tenant-aware since Sprint 009 (ADR-026): every user belongs to a tenant, JWT carries `tenant_id`, old-shape tokens rejected | ✅ Sprint 003, tenant-aware Sprint 009 |
+| `app.auth` | JWT signup/login/`/me` — issuance + validation, enforced on `app.customers`/`app.projects`/`app.quotes`/`app.tenants`. Tenant-aware since Sprint 009 (ADR-026): every user belongs to a tenant, JWT carries `tenant_id`, old-shape tokens rejected. `role` is a real `UserRole` enum since Sprint 010 (ADR-027); `require_role()` is attached to `app.invitations` since Sprint 011 (ADR-028), its first real route | ✅ Sprint 003, tenant-aware Sprint 009, role machinery Sprint 010, first enforced Sprint 011 |
 | `app.customers` | Real customer list/detail/create — first business-data module, first auth-enforced module | ✅ Sprint 004 |
 | `app.projects` | Real project list/detail/create + status pipeline — second auth-enforced module, first update endpoint beyond create | ✅ Sprint 006 |
 | `app.activity` | Recent Activity feed — log and list timestamped events | ✅ Postgres-backed (Sprint 002) |
@@ -219,11 +224,12 @@ apps/web/
 | `app.quotes` | Quote pricing engine + persistence + downloadable invoices — third auth-enforced module (GET/browsing routes only; POST /quote and /estimate stay public); also hosts AI Quotation Generator v1 (`ai_draft.py`) | ✅ Sprint 007 (+ AI draft, `d306c99`) |
 | `app.materials` | Database-backed material catalogue (list, lookup by name+thickness) | ✅ Sprint 005 — internal only, no route |
 | `app.tenants` | `tenants` table CRUD (list/get/create) — schema/plumbing only, not yet tied to auth or data isolation | ✅ Sprint 008 |
+| `app.invitations` | Staff invitations — create/list/revoke (Owner-only, `require_role`) + public token-view/accept. First module letting a tenant have >1 user; reuses `app.auth.service.auth_service.create_user()` | ✅ Sprint 011 |
 | `app.data` | `services.py` (still live); `materials.py`/`pricing.py` superseded by `app.materials` | ⚠ mixed — see §2.1 |
 | `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
 | `app.brain` | Routes free text to an assistant | ⚠ hardcoded keyword dict, not AI |
 | `app.core` | `config.py` (pydantic-settings) + `errors.py` (exception handlers) | ✅ Sprint 003 — logging/lifecycle still ⬜ |
-| `app.database` | ORM models (7 tables), DB session, CRUD helpers | ✅ Sprint 002, extended Sprint 003 — see §3.1 |
+| `app.database` | ORM models (9 tables), DB session, CRUD helpers | ✅ Sprint 002, extended Sprint 003 — see §3.1 |
 
 ### 3.1 The repository pattern (important — read before touching activity/notifications)
 
@@ -480,4 +486,4 @@ Full context on architecture decisions (ORM choice, auth strategy, multi-tenancy
 
 ---
 
-*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 009 (13 August 2026). Note: §9's Sprint 008–016 sequence below reflects the pre-SaaS-replan draft and has not yet been reconciled with the newer Phase 1–9 roadmap agreed separately — that reconciliation is an explicit future decision, not done as part of Sprint 008 or 009.*
+*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 011 (14 August 2026). Note: §9's Sprint 008–016 sequence below reflects the pre-SaaS-replan draft and has not yet been reconciled with the newer Phase 1–9 roadmap agreed separately — that reconciliation is an explicit future decision, not done as part of Sprints 008–011.*

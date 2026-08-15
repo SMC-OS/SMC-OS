@@ -1,6 +1,24 @@
 import uuid
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
+
+
+class UserRole(str, Enum):
+    """Sprint 010 — formalizes `role` as a fixed set of values instead of
+    a free string. Stored as a plain String column on `users`
+    (app/database/models.py), same convention as ProjectStatus/
+    ActivityType/NotificationType — no native Postgres enum, no DB CHECK
+    constraint; validated at the Pydantic/API boundary only.
+
+    STAFF exists here because it's part of the anticipated permission
+    model (docs/USER_ROLES.md §2), but there is still no way to create a
+    Staff user — that's Sprint 011's invitations. Every user today is an
+    Owner.
+    """
+
+    OWNER = "Owner"
+    STAFF = "Staff"
 
 
 class LoginRequest(BaseModel):
@@ -24,7 +42,7 @@ class UserOut(BaseModel):
     id: uuid.UUID
     name: str
     email: str
-    role: str | None = None
+    role: UserRole | None = None
     # Sprint 009 — every user now belongs to exactly one tenant. Built via
     # AuthService.build_user_out(), not automatic from_attributes validation
     # (tenant_name isn't a column on `users`, it's resolved from `tenants`).

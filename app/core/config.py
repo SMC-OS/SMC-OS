@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     seed_admin_email: str = "owner@simo-os.local"
     seed_admin_password: str = "change-me-on-first-login"
 
+    # Sprint 011 — staff invitation links expire this many days after
+    # creation. Computed Python-side at invitation-creation time, same
+    # style as the JWT `exp` claim below (not a DB server_default).
+    invitation_expire_days: int = 7
+
     # AI Quotation Generator v1 — optional. The app runs fully normally with
     # both unset; app/quotes/ai_draft.py's AIDraftService only ever
     # constructs an OpenAI client lazily, on first real use, and only if

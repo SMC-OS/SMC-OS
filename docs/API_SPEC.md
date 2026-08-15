@@ -1,6 +1,6 @@
 # SIMO OS — API Specification
 
-**Status:** Reflects the actual FastAPI application as of Sprint 009 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/tenants/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 added the third (`quotes`) and, for the first time, actually persisted a calculated quote; Sprint 008 added `tenants` — schema/CRUD only, not yet tied to authentication; **Sprint 009 makes authentication itself tenant-aware** — every user belongs to a tenant, the JWT carries `tenant_id`, and `POST /api/v1/auth/signup` creates a new company workspace (see ADR-026). Still **not** tenant data isolation — no query in any business-data module filters by tenant yet (Sprint 012).
+**Status:** Reflects the actual FastAPI application as of Sprint 011 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/tenants/` + `app/invitations/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 added the third (`quotes`) and, for the first time, actually persisted a calculated quote; Sprint 008 added `tenants` — schema/CRUD only, not yet tied to authentication; Sprint 009 made authentication itself tenant-aware — every user belongs to a tenant, the JWT carries `tenant_id`, and `POST /api/v1/auth/signup` creates a new company workspace (see ADR-026). Sprint 010 formalized `role` as a real enum (`UserRole`) and added a `require_role()` permission dependency (ADR-027) — machinery only, not attached to any route. **Sprint 011 adds `invitations` (ADR-028): an Owner can invite a Staff teammate by email, and `require_role(UserRole.OWNER)` is attached to a route for the first time** — `POST`/`GET`/`DELETE /api/v1/invitations*` require the caller to be an Owner; the token-view/accept routes stay public since the invitee has no account yet. Still **not** tenant data isolation — no query in any business-data module filters by tenant yet (Sprint 012).
 **Base URL (local dev):** `http://127.0.0.1:8000`
 **Versioning:** `/api/v1` prefix on every route except `GET /` and `GET /health`, which stay unversioned as infra/health-check endpoints. Implemented Sprint 003 (ADR-012).
 **Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/me`) since Sprint 003 (signup added Sprint 009). Every token carries a `tenant_id` claim since Sprint 009 (ADR-026) — a token issued before that sprint is rejected (`401`), not silently accepted. Sprint 003 itself required no route to present a token (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), `/api/v1/quotes/*` (Sprint 007, ADR-023), and `/api/v1/tenants/*` (Sprint 008) enforce it. `POST /api/v1/quote` and `POST /api/v1/estimate` deliberately stay public — every other route below is still callable without a token.
@@ -32,6 +32,8 @@ Static health check — does **not** check a database connection.
 ---
 
 ## Auth routes (`app/auth/router.py`) — added Sprint 003, tenant-aware since Sprint 009
+
+`role` on `UserOut` (below) is validated against `UserRole` since Sprint 010 (`"Owner"` or `"Staff"`) — same JSON shape as before, just constrained server-side now. `/api/v1/invitations*` is the only place `role` is checked (Sprint 011, ADR-028); see the Invitation routes section below.
 
 ### `POST /api/v1/auth/signup` — added Sprint 009
 
@@ -201,6 +203,60 @@ Generates and returns a real downloadable PDF invoice for an already-persisted q
 **Request body** (`TenantCreate`): `{ "name": "string", "slug": "string | null" }` — `slug` is auto-generated from `name` if omitted (lowercased, hyphenated), with a random-suffix retry on a collision.
 
 **Response (201):** the created `Tenant`, `status` defaulted to `"active"`. Also logs a real `ActivityEvent` (`tenant_created`) server-side, same pattern as customers/projects/quotes.
+
+---
+
+## Invitation routes (`app/invitations/router.py`) — added Sprint 011 (ADR-028)
+
+The first module that lets a tenant have more than one user, and the first place `require_role(UserRole.OWNER)` (Sprint 010, ADR-027) is actually attached to a route. `POST`/`GET`/`DELETE /api/v1/invitations*` require `Authorization: Bearer <token>` **and** an `Owner` role — `403` (`{"detail": "Insufficient permissions"}`) for a valid token belonging to a `Staff` user. The two `/token/{token}` routes are deliberately public — an invitee has no account yet.
+
+### `POST /api/v1/invitations`
+
+Creates a pending invitation for an email address. Always invites as `Staff` — `InvitationCreate` has no `role` field (see ADR-028 for why). Returns the one-time raw token; it is never retrievable again after this response (only its SHA-256 hash is persisted).
+
+**Request body** (`InvitationCreate`): `{ "email": "newhire@example.com" }`
+
+**Response (201)** (`InvitationCreateOut`):
+```json
+{
+  "id": "...", "tenant_id": "...", "email": "newhire@example.com", "role": "Staff",
+  "status": "pending", "invited_by_user_id": "...", "expires_at": "2026-08-21T00:37:36Z",
+  "created_at": "2026-08-14T00:37:36Z", "token": "<one-time raw token, only ever returned here>"
+}
+```
+**Response (409):** `{ "detail": "A user with that email already exists." }`, or `{ "detail": "An invitation is already pending for this email." }`.
+
+### `GET /api/v1/invitations`
+
+| Query param | Type | Default |
+|---|---|---|
+| `status_filter` | string \| null | none — no filter |
+
+**Response** — array of `InvitationOut` (same shape as `POST`'s response, minus `token`), most recent first, scoped to the caller's tenant. `status` reflects `"expired"` for a still-`"pending"` row whose `expires_at` has passed, even though nothing was written back to the row (derived at read time — see ADR-028).
+
+### `DELETE /api/v1/invitations/{invitation_id}`
+
+Revokes a pending invitation.
+
+**Response (200):** the updated `InvitationOut` (`status: "revoked"`).
+**Response (404):** `{ "detail": "Invitation not found" }` — also returned (not `403`) for an invitation belonging to a different tenant, so a cross-tenant lookup can't confirm another tenant's invitation exists.
+
+### `GET /api/v1/invitations/token/{token}` — public, no auth
+
+What an unauthenticated invitee sees before deciding whether to accept.
+
+**Response (200)** (`InvitationPublicOut`): `{ "email": "...", "role": "Staff", "tenant_name": "...", "status": "pending", "expires_at": "..." }` — no internal IDs.
+**Response (404):** `{ "detail": "Invitation not found" }` — unknown token.
+
+### `POST /api/v1/invitations/token/{token}/accept` — public, no auth
+
+Creates the `Staff` user (via `app.auth.service.auth_service.create_user()`, the same primitive `signup()` uses) and signs them in immediately — same response shape as `/auth/login`.
+
+**Request body** (`AcceptInvitationRequest`): `{ "name": "string", "password": "string" }`
+
+**Response (200)** (`TokenResponse`) — same shape as `/auth/login`, `user.role` is `"Staff"`.
+**Response (404):** `{ "detail": "Invitation not found" }` — unknown token.
+**Response (409):** one of `{ "detail": "This invitation has been revoked." }`, `{ "detail": "This invitation has already been used." }`, `{ "detail": "This invitation link has expired." }`, or `{ "detail": "A user with that email already exists." }` (the email was registered through a separate path between invite and accept).
 
 ---
 
@@ -408,6 +464,11 @@ Marks one notification as read.
 | GET | `/api/v1/tenants` | Sprint 008 | Yes | **Yes** (existing single-tenant gate) |
 | POST | `/api/v1/tenants` | Sprint 008 | Yes | **Yes** (existing single-tenant gate) |
 | GET | `/api/v1/tenants/{tenant_id}` | Sprint 008 | Yes | **Yes** (existing single-tenant gate) |
+| POST | `/api/v1/invitations` | Sprint 011 | Yes | **Yes** (`require_role(OWNER)`) |
+| GET | `/api/v1/invitations` | Sprint 011 | Yes | **Yes** (`require_role(OWNER)`) |
+| DELETE | `/api/v1/invitations/{invitation_id}` | Sprint 011 | Yes | **Yes** (`require_role(OWNER)`) |
+| GET | `/api/v1/invitations/token/{token}` | Sprint 011 | Yes | No (invitee has no account yet) |
+| POST | `/api/v1/invitations/token/{token}/accept` | Sprint 011 | Yes | No (issues the token) |
 | POST | `/api/v1/process` | Initial | No | No |
 | POST | `/api/v1/quote` | Initial | Yes — Postgres (Sprint 007) | No |
 | POST | `/api/v1/estimate` | Initial | Yes — Postgres (Sprint 007) | No |

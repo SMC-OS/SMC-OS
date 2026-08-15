@@ -2,6 +2,12 @@ import type { ActivityEvent, ActivityType } from "@/types/activity";
 import type { AuthUser, LoginResponse, SignupRequest } from "@/types/auth";
 import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
+import type {
+  AcceptInvitationRequest,
+  InvitationCreateOut,
+  InvitationOut,
+  InvitationPublicOut,
+} from "@/types/invitation";
 import type { AppNotification } from "@/types/notification";
 import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
 import type { AIQuoteDraft, Quote, QuoteRequest, QuoteResult } from "@/types/quote";
@@ -113,6 +119,29 @@ export const api = {
     }),
 
   getMe: () => request<AuthUser>("/auth/me"),
+
+  // Sprint 011 — Owner-only (require_role(OWNER) server-side; a Staff
+  // caller gets a 403 handled by the caller, same as any other ApiError).
+  createInvitation: (email: string) =>
+    request<InvitationCreateOut>("/invitations", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  getInvitations: () => request<InvitationOut[]>("/invitations"),
+
+  revokeInvitation: (id: string) =>
+    request<InvitationOut>(`/invitations/${id}`, { method: "DELETE" }),
+
+  // Public — no token required, the invitee has no account yet.
+  getInvitationByToken: (token: string) =>
+    request<InvitationPublicOut>(`/invitations/token/${token}`),
+
+  acceptInvitation: (token: string, data: AcceptInvitationRequest) =>
+    request<LoginResponse>(`/invitations/token/${token}/accept`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   getCustomers: (limit = 20) =>
     request<Customer[]>(`/customers?limit=${limit}`),

@@ -137,9 +137,42 @@ class User(Base):
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    # Sprint 010 — constrained to app.auth.models.UserRole's values at the
+    # Pydantic/API boundary, same convention as Project.status/ProjectStatus.
+    # Still a plain String column, no DB-level enum or CHECK constraint.
     role: Mapped[str | None] = mapped_column(String, nullable=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
 
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Invitation(Base):
+    """A pending offer to join a tenant as a Staff user. Sprint 011 — the
+    first table that lets a tenant have more than one user. No
+    relationship() (repo convention) — tenant_id/invited_by_user_id are
+    plain FK columns, resolved via explicit crud lookups.
+
+    status is one of "pending" | "accepted" | "revoked" — plain String,
+    same convention as User.role/Project.status. "expired" is derived at
+    read time from expires_at, not stored. See docs/DECISIONS.md ADR-028.
+    """
+
+    __tablename__ = "invitations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False
+    )
+    invited_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="pending")
+
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

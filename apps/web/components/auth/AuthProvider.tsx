@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { clearToken, getToken, setToken } from "@/lib/auth-storage";
 import type { SignupRequest } from "@/types/auth";
+import type { AcceptInvitationRequest } from "@/types/invitation";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
@@ -16,8 +17,14 @@ interface AuthContextValue {
   // Sprint 009 — the signed-in user's company name, null until resolved
   // (no token, or the token turned out to be invalid/expired).
   tenantName: string | null;
+  // Sprint 011 — "Owner" | "Staff" | null, used to gate the invitations UI
+  // client-side (the server enforces this for real via require_role()).
+  role: string | null;
   login: (email: string, password: string) => Promise<void>;
   signup: (data: SignupRequest) => Promise<void>;
+  // Sprint 011 — accepting a Staff invitation signs the new user straight
+  // in, same shape as login()/signup().
+  acceptInvite: (token: string, data: AcceptInvitationRequest) => Promise<void>;
   logout: () => void;
 }
 
@@ -27,6 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [tenantName, setTenantName] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
     // One-time sync from a browser-only API (localStorage isn't available
@@ -45,7 +53,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // on a 401).
     api
       .getMe()
-      .then((me) => setTenantName(me.tenant_name))
+      .then((me) => {
+        setTenantName(me.tenant_name);
+        setRole(me.role);
+      })
       .catch(() => setIsAuthenticated(false))
       .finally(() => setIsReady(true));
   }, []);
@@ -55,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(response.access_token);
     setIsAuthenticated(true);
     setTenantName(response.user.tenant_name);
+    setRole(response.user.role);
   }
 
   async function signup(data: SignupRequest) {
@@ -62,17 +74,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(response.access_token);
     setIsAuthenticated(true);
     setTenantName(response.user.tenant_name);
+    setRole(response.user.role);
+  }
+
+  async function acceptInvite(token: string, data: AcceptInvitationRequest) {
+    const response = await api.acceptInvitation(token, data);
+    setToken(response.access_token);
+    setIsAuthenticated(true);
+    setTenantName(response.user.tenant_name);
+    setRole(response.user.role);
   }
 
   function logout() {
     clearToken();
     setIsAuthenticated(false);
     setTenantName(null);
+    setRole(null);
   }
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated, isReady, tenantName, login, signup, logout }}
+      value={{
+        isAuthenticated,
+        isReady,
+        tenantName,
+        role,
+        login,
+        signup,
+        acceptInvite,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>

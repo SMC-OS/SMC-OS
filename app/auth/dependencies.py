@@ -10,6 +10,15 @@ the same way a missing/invalid token is — a clean cutover, not a dual-mode
 shim (see app/auth/security.py's docstring). The DB row fetched below is
 still the actual source of truth for `user.tenant_id`; the claim is only
 validated for shape here, not substituted for the DB value.
+
+Sprint 010 — adds require_role(), a permission-checking dependency built
+on top of get_current_user. Not attached to any route yet: every user in
+the system today is a UserRole.OWNER (Sprint 011's invitations are what
+first make a Staff user possible), so there is nothing a role check could
+meaningfully restrict yet. Shipped as inert machinery — same "ship it,
+prove it doesn't break anything, enforce later" shape as this file's own
+Sprint 003 -> Sprint 004 history. See docs/DECISIONS.md's new ADR and
+docs/SPRINTS/sprint-010.md.
 """
 
 import uuid
@@ -19,6 +28,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.auth.models import UserRole
 from app.auth.security import decode_access_token
 from app.database import crud
 from app.database.database import get_db
@@ -48,3 +58,24 @@ def get_current_user(
     if user is None:
         raise credentials_error
     return user
+
+
+def require_role(*allowed_roles: UserRole):
+    """Dependency factory — returns a FastAPI dependency that only lets a
+    request through if the current user's role is one of `allowed_roles`.
+
+    Not wired into any route in Sprint 010 (see this module's docstring).
+    Rejects with 403, not 401: reaching this check means the token was
+    already valid (get_current_user succeeded), so the failure is "not
+    authorized for this action," not "not authenticated."
+    """
+
+    def checker(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in {role.value for role in allowed_roles}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions",
+            )
+        return current_user
+
+    return checker
