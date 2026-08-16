@@ -76,8 +76,13 @@ app/
 │
 ├── portal/                    # ✅ Sprint 013 — read-only client portal, no users row (ADR-030)
 │   ├── models.py                #    PortalLinkCreate, PortalLinkOut, PortalLinkCreateOut (+raw token), PortalProjectOut, PortalQuoteOut, PortalPublicOut
-│   ├── service.py                 #    PortalService — create_link/list_links/revoke_link/get_public_view; same hashed-token convention as invitations, but reusable (no "accepted" state); CustomerNotFoundError enforces tenant ownership of customer_id; create_link() logs an ActivityEvent (Sprint 014) — revoke deliberately does not
-│   └── router.py                   #    APIRouter: POST/GET /portal-links, DELETE /portal-links/{id} — Depends(get_current_user), any role, NOT Owner-only; GET /portal-links/token/{token} — public
+│   ├── service.py                 #    PortalService — create_link/list_links/revoke_link/get_public_view/get_customer_quote; Sprint 016 adds list_customer_documents/get_customer_document, same active-token + tenant+customer match pattern as get_customer_quote; CustomerNotFoundError enforces tenant ownership of customer_id; create_link() logs an ActivityEvent (Sprint 014) — revoke deliberately does not
+│   └── router.py                   #    APIRouter: POST/GET /portal-links, DELETE /portal-links/{id} — Depends(get_current_user), any role, NOT Owner-only; GET /portal-links/token/{token} — public; GET /portal-links/token/{token}/invoice/{quote_id} — public PDF download; Sprint 016 adds GET .../documents and .../documents/{id}/download — public, forced-attachment downloads, no require_role
+│
+├── documents/                 # ✅ Sprint 016 — client portal document upload/download, local disk (ADR-032)
+│   ├── models.py                #    DocumentOut (excludes storage_filename — never exposed to any client)
+│   ├── service.py                 #    DocumentService — upload_document (20MB cap enforced against actual bytes, extension allowlist, generated uuid4() storage filename)/list_documents/get_document/file_path
+│   └── router.py                   #    APIRouter: POST/GET /documents, GET /documents/{id}/download — Depends(get_current_user), any role, NOT Owner-only; no public routes here (those live on app/portal/router.py, see above)
 │
 ├── users/                     # ✅ Sprint 015 — team management: list team, deactivate a teammate (ADR-031)
 │   ├── models.py                #    TeamMemberOut (named to avoid colliding with app.auth.models.UserOut)
@@ -235,7 +240,8 @@ apps/web/
 | `app.materials` | Database-backed material catalogue (list, lookup by name+thickness) | ✅ Sprint 005 — internal only, no route |
 | `app.tenants` | `tenants` table CRUD (list/get/create) — schema/plumbing only, not yet tied to auth or data isolation | ✅ Sprint 008 |
 | `app.invitations` | Staff invitations — create/list/revoke (Owner-only, `require_role`) + public token-view/accept. First module letting a tenant have >1 user; reuses `app.auth.service.auth_service.create_user()` | ✅ Sprint 011 |
-| `app.portal` | Read-only client portal — create/list/revoke a reusable per-customer link (any tenant user, not Owner-only) + public token-view. No `users` row, no login; tenant-scoped from the start (ADR-029/030) | ✅ Sprint 013 |
+| `app.portal` | Read-only client portal — create/list/revoke a reusable per-customer link (any tenant user, not Owner-only) + public token-view + public invoice/document download. No `users` row, no login; tenant-scoped from the start (ADR-029/030) | ✅ Sprint 013 (+ documents, Sprint 016) |
+| `app.documents` | Client portal document upload/download — staff upload a file against a customer (any tenant user, not Owner-only); local-disk storage, generated filename, explicit extension allowlist, 20MB cap; public download routes live on `app.portal`, not here (ADR-032) | ✅ Sprint 016 |
 | `app.users` | Team management — list a tenant's users, deactivate a Staff member's access (Owner-only, `require_role`). Soft-deactivation only, no row delete; deactivation also ends that user's already-issued token on its next request (`get_current_user`) | ✅ Sprint 015 |
 | `app.data` | `services.py` (still live); `materials.py`/`pricing.py` superseded by `app.materials` | ⚠ mixed — see §2.1 |
 | `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
@@ -326,8 +332,8 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | `/quotes/[id]` | Quote detail | ✅ Sprint 007 — full price breakdown, linked customer, Download Invoice |
 | `/quotes/new` | New Quote | ✅ Real pricing calculation, persists, optional customer link, Download Invoice once calculated (public — matches `POST /quote`'s auth posture; download itself needs sign-in) |
 | `/customers` | Customers index | ✅ Sprint 004 — real list from the database, redirects to `/login` if not authenticated |
-| `/customers/[id]` | Customer detail | ✅ Sprint 004 — read-only, plus (Sprint 013) a "Client portal" card to generate/copy a read-only portal link, plus (Sprint 014) that same card now lists existing links with status and lets staff revoke an active one |
-| `/portal/[token]` | Client portal | ✅ Sprint 013 — public, no auth: a customer's own projects/quotes via `GET /api/v1/portal-links/token/{token}` — same fetch/loading/status-conditional shell as `/invite/[token]`, no form |
+| `/customers/[id]` | Customer detail | ✅ Sprint 004 — read-only, plus (Sprint 013) a "Client portal" card to generate/copy a read-only portal link, plus (Sprint 014) that same card now lists existing links with status and lets staff revoke an active one, plus (Sprint 016) a "Documents" card — upload a file, list/download previously uploaded ones |
+| `/portal/[token]` | Client portal | ✅ Sprint 013 — public, no auth: a customer's own projects/quotes via `GET /api/v1/portal-links/token/{token}` — same fetch/loading/status-conditional shell as `/invite/[token]`, no form. Sprint 016 adds a Documents section — a separate, independent fetch of `GET .../documents` so a failed documents load can't block the projects/quotes view |
 | `/customers/new` | New Customer | ✅ Sprint 004 — real persistence, redirects to the new customer's detail page |
 | `/projects` | Projects index | ✅ Sprint 006 — real list, stage Badge per row, redirects to `/login` if not authenticated |
 | `/projects/[id]` | Project detail | ✅ Sprint 006 — shows linked customer/notes, "Advance to \<next stage\>" control |

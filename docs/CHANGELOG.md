@@ -4,6 +4,28 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
+## 2026-08-16 — (uncommitted) — Sprint #016 — Client Portal Documents (Upload/Download)
+
+Full detail in `docs/DECISIONS.md` ADR-032 and `docs/SPRINTS/sprint-016.md`.
+
+**Scope note:** Closes the "documents" half of the client-portal gap deferred since Sprint 013 (ADR-030), named again in Sprint 014's and Sprint 015's follow-ups — three sprints running. Messaging remains deferred. `docs/ROADMAP.md`'s stale Sprint 016 line (AI features/observability/security/billing) is untouched and unaddressed.
+
+**Backend**
+- Migration `b0bddd0fb66b`: new `documents` table (additive-only). New setting `upload_dir` (local disk). New dependency `python-multipart==0.0.20`, required for `UploadFile`, flagged explicitly.
+- New `app/documents/` module — `POST`/`GET /api/v1/documents`, `GET /api/v1/documents/{id}/download`, none `require_role`-gated. Upload security policy: 20MB cap enforced against actual bytes, explicit extension allowlist (not denylist), generated `uuid4()` storage filename never derived from user input, `storage_filename` never exposed in any response.
+- Two new public routes on the **existing** `app/portal/router.py` (not a new router) — `GET /token/{token}/documents` and `.../download` — mirroring the existing invoice-download route's exact shape.
+
+**Frontend**
+- `apps/web/app/customers/[id]/page.tsx` gains a Documents card (upload + list + download).
+- `apps/web/app/portal/[token]/page.tsx` gains a Documents section (list + download, no login).
+- New `apps/web/types/document.ts`; `apps/web/lib/api.ts` gains 5 new methods, downloads use the existing blob-fetch-and-save pattern.
+
+**Tests**
+- New `tests/test_documents.py` (12 tests): upload success/cross-tenant/oversized/disallowed-extension, staff list/download/cross-tenant-download/unknown-document, portal list/download/cross-customer-rejection/revoked-link-rejection.
+- Full suite: 157/157 passing.
+
+**Verified:** `pytest` (157/157), `alembic check` ("No new upgrade operations detected"), a clean `downgrade -1`/`upgrade head` round-trip, `pnpm lint` (0 errors/warnings), `pnpm build` (TypeScript clean, 15 routes, same as Sprint 015 baseline), `git diff --check` (clean), and a manual smoke test against the real running app confirming upload/list/download/rejection/revocation end-to-end, including a direct on-disk check that stored filenames are generated UUIDs, never original names.
+
 ## 2026-08-15 — (uncommitted) — Sprint #015 — Team Management (View Team, Deactivate a Teammate)
 
 Full detail in `docs/DECISIONS.md` ADR-031 and `docs/SPRINTS/sprint-015.md`.

@@ -322,6 +322,57 @@ Downloads the same PDF invoice `GET /api/v1/quotes/{quote_id}/invoice` produces,
 **Response (200):** `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="invoice-<id>.pdf"`, raw PDF bytes.
 **Response (404):** `{ "detail": "Invoice not found" }` — unknown token, an inactive (expired/revoked) token, an unknown `quote_id`, or a quote belonging to a different customer/tenant. All four cases return the identical response, so a caller can't distinguish "bad token" from "not your quote."
 
+### `GET /api/v1/portal-links/token/{token}/documents` — public, no auth — added Sprint 016 (ADR-032)
+
+Lists documents uploaded against the token's own customer. Same active-token requirement as the invoice route above — a revoked/expired link lists none.
+
+**Response (200):** array of `DocumentOut` (see Document routes below).
+**Response (404):** `{ "detail": "Portal link not found" }` — unknown or inactive token.
+
+### `GET /api/v1/portal-links/token/{token}/documents/{document_id}/download` — public, no auth — added Sprint 016 (ADR-032)
+
+Downloads one document, reusing `app/documents/service.py`'s `file_path()`. Only reachable via a valid, active link, and only for a document belonging to that link's own `customer_id` — mirrors the invoice route's "match both tenant_id AND customer_id" pattern exactly.
+
+**Response (200):** `Content-Type: <the stored content_type>`, `Content-Disposition: attachment; filename="<original_filename>"`, raw file bytes.
+**Response (404):** `{ "detail": "Document not found" }` — unknown/inactive token, unknown `document_id`, or a document belonging to a different customer. All cases return the identical response.
+
+---
+
+## Document routes (`app/documents/router.py`) — added Sprint 016 (ADR-032)
+
+Client portal document upload/download — staff upload a file against a customer, downloadable by staff and (via the two public routes above) by that customer through their portal link. `Authorization: Bearer <token>` required on all three routes below, **not** `require_role`-gated — any authenticated tenant user, matching the customer/project/portal-link creation precedent. Upload security policy: 20MB max, enforced against actual bytes written; an explicit extension allowlist (`.pdf .doc .docx .xls .xlsx .txt .jpg .jpeg .png .heic .webp`); the stored filename is always a generated `uuid4()`, never the client-supplied name (path traversal prevented by construction); the original filename is retained only as display/`Content-Disposition` metadata. See ADR-032 for the full rationale.
+
+### `POST /api/v1/documents`
+
+Uploads a file against a customer. `multipart/form-data`; `customer_id` is a query parameter, the file itself is the `file` form field.
+
+**Response (201)** (`DocumentOut`):
+```json
+{
+  "id": "...", "tenant_id": "...", "customer_id": "...", "uploaded_by_user_id": "...",
+  "original_filename": "Contract Draft.pdf", "content_type": "application/pdf",
+  "size_bytes": 48213, "created_at": "2026-08-16T14:20:06Z"
+}
+```
+`storage_filename` (the on-disk name) is never included in this or any other response.
+
+**Response (404):** `{ "detail": "Customer not found" }` — `customer_id` must belong to the caller's own tenant (ADR-029's relationship-linkage-bypass check).
+**Response (413):** `{ "detail": "File exceeds the 20MB limit" }` — checked against actual bytes written, not a trusted `Content-Length` header.
+**Response (422):** `{ "detail": "File type '.exe' is not allowed" }` — extension not on the allowlist.
+
+### `GET /api/v1/documents`
+
+| Query param | Type | Default |
+|---|---|---|
+| `customer_id` | uuid \| null | none — no filter, lists every document for the caller's tenant |
+
+**Response** — array of `DocumentOut`, most recent first, scoped to the caller's tenant.
+
+### `GET /api/v1/documents/{document_id}/download`
+
+**Response (200):** `Content-Type: <the stored content_type>`, `Content-Disposition: attachment; filename="<original_filename>"`, raw file bytes.
+**Response (404):** `{ "detail": "Document not found" }` — unknown id, or a document belonging to a different tenant (not `403` — a cross-tenant lookup can't confirm another tenant's document exists).
+
 ---
 
 ## User management routes (`app/users/router.py`) — added Sprint 015 (ADR-031)
@@ -561,6 +612,11 @@ Marks one notification as read.
 | DELETE | `/api/v1/portal-links/{portal_link_id}` | Sprint 013 | Yes | **Yes** |
 | GET | `/api/v1/portal-links/token/{token}` | Sprint 013 | Yes | No (customer has no account) |
 | GET | `/api/v1/portal-links/token/{token}/invoice/{quote_id}` | Sprint 013 | Yes | No (customer has no account) |
+| POST | `/api/v1/documents` | Sprint 016 | Yes | **Yes** (any tenant user, not Owner-only) |
+| GET | `/api/v1/documents` | Sprint 016 | Yes | **Yes** |
+| GET | `/api/v1/documents/{document_id}/download` | Sprint 016 | Yes | **Yes** |
+| GET | `/api/v1/portal-links/token/{token}/documents` | Sprint 016 | Yes | No (customer has no account) |
+| GET | `/api/v1/portal-links/token/{token}/documents/{document_id}/download` | Sprint 016 | Yes | No (customer has no account) |
 | GET | `/api/v1/users` | Sprint 015 | Yes | **Yes** (`require_role(OWNER)`) |
 | POST | `/api/v1/users/{user_id}/deactivate` | Sprint 015 | Yes | **Yes** (`require_role(OWNER)`) |
 | POST | `/api/v1/process` | Initial | No | No |
