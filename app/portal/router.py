@@ -14,12 +14,15 @@ the tenant can create/list/revoke a portal link.
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.customers.service import customer_service
 from app.database.database import get_db
 from app.database.models import User
+from app.documents.models import DocumentOut
+from app.documents.service import document_service
 from app.portal.models import (
     PortalLinkCreate,
     PortalLinkCreateOut,
@@ -124,4 +127,25 @@ def download_portal_invoice(token: str, quote_id: uuid.UUID, db: Session = Depen
         headers={
             "Content-Disposition": f'attachment; filename="invoice-{str(quote.id)[:8]}.pdf"'
         },
+    )
+
+
+@router.get("/token/{token}/documents", response_model=list[DocumentOut])
+def list_portal_documents(token: str, db: Session = Depends(get_db)):
+    try:
+        return portal_service.list_customer_documents(db, token)
+    except PortalLinkNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portal link not found")
+
+
+@router.get("/token/{token}/documents/{document_id}/download")
+def download_portal_document(token: str, document_id: uuid.UUID, db: Session = Depends(get_db)):
+    try:
+        row = portal_service.get_customer_document(db, token, document_id)
+    except PortalLinkNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    return FileResponse(
+        path=document_service.file_path(row),
+        media_type=row.content_type,
+        filename=row.original_filename,
     )

@@ -29,7 +29,7 @@ from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
 from app.core.config import settings
 from app.database import crud
-from app.database.models import Customer, PortalLink, Project, Quote, Tenant
+from app.database.models import Customer, Document, PortalLink, Project, Quote, Tenant
 
 
 class CustomerNotFoundError(Exception):
@@ -149,6 +149,33 @@ class PortalService:
         if quote is None or quote.customer_id != row.customer_id:
             raise PortalLinkNotFoundError(quote_id)
         return quote
+
+    def list_customer_documents(self, db: Session, token: str) -> list[Document]:
+        """Same active-token requirement as get_customer_quote — a
+        revoked/expired link lists no documents, not an empty-but-200
+        equivalent of get_public_view()'s convention (there is no
+        meaningful "still show something" state for a document list on a
+        dead link)."""
+        row = self.get_link_by_token(db, token)
+        if row is None or self.derive_status(row) != "active":
+            raise PortalLinkNotFoundError(token)
+        return crud.list_documents(db, row.tenant_id, customer_id=row.customer_id)
+
+    def get_customer_document(self, db: Session, token: str, document_id: uuid.UUID) -> Document:
+        """Mirrors get_customer_quote's exact shape: the document must
+        belong to both the token's tenant_id AND its customer_id — not
+        tenant alone, or one portal link could pull a different
+        customer's document within the same tenant. Every failure raises
+        the same PortalLinkNotFoundError so a caller can't distinguish
+        "bad token" from "document not yours.\""""
+        row = self.get_link_by_token(db, token)
+        if row is None or self.derive_status(row) != "active":
+            raise PortalLinkNotFoundError(token)
+
+        document = crud.get_document_by_id(db, document_id)
+        if document is None or document.tenant_id != row.tenant_id or document.customer_id != row.customer_id:
+            raise PortalLinkNotFoundError(document_id)
+        return document
 
 
 portal_service = PortalService()
