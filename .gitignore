@@ -14,6 +14,9 @@ env/
 *SIMO-OS.VENVA*/
 quote.pdf
 
+# Sprint 016 — local disk storage for uploaded client-portal documents
+uploads/
+
 # ---- Node / dependencies ----
 node_modules/
 .pnp

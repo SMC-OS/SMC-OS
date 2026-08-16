@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     # duration of a job so a customer can keep checking status.
     portal_link_expire_days: int = 90
 
+    # Sprint 016 (docs/DECISIONS.md ADR-032) — local disk directory for
+    # uploaded client-portal documents. Created on startup if missing.
+    # Deliberately NOT S3/object storage this sprint — accepted limitation:
+    # does not survive a redeploy to a different host, does not scale past
+    # one running instance. See ADR-032.
+    upload_dir: str = "./uploads"
+
     # AI Quotation Generator v1 — optional. The app runs fully normally with
     # both unset; app/quotes/ai_draft.py's AIDraftService only ever
     # constructs an OpenAI client lazily, on first real use, and only if

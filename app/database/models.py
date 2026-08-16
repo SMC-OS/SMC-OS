@@ -222,6 +222,40 @@ class PortalLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Document(Base):
+    """A file uploaded by staff against a customer, downloadable by staff
+    and via that customer's portal link (Sprint 016, ADR-032). Customer-
+    level, not project-level — same reasoning as PortalLink (ADR-030): one
+    customer's document list serves all their concurrent jobs, no
+    project-picker UI needed. storage_filename is a generated UUID-based
+    name, never the user-supplied original_filename — original_filename is
+    display/metadata only, never interpreted as a filesystem path (path
+    traversal prevention by construction, see app/documents/service.py).
+    No relationship() (repo convention) — every FK here is a plain column,
+    resolved via explicit crud lookups.
+    """
+
+    __tablename__ = "documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False
+    )
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False
+    )
+    uploaded_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+
+    original_filename: Mapped[str] = mapped_column(String, nullable=False)
+    storage_filename: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    content_type: Mapped[str] = mapped_column(String, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ActivityLog(Base):
     """Table-ification of app/activity/models.py's ActivityEvent.
 
