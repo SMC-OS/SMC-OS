@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Customer } from "@/types/customer";
+import type { DocumentOut } from "@/types/document";
 import type { PortalLinkCreateOut, PortalLinkOut } from "@/types/portal";
 
 const PORTAL_LINK_STATUS_TONE: Record<string, "success" | "neutral" | "warning"> = {
@@ -60,6 +61,23 @@ export default function CustomerDetailPage() {
       );
   }
 
+  // Sprint 016 — client-portal documents. Customer-level, not
+  // project-level, matching PortalLink's precedent.
+  const [documents, setDocuments] = useState<DocumentOut[] | null>(null);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+
+  function loadDocuments(customerId: string) {
+    setDocumentsError(null);
+    api
+      .getDocuments(customerId)
+      .then(setDocuments)
+      .catch((err) =>
+        setDocumentsError(err instanceof ApiError ? err.message : "Something went wrong.")
+      );
+  }
+
   useEffect(() => {
     if (!isReady) return;
     if (!isAuthenticated) {
@@ -71,6 +89,7 @@ export default function CustomerDetailPage() {
       .then((c) => {
         setCustomer(c);
         loadPortalLinks(c.id);
+        loadDocuments(c.id);
       })
       .catch((err) =>
         setError(
@@ -123,6 +142,38 @@ export default function CustomerDetailPage() {
     } finally {
       setRevokingId(null);
     }
+  }
+
+  async function handleUploadDocument(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !customer) return;
+    setUploading(true);
+    setDocumentsError(null);
+    try {
+      await api.uploadDocument(customer.id, file);
+      loadDocuments(customer.id);
+    } catch (err) {
+      setDocumentsError(err instanceof ApiError ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleDownloadDocument(doc: DocumentOut) {
+    setDownloadingDocId(doc.id);
+    try {
+      await api.downloadDocument(doc.id, doc.original_filename);
+    } catch (err) {
+      setDocumentsError(err instanceof ApiError ? err.message : "Download failed.");
+    } finally {
+      setDownloadingDocId(null);
+    }
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   return (
@@ -261,6 +312,64 @@ export default function CustomerDetailPage() {
                   ))}
                 </ul>
               </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {customer && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Documents</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="border-b border-border p-5">
+              <label className="flex items-center gap-3">
+                <span className="text-sm text-muted">
+                  {uploading ? "Uploading…" : "Upload a document"}
+                </span>
+                <input
+                  type="file"
+                  onChange={handleUploadDocument}
+                  disabled={uploading}
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.heic,.webp"
+                  className="text-sm text-foreground"
+                />
+              </label>
+            </div>
+            {documentsError && (
+              <p className="p-5 text-sm text-danger">{documentsError}</p>
+            )}
+            {documents === null && !documentsError && (
+              <p className="p-5 text-center text-sm text-muted">Loading…</p>
+            )}
+            {documents && documents.length === 0 && (
+              <p className="p-5 text-center text-sm text-muted">No documents yet.</p>
+            )}
+            {documents && documents.length > 0 && (
+              <ul className="divide-y divide-border">
+                {documents.map((doc) => (
+                  <li key={doc.id} className="flex items-center gap-3 px-5 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {doc.original_filename}
+                      </p>
+                      <p className="truncate text-xs text-muted">
+                        {formatFileSize(doc.size_bytes)} · {formatDate(doc.created_at)}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={downloadingDocId === doc.id}
+                      onClick={() => handleDownloadDocument(doc)}
+                    >
+                      {downloadingDocId === doc.id ? "Downloading…" : "Download"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
             )}
           </CardContent>
         </Card>

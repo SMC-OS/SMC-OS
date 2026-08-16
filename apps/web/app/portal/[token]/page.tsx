@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ApiError, api } from "@/lib/api";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
 import { formatCurrencyGBP } from "@/lib/utils";
+import type { DocumentOut } from "@/types/document";
 import type { PortalPublicOut } from "@/types/portal";
 import type { ProjectStatus } from "@/types/project";
 
@@ -33,6 +34,12 @@ export default function ClientPortalPage() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
+  // Sprint 016 — documents are a separate endpoint, not bundled into
+  // PortalPublicOut, so they get their own state and fetch.
+  const [documents, setDocuments] = useState<DocumentOut[] | null>(null);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+
   async function handleDownloadInvoice(quoteId: string) {
     setDownloadingId(quoteId);
     setDownloadError(null);
@@ -42,6 +49,18 @@ export default function ClientPortalPage() {
       setDownloadError("Could not download that invoice. Try again.");
     } finally {
       setDownloadingId(null);
+    }
+  }
+
+  async function handleDownloadDocument(doc: DocumentOut) {
+    setDownloadingDocId(doc.id);
+    setDocumentsError(null);
+    try {
+      await api.downloadPortalDocument(params.token, doc.id, doc.original_filename);
+    } catch {
+      setDocumentsError("Could not download that document. Try again.");
+    } finally {
+      setDownloadingDocId(null);
     }
   }
 
@@ -55,6 +74,12 @@ export default function ClientPortalPage() {
             ? "This link isn't valid."
             : "Something went wrong."
         )
+      );
+    api
+      .getPortalDocuments(params.token)
+      .then(setDocuments)
+      .catch((err) =>
+        setDocumentsError(err instanceof ApiError ? err.message : "Something went wrong.")
       );
   }, [params.token]);
 
@@ -170,6 +195,45 @@ export default function ClientPortalPage() {
               )}
               {downloadError && (
                 <p className="px-5 pb-3 text-sm text-danger">{downloadError}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Documents</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {documentsError && (
+                <p className="p-5 text-sm text-danger">{documentsError}</p>
+              )}
+              {documents && documents.length === 0 && (
+                <p className="p-5 text-center text-sm text-muted">No documents yet.</p>
+              )}
+              {documents && documents.length > 0 && (
+                <ul className="divide-y divide-border">
+                  {documents.map((doc) => (
+                    <li key={doc.id} className="flex items-center gap-3 px-5 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {doc.original_filename}
+                        </p>
+                        <p className="truncate text-xs text-muted">
+                          {formatDate(doc.created_at)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleDownloadDocument(doc)}
+                        disabled={downloadingDocId === doc.id}
+                      >
+                        {downloadingDocId === doc.id ? "Downloading…" : "Download"}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>

@@ -2,6 +2,7 @@ import type { ActivityEvent, ActivityType } from "@/types/activity";
 import type { AuthUser, LoginResponse, SignupRequest } from "@/types/auth";
 import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
+import type { DocumentOut } from "@/types/document";
 import type {
   AcceptInvitationRequest,
   InvitationCreateOut,
@@ -218,6 +219,46 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
+  // Sprint 016 — public, no token required, matches
+  // getPortalByToken/downloadPortalInvoice.
+  getPortalDocuments: (token: string) =>
+    request<DocumentOut[]>(`/portal-links/token/${token}/documents`),
+
+  downloadPortalDocument: async (
+    token: string,
+    documentId: string,
+    filename: string
+  ): Promise<void> => {
+    let res: Response;
+    try {
+      res = await fetch(
+        `${API_BASE_URL}/api/v1/portal-links/token/${token}/documents/${documentId}/download`
+      );
+    } catch {
+      throw new ApiError(
+        `Could not reach the API at /portal-links/token/${token}/documents/${documentId}/download`,
+        0
+      );
+    }
+
+    if (!res.ok) {
+      throw new ApiError(
+        `Request to /portal-links/token/${token}/documents/${documentId}/download failed with ${res.status}`,
+        res.status
+      );
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+
   getProjects: (limit = 20) => request<Project[]>(`/projects?limit=${limit}`),
 
   getProject: (id: string) => request<Project>(`/projects/${id}`),
@@ -274,6 +315,78 @@ export const api = {
     const link = document.createElement("a");
     link.href = url;
     link.download = `invoice-${id.slice(0, 8)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  // Sprint 016 — multipart upload, cannot reuse request()'s JSON-only
+  // Content-Type/body handling. Mirrors request()'s auth-header and
+  // 401-clearing behavior manually; browser sets the multipart
+  // Content-Type boundary automatically when body is a FormData instance
+  // (must NOT set Content-Type manually here).
+  uploadDocument: async (customerId: string, file: File): Promise<DocumentOut> => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("file", file);
+
+    let res: Response;
+    try {
+      res = await fetch(
+        `${API_BASE_URL}/api/v1/documents?customer_id=${customerId}`,
+        {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: formData,
+        }
+      );
+    } catch {
+      throw new ApiError(`Could not reach the API at /documents`, 0);
+    }
+
+    if (!res.ok) {
+      if (res.status === 401) clearToken();
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(
+        body.detail ?? `Request to /documents failed with ${res.status}`,
+        res.status
+      );
+    }
+    return res.json();
+  },
+
+  getDocuments: (customerId: string) =>
+    request<DocumentOut[]>(`/documents?customer_id=${customerId}`),
+
+  // Sprint 016 — same blob-download-and-save pattern as downloadInvoice,
+  // parameterized by filename since documents don't have a predictable
+  // name the way "invoice-<id>.pdf" does.
+  downloadDocument: async (id: string, filename: string): Promise<void> => {
+    const token = getToken();
+    let res: Response;
+
+    try {
+      res = await fetch(`${API_BASE_URL}/api/v1/documents/${id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch {
+      throw new ApiError(`Could not reach the API at /documents/${id}/download`, 0);
+    }
+
+    if (!res.ok) {
+      if (res.status === 401) clearToken();
+      throw new ApiError(
+        `Request to /documents/${id}/download failed with ${res.status}`,
+        res.status
+      );
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
