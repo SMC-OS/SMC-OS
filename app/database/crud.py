@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from app.database.models import (
     ActivityLog,
     Customer,
+    Document,
     Invitation,
     Material,
     NotificationRecord,
@@ -531,6 +532,48 @@ def update_portal_link_status(db: Session, portal_link_id: uuid.UUID, status: st
     db.commit()
     db.refresh(row)
     return row
+
+
+def create_document(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    customer_id: uuid.UUID,
+    uploaded_by_user_id: uuid.UUID,
+    original_filename: str,
+    storage_filename: str,
+    content_type: str,
+    size_bytes: int,
+) -> Document:
+    row = Document(
+        id=id,
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        uploaded_by_user_id=uploaded_by_user_id,
+        original_filename=original_filename,
+        storage_filename=storage_filename,
+        content_type=content_type,
+        size_bytes=size_bytes,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_document_by_id(db: Session, document_id: uuid.UUID) -> Document | None:
+    return db.get(Document, document_id)
+
+
+def list_documents(
+    db: Session, tenant_id: uuid.UUID, customer_id: uuid.UUID | None = None
+) -> list[Document]:
+    stmt = select(Document).where(Document.tenant_id == tenant_id)
+    if customer_id is not None:
+        stmt = stmt.where(Document.customer_id == customer_id)
+    stmt = stmt.order_by(Document.created_at.desc())
+    return list(db.scalars(stmt))
 
 
 def list_projects_by_customer(
