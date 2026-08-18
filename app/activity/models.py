@@ -21,6 +21,7 @@ class ActivityType(str, Enum):
     TENANT_CREATED = "tenant_created"
     PORTAL_LINK_CREATED = "portal_link_created"
     TEAM_MEMBER_DEACTIVATED = "team_member_deactivated"
+    CUSTOMER_MESSAGE_RECEIVED = "customer_message_received"
 
 
 class ActivityEventCreate(BaseModel):

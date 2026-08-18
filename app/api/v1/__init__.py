@@ -12,6 +12,7 @@ from app.auth.router import router as auth_router
 from app.customers.router import router as customers_router
 from app.documents.router import router as documents_router
 from app.invitations.router import router as invitations_router
+from app.messages.router import router as messages_router
 from app.portal.router import router as portal_router
 from app.projects.router import router as projects_router
 from app.quotes.router import router as quotes_router
@@ -24,6 +25,7 @@ api_router.include_router(auth_router)
 api_router.include_router(customers_router)
 api_router.include_router(documents_router)
 api_router.include_router(invitations_router)
+api_router.include_router(messages_router)
 api_router.include_router(portal_router)
 api_router.include_router(projects_router)
 api_router.include_router(quotes_router)

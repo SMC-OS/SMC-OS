@@ -29,7 +29,9 @@ from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
 from app.core.config import settings
 from app.database import crud
-from app.database.models import Customer, Document, PortalLink, Project, Quote, Tenant
+from app.database.models import Customer, Document, Message, PortalLink, Project, Quote, Tenant
+from app.notifications.models import NotificationCreate, NotificationType
+from app.notifications.service import notification_service
 
 
 class CustomerNotFoundError(Exception):
@@ -176,6 +178,51 @@ class PortalService:
         if document is None or document.tenant_id != row.tenant_id or document.customer_id != row.customer_id:
             raise PortalLinkNotFoundError(document_id)
         return document
+
+    def list_customer_messages(self, db: Session, token: str) -> list[Message]:
+        """Same active-token requirement as list_customer_documents — a
+        revoked/expired link lists no messages."""
+        row = self.get_link_by_token(db, token)
+        if row is None or self.derive_status(row) != "active":
+            raise PortalLinkNotFoundError(token)
+        return crud.list_messages_by_customer(db, row.tenant_id, row.customer_id)
+
+    def post_customer_message(self, db: Session, token: str, body: str) -> Message:
+        """Create a customer-authored message scoped entirely by the active token."""
+        row = self.get_link_by_token(db, token)
+        if row is None or self.derive_status(row) != "active":
+            raise PortalLinkNotFoundError(token)
+
+        message = crud.create_message(
+            db,
+            id=uuid.uuid4(),
+            tenant_id=row.tenant_id,
+            customer_id=row.customer_id,
+            sender_type="customer",
+            sender_user_id=None,
+            body=body,
+        )
+
+        customer = crud.get_customer_by_id(db, row.customer_id, row.tenant_id)
+        customer_name = customer.name if customer is not None else "A customer"
+        activity_service.log(
+            ActivityEventCreate(
+                type=ActivityType.CUSTOMER_MESSAGE_RECEIVED,
+                title="New message from a customer",
+                description=customer_name,
+            ),
+            tenant_id=row.tenant_id,
+        )
+        notification_service.create(
+            NotificationCreate(
+                title="New message",
+                message=f"{customer_name} sent a new message.",
+                type=NotificationType.INFO,
+            ),
+            tenant_id=row.tenant_id,
+        )
+
+        return message
 
 
 portal_service = PortalService()

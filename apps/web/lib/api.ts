@@ -9,6 +9,7 @@ import type {
   InvitationOut,
   InvitationPublicOut,
 } from "@/types/invitation";
+import type { MessageOut } from "@/types/message";
 import type { AppNotification } from "@/types/notification";
 import type { PortalLinkCreateOut, PortalLinkOut, PortalPublicOut } from "@/types/portal";
 import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
@@ -224,6 +225,18 @@ export const api = {
   getPortalDocuments: (token: string) =>
     request<DocumentOut[]>(`/portal-links/token/${token}/documents`),
 
+  // Sprint 017 — public, no token required. postPortalMessage is the
+  // first public write call this client ever makes (the customer's side
+  // of two-way portal messaging, ADR-033).
+  getPortalMessages: (token: string) =>
+    request<MessageOut[]>(`/portal-links/token/${token}/messages`),
+
+  postPortalMessage: (token: string, body: string) =>
+    request<MessageOut>(`/portal-links/token/${token}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    }),
+
   downloadPortalDocument: async (
     token: string,
     documentId: string,
@@ -392,4 +405,15 @@ export const api = {
     link.remove();
     URL.revokeObjectURL(url);
   },
+
+  // Sprint 017 — staff side of client-portal messaging. Any authenticated
+  // tenant user, not Owner-only, matching createPortalLink/uploadDocument.
+  getMessages: (customerId: string) =>
+    request<MessageOut[]>(`/messages?customer_id=${customerId}`),
+
+  postMessage: (customerId: string, body: string) =>
+    request<MessageOut>(`/messages?customer_id=${customerId}`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    }),
 };

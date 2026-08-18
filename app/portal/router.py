@@ -23,15 +23,21 @@ from app.database.database import get_db
 from app.database.models import User
 from app.documents.models import DocumentOut
 from app.documents.service import document_service
+from app.messages.models import MessageOut
 from app.portal.models import (
     PortalLinkCreate,
     PortalLinkCreateOut,
     PortalLinkOut,
+    PortalMessageCreate,
     PortalProjectOut,
     PortalPublicOut,
     PortalQuoteOut,
 )
-from app.portal.service import CustomerNotFoundError, PortalLinkNotFoundError, portal_service
+from app.portal.service import (
+    CustomerNotFoundError,
+    PortalLinkNotFoundError,
+    portal_service,
+)
 from app.quotes.pdf import PDFGenerator
 
 router = APIRouter(prefix="/portal-links", tags=["portal"])
@@ -149,3 +155,19 @@ def download_portal_document(token: str, document_id: uuid.UUID, db: Session = D
         media_type=row.content_type,
         filename=row.original_filename,
     )
+
+
+@router.get("/token/{token}/messages", response_model=list[MessageOut])
+def list_portal_messages(token: str, db: Session = Depends(get_db)):
+    try:
+        return portal_service.list_customer_messages(db, token)
+    except PortalLinkNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portal link not found")
+
+
+@router.post("/token/{token}/messages", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
+def post_portal_message(token: str, data: PortalMessageCreate, db: Session = Depends(get_db)):
+    try:
+        return portal_service.post_customer_message(db, token, data.body)
+    except PortalLinkNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portal link not found")

@@ -10,10 +10,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Field";
+import { usePolling } from "@/hooks/usePolling";
 import { ApiError, api } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Customer } from "@/types/customer";
 import type { DocumentOut } from "@/types/document";
+import type { MessageOut } from "@/types/message";
 import type { PortalLinkCreateOut, PortalLinkOut } from "@/types/portal";
 
 const PORTAL_LINK_STATUS_TONE: Record<string, "success" | "neutral" | "warning"> = {
@@ -33,7 +35,7 @@ function formatDate(isoTimestamp: string): string {
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAuthenticated, isReady } = useAuth();
+  const { isAuthenticated, isReady, userId } = useAuth();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,6 +101,23 @@ export default function CustomerDetailPage() {
         )
       );
   }, [isReady, isAuthenticated, router, params.id]);
+
+  // Sprint 017 (ADR-033) — two-way messaging on the customer's portal
+  // thread. Polled via the shared usePolling hook (ADR-004), same
+  // mechanism every other live panel uses — not a new pattern. Declared
+  // above the early return below so hook order stays stable regardless
+  // of auth state (rules-of-hooks).
+  const {
+    data: messages,
+    error: messagesError,
+    refetch: refetchMessages,
+  } = usePolling<MessageOut[]>(
+    () => (customer ? api.getMessages(customer.id) : Promise.resolve([])),
+    { enabled: Boolean(customer) }
+  );
+  const [messageBody, setMessageBody] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [sendMessageError, setSendMessageError] = useState<string | null>(null);
 
   if (!isReady || !isAuthenticated) return null;
 
@@ -174,6 +193,33 @@ export default function CustomerDetailPage() {
   function formatFileSize(bytes: number): string {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function formatMessageTime(isoTimestamp: string): string {
+    return new Date(isoTimestamp).toLocaleString(undefined, {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!customer) return;
+    if (!messageBody.trim()) return;
+
+    setSendingMessage(true);
+    setSendMessageError(null);
+    try {
+      await api.postMessage(customer.id, messageBody);
+      setMessageBody("");
+      await refetchMessages();
+    } catch (err) {
+      setSendMessageError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setSendingMessage(false);
+    }
   }
 
   return (
@@ -370,6 +416,72 @@ export default function CustomerDetailPage() {
                   </li>
                 ))}
               </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {customer && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Messages</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {messagesError && (
+              <p className="p-5 text-sm text-danger">{messagesError}</p>
+            )}
+            {messages === null && !messagesError && (
+              <p className="p-5 text-center text-sm text-muted">Loading…</p>
+            )}
+            {messages && messages.length === 0 && (
+              <p className="p-5 text-center text-sm text-muted">No messages yet.</p>
+            )}
+            {messages && messages.length > 0 && (
+              <ul className="max-h-96 space-y-3 overflow-y-auto p-5">
+                {messages.map((message) => (
+                  <li
+                    key={message.id}
+                    className={
+                      message.sender_type === "staff"
+                        ? "ml-auto max-w-[80%] rounded-lg bg-accent/10 px-3 py-2"
+                        : "mr-auto max-w-[80%] rounded-lg bg-muted/10 px-3 py-2"
+                    }
+                  >
+                    <p className="whitespace-pre-wrap text-sm text-foreground">
+                      {message.body}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                      {message.sender_type === "customer"
+                        ? customer.name
+                        : message.sender_user_id === userId
+                          ? "You"
+                          : "Staff"} ·{" "}
+                      {formatMessageTime(message.created_at)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <form
+              onSubmit={handleSendMessage}
+              className="flex items-end gap-2 border-t border-border p-5"
+            >
+              <textarea
+                value={messageBody}
+                onChange={(e) => setMessageBody(e.target.value)}
+                placeholder="Write a message…"
+                rows={2}
+                maxLength={5000}
+                disabled={sendingMessage}
+                className="h-16 flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent"
+              />
+              <Button type="submit" disabled={sendingMessage || !messageBody.trim()}>
+                {sendingMessage ? "Sending…" : "Send"}
+              </Button>
+            </form>
+            {sendMessageError && (
+              <p className="px-5 pb-4 text-sm text-danger">{sendMessageError}</p>
             )}
           </CardContent>
         </Card>

@@ -338,6 +338,28 @@ Downloads one document, reusing `app/documents/service.py`'s `file_path()`. Only
 
 ---
 
+## Message routes (`app/messages/router.py` + `app/portal/router.py`) — added Sprint 017 (ADR-033)
+
+Customer-level, chronological plain-text messaging. Bodies must contain at least one non-whitespace character and are limited to 5,000 characters. Message bodies are stored unchanged and must be rendered as text, never HTML or markdown. No attachments, editing/deleting, read state, real-time push, or rate limiting are provided.
+
+### `POST /api/v1/messages?customer_id={customer_id}`
+
+Authenticated staff route; any tenant user may post. `customer_id` is a required query parameter. The customer must belong to the caller's tenant or the response is 404. Request body: `{ "body": "text" }`. Response `201` is `MessageOut`; `sender_type` is `"staff"` and `sender_user_id` is the caller's user id. Staff messages do not create activity or notifications.
+
+### `GET /api/v1/messages?customer_id={customer_id}`
+
+Authenticated staff route. Returns the customer's `MessageOut[]` oldest-first. Missing `customer_id` returns 422; unknown or cross-tenant customer returns 404.
+
+### `GET /api/v1/portal-links/token/{token}/messages` — public, no auth
+
+Lists only the resolved active token's own customer thread, oldest-first. Unknown, revoked, or expired tokens return 404. No caller-supplied customer id is accepted.
+
+### `POST /api/v1/portal-links/token/{token}/messages` — public, no auth
+
+Posts to only the resolved active token's own customer thread. Request body: `{ "body": "text" }`; response `201` is `MessageOut` with `sender_type: "customer"` and `sender_user_id: null`. A successful post creates exactly one `customer_message_received` activity event and one tenant-scoped `info` notification. Unknown/inactive token returns 404; invalid body returns 422 with no write or side effect.
+
+`MessageOut`: `id`, `tenant_id`, `customer_id`, `sender_type`, nullable `sender_user_id`, `body`, `created_at`.
+
 ## Document routes (`app/documents/router.py`) — added Sprint 016 (ADR-032)
 
 Client portal document upload/download — staff upload a file against a customer, downloadable by staff and (via the two public routes above) by that customer through their portal link. `Authorization: Bearer <token>` required on all three routes below, **not** `require_role`-gated — any authenticated tenant user, matching the customer/project/portal-link creation precedent. Upload security policy: 20MB max, enforced against actual bytes written; an explicit extension allowlist (`.pdf .doc .docx .xls .xlsx .txt .jpg .jpeg .png .heic .webp`); the stored filename is always a generated `uuid4()`, never the client-supplied name (path traversal prevented by construction); the original filename is retained only as display/`Content-Disposition` metadata. See ADR-032 for the full rationale.
@@ -617,6 +639,10 @@ Marks one notification as read.
 | GET | `/api/v1/documents/{document_id}/download` | Sprint 016 | Yes | **Yes** |
 | GET | `/api/v1/portal-links/token/{token}/documents` | Sprint 016 | Yes | No (customer has no account) |
 | GET | `/api/v1/portal-links/token/{token}/documents/{document_id}/download` | Sprint 016 | Yes | No (customer has no account) |
+| POST | `/api/v1/messages?customer_id={customer_id}` | Sprint 017 | Yes | **Yes** (any tenant user, not Owner-only) |
+| GET | `/api/v1/messages?customer_id={customer_id}` | Sprint 017 | Yes | **Yes** |
+| GET | `/api/v1/portal-links/token/{token}/messages` | Sprint 017 | Yes | No (customer has no account) |
+| POST | `/api/v1/portal-links/token/{token}/messages` | Sprint 017 | Yes | No (customer has no account) |
 | GET | `/api/v1/users` | Sprint 015 | Yes | **Yes** (`require_role(OWNER)`) |
 | POST | `/api/v1/users/{user_id}/deactivate` | Sprint 015 | Yes | **Yes** (`require_role(OWNER)`) |
 | POST | `/api/v1/process` | Initial | No | No |

@@ -1,7 +1,10 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_core import PydanticCustomError
+
+from app.messages.models import MAX_MESSAGE_BODY_LENGTH
 
 
 class PortalLinkCreate(BaseModel):
@@ -70,3 +73,18 @@ class PortalPublicOut(BaseModel):
     expires_at: datetime
     projects: list[PortalProjectOut] = []
     quotes: list[PortalQuoteOut] = []
+
+
+class PortalMessageCreate(BaseModel):
+    """A customer-authored message, posted via their portal token (Sprint
+    017, ADR-033) — the first write payload a public portal route accepts.
+    Same length cap as the staff-authored side (MessageCreate)."""
+
+    body: str = Field(min_length=1, max_length=MAX_MESSAGE_BODY_LENGTH)
+
+    @field_validator("body")
+    @classmethod
+    def body_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise PydanticCustomError("message_body_blank", "Message body must not be blank")
+        return value

@@ -256,6 +256,38 @@ class Document(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Message(Base):
+    """One staff<->customer message on a customer's portal thread (Sprint
+    017, ADR-033). Customer-level, not project-level — same reasoning as
+    PortalLink/Document (ADR-030/ADR-032): one thread covers all of a
+    customer's concurrent jobs. sender_user_id is populated for a
+    staff-authored message and null for a customer-authored message,
+    because portal customers have no users row. sender_type ("staff"|
+    "customer") is the single source of truth for which side sent it —
+    plain String, same convention as PortalLink.status/User.role. No
+    relationship() (repo convention) — every FK here is a plain column,
+    resolved via explicit crud lookups.
+    """
+
+    __tablename__ = "messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False
+    )
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False
+    )
+    sender_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    sender_type: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str] = mapped_column(String, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ActivityLog(Base):
     """Table-ification of app/activity/models.py's ActivityEvent.
 

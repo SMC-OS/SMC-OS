@@ -249,3 +249,16 @@ Closes the "documents" half of the client-portal gap deliberately deferred at Sp
 **Staff-side routes (`app/documents/router.py`) are not `require_role`-gated** — any authenticated tenant user may upload/list/download, matching the customer/project/portal-link creation precedent (routine work, not a tenant-control decision).
 
 **What this is not:** messaging/chat (still deferred, the other half of the gap this sprint doesn't close); file versioning or editing (upload-and-download only); virus scanning, S3/object storage, or storage quotas (all explicitly deferred, see above); project-level document attachment; or any change to portal token design, auth, or tenant-isolation semantics established in ADR-029/ADR-030.
+
+## ADR-033: Client portal messaging — customer-level plain-text thread with nullable staff attribution
+**Status:** IMPLEMENTED (Sprint 017)
+
+Sprint 017 closes the final part of the portal gap deferred in Sprint 013: staff and a customer can exchange messages through the existing reusable portal link. Messages belong to a customer rather than a project, matching `PortalLink` and `Document`; one thread therefore covers all of that customer's concurrent work without a project picker or unused relationship column.
+
+Each `Message` stores `tenant_id`, `customer_id`, `sender_type`, nullable `sender_user_id`, `body`, and `created_at`. `sender_user_id` identifies an authenticated staff author and is always `NULL` for a customer author because portal customers have no `users` row. Public routes accept no caller-supplied customer identifier: both tenant and customer are derived exclusively from the active portal-link row. Staff create/list operations validate the customer under the authenticated user's tenant; unknown and cross-tenant customer identifiers return the same 404.
+
+An inbound customer message creates one `CUSTOMER_MESSAGE_RECEIVED` activity event and one tenant-scoped informational notification so staff can discover it outside the open thread. A staff-authored message creates neither—staff are not notified about their own action. This is the first business-service call to `notification_service.create()` outside the notifications router; the existing singleton repository architecture means message, activity, and notification persistence use their established service boundaries rather than a new transaction abstraction.
+
+Message bodies are plain text only and limited to 5,000 characters. Empty and whitespace-only bodies are rejected with 422 while accepted text is stored unchanged. Both frontends render `body` only through JSX text interpolation with `whitespace-pre-wrap`; no markdown or HTML interpretation is allowed. This escaping behavior is the feature's XSS boundary.
+
+No rate limiting is introduced. This is an accepted gap for the first anonymous portal write endpoint and is explicitly deferred rather than silently implemented. Also out of scope: attachments, per-message read state, editing/deleting, staff-name resolution, WebSockets/SSE, and any portal-token redesign.

@@ -4,6 +4,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
+## 2026-08-18 — (uncommitted) — Sprint #017 — Client Portal Messaging
+
+Full detail in `docs/DECISIONS.md` ADR-033 and `docs/SPRINTS/sprint-017.md`.
+
+**Scope note:** Closes the final part of the client-portal gap deferred since Sprint 013: tracking, documents, and messaging are now implemented. `docs/ROADMAP.md` remains untouched.
+
+**Backend:** Adds the customer-level `messages` table and `app/messages/` module; authenticated staff can post/list a customer's chronological thread, while active portal tokens can post/list only their own customer's thread. Staff messages carry nullable `sender_user_id` attribution and create no activity/notification. Each inbound customer message creates one `CUSTOMER_MESSAGE_RECEIVED` activity event and one tenant-scoped informational notification. Bodies are plain text, reject blank input, and cap at 5,000 characters. No rate limiter, attachments, editing/deleting, or WebSockets/SSE were added.
+
+**Frontend:** Adds polling message threads and send forms to `/customers/[id]` and `/portal/[token]`. Both poll every five seconds and render message bodies as escaped JSX text with preserved line breaks.
+
+**Verification:** 21 targeted Sprint 017 tests pass; full backend, Alembic round-trip, frontend lint/type/build, tenant-isolation review, and final diff/scope results are recorded in `docs/SPRINTS/sprint-017.md`.
+
 ## 2026-08-16 — (uncommitted) — Sprint #016 — Client Portal Documents (Upload/Download)
 
 Full detail in `docs/DECISIONS.md` ADR-032 and `docs/SPRINTS/sprint-016.md`.

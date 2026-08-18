@@ -34,6 +34,7 @@ from app.database.models import (
     Document,
     Invitation,
     Material,
+    Message,
     NotificationRecord,
     PortalLink,
     Project,
@@ -573,6 +574,43 @@ def list_documents(
     if customer_id is not None:
         stmt = stmt.where(Document.customer_id == customer_id)
     stmt = stmt.order_by(Document.created_at.desc())
+    return list(db.scalars(stmt))
+
+
+def create_message(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    customer_id: uuid.UUID,
+    sender_type: str,
+    body: str,
+    sender_user_id: uuid.UUID | None = None,
+) -> Message:
+    row = Message(
+        id=id,
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        sender_user_id=sender_user_id,
+        sender_type=sender_type,
+        body=body,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_messages_by_customer(
+    db: Session, tenant_id: uuid.UUID, customer_id: uuid.UUID
+) -> list[Message]:
+    # Ascending, unlike list_documents/list_portal_links' newest-first
+    # convention — a message thread reads top-to-bottom chronologically.
+    stmt = (
+        select(Message)
+        .where(Message.tenant_id == tenant_id, Message.customer_id == customer_id)
+        .order_by(Message.created_at.asc())
+    )
     return list(db.scalars(stmt))
 
 

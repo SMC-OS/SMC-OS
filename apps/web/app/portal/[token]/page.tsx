@@ -6,10 +6,12 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { usePolling } from "@/hooks/usePolling";
 import { ApiError, api } from "@/lib/api";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
 import { formatCurrencyGBP } from "@/lib/utils";
 import type { DocumentOut } from "@/types/document";
+import type { MessageOut } from "@/types/message";
 import type { PortalPublicOut } from "@/types/portal";
 import type { ProjectStatus } from "@/types/project";
 
@@ -61,6 +63,48 @@ export default function ClientPortalPage() {
       setDocumentsError("Could not download that document. Try again.");
     } finally {
       setDownloadingDocId(null);
+    }
+  }
+
+  // Sprint 017 (ADR-033) — two-way messaging. Polled the same way as the
+  // rest of this app's live panels (ADR-004); only enabled once the link
+  // is confirmed active, since a revoked/expired token has nothing to
+  // poll (list/post both 404).
+  const isActive = portal !== null && portal.status === "active";
+  const {
+    data: messages,
+    error: messagesError,
+    refetch: refetchMessages,
+  } = usePolling<MessageOut[]>(() => api.getPortalMessages(params.token), {
+    enabled: isActive,
+  });
+  const [messageBody, setMessageBody] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [sendMessageError, setSendMessageError] = useState<string | null>(null);
+
+  function formatMessageTime(isoTimestamp: string): string {
+    return new Date(isoTimestamp).toLocaleString(undefined, {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!messageBody.trim()) return;
+
+    setSendingMessage(true);
+    setSendMessageError(null);
+    try {
+      await api.postPortalMessage(params.token, messageBody);
+      setMessageBody("");
+      await refetchMessages();
+    } catch {
+      setSendMessageError("Could not send that message. Try again.");
+    } finally {
+      setSendingMessage(false);
     }
   }
 
@@ -234,6 +278,63 @@ export default function ClientPortalPage() {
                     </li>
                   ))}
                 </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Messages</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {messagesError && (
+                <p className="p-5 text-sm text-danger">{messagesError}</p>
+              )}
+              {messages && messages.length === 0 && (
+                <p className="p-5 text-center text-sm text-muted">No messages yet.</p>
+              )}
+              {messages && messages.length > 0 && (
+                <ul className="max-h-96 space-y-3 overflow-y-auto p-5">
+                  {messages.map((message) => (
+                    <li
+                      key={message.id}
+                      className={
+                        message.sender_type === "customer"
+                          ? "ml-auto max-w-[80%] rounded-lg bg-accent/10 px-3 py-2"
+                          : "mr-auto max-w-[80%] rounded-lg bg-muted/10 px-3 py-2"
+                      }
+                    >
+                      <p className="whitespace-pre-wrap text-sm text-foreground">
+                        {message.body}
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        {message.sender_type === "customer" ? "You" : portal.tenant_name} ·{" "}
+                        {formatMessageTime(message.created_at)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <form
+                onSubmit={handleSendMessage}
+                className="flex items-end gap-2 border-t border-border p-5"
+              >
+                <textarea
+                  value={messageBody}
+                  onChange={(e) => setMessageBody(e.target.value)}
+                  placeholder="Write a message…"
+                  rows={2}
+                  maxLength={5000}
+                  disabled={sendingMessage}
+                  className="h-16 flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent"
+                />
+                <Button type="submit" disabled={sendingMessage || !messageBody.trim()}>
+                  {sendingMessage ? "Sending…" : "Send"}
+                </Button>
+              </form>
+              {sendMessageError && (
+                <p className="px-5 pb-4 text-sm text-danger">{sendMessageError}</p>
               )}
             </CardContent>
           </Card>
