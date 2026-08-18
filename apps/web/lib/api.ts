@@ -16,6 +16,7 @@ import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
 import type { AIQuoteDraft, Quote, QuoteRequest, QuoteResult } from "@/types/quote";
 import type { TeamMemberOut } from "@/types/user";
 import { clearToken, getToken } from "@/lib/auth-storage";
+import { resolveApiBaseUrl } from "@/lib/runtime-config";
 
 /**
  * Single source of truth for the backend base URL. Reads from an env var
@@ -24,8 +25,7 @@ import { clearToken, getToken } from "@/lib/auth-storage";
  *
  * Set NEXT_PUBLIC_API_URL in apps/web/.env.local to point elsewhere.
  */
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+export const API_BASE_URL = resolveApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;

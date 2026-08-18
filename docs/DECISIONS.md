@@ -70,6 +70,8 @@ Stateless tokens were chosen over sessions so a future mobile app or client port
 
 Every route except `GET /`/`GET /health` (kept unversioned as infra/health-check endpoints) now lives under `/api/v1` (see `docs/API_SPEC.md`). Cutover was clean, not dual-mounted — the old unprefixed paths return `404` — because only the frontend consumes this API and there was no external client to break.
 
+**Update, Sprint 018:** ADR-034 adds unversioned infrastructure route `GET /ready`; no product route moved or became unversioned.
+
 ## ADR-013: Multi-tenancy model — row-level `tenant_id`, not separate schemas
 **Status:** IMPLEMENTED for the column (all 7 tables, Sprint 002); IMPLEMENTED as a real FK (Sprint 008, see ADR-025); IMPLEMENTED for enforcement (Sprint 012, see ADR-029) — `materials` is the sole, deliberate exception (shared reference catalogue, not tenant-owned data)
 
@@ -262,3 +264,22 @@ An inbound customer message creates one `CUSTOMER_MESSAGE_RECEIVED` activity eve
 Message bodies are plain text only and limited to 5,000 characters. Empty and whitespace-only bodies are rejected with 422 while accepted text is stored unchanged. Both frontends render `body` only through JSX text interpolation with `whitespace-pre-wrap`; no markdown or HTML interpretation is allowed. This escaping behavior is the feature's XSS boundary.
 
 No rate limiting is introduced. This is an accepted gap for the first anonymous portal write endpoint and is explicitly deferred rather than silently implemented. Also out of scope: attachments, per-message read state, editing/deleting, staff-name resolution, WebSockets/SSE, and any portal-token redesign.
+
+## ADR-034: Production runtime hardening — explicit environment policy and migration-first releases
+**Status:** IMPLEMENTED (Sprint 018)
+
+SIMO OS now distinguishes `development`, `test`, and `production` through the explicit `APP_ENV` setting. Development remains the default and preserves convenient local database, CORS, upload-directory, and seed behavior. Production is fail-closed: the shared Pydantic `Settings` model rejects the repository JWT and seed defaults, short or blank secrets, enabled seeding, missing or unsafe CORS origins, the local development database URL, and a relative/missing upload path. `python -m app.core.runtime_check` provides the same validation as a read-only, sanitized release preflight; application import and Alembic configuration independently load the same validated settings.
+
+**Migrations are a release job, never application startup.** The normative production order is configuration preflight, one-off `alembic upgrade head`, sole-head verification, Uvicorn container startup, `/health`, `/ready`, authenticated/storage smoke checks, then traffic promotion. This avoids concurrent application replicas racing to migrate and makes migration failure observable before the new application receives traffic. The default container command starts only `uvicorn app.main:app`; the application lifespan never runs Alembic.
+
+**Startup is import-safe and environment-aware.** FastAPI's lifespan configures logging first, validates the upload mount, and runs the existing idempotent seeders only when `SEED_DATA_ENABLED` is true. Production requires the persistent upload directory to exist and be writable, and requires seeding to be false, so normal production startup neither creates sample/application data nor silently substitutes ephemeral storage. Local development/test may create a missing upload directory and retain seed convenience.
+
+**Health responsibilities are deliberately split.** `GET /health` remains dependency-free liveness and preserves `{"status":"healthy"}`. `GET /ready` performs a bounded `SELECT 1` and returns a safe 200/503 database-reachability result. Readiness does not certify Alembic revision; release verification owns schema state. Both endpoints are unversioned, unauthenticated, and intentionally reveal no environment, version, tenant, database host, or error details.
+
+**Production request observability stays inside the existing stack.** Middleware validates or generates an `X-Request-ID`, makes it available through context-local state, returns it on every response, and emits one `http_request_completed` record using a route template rather than a concrete/token-bearing path. Production logging is one JSON object per line on stdout/stderr with stable `startup_failed`, `readiness_failed`, `unhandled_exception`, and request-completion events. The allowlisted record format excludes query strings, authorization headers, bodies, raw exception messages, secret values, and database URLs. Development retains readable console logs with the same event vocabulary. This is not a full APM/metrics platform.
+
+**The backend image is provider-neutral and non-root.** A Python 3.12 slim image includes the FastAPI and Alembic runtime, writes only through configured writable paths, exposes port 8000, and uses `/health` for container liveness. The same immutable image can be invoked by an operator as the release job or run with its Uvicorn-only default command. Hosting-provider selection remains ADR-016's unresolved decision.
+
+**Local document storage remains an explicit production constraint.** `UPLOAD_DIR` must be an absolute persistent-volume mount that survives container replacement and application rollback. The supported topology is one backend instance, or multiple instances sharing the same supported filesystem; independent local disks are not safe. Volume ownership, coordinated backup/restore, and upload/restart/download verification are operator responsibilities documented in `docs/PRODUCTION_RUNBOOK.md`. S3/object storage, malware scanning, quotas, and storage redesign remain out of scope.
+
+**Rollback keeps application and database actions separate.** An application rollback deploys a schema-compatible previous image without changing the database. Database downgrade is an explicit operator action only when the exact migration is known and tested to be safely reversible, incompatible writers are stopped, data implications are accepted, and a current restorable backup is verified. No automatic downgrade exists.

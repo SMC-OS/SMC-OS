@@ -1,10 +1,11 @@
 # SIMO OS — API Specification
 
-**Status:** Reflects the actual FastAPI application as of Sprint 013 (`app/main.py` + `app/api/v1/` + `app/auth/` + `app/customers/` + `app/projects/` + `app/quotes/` + `app/tenants/` + `app/invitations/` + `app/portal/` + `app/activity/` + `app/notifications/`). Sprint 003 moved every route except `/` and `/health` under `/api/v1` (clean cutover) and added JWT login/`/me`. Sprint 004 added the first auth-enforced module (`customers`); Sprint 006 added the second (`projects`); Sprint 007 added the third (`quotes`) and, for the first time, actually persisted a calculated quote; Sprint 008 added `tenants` — schema/CRUD only, not yet tied to authentication; Sprint 009 made authentication itself tenant-aware — every user belongs to a tenant, the JWT carries `tenant_id`, and `POST /api/v1/auth/signup` creates a new company workspace (see ADR-026). Sprint 010 formalized `role` as a real enum (`UserRole`) and added a `require_role()` permission dependency (ADR-027) — machinery only, not attached to any route. Sprint 011 adds `invitations` (ADR-028): an Owner can invite a Staff teammate by email, and `require_role(UserRole.OWNER)` is attached to a route for the first time. **Sprint 012 (ADR-029) enforces tenant data isolation across every business-data module** — `customers`, `projects`, `quotes`, `activity`, `notifications`, and `dashboard` now filter every query by the caller's `tenant_id`; `activity` and `notifications` gained auth for the first time (previously fully public); `tenants` list/detail now return only the caller's own tenant (previously leaked every tenant in the system). `materials` stays a shared, unfiltered reference catalogue by design. **Sprint 013 (ADR-030) adds `portal` — a read-only client portal:** any authenticated tenant user can generate a reusable, revocable link letting one customer view their own projects/quotes with no account, no login, no `users` row.
+**Status:** Reflects the actual FastAPI application through Sprint 018. Sprint 018 adds the production runtime contract without changing product-route auth or tenant semantics: configurable CORS, request IDs, dependency-free liveness, database-aware readiness, and safe structured error/request logging (ADR-034).
 **Base URL (local dev):** `http://127.0.0.1:8000`
-**Versioning:** `/api/v1` prefix on every route except `GET /` and `GET /health`, which stay unversioned as infra/health-check endpoints. Implemented Sprint 003 (ADR-012).
+**Versioning:** `/api/v1` prefix on every product route. `GET /`, `GET /health`, and `GET /ready` are unversioned infrastructure routes. `/health` was preserved from Sprint 003's versioning decision (ADR-012); `/ready` was added in Sprint 018 (ADR-034).
 **Authentication:** JWT bearer tokens (`POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/me`) since Sprint 003 (signup added Sprint 009). Every token carries a `tenant_id` claim since Sprint 009 (ADR-026) — a token issued before that sprint is rejected (`401`), not silently accepted. Sprint 003 itself required no route to present a token (ADR-020); `/api/v1/customers/*` (Sprint 004, ADR-021), `/api/v1/projects/*` (Sprint 006, ADR-022), `/api/v1/quotes/*` (Sprint 007, ADR-023), `/api/v1/tenants/*` (Sprint 008), and — since Sprint 012 (ADR-029) — `/api/v1/activity*`, `/api/v1/notifications*`, and `GET /api/v1/dashboard` all enforce it. `POST /api/v1/quote` and `POST /api/v1/estimate` deliberately stay public (ADR-023); since Sprint 012, a valid token optionally tags the created quote with the caller's tenant via `get_current_user_optional` — called with no token, the quote is still created, just tenant-less.
-**CORS:** `allow_origins=["*"]`, all methods and headers allowed (`app/main.py`) — acceptable for local development only; must be restricted before any non-local deployment.
+**CORS:** Origins come from `CORS_ALLOWED_ORIGINS`. Development/test default to `http://localhost:3000` and `http://127.0.0.1:3000`; production requires an explicit comma-separated list of absolute HTTPS origins and rejects wildcard, loopback, credentials, path, query, and fragment values. Methods and headers remain broad and credentials remain enabled, but a denied origin receives no CORS permission. CORS is a browser policy, not authentication; JWT/portal-token and tenant checks remain authoritative.
+**Request correlation:** Every HTTP response includes `X-Request-ID`. A caller-supplied value is retained only when it is 1–128 ASCII letters, digits, `.`, `_`, or `-`; otherwise the backend generates a UUID. This value is for correlation only and grants no identity or permission.
 
 ---
 
@@ -23,11 +24,29 @@ Welcome message. No parameters.
 
 ### `GET /health`
 
-Static health check — does **not** check a database connection.
+Dependency-free liveness check. It does **not** access the database, filesystem, network, or migration state.
 
 ```json
 { "status": "healthy" }
 ```
+
+### `GET /ready`
+
+Unauthenticated database-readiness check. It runs a bounded `SELECT 1` through the configured SQLAlchemy engine. The entire connection-and-query probe is capped at `READINESS_TIMEOUT_SECONDS`, which cannot exceed two seconds.
+
+**Response (200):**
+
+```json
+{ "status": "ready", "database": "reachable" }
+```
+
+**Response (503):**
+
+```json
+{ "status": "not_ready", "database": "unreachable" }
+```
+
+The 503 response never includes the connection string, database host, credentials, driver error, raw exception, or stack trace. `/ready` proves connectivity only; it does not inspect or certify the current Alembic revision.
 
 ---
 
@@ -77,7 +96,7 @@ Creates a brand-new company workspace (`Tenant`) and its first user (`role="Owne
 **Response (200)** (`UserOut`): `{ "id": "...", "name": "...", "email": "...", "role": "...", "tenant_id": "...", "tenant_name": "..." }`
 **Response (401):** `{ "detail": "Could not validate credentials" }` — missing, malformed, expired token, **or a token missing the `tenant_id` claim** (i.e. any token issued before Sprint 009 — a clean cutover, not a dual-mode shim).
 
-One owner account is seeded on startup (`app/auth/seed.py`) if the `users` table is empty, from `.env`'s `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` — never hardcoded credentials. Since Sprint 009 this goes through the same `AuthService.signup()` path as a real signup, giving the seeded owner a real "Default Workspace" tenant instead of special-cased logic.
+In development/test, one owner account is seeded during lifespan only when `SEED_DATA_ENABLED=true` and the `users` table is empty, using `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD`. Since Sprint 009 this goes through the same `AuthService.signup()` path as a real signup, giving the seeded owner a real "Default Workspace" tenant instead of special-cased logic. Production requires `SEED_DATA_ENABLED=false` and never runs this seeder.
 
 ---
 
@@ -592,6 +611,8 @@ Marks one notification as read.
 
 ## Error responses (`app/core/errors.py`) — added Sprint 003
 
+Sprint 018 preserves every JSON error body below. Correlation is carried in the `X-Request-ID` response header rather than by changing response schemas. Unexpected exceptions emit a structured `unhandled_exception` record containing the request ID, method, safe route template, and exception type; the response and routine logs never expose a stack trace, raw exception message, authorization header, request body, query string, or concrete token-bearing URL.
+
 | Status | When | Body shape |
 |---|---|---|
 | `400` | A lookup against a known dict fails (e.g. unrecognised `/api/v1/quote` material) | `{ "detail": "Unrecognised value: '...'" }` |
@@ -608,6 +629,7 @@ Marks one notification as read.
 |---|---|---|---|---|
 | GET | `/` | Initial | No | No |
 | GET | `/health` | Initial | No | No |
+| GET | `/ready` | Sprint 018 | Yes — connectivity probe only | No |
 | POST | `/api/v1/auth/signup` | Sprint 009 | Yes | No (issues the token) |
 | POST | `/api/v1/auth/login` | Sprint 003 (tenant-aware since Sprint 009) | Yes | No (issues the token) |
 | GET | `/api/v1/auth/me` | Sprint 003 | Yes | **Yes** |

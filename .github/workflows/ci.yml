@@ -69,5 +69,8 @@ jobs:
       - name: Type-check
         run: pnpm check-types
 
+      - name: Test frontend runtime configuration
+        run: pnpm --filter web test:runtime-config
+
       - name: Build
         run: pnpm build

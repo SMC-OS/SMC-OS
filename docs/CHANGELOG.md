@@ -4,6 +4,22 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
+## 2026-08-18 — (uncommitted) — Sprint #018 — Production Runtime Hardening
+
+Full design and release policy are recorded in `docs/superpowers/specs/2026-08-18-sprint-018-production-runtime-hardening-design.md`, `docs/DECISIONS.md` ADR-034, and `docs/PRODUCTION_RUNBOOK.md`.
+
+**Scope note:** Launch-readiness hardening only. No product feature, tenant/auth rule, hosting provider, object storage, virus scanning, quota, email/password reset, billing, rate limit, WebSocket/SSE, full APM platform, roadmap reconciliation, or Sprint 019 work is included.
+
+**Runtime/configuration:** Adds explicit `APP_ENV=development|test|production` policy, a sanitized read-only `python -m app.core.runtime_check` preflight, fail-closed production JWT/seed/database/CORS/upload validation, and `SEED_DATA_ENABLED`. Development/test keep their local defaults and optional seed convenience. Production seeding is forbidden and application import/startup never runs Alembic.
+
+**Startup/health/observability:** Moves runtime initialization into FastAPI lifespan so module import performs no database writes. Production startup validates that the persistent upload mount already exists and is writable. `/health` remains dependency-free and response-compatible; new `/ready` performs a bounded PostgreSQL `SELECT 1` with safe 200/503 bodies. Request middleware validates or generates `X-Request-ID` and production emits allowlisted JSON request/error/startup/readiness events without query strings, authorization headers, bodies, secrets, raw database errors, or concrete token-bearing paths.
+
+**Release/container/frontend:** Adds a provider-neutral Python 3.12 slim non-root backend image whose default command starts only Uvicorn. Production migrations remain a separate one-off `alembic upgrade head` release job completed before application startup and traffic promotion. The frontend retains its loopback development fallback but an explicit production build requires a safe absolute HTTPS API origin.
+
+**Operations:** Documents the migration-first release sequence, separate schema-compatible application rollback, explicit operator-only downgrade conditions, health interpretation, and the persistent upload-volume ownership/backup/restore/restart contract. Local filesystem storage remains limited to one backend instance or instances sharing the same supported filesystem.
+
+**Verification status:** Implementation verification is in progress. Exact backend, Alembic, frontend, image, container, and persistence-smoke results will be recorded only after the integrated Sprint 018 release gates run; this entry does not claim those checks have passed.
+
 ## 2026-08-18 — (uncommitted) — Sprint #017 — Client Portal Messaging
 
 Full detail in `docs/DECISIONS.md` ADR-033 and `docs/SPRINTS/sprint-017.md`.

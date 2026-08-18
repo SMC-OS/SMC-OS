@@ -1,7 +1,7 @@
 # SIMO OS — System Architecture
 
-**Status:** Canonical reference, current as of Sprint 013 completion (15 August 2026)
-**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic (Sprint 002) · `/api/v1` + JWT auth machinery (Sprint 003) · Customers CRM + enforced auth (Sprint 004) · Database-backed material catalogue + real slab-yield formula (Sprint 005) · Projects job pipeline (Sprint 006) · Real quote persistence + downloadable invoices + real dashboard (Sprint 007) · AI Quotation Generator v1 (`d306c99`) · Tenants table + CRUD, schema only (Sprint 008) · Tenant-aware authentication + signup (Sprint 009) · Role enum + permission-checking machinery, unenforced (Sprint 010) · Staff invitations, first `require_role()`-gated route (Sprint 011) · Tenant data isolation enforced across every business-data module (Sprint 012, ADR-029) · Read-only client portal, no `users` row (Sprint 013, ADR-030) · Turborepo/pnpm workspace
+**Status:** Canonical reference, current as of Sprint 018 implementation (18 August 2026)
+**Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic · `/api/v1` + JWT auth · tenant-isolated SaaS data · client portal tracking/documents/messaging · explicit development/test/production runtime policy · structured request logging · provider-neutral non-root backend container · Turborepo/pnpm workspace
 
 This document describes the system as it actually exists today — not the aspirational end state. Anything not yet built is explicitly marked as such, with the sprint that delivers it. Treat this as the source of truth for architecture decisions; update it at the end of every sprint.
 
@@ -11,10 +11,10 @@ This document describes the system as it actually exists today — not the aspir
 
 SIMO OS is a monorepo with two independently-runnable halves:
 
-- **Backend** (`SMC-OS/app/`) — a FastAPI application. Every route except `GET /`/`GET /health` lives under `/api/v1` as of Sprint 003 (`app/api/v1/`). Persistent as of Sprint 002: `app.activity` and `app.notifications` are PostgreSQL-backed; `app.auth` (Sprint 003) adds real login/`/me` against the `users` table; `app.customers` (Sprint 004), `app.projects` (Sprint 006), `app.quotes` (Sprint 007), and `app.tenants` (Sprint 008) are auth-enforced modules (though `tenants`' auth is the existing single-tenant gate, not tenant-scoped auth — see ADR-025); `app.materials` (Sprint 005) is real but internal-only, no route. All 7 Sprint-002 tables are genuinely in use, plus the 8th (`tenants`, Sprint 008). AI Quotation Generator v1 (`app.quotes.ai_draft`) shipped after Sprint 007, ships dark without an `OPENAI_API_KEY`.
+- **Backend** (`SMC-OS/app/`) — a FastAPI application. Every product route lives under `/api/v1`; `GET /`, dependency-free `GET /health`, and database-aware `GET /ready` are unversioned. Sprint 018 uses an import-safe application factory and FastAPI lifespan: logging is configured first, the upload mount is validated, and development/test seeders run only when enabled. Production settings are fail-closed, seed nothing, require an existing writable persistent upload path, and never run Alembic during application startup. `python -m app.core.runtime_check` is the read-only release preflight.
 - **Frontend** (`SMC-OS/apps/web/`) — a Next.js App Router application, the sole consumer of the backend API, styled with Tailwind v4 and a hand-built component system (no UI library).
 
-They communicate over HTTP only. The frontend never imports backend code or vice versa. `NEXT_PUBLIC_API_URL` (in `apps/web/.env.local`) is the single point of configuration for where the frontend looks for the API — defaults to `http://127.0.0.1:8000`.
+They communicate over HTTP only. The frontend never imports backend code or vice versa. `NEXT_PUBLIC_API_URL` remains the single point of configuration for the backend origin. Development/test retain the `http://127.0.0.1:8000` fallback; an explicit `APP_ENV=production` build requires a non-loopback absolute HTTPS origin and fails during configuration evaluation if it is missing or unsafe.
 
 A third directory, `SMC-OS-Docs/`, is a separate, disconnected Turborepo used for planning documents (`VISION.md`, `BLUEPRINT.md`) and is not part of the running system.
 
@@ -26,7 +26,15 @@ A third directory, `SMC-OS-Docs/`, is a separate, disconnected Turborepo used fo
 
 ```
 app/
-├── main.py                  # FastAPI app instance, CORS, exception handlers, router mounts, seeding
+├── main.py                  # Import-safe FastAPI factory, lifespan, configured CORS/middleware, router mounts
+├── core/                    # ✅ Sprint 018 runtime contract (ADR-034)
+│   ├── config.py              # APP_ENV policy, production validation, CORS/readiness/upload settings
+│   ├── runtime_check.py        # Read-only sanitized production preflight command
+│   ├── startup.py              # Upload-mount validation + policy-gated seeders; never Alembic
+│   ├── health.py               # Dependency-free /health + bounded PostgreSQL /ready
+│   ├── middleware.py           # X-Request-ID propagation and safe request-completion logs
+│   ├── logging.py              # JSON production/readable development formatting
+│   └── errors.py               # Safe error bodies + correlated unhandled-exception logging
 │
 ├── api/v1/                  # ✅ Sprint 003 — /api/v1 route restructuring (ADR-012)
 │   ├── __init__.py          #    api_router: assembles core + auth sub-routers under /api/v1
@@ -127,11 +135,6 @@ app/
 │   ├── materials.py, pricing.py           #    Left in place per ADR-008, not deleted
 │   └── services.py                         #    Still live — static list of 4 service names, unrelated to materials
 │
-├── core/                                 # ✅ Sprint 003 — config + error handling
-│   ├── config.py                          #    Settings (pydantic-settings) — database_url, JWT config, seed admin creds
-│   ├── errors.py                           #    Global exception handlers: 400 (KeyError), 422 (validation), 500 (catch-all)
-│   └── {events, logger, utils}.py           #    ⬜ still empty — no lifecycle/logging module yet
-│
 ├── database/                             # ✅ Sprint 002 — persistence layer, ✅ Sprint 003 adds User CRUD
 │   ├── database.py                        #    Engine, SessionLocal, declarative Base, get_db() dependency — reads app.core.config.settings
 │   ├── models.py                           #    Customer, Quote, Project, Material, User (+ password_hash, Sprint 003), ActivityLog, NotificationRecord
@@ -222,7 +225,14 @@ apps/web/
 - `SMC-OS/alembic/`, `SMC-OS/alembic.ini` — migration tooling. `alembic/env.py` imports `app.core.config.settings` (Sprint 003 — previously a constant in `database.py`) and `app.database.models` directly, so migrations always target the same database the app does and `--autogenerate` sees every model.
 - Run `docker compose up -d` then `alembic upgrade head` to stand up a fresh local database.
 
-### 2.4 Other repo contents (not part of the running app)
+### 2.4 Production runtime boundary (Sprint 018)
+
+- `Dockerfile` and `.dockerignore` define a provider-neutral Python 3.12 slim backend image. Its dedicated application user is non-root and its default command starts only Uvicorn on port 8000.
+- The same immutable image is used for the one-off `alembic upgrade head` release job. Migration success and sole-head state are verified before application containers start; no entrypoint or lifespan hook runs Alembic.
+- Production `UPLOAD_DIR` is an absolute, pre-mounted persistent path. A missing or unwritable mount fails startup. The supported topology is one backend instance, or multiple instances sharing the same supported filesystem; independent instance-local disks are not safe for documents.
+- Container liveness calls `/health`. Deployment readiness and traffic promotion call `/ready` separately after migration verification. See `docs/PRODUCTION_RUNBOOK.md` for release, rollback, health, backup/restore, and persistence smoke procedures.
+
+### 2.5 Other repo contents (not part of the running app)
 
 - `SMC-OS/packages/ui/` — Turborepo starter boilerplate (Button/Card/Code), not imported by `apps/web`. Leave as-is until a decision is made to either adopt or remove it (flagged in the original architecture report as a duplicate "shared UI" system).
 - `SMC-OS/apps/web/app/smc-home-backup.tsx` and `SMC-OS/smc-home-backup.tsx` — leftover backup files, not routes (Next.js only picks up `page.tsx`). Harmless but should eventually be removed or archived.
@@ -234,7 +244,7 @@ apps/web/
 
 | Module | Responsibility | State |
 |---|---|---|
-| `app.main` | FastAPI app instance, CORS, exception handlers, router mounting, seeding | ✅ |
+| `app.main` | Import-safe FastAPI factory, lifespan assembly, configurable CORS, request context, exception handlers, health and product router mounting | ✅ Sprint 018 runtime hardening |
 | `app.api.v1` | Assembles every `/api/v1` route (ADR-012) | ✅ Sprint 003 |
 | `app.auth` | JWT signup/login/`/me` — issuance + validation, enforced on `app.customers`/`app.projects`/`app.quotes`/`app.tenants`. Tenant-aware since Sprint 009 (ADR-026): every user belongs to a tenant, JWT carries `tenant_id`, old-shape tokens rejected. `role` is a real `UserRole` enum since Sprint 010 (ADR-027); `require_role()` is attached to `app.invitations` since Sprint 011 (ADR-028), its first real route | ✅ Sprint 003, tenant-aware Sprint 009, role machinery Sprint 010, first enforced Sprint 011 |
 | `app.customers` | Real customer list/detail/create — first business-data module, first auth-enforced module | ✅ Sprint 004 |
@@ -252,7 +262,7 @@ apps/web/
 | `app.data` | `services.py` (still live); `materials.py`/`pricing.py` superseded by `app.materials` | ⚠ mixed — see §2.1 |
 | `app.assistant` | Per-domain "AI" agents | ⚠ 3 of 12 implemented, keyword-based |
 | `app.brain` | Routes free text to an assistant | ⚠ hardcoded keyword dict, not AI |
-| `app.core` | `config.py` (pydantic-settings) + `errors.py` (exception handlers) | ✅ Sprint 003 — logging/lifecycle still ⬜ |
+| `app.core` | Explicit runtime settings and sanitized preflight; upload/seed lifespan; liveness/readiness; request-ID middleware; structured logging; safe exception handlers | ✅ Sprint 018 (ADR-034) |
 | `app.database` | ORM models (9 tables), DB session, CRUD helpers | ✅ Sprint 002, extended Sprint 003 — see §3.1 |
 
 ### 3.1 The repository pattern (important — read before touching activity/notifications)
@@ -297,7 +307,8 @@ ActivityRepository (ABC)              NotificationRepository (ABC)
 | Method | Path | Module | Notes |
 |---|---|---|---|
 | GET | `/` | `main.py` | Welcome message — unversioned, infra endpoint |
-| GET | `/health` | `main.py` | Static health check (no DB to check yet) — unversioned, infra endpoint |
+| GET | `/health` | `core.health` | Dependency-free liveness, `{"status":"healthy"}` — unversioned and unauthenticated. |
+| GET | `/ready` | `core.health` | Bounded PostgreSQL `SELECT 1`; safe ready/unreachable 200/503 — unversioned and unauthenticated. Does not certify Alembic revision. |
 | POST | `/api/v1/auth/signup` | `auth` | Creates a new tenant + its first (Owner) user, returns a token. New in Sprint 009. |
 | POST | `/api/v1/auth/login` | `auth` | Issues a JWT for a valid email/password — payload now carries `tenant_id` (Sprint 009). New in Sprint 003. |
 | GET | `/api/v1/auth/me` | `auth` | Returns the current user (+ tenant) for a valid bearer token. New in Sprint 003, tenant fields Sprint 009. |
@@ -415,6 +426,31 @@ BrainManager.process()  →  BrainRouter.think()  (keyword match, not AI)
 Raw JSON response rendered on the page, with the resolved agent shown as a badge
 ```
 
+### 6.4 Production release and request lifecycle (Sprint 018)
+
+```text
+operator supplies APP_ENV=production + secrets + persistent UPLOAD_DIR
+        │
+        ├── python -m app.core.runtime_check       (read-only, sanitized)
+        ├── alembic upgrade head                  (one-off release job)
+        └── verify alembic current == sole head
+                │
+                ▼
+start default Uvicorn container                   (no migration, no seeding)
+        │
+        ├── lifespan configures logging
+        ├── validates the existing writable upload mount
+        └── begins serving after initialization succeeds
+                │
+                ├── GET /health → process liveness
+                └── GET /ready  → bounded PostgreSQL reachability
+                        │
+                        ▼
+authenticated/storage smoke → traffic promotion
+```
+
+For every request, the outer request-context middleware accepts a bounded safe `X-Request-ID` or generates a UUID, stores it in request/context-local state, returns it in the response, and emits one `http_request_completed` event. Production output is JSON to stdout/stderr. Logs use matched route templates and exclude query strings, concrete token-bearing URLs, authorization headers, bodies, secret values, and database URLs. Unexpected errors preserve the existing safe JSON response while emitting a correlated `unhandled_exception` event.
+
 ---
 
 ## 7. Design Principles
@@ -427,6 +463,8 @@ Raw JSON response rendered on the page, with the resolved agent shown as a badge
 6. **Polling now, swappable for WebSockets later.** Every live data hook goes through the single `usePolling` primitive specifically so a future real-time layer replaces one function, not every component that displays live data.
 7. **No new dependencies without a reason.** The icon set, the `cn()` classname helper, and the dropdown/click-outside logic are all hand-rolled rather than pulling in `lucide-react`, `clsx`, or a headless UI library, because the app doesn't need them yet at this scale. Revisit this if/when the component surface grows enough to justify the dependency weight.
 8. **Archive, don't delete, until told otherwise.** Obsolete files move to `_legacy/` with a documented reason (see `apps/web/_legacy/README.md`), not `rm`. This is a standing instruction, not a one-off.
+9. **Production startup serves; release jobs migrate.** Configuration validation and upload-mount checks belong to application startup, but schema changes remain an explicit, observable one-off release operation completed before containers receive traffic (ADR-034).
+10. **Liveness, readiness, and schema state are separate gates.** `/health` proves the process can answer HTTP, `/ready` proves PostgreSQL is reachable within a bound, and Alembic commands prove revision state. No one signal substitutes for the others.
 
 ---
 
@@ -511,4 +549,4 @@ Full context on architecture decisions (ORM choice, auth strategy, multi-tenancy
 
 ---
 
-*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated: Sprint 011 (14 August 2026). Note: §9's Sprint 008–016 sequence below reflects the pre-SaaS-replan draft and has not yet been reconciled with the newer Phase 1–9 roadmap agreed separately — that reconciliation is an explicit future decision, not done as part of Sprints 008–011.*
+*This document should be updated at the close of every sprint — folder structure, route tables, and the "done vs. not built" markers throughout §2–§6 are the parts most likely to go stale first. Last updated for runtime architecture: Sprint 018 (18 August 2026). Note: §9's Sprint 008–016 sequence below is preserved as historical, potentially stale roadmap material; Sprint 018 deliberately does not reconcile or modify `docs/ROADMAP.md`.*
