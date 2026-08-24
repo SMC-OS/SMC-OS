@@ -277,7 +277,7 @@ def test_health_monitor_requires_both_origins_and_never_uses_credentials():
 def test_health_monitor_rejects_unsafe_public_origin_components_before_network(unsafe_origin):
     result = subprocess.run(
         [
-            "powershell",
+            "pwsh",
             "-NoProfile",
             "-File",
             str(HEALTH_SCRIPT),
