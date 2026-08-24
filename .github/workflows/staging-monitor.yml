@@ -1,0 +1,18 @@
+name: Staging monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check public staging health
+        shell: pwsh
+        env:
+          STAGING_WEB_ORIGIN: ${{ vars.STAGING_WEB_ORIGIN }}
+          STAGING_API_ORIGIN: ${{ vars.STAGING_API_ORIGIN }}
+        run: ./scripts/staging/check-health.ps1 -WebOrigin $env:STAGING_WEB_ORIGIN -ApiOrigin $env:STAGING_API_ORIGIN

@@ -294,15 +294,31 @@ def test_production_request_logging_is_structured_and_redacts_request_data(
 def test_unhandled_exception_is_structured_redacted_and_keeps_safe_response(
     tmp_path,
     capsys,
+    monkeypatch,
     preserve_simo_os_logger,
 ):
     application = create_app(make_production_settings(tmp_path))
-    exception_secret = "database-password-value"
+    raw_sql = "SELECT users WHERE email = %(email_1)s"
+    synthetic_email = "synthetic@example.invalid"
+    synthetic_password = "synthetic-password-value"
+    exception_token = "exception-token-value"
+    exception_secret = f"{raw_sql}; {synthetic_email}; {synthetic_password}; {exception_token}"
     concrete_token = "unhandled-concrete-token"
 
     @application.get("/testing/unhandled/{token}")
     async def unhandled_probe(token: str):
         raise RuntimeError(exception_secret)
+
+    logged = []
+    from app.core.errors import logger as error_logger
+
+    original_error = error_logger.error
+
+    def capture_error(*args, **kwargs):
+        logged.append((args, kwargs))
+        return original_error(*args, **kwargs)
+
+    monkeypatch.setattr(error_logger, "error", capture_error)
 
     with TestClient(application, raise_server_exceptions=False) as client:
         response = client.get(
@@ -326,10 +342,15 @@ def test_unhandled_exception_is_structured_redacted_and_keeps_safe_response(
     assert unhandled["method"] == "GET"
     assert unhandled["path"] == "/testing/unhandled/{token}"
     assert unhandled["exception_type"] == "RuntimeError"
-    assert unhandled["stack_trace"]
+    assert "stack_trace" not in unhandled
     assert completion["status_code"] == 500
     assert exception_secret not in serialized_logs
+    for sensitive_value in (raw_sql, synthetic_email, synthetic_password, exception_token):
+        assert sensitive_value not in serialized_logs
+        assert sensitive_value not in response.text
     assert concrete_token not in serialized_logs
+    assert "Traceback (most recent call last)" not in serialized_logs
+    assert logged[0][1].get("exc_info") is None
 
 
 def test_startup_failure_is_structured_and_redacts_exception_message(

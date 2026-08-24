@@ -72,5 +72,8 @@ jobs:
       - name: Test frontend runtime configuration
         run: pnpm --filter web test:runtime-config
 
+      - name: Test frontend Docker contract
+        run: pnpm --filter web test:docker-contract
+
       - name: Build
         run: pnpm build

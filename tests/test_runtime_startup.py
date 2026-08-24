@@ -229,6 +229,7 @@ def test_production_dockerfile_enforces_the_backend_runtime_contract():
     assert "user simo" in normalized
     assert "expose 8000" in normalized
     assert '"uvicorn", "app.main:app"' in normalized
+    assert '"--no-access-log"' in normalized
     assert "/health" in normalized
 
     assert "entrypoint" not in normalized
