@@ -5,7 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_role
+from app.auth.models import UserRole
+from app.quotes.service import (
+    QuoteApprovalStateError,
+    QuoteNotFoundError,
+    quote_service,
+)
 from app.customers.service import customer_service
 from app.database import crud
 from app.database.database import get_db
@@ -35,6 +41,9 @@ def _serialize(quote) -> dict:
         "price_before_vat": quote.price_before_vat,
         "vat": quote.vat,
         "total": quote.total,
+        "status": quote.status,
+        "approved_at": quote.approved_at,
+        "approved_by_user_id": quote.approved_by_user_id,
         "created_at": quote.created_at,
     }
 
@@ -55,6 +64,32 @@ def get_quote(
     quote = crud.get_quote_by_id(db, quote_id, current_user.tenant_id)
     if quote is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    return _serialize(quote)
+
+@router.post("/{quote_id}/approve")
+def approve_quote(
+    quote_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    db: Session = Depends(get_db),
+):
+    try:
+        quote = quote_service.approve(
+            db,
+            quote_id,
+            current_user.tenant_id,
+            current_user.id,
+        )
+    except QuoteNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quote not found",
+        )
+    except QuoteApprovalStateError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Quote cannot be approved in its current state",
+        )
+
     return _serialize(quote)
 
 
@@ -102,6 +137,7 @@ def generate_ai_draft(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+
     """AI Quotation Generator v1 — extraction only, never pricing (see
     app/quotes/ai_draft.py's docstring). Persists nothing to `quotes`; the
     only side effect is one ActivityEvent, same as the seed data has

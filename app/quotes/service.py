@@ -8,7 +8,7 @@ the pre-database era (ADR-001).
 """
 
 import uuid
-
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
@@ -28,11 +28,36 @@ class CustomerNotFoundError(Exception):
     against, and the resulting quote is itself tenant_id=None — invisible
     to every tenant's authenticated browsing routes either way."""
 
+class QuoteNotFoundError(Exception):
+    pass
+
+
+class QuoteApprovalStateError(Exception):
+    pass
 
 class QuoteService:
     def __init__(self) -> None:
         self.calculator = QuoteCalculator()
+    def approve(
+        self,
+        db: Session,
+        quote_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+    ):
+        quote = crud.get_quote_by_id(db, quote_id, tenant_id)
+        if quote is None:
+            raise QuoteNotFoundError(quote_id)
 
+        if quote.status != "draft":
+            raise QuoteApprovalStateError(quote.status)
+
+        quote.status = "approved"
+        quote.approved_at = datetime.now(timezone.utc)
+        quote.approved_by_user_id = actor_user_id
+        db.commit()
+        db.refresh(quote)
+        return quote
     def create(self, db: Session, quote: QuoteRequest, tenant_id: uuid.UUID | None = None) -> dict:
         if (
             quote.customer_id is not None
