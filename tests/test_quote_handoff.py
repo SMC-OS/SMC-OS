@@ -4,12 +4,15 @@ import uuid
 
 from sqlalchemy import delete, select
 
+from app.auth.service import auth_service
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, Project, Quote
+from app.database.models import ActivityLog, Customer, Project, Quote, User
 
 
 TEST_PREFIX = "Pytest Sprint 020"
 TEST_POSTCODE = "S020-TEST"
+NO_ROLE_EMAIL = "pytest-sprint020-no-role@example.invalid"
+NO_ROLE_PASSWORD = "pytest-sprint020-no-role-password"
 
 
 def _cleanup() -> None:
@@ -25,6 +28,7 @@ def _cleanup() -> None:
         db.execute(delete(Quote).where(Quote.postcode == TEST_POSTCODE))
         db.execute(delete(ActivityLog).where(ActivityLog.title.like(f"{TEST_PREFIX}%")))
         db.execute(delete(Customer).where(Customer.name.like(f"{TEST_PREFIX}%")))
+        db.execute(delete(User).where(User.email == NO_ROLE_EMAIL))
         db.commit()
     finally:
         db.close()
@@ -205,6 +209,54 @@ def test_handoff_of_another_tenants_quote_returns_404(
             f"/api/v1/quotes/{quote['id']}/handoff", headers=other_tenant_auth_headers
         )
         assert handoff.status_code == 404
+
+        with SessionLocal() as db:
+            assert (
+                db.query(Project).filter_by(quote_id=uuid.UUID(quote["id"])).count() == 0
+            )
+            still_approved = db.get(Quote, uuid.UUID(quote["id"]))
+            assert still_approved.status == "approved"
+    finally:
+        _cleanup()
+
+
+def test_non_owner_staff_user_cannot_hand_off_an_approved_quote(client, auth_headers):
+    """RBAC (not tenant isolation — see
+    test_handoff_of_another_tenants_quote_returns_404): a same-tenant,
+    authenticated user who is neither OWNER nor STAFF must not be able to
+    hand off an approved quote. role=None is the repository's real
+    "no role assigned" state — see tests/test_permissions.py's
+    test_require_role_rejects_missing_role — not a fabricated role name;
+    the codebase has no third UserRole. The handoff route already declares
+    require_role(UserRole.OWNER, UserRole.STAFF) (app/quotes/router.py),
+    so this locks in existing behavior as permanent regression coverage."""
+    _cleanup()
+    try:
+        customer, quote = _create_linked_quote(client, auth_headers)
+        approved = client.post(f"/api/v1/quotes/{quote['id']}/approve", headers=auth_headers)
+        assert approved.status_code == 200
+
+        tenant_id = _tenant_id(customer["id"])
+        with SessionLocal() as db:
+            auth_service.create_user(
+                db,
+                tenant_id=tenant_id,
+                name="Pytest No-Role User",
+                email=NO_ROLE_EMAIL,
+                password=NO_ROLE_PASSWORD,
+            )
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": NO_ROLE_EMAIL, "password": NO_ROLE_PASSWORD},
+        )
+        assert login.status_code == 200
+        no_role_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        handoff = client.post(
+            f"/api/v1/quotes/{quote['id']}/handoff", headers=no_role_headers
+        )
+        assert handoff.status_code == 403
 
         with SessionLocal() as db:
             assert (
