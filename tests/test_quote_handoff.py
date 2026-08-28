@@ -120,10 +120,12 @@ def test_staff_can_hand_off_an_approved_quote_into_a_project(client, auth_header
         assert handoff.status_code in (200, 201)
         project = handoff.json()
         assert project["customer_id"] == customer["id"]
+        assert project["status"] == "booked"
 
         fetched = client.get(f"/api/v1/projects/{project['id']}", headers=auth_headers)
         assert fetched.status_code == 200
         assert fetched.json()["customer_id"] == customer["id"]
+        assert fetched.json()["status"] == "booked"
 
         assert project["quote_id"] == quote["id"]
     finally:
