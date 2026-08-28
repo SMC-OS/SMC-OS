@@ -31,6 +31,7 @@ class ProjectOut(ProjectCreate):
     id: uuid.UUID
     status: ProjectStatus
     created_at: datetime
+    quote_id: uuid.UUID | None = None
 
 
 class ProjectStatusUpdate(BaseModel):

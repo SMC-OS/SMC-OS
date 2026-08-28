@@ -273,9 +273,16 @@ def create_project(
     customer_id: uuid.UUID | None,
     notes: str | None,
     status: str,
+    quote_id: uuid.UUID | None = None,
 ) -> Project:
     row = Project(
-        id=id, tenant_id=tenant_id, name=name, customer_id=customer_id, notes=notes, status=status
+        id=id,
+        tenant_id=tenant_id,
+        name=name,
+        customer_id=customer_id,
+        notes=notes,
+        status=status,
+        quote_id=quote_id,
     )
     db.add(row)
     db.commit()

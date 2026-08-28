@@ -16,6 +16,7 @@ from app.customers.service import customer_service
 from app.database import crud
 from app.database.database import get_db
 from app.database.models import User
+from app.projects.models import ProjectOut
 from app.quotes.ai_draft import AIDraftError, AIDraftUnavailable, ai_draft_service
 from app.quotes.ai_models import AIDraftRequest, AIQuoteDraft
 from app.quotes.pdf import PDFGenerator
@@ -91,6 +92,21 @@ def approve_quote(
         )
 
     return _serialize(quote)
+
+
+@router.post("/{quote_id}/handoff", response_model=ProjectOut)
+def handoff_quote(
+    quote_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    db: Session = Depends(get_db),
+):
+    try:
+        return quote_service.handoff(db, quote_id, current_user.tenant_id)
+    except QuoteNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quote not found",
+        )
 
 
 @router.get("/{quote_id}/invoice")

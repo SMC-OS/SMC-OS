@@ -114,6 +114,12 @@ class Project(Base):
     customer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True
     )
+    # Sprint 020 — traceable handoff source; nullable so historical projects
+    # (created before handoff existed) remain valid. Unique: the DB-level
+    # duplicate-handoff guard (one quote hands off to at most one project).
+    quote_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=True, unique=True
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(String, nullable=True)

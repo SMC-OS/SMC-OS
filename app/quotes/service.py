@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
 from app.database import crud
+from app.database.models import Project
+from app.projects.models import ProjectStatus
 from app.quotes.calculator import QuoteCalculator
 from app.quotes.models import QuoteRequest
 
@@ -69,6 +71,35 @@ class QuoteService:
         )
 
         return quote
+
+    def handoff(
+        self,
+        db: Session,
+        quote_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+    ) -> Project:
+        quote = crud.get_quote_by_id(db, quote_id, tenant_id)
+        if quote is None:
+            raise QuoteNotFoundError(quote_id)
+
+        customer = (
+            crud.get_customer_by_id(db, quote.customer_id, tenant_id)
+            if quote.customer_id is not None
+            else None
+        )
+        name = customer.name if customer is not None else f"Quote {quote.id}"
+
+        return crud.create_project(
+            db,
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            name=name,
+            customer_id=quote.customer_id,
+            notes=None,
+            status=ProjectStatus.BOOKED.value,
+            quote_id=quote.id,
+        )
+
     def create(self, db: Session, quote: QuoteRequest, tenant_id: uuid.UUID | None = None) -> dict:
         if (
             quote.customer_id is not None
