@@ -130,3 +130,27 @@ def test_staff_can_hand_off_an_approved_quote_into_a_project(client, auth_header
         assert project["quote_id"] == quote["id"]
     finally:
         _cleanup()
+
+
+def test_handoff_rejects_a_draft_quote(client, auth_headers):
+    """A quote must be approved before it can be handed off — draft quotes
+    must not create a Project. Repeated handoff, cross-tenant access, RBAC
+    denial, and handoff activity are later RED/GREEN cycles, not this one."""
+    _cleanup()
+    try:
+        customer, quote = _create_linked_quote(client, auth_headers)
+
+        handoff = client.post(f"/api/v1/quotes/{quote['id']}/handoff", headers=auth_headers)
+        assert handoff.status_code == 409
+
+        with SessionLocal() as db:
+            still_draft = db.get(Quote, uuid.UUID(quote["id"]))
+            assert still_draft.status == "draft"
+            assert (
+                db.query(Project)
+                .filter_by(customer_id=uuid.UUID(customer["id"]))
+                .count()
+                == 0
+            )
+    finally:
+        _cleanup()
