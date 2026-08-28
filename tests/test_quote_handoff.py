@@ -266,3 +266,43 @@ def test_non_owner_staff_user_cannot_hand_off_an_approved_quote(client, auth_hea
             assert still_approved.status == "approved"
     finally:
         _cleanup()
+
+
+def test_successful_handoff_creates_exactly_one_tenant_scoped_activity_record(
+    client, auth_headers
+):
+    """Handoff must be audited through the same ActivityLog mechanism as
+    QUOTE_APPROVED (see
+    test_approving_quote_creates_exactly_one_tenant_scoped_activity_record
+    above) and QUOTE_CREATED (app/quotes/service.py) — not a parallel audit
+    system. quote_handed_off is its own event type, not a reuse of
+    PROJECT_CREATED: it represents the domain transition (approved Quote ->
+    booked Project), not a generic project-creation. Repeat-handoff
+    idempotency for this activity record is a later RED/GREEN cycle, not
+    this one."""
+    _cleanup()
+    try:
+        customer, quote = _create_linked_quote(client, auth_headers)
+        approved = client.post(f"/api/v1/quotes/{quote['id']}/approve", headers=auth_headers)
+        assert approved.status_code == 200
+
+        tenant_id = _tenant_id(customer["id"])
+        with SessionLocal() as db:
+            activity_count_before = db.query(ActivityLog).filter_by(tenant_id=tenant_id).count()
+
+        handoff = client.post(f"/api/v1/quotes/{quote['id']}/handoff", headers=auth_headers)
+        assert handoff.status_code in (200, 201)
+
+        with SessionLocal() as db:
+            activities = list(
+                db.scalars(
+                    select(ActivityLog)
+                    .where(ActivityLog.tenant_id == tenant_id)
+                    .order_by(ActivityLog.timestamp.desc())
+                )
+            )
+        assert len(activities) == activity_count_before + 1
+        assert activities[0].type == "quote_handed_off"
+        assert activities[0].tenant_id == tenant_id
+    finally:
+        _cleanup()
