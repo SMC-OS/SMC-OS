@@ -1,6 +1,8 @@
 """Sprint 020 — quote approval and approved-quote project handoff."""
 
-from sqlalchemy import delete
+import uuid
+
+from sqlalchemy import delete, select
 
 from app.database.database import SessionLocal
 from app.database.models import ActivityLog, Customer, Quote
@@ -44,6 +46,11 @@ def _create_linked_quote(client, headers: dict[str, str]) -> tuple[dict, dict]:
     return customer.json(), quote.json()
 
 
+def _tenant_id(customer_id: str):
+    with SessionLocal() as db:
+        return db.get(Customer, uuid.UUID(customer_id)).tenant_id
+
+
 def test_staff_can_approve_a_draft_quote(client, auth_headers):
     """Smallest Sprint 020 contract: a linked draft quote becomes approved."""
     _cleanup()
@@ -55,5 +62,35 @@ def test_staff_can_approve_a_draft_quote(client, auth_headers):
         assert approved.status_code == 200
         assert approved.json()["status"] == "approved"
         assert approved.json()["approved_at"] is not None
+    finally:
+        _cleanup()
+
+
+def test_approving_quote_creates_exactly_one_tenant_scoped_activity_record(client, auth_headers):
+    """Approval must be audited through the existing ActivityLog
+    infrastructure — same mechanism as QUOTE_CREATED (app/quotes/service.py)
+    and every other staff mutation — not a parallel audit system."""
+    _cleanup()
+    try:
+        customer, quote = _create_linked_quote(client, auth_headers)
+        tenant_id = _tenant_id(customer["id"])
+        with SessionLocal() as db:
+            activity_count_before = db.query(ActivityLog).filter_by(tenant_id=tenant_id).count()
+
+        approved = client.post(f"/api/v1/quotes/{quote['id']}/approve", headers=auth_headers)
+        assert approved.status_code == 200
+        assert approved.json()["status"] == "approved"
+
+        with SessionLocal() as db:
+            activities = list(
+                db.scalars(
+                    select(ActivityLog)
+                    .where(ActivityLog.tenant_id == tenant_id)
+                    .order_by(ActivityLog.timestamp.desc())
+                )
+            )
+        assert len(activities) == activity_count_before + 1
+        assert activities[0].type == "quote_approved"
+        assert activities[0].tenant_id == tenant_id
     finally:
         _cleanup()
