@@ -57,6 +57,17 @@ class QuoteService:
         quote.approved_by_user_id = actor_user_id
         db.commit()
         db.refresh(quote)
+
+        # Same backend-logs-its-own-ActivityEvent pattern as create() above.
+        activity_service.log(
+            ActivityEventCreate(
+                type=ActivityType.QUOTE_APPROVED,
+                title="Quote approved",
+                description=f"Quote {quote.id}",
+            ),
+            tenant_id=tenant_id,
+        )
+
         return quote
     def create(self, db: Session, quote: QuoteRequest, tenant_id: uuid.UUID | None = None) -> dict:
         if (
