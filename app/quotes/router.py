@@ -107,6 +107,11 @@ def handoff_quote(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quote not found",
         )
+    except QuoteApprovalStateError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Quote must be approved before handoff",
+        )
 
 
 @router.get("/{quote_id}/invoice")

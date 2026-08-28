@@ -82,6 +82,9 @@ class QuoteService:
         if quote is None:
             raise QuoteNotFoundError(quote_id)
 
+        if quote.status != "approved":
+            raise QuoteApprovalStateError(quote.status)
+
         customer = (
             crud.get_customer_by_id(db, quote.customer_id, tenant_id)
             if quote.customer_id is not None
