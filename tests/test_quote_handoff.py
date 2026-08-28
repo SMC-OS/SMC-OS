@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import delete, select
 
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, Quote
+from app.database.models import ActivityLog, Customer, Project, Quote
 
 
 TEST_PREFIX = "Pytest Sprint 020"
@@ -15,6 +15,13 @@ TEST_POSTCODE = "S020-TEST"
 def _cleanup() -> None:
     db = SessionLocal()
     try:
+        # Projects (if handoff created any) must go before their Customer —
+        # Project.customer_id has no ON DELETE CASCADE.
+        customer_ids = list(
+            db.scalars(select(Customer.id).where(Customer.name.like(f"{TEST_PREFIX}%")))
+        )
+        if customer_ids:
+            db.execute(delete(Project).where(Project.customer_id.in_(customer_ids)))
         db.execute(delete(Quote).where(Quote.postcode == TEST_POSTCODE))
         db.execute(delete(ActivityLog).where(ActivityLog.title.like(f"{TEST_PREFIX}%")))
         db.execute(delete(Customer).where(Customer.name.like(f"{TEST_PREFIX}%")))
@@ -92,5 +99,32 @@ def test_approving_quote_creates_exactly_one_tenant_scoped_activity_record(clien
         assert len(activities) == activity_count_before + 1
         assert activities[0].type == "quote_approved"
         assert activities[0].tenant_id == tenant_id
+    finally:
+        _cleanup()
+
+
+def test_staff_can_hand_off_an_approved_quote_into_a_project(client, auth_headers):
+    """First Sprint 020 handoff contract: an approved, customer-linked quote
+    becomes a tenant-scoped Project through the existing Project pipeline
+    (app/projects/), traceable back to the quote it came from — not a
+    parallel handoff record. Repeat-handoff idempotency, unapproved-quote
+    rejection, cross-tenant denial, RBAC, and handoff activity are later
+    RED/GREEN cycles, not this one."""
+    _cleanup()
+    try:
+        customer, quote = _create_linked_quote(client, auth_headers)
+        approved = client.post(f"/api/v1/quotes/{quote['id']}/approve", headers=auth_headers)
+        assert approved.status_code == 200
+
+        handoff = client.post(f"/api/v1/quotes/{quote['id']}/handoff", headers=auth_headers)
+        assert handoff.status_code in (200, 201)
+        project = handoff.json()
+        assert project["customer_id"] == customer["id"]
+
+        fetched = client.get(f"/api/v1/projects/{project['id']}", headers=auth_headers)
+        assert fetched.status_code == 200
+        assert fetched.json()["customer_id"] == customer["id"]
+
+        assert project["quote_id"] == quote["id"]
     finally:
         _cleanup()
