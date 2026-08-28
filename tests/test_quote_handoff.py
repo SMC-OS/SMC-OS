@@ -184,3 +184,33 @@ def test_handoff_rejects_a_draft_quote(client, auth_headers):
             )
     finally:
         _cleanup()
+
+
+def test_handoff_of_another_tenants_quote_returns_404(
+    client, auth_headers, other_tenant_auth_headers
+):
+    """Tenant B must not be able to hand off Tenant A's approved quote —
+    same tenant-scoped-lookup-hides-existence convention as
+    test_get_quote_cross_tenant_returns_404 (tests/test_quotes_api.py) and
+    test_get_project_cross_tenant_returns_404 (tests/test_projects.py).
+    RBAC role denial is a later RED/GREEN cycle, not this one — both
+    callers here are OWNER."""
+    _cleanup()
+    try:
+        customer, quote = _create_linked_quote(client, auth_headers)
+        approved = client.post(f"/api/v1/quotes/{quote['id']}/approve", headers=auth_headers)
+        assert approved.status_code == 200
+
+        handoff = client.post(
+            f"/api/v1/quotes/{quote['id']}/handoff", headers=other_tenant_auth_headers
+        )
+        assert handoff.status_code == 404
+
+        with SessionLocal() as db:
+            assert (
+                db.query(Project).filter_by(quote_id=uuid.UUID(quote["id"])).count() == 0
+            )
+            still_approved = db.get(Quote, uuid.UUID(quote["id"]))
+            assert still_approved.status == "approved"
+    finally:
+        _cleanup()
