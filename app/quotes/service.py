@@ -85,6 +85,10 @@ class QuoteService:
         if quote.status != "approved":
             raise QuoteApprovalStateError(quote.status)
 
+        existing = crud.get_project_by_quote_id(db, quote.id, tenant_id)
+        if existing is not None:
+            return existing
+
         customer = (
             crud.get_customer_by_id(db, quote.customer_id, tenant_id)
             if quote.customer_id is not None

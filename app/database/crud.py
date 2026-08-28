@@ -295,6 +295,11 @@ def get_project_by_id(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) 
     return db.scalars(stmt).first()
 
 
+def get_project_by_quote_id(db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID) -> Project | None:
+    stmt = select(Project).where(Project.quote_id == quote_id, Project.tenant_id == tenant_id)
+    return db.scalars(stmt).first()
+
+
 def list_projects(db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[Project]:
     stmt = (
         select(Project)
