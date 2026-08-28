@@ -96,7 +96,7 @@ class QuoteService:
         )
         name = customer.name if customer is not None else f"Quote {quote.id}"
 
-        return crud.create_project(
+        project = crud.create_project(
             db,
             id=uuid.uuid4(),
             tenant_id=tenant_id,
@@ -106,6 +106,18 @@ class QuoteService:
             status=ProjectStatus.BOOKED.value,
             quote_id=quote.id,
         )
+
+        # Same backend-logs-its-own-ActivityEvent pattern as approve() above.
+        activity_service.log(
+            ActivityEventCreate(
+                type=ActivityType.QUOTE_HANDED_OFF,
+                title="Quote handed off",
+                description=f"Quote {quote.id} to project {project.id}",
+            ),
+            tenant_id=tenant_id,
+        )
+
+        return project
 
     def create(self, db: Session, quote: QuoteRequest, tenant_id: uuid.UUID | None = None) -> dict:
         if (
