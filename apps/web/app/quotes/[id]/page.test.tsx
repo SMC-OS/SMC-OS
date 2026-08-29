@@ -4,7 +4,7 @@
  * test in the repo — see vitest.config.ts's docstring for why.
  */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -114,6 +114,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   clearToken();
   vi.unstubAllGlobals();
 });
@@ -162,6 +163,46 @@ describe("QuoteDetailPage — approval (Sprint 020)", () => {
     // returned Project's own id, never derived from the Quote id.
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith(`/projects/${PROJECT_ID}`);
+    });
+  });
+
+  it("keeps_the_user_on_the_quote_and_restores_handoff_after_api_failure", async () => {
+    currentStatus = "approved";
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith(`/quotes/${QUOTE_ID}/handoff`) && init?.method === "POST") {
+        return jsonResponse({ detail: "Handoff failed" }, 500);
+      }
+      if (url.endsWith(`/quotes/${QUOTE_ID}`)) {
+        return jsonResponse(makeQuote({ status: currentStatus }));
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`);
+    });
+
+    render(<QuoteDetailPage />);
+
+    const handoffButton = await screen.findByRole("button", {
+      name: /hand off to project/i,
+    });
+    await userEvent.click(handoffButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/quotes/${QUOTE_ID}/handoff`),
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+
+    // A failed handoff must never navigate away from the quote.
+    expect(pushMock).not.toHaveBeenCalled();
+
+    // The existing error card renders the failure, no new toast/modal system.
+    expect(await screen.findByText(/failed with 500/i)).toBeInTheDocument();
+
+    // The action must be available again so the user can retry.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /hand off to project/i })).toBeEnabled();
     });
   });
 });
