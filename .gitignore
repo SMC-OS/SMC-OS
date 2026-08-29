@@ -45,6 +45,11 @@ next-env.d.ts
 # ---- Testing / coverage ----
 coverage/
 
+# ---- Playwright (Sprint 020 E2E) ----
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
+
 # ---- Env files (keep example/template files committed) ----
 .env
 .env.local
