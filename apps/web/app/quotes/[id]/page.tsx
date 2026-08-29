@@ -21,6 +21,7 @@ export default function QuoteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [handingOff, setHandingOff] = useState(false);
 
   useEffect(() => {
     if (!isReady) return;
@@ -72,7 +73,20 @@ export default function QuoteDetailPage() {
     }
   }
 
+  async function handleHandoff() {
+    if (!quote) return;
+    setHandingOff(true);
+    try {
+      const project = await api.handoffQuote(quote.id);
+      router.push(`/projects/${project.id}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not hand off the quote.");
+      setHandingOff(false);
+    }
+  }
+
   const canApprove = role === "Owner" || role === "Staff";
+  const canHandoff = role === "Owner" || role === "Staff";
 
   return (
     <div className="mx-auto max-w-xl">
@@ -159,6 +173,11 @@ export default function QuoteDetailPage() {
               {quote.status === "draft" && canApprove && (
                 <Button onClick={handleApprove} disabled={approving}>
                   {approving ? "Approving…" : "Approve"}
+                </Button>
+              )}
+              {quote.status === "approved" && canHandoff && (
+                <Button onClick={handleHandoff} disabled={handingOff}>
+                  {handingOff ? "Handing off…" : "Hand off to Project"}
                 </Button>
               )}
               <Button onClick={handleDownload} disabled={downloading} variant="outline">

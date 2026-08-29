@@ -18,6 +18,7 @@ export interface ProjectCreate {
 
 export interface Project extends ProjectCreate {
   id: string;
+  quote_id: string | null;
   status: ProjectStatus;
   created_at: string;
 }
