@@ -13,10 +13,17 @@ import { clearToken, setToken } from "@/lib/auth-storage";
 import QuoteDetailPage from "./page";
 
 const QUOTE_ID = "quote-1";
+const PROJECT_ID = "project-1";
+
+// Hoisted so a test can assert on the exact call — a factory returning a
+// fresh vi.fn() per useRouter() call would give each render its own spy,
+// making "was push called with X" unobservable from the test.
+const pushMock = vi.fn();
+const replaceMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: QUOTE_ID }),
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ replace: replaceMock, push: pushMock }),
 }));
 
 vi.mock("@/components/auth/AuthProvider", () => ({
@@ -57,6 +64,19 @@ function makeQuote(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeProject(overrides: Record<string, unknown> = {}) {
+  return {
+    id: PROJECT_ID,
+    quote_id: QUOTE_ID,
+    customer_id: null,
+    name: `Quote ${QUOTE_ID}`,
+    notes: null,
+    status: "booked",
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -79,6 +99,9 @@ beforeEach(() => {
         makeQuote({ status: "approved", approved_at: new Date().toISOString() })
       );
     }
+    if (url.endsWith(`/quotes/${QUOTE_ID}/handoff`) && init?.method === "POST") {
+      return jsonResponse(makeProject());
+    }
     if (url.endsWith(`/quotes/${QUOTE_ID}`)) {
       return jsonResponse(makeQuote({ status: currentStatus }));
     }
@@ -86,6 +109,8 @@ beforeEach(() => {
   });
   vi.stubGlobal("fetch", fetchMock);
   setToken("pytest-owner-token");
+  pushMock.mockClear();
+  replaceMock.mockClear();
 });
 
 afterEach(() => {
@@ -113,5 +138,30 @@ describe("QuoteDetailPage — approval (Sprint 020)", () => {
       expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
     });
     expect(await screen.findByText(/approved/i)).toBeInTheDocument();
+  });
+
+  it("lets an Owner/Staff user hand off an approved quote and opens the returned project", async () => {
+    currentStatus = "approved";
+    render(<QuoteDetailPage />);
+
+    const handoffButton = await screen.findByRole("button", {
+      name: /hand off to project/i,
+    });
+    expect(handoffButton).toBeInTheDocument();
+
+    await userEvent.click(handoffButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/quotes/${QUOTE_ID}/handoff`),
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+
+    // The server response is authoritative — the destination must be the
+    // returned Project's own id, never derived from the Quote id.
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith(`/projects/${PROJECT_ID}`);
+    });
   });
 });
