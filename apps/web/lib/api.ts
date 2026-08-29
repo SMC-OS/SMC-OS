@@ -300,6 +300,11 @@ export const api = {
 
   getQuote: (id: string) => request<Quote>(`/quotes/${id}`),
 
+  // Sprint 020 — Owner/Staff only (require_role(OWNER, STAFF) server-side; a
+  // caller without that role gets a 403 handled by the caller, same as
+  // invitations/users).
+  approveQuote: (id: string) => request<Quote>(`/quotes/${id}/approve`, { method: "POST" }),
+
   // Sprint 007: not JSON, so this bypasses request() and triggers a real
   // browser download directly — fetch the PDF as a blob, point a synthetic
   // <a download> at an object URL, click it, clean up.
