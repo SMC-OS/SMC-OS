@@ -499,51 +499,29 @@ For every request, the outer request-context middleware accepts a bounded safe `
 
 ---
 
-## 9. Roadmap — Sprint 002 to Sprint 016
+## 9. Roadmap
 
-Sprint 001 (application shell) is complete and audited — see `SPRINT-001-AUDIT.md`. Estimates are in developer-days (relative sizing, not a fixed-price quote), assuming AI-assisted development at the pace demonstrated in Sprint 001. **P0** = blocking/sequenced, **P1** = important but flexible ordering, **P2** = valuable, can slip a sprint.
+**`docs/ROADMAP.md` is the canonical source for the future sprint sequence** — full detail, priorities, and status for every sprint lives there, not here. This section stays intentionally short: a current snapshot so this document doesn't need cross-referencing for the basics, not a second copy of the plan to keep in sync by hand. (This section itself used to be that second copy — its Sprint 002–016 table drifted stale for 14 sprints before being reconciled; see `docs/ROADMAP.md`'s reconciliation note.)
 
-### v0.1 — Foundation & Stabilise (Sprint 001 ✅ done, 002–003 remaining)
+Sprint 001 (application shell) is complete and audited — see `SPRINT-001-AUDIT.md`. **P0** = blocking/sequenced, **P1** = important but flexible ordering, **P2** = valuable, can slip a sprint.
 
-| Sprint | Feature | Priority | Depends on |
-|---|---|---|---|
-| **001** ✅ | Application shell, dashboard rebuild, Recent Activity + Notifications (in-memory) | P0 | — |
-| **002** ✅ | Database foundation: PostgreSQL (Docker Compose, dev) + SQLAlchemy 2.0 + Alembic; core models (`Customer`, `Quote`, `Project`, `Material`, `User`, `ActivityLog`, `NotificationRecord`), all with `tenant_id` | P0 | Sprint 001 |
-| **002** ✅ | Swap the in-memory activity/notification repositories for Postgres-backed ones — zero frontend changes, zero API surface changes, per §3.1 | P0 | Sprint 002 DB models |
-| **003** ✅ | API restructuring: split `main.py` into `APIRouter` modules under `/api/v1`; `core/config.py` via `pydantic-settings` + `.env`; CRUD endpoints for `customers`/`quotes`/`projects`/`materials`/`users` deliberately deferred to their own sprints, not added in Sprint 002 | P0 | Sprint 002 |
-| **003** ✅ | Error handling middleware (400/404/422 instead of raw 500s) | P0 | Sprint 003 routing |
-| **003** ✅ | Basic JWT auth machinery, single-tenant — `login`/`me` implemented, but not applied to any route yet (ADR-020) and `UserProfileMenu`/`/settings` not wired up yet | P0 | Sprint 002 `User` model |
-| **003** ✅ | `pytest` + coverage on the quote calculator and auth flow; basic CI (lint + test on push) | P0 | — |
+**Delivered:** v0.1 Foundation (Sprints 001–003), v0.2 Core Business Operations (004–007), and v0.3 SaaS Transformation (008–021 — tenants, auth, RBAC, invitations, tenant isolation, client portal tracking/documents/messaging, team management, production hardening, staging, quote approval/handoff, enquiry→customer conversion). Full per-sprint detail: `docs/ROADMAP.md` and `docs/SPRINTS/sprint-NNN.md`.
 
-### v0.2 — Core Business Operations
+**Locked next (v1.0 — Product Vertical Completion & Launch):**
 
-| Sprint | Feature | Priority | Depends on |
-|---|---|---|---|
-| **004** ✅ | CRM: customer list/detail/create, backed by the database — replaces `/customers/new`'s activity-log-only form with real persistence. First auth-enforced module (ADR-021). | P0 | v0.1 auth + DB |
-| **005** ✅ | Full Material Library (quartz/granite/marble/porcelain/Dekton, reference pricing — see `docs/SPRINTS/sprint-005.md` for the "not a live supplier feed" caveat) + accurate slab-yield calculator (real area-based formula, replaces the placeholder in `slab_calculator.py`) | P0 | v0.1 DB |
-| **006** ⬜ | AI Quotation Generator v1 (LLM-assisted text→quote extraction via the already-installed OpenAI SDK) — **deferred**, not part of Sprint 006 as actually delivered: no `OPENAI_API_KEY` configured, real usage costs money, tracked as its own future sprint | P1 | Sprint 005 |
-| **006** ✅ | Projects module: job pipeline (enquiry → quoted → booked → templated → fabricated → installed → complete) — replaces `/projects/new`'s activity-log-only form. Second auth-enforced module (ADR-022), first update-beyond-create endpoint. | P1 | Sprint 004 |
-| **007** ✅ | Invoice generator: proper PDF layout, VAT breakdown, letterhead, returned as a real download (`GET /api/v1/quotes/{id}/invoice`, not written to local disk). Required persisting quotes for the first time — the `quotes` table's original purpose, finally used. Third auth-enforced module (ADR-023). | P1 | Sprint 005 |
-| **007** ✅ | Dashboard polish: all 4 stat cards computed from real data (`customers`/`projects` counts, `quotes_today`, all-time `revenue`) — previously hardcoded | P1 | Sprints 001–007 |
+| Sprint | Feature | Status |
+|---|---|---|
+| **022** | Appointment / Site Visit Scheduling | ⬜ Not started — next up |
+| **023** | Project Operations | ⬜ Not started |
+| **024** | Notifications / Follow-up Automation | ⬜ Not started |
+| **025** | Business Command Centre | ⬜ Not started |
+| **026** | Security & Production Hardening II | ⬜ Not started |
+| **027** | Full-System E2E / UAT Preparation | ⬜ Not started |
+| **028** | UAT + Bug-Fix Cycle | ⬜ Not started |
+| **029** | Release Candidate + Rollback/Recovery Drill | ⬜ Not started |
+| **030** | **Production Launch** 🚀 — the planned core production-launch milestone | ⬜ Not started |
 
-### v0.3 — AI Workforce & Automation
-
-| Sprint | Feature | Priority | Depends on |
-|---|---|---|---|
-| **008** | Real AI Router: replace `BrainRouter`'s keyword `dict` with LLM/embeddings-based intent classification | P0 | v0.2 complete |
-| **009** | Implement the 9 stub assistants (customer service, marketing, SEO, scheduling, finance, purchasing, construction, social, executive) | P1 | Sprint 008 |
-| **010** | AI Sales Assistant + AI Customer Support (chat-based, grounded in CRM/material data) | P1 | Sprint 009 |
-| **011** | Appointment booking + calendar integration; marketing dashboard + social scheduler; automation (lead nurture, quote-expiry reminders); Analytics v1 | P2 | Sprint 004–010 |
-
-### v1.0 — Production SaaS Platform
-
-| Sprint | Feature | Priority | Depends on |
-|---|---|---|---|
-| **012** | Multi-tenant architecture refactor (de-risked if Sprint 002 added a `tenant_id` column to every table up front) | P0 | Sprint 002 |
-| **013** | Client Portal (project tracking, documents, messaging) | P1 | Sprint 012 |
-| **014** | Contracts + digital signatures; Payment tracking (Stripe/GoCardless) | P1 | Sprint 012 |
-| **015** | Staff management + RBAC; Supplier database + purchasing workflow | P2 | Sprint 012 |
-| **016** | AI Renovation Planner / Design Assistant / Stone Visualiser (vision model + rendering); full observability; security hardening; subscription billing | P2 | Sprint 012, highest R&D risk in the roadmap |
+**Deferred, not scheduled:** the original AI Workforce & Commerce line items (AI router, the 9 stub assistants, AI sales/support, contracts/signatures, payments, supplier/purchasing, AI renovation planner/visualiser, subscription billing) — see `docs/ROADMAP.md`'s "Deferred" section for the full list.
 
 Full context on architecture decisions (ORM choice, auth strategy, multi-tenancy model, CI/CD timing) and risk mitigations behind this roadmap lives in `SIMO-OS-Architecture-Report.md`.
 
