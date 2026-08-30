@@ -10,8 +10,9 @@ import uuid
 
 from sqlalchemy import delete
 
+from app.auth.service import auth_service
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, Project
+from app.database.models import ActivityLog, Customer, Project, User
 
 TEST_PREFIX = "Pytest Sprint 021"
 TEST_PROJECT_NAME = f"{TEST_PREFIX} Project"
@@ -43,6 +44,16 @@ TEST_CROSS_TENANT_CUSTOMER_NAME = f"{TEST_PREFIX} Cross-Tenant Customer"
 TEST_CROSS_TENANT_CUSTOMER_EMAIL = "pytest-sprint021-cross-tenant-customer@example.invalid"
 TEST_CROSS_TENANT_CUSTOMER_PHONE = "+44 7000 000024"
 
+# Distinct name/project/email again, for the RBAC-negative test below — its
+# own unique rows, never entangled with the other tests' counts. Same
+# no-role-user shape as tests/test_quote_handoff.py's NO_ROLE_EMAIL/PASSWORD.
+TEST_RBAC_PROJECT_NAME = f"{TEST_PREFIX} RBAC Project"
+TEST_RBAC_CUSTOMER_NAME = f"{TEST_PREFIX} RBAC Customer"
+TEST_RBAC_CUSTOMER_EMAIL = "pytest-sprint021-rbac-customer@example.invalid"
+TEST_RBAC_CUSTOMER_PHONE = "+44 7000 000025"
+NO_ROLE_EMAIL = "pytest-sprint021-no-role@example.invalid"
+NO_ROLE_PASSWORD = "pytest-sprint021-no-role-password"
+
 
 def _cleanup() -> None:
     db = SessionLocal()
@@ -57,6 +68,7 @@ def _cleanup() -> None:
                         TEST_RETRY_PROJECT_NAME,
                         TEST_NON_ENQUIRY_PROJECT_NAME,
                         TEST_CROSS_TENANT_PROJECT_NAME,
+                        TEST_RBAC_PROJECT_NAME,
                     ]
                 )
             )
@@ -70,10 +82,12 @@ def _cleanup() -> None:
                         TEST_RETRY_CUSTOMER_NAME,
                         TEST_NON_ENQUIRY_CUSTOMER_NAME,
                         TEST_CROSS_TENANT_CUSTOMER_NAME,
+                        TEST_RBAC_CUSTOMER_NAME,
                     ]
                 )
             )
         )
+        db.execute(delete(User).where(User.email == NO_ROLE_EMAIL))
         db.commit()
     finally:
         db.close()
@@ -281,6 +295,73 @@ def test_conversion_of_another_tenants_project_returns_404(
             customer_count = (
                 db.query(Customer).filter_by(name=TEST_CROSS_TENANT_CUSTOMER_NAME).count()
             )
+            assert customer_count == 0
+
+            persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
+            assert persisted_project.customer_id is None
+            assert persisted_project.status == "enquiry"
+    finally:
+        _cleanup()
+
+
+def test_same_tenant_user_without_owner_staff_role_cannot_convert_enquiry(
+    client, auth_headers
+):
+    """RBAC (not tenant isolation — see
+    test_conversion_of_another_tenants_project_returns_404): a same-tenant,
+    authenticated user who is neither OWNER nor STAFF must not be able to
+    convert an enquiry Project into a Customer. role=None is the
+    repository's real "no role assigned" state — see
+    tests/test_permissions.py's test_require_role_rejects_missing_role and
+    tests/test_quote_handoff.py's
+    test_non_owner_staff_user_cannot_hand_off_an_approved_quote, the exact
+    template for this test — not a fabricated role name; the codebase has
+    no third UserRole. The conversion route already declares
+    require_role(UserRole.OWNER, UserRole.STAFF) (app/projects/router.py),
+    so this locks in existing behavior as permanent regression coverage."""
+    _cleanup()
+    try:
+        project = client.post(
+            "/api/v1/projects",
+            json={"name": TEST_RBAC_PROJECT_NAME},
+            headers=auth_headers,
+        )
+        assert project.status_code == 201
+        project_body = project.json()
+        assert project_body["status"] == "enquiry"
+        assert project_body["customer_id"] is None
+
+        with SessionLocal() as db:
+            tenant_id = db.get(Project, uuid.UUID(project_body["id"])).tenant_id
+            auth_service.create_user(
+                db,
+                tenant_id=tenant_id,
+                name="Pytest No-Role User",
+                email=NO_ROLE_EMAIL,
+                password=NO_ROLE_PASSWORD,
+            )
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": NO_ROLE_EMAIL, "password": NO_ROLE_PASSWORD},
+        )
+        assert login.status_code == 200
+        no_role_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        response = client.post(
+            f"/api/v1/projects/{project_body['id']}/convert-to-customer",
+            json={
+                "name": TEST_RBAC_CUSTOMER_NAME,
+                "email": TEST_RBAC_CUSTOMER_EMAIL,
+                "phone": TEST_RBAC_CUSTOMER_PHONE,
+            },
+            headers=no_role_headers,
+        )
+
+        assert response.status_code == 403
+
+        with SessionLocal() as db:
+            customer_count = db.query(Customer).filter_by(name=TEST_RBAC_CUSTOMER_NAME).count()
             assert customer_count == 0
 
             persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
