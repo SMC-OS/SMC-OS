@@ -29,6 +29,26 @@ This is recorded as an **observed CLI-deployment gap for this one release**, not
 
 **New rule: after every staging deploy that includes pending Alembic migrations, explicitly verify the actual staging revision before treating the deploy as complete.** Do not infer migration success from `/health` or `/ready` alone — neither checks schema version. The verification command is `railway ssh --service simo-api-staging --environment staging -- alembic current`, and its output must match the local `alembic heads` value for the deployed commit.
 
+**Sprint 021 addendum:** run this same verification even on a deploy that ships *no* migration — confirm `alembic current` still equals `alembic heads` for the deployed commit. `/health`/`/ready` prove reachability, never schema correctness, regardless of whether a migration was expected; a clean "no drift" result is itself the evidence, not an assumption.
+
+## Clean-commit staging deployment (Sprint 021 finding)
+
+`railway up` uploads whatever is on disk in the current directory (filtered by `.gitignore`/`.railwayignore`), not necessarily the exact reviewed commit — and its local indexer can hard-fail outright if the working tree contains a file or directory it cannot read (Sprint 021 hit a pre-existing, ACL-locked, non-gitignored directory left over from an earlier session; even `icacls` on it returned Access Denied). Do not attempt to force through such a failure by taking ownership of or deleting an unfamiliar, inaccessible path.
+
+Instead, deploy from a clean export of the exact reviewed commit:
+
+```
+git archive <reviewed-sha> | tar -x -C <clean-target-dir>
+cd <clean-target-dir>
+railway up --project <project-id> --service <service-name> --environment <environment-id> -c
+```
+
+This guarantees the uploaded artifact is byte-for-byte the reviewed commit — no uncommitted changes, no stray untracked debris — and sidesteps local filesystem issues entirely rather than routing around them in place. Repeat once per service (API, web) from the same clean export.
+
+## Browser-session isolation for staging auth verification (Sprint 021 finding)
+
+Manual or agent-driven browser verification against staging must use a fresh, isolated browser context (a new Playwright `BrowserContext`, an incognito window, or equivalent) — never a persistent browser profile that may already hold an authenticated session for a real account. Sprint 021's staging verification found an already-authenticated real-user session in the shared browser profile before the synthetic staging login even began. The synthetic account was used as instructed and the session was cleared (`localStorage.clear()`) immediately afterward, but isolating from the start is the safer default — it removes the risk of ever mixing a synthetic test session with a real one, rather than relying on cleanup after the fact.
+
 ## Backup and restore
 
 The target protection design includes daily PostgreSQL backups and PITR, daily upload-volume backups, and a matched recovery point before migration or storage-risk work. A matched point consists of a labeled Railway database backup, a custom-format `pg_dump --format=custom --no-owner`, and a portable upload archive that preserves every relative path below `/var/lib/simo-os/uploads` with a SHA-256 manifest and the paired database recovery-point identifier.

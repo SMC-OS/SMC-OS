@@ -1,10 +1,15 @@
-# Sprint 021 — Enquiry → Customer Conversion (Discovery / Contract Lock)
+# Sprint 021 — Enquiry → Customer Conversion
 
-Status: **CONTRACT LOCKED — the three open questions below are resolved. No
-production code, no migrations written yet; first TDD RED is next.**
+Status: **ENGINEERING COMPLETE — STAGING VERIFIED — READY TO MERGE.** Not yet
+merged to `main` and not deployed to production — see
+[Implementation evidence](#implementation-evidence) below for what was
+actually run, and the discovery/contract-lock sections that follow (§1-6,
+originally written before implementation started) for the reasoning behind
+the design.
 
 Branch: `sprint-021-enquiry-customer-conversion`
 Baseline: `main` @ `77a5a25` (Sprint 020 merge, confirmed via `git rev-parse HEAD`)
+Feature HEAD: `96f7448`
 
 ## 1. Domain reality check
 
@@ -263,10 +268,272 @@ them, they do not renegotiate them.
   `Project.status`.
 - Frontend work in the first backend TDD cycle.
 
-## Verdict
+## Verdict (discovery/contract-lock pass)
 
 - **Contract locked: YES** — all three previously-open questions (source
   status restriction, repeat-conversion behavior, response shape) are
   resolved above and are binding for implementation.
 - **Ready to begin Sprint 021 TDD: YES** — proceeding to the first RED test
   named in §5.
+
+## Implementation evidence
+
+Engineering-complete at commit `96f7448` on `sprint-021-enquiry-customer-conversion`.
+Every item below is backed by a command, test, or staging check actually run
+during this sprint — nothing here is aspirational. TDD proceeded as one
+RED/GREEN cycle per contract, each committed and pushed separately; commit
+SHAs are cited so any claim here can be traced back to the exact diff that
+produced it.
+
+### Backend
+
+- Endpoint: `POST /api/v1/projects/{project_id}/convert-to-customer`
+  (`app/projects/router.py`), gated by `require_role(UserRole.OWNER,
+  UserRole.STAFF)` — same convention as Sprint 020's `approve`/`handoff`.
+  Request body is the existing `CustomerCreate` shape; response is the
+  existing `CustomerOut` shape — no new schema introduced.
+- First conversion: an unlinked, `status == "enquiry"` Project gets a new
+  `Customer` created and linked, `200` — RED `865f2ed`, GREEN `cff5db2`.
+  Covered by `tests/test_enquiry_conversion.py::test_staff_can_convert_an_unlinked_enquiry_project_into_a_customer`.
+- Idempotency: a repeat conversion on an already-linked Project returns the
+  existing Customer (tenant-scoped lookup via `Project.customer_id`), `200`,
+  never creates a second Customer or changes the link — RED `ddaacc5`, GREEN
+  `4fac247`. `test_repeat_conversion_returns_the_same_customer_without_creating_another`.
+- Lifecycle guard: conversion is only allowed while `Project.status ==
+  "enquiry"`; any other status returns `409` via a new
+  `ProjectNotInEnquiryStateError` (service-raises / router-maps convention,
+  same as `QuoteApprovalStateError`), and never mutates the Project — RED
+  `5ca8069`, GREEN `a97dff3`. `test_conversion_rejects_a_non_enquiry_project`.
+  The status check runs *before* the idempotency short-circuit, so an
+  already-linked Project that has since advanced past `"enquiry"` is still
+  rejected, not idempotently returned.
+- Tenant isolation: Tenant B converting Tenant A's Project returns `404`
+  (existing `crud.get_project_by_id(db, project_id, tenant_id)` already hides
+  cross-tenant Projects — no production change was needed here, verified as
+  regression coverage) — `de95eff`.
+  `test_conversion_of_another_tenants_project_returns_404`.
+- RBAC: a same-tenant, role-less (`role=None`) user gets `403` (existing
+  `require_role` already covered this from the very first GREEN — no
+  production change needed, verified as regression coverage) — `a6426da`.
+  `test_same_tenant_user_without_owner_staff_role_cannot_convert_enquiry`.
+- Activity: new `ActivityType.ENQUIRY_CONVERTED = "enquiry_converted"`
+  (`app/activity/models.py`). Exactly one event on the first real conversion
+  only — the idempotent-retry early return happens before logging, so a
+  retry never emits a duplicate. Safe content only: `title="Enquiry
+  converted"`, `description=f"Project {project.id} converted to customer
+  {customer.id}"` — no email/phone/name/PII — RED `b492eff`, GREEN `ee9eee2`.
+  `test_successful_enquiry_conversion_creates_exactly_one_tenant_scoped_activity`.
+- **Atomicity**: the first conversion's three writes (Customer creation,
+  `Project.customer_id` link, `enquiry_converted` activity) are one logical
+  transaction on the request-scoped `db` session — `crud.create_customer`,
+  `crud.update_project_customer`, and `PostgresActivityRepository.add` each
+  gained an additive `commit: bool = True` / `db: Session | None = None`
+  parameter (default preserves every other existing caller's behavior
+  unchanged); `ProjectService.convert_to_customer` calls all three with
+  `commit=False`, then commits exactly once, rolling back and re-raising on
+  any failure. Proven by injecting a `RuntimeError` into
+  `activity_service.log` via `monkeypatch` and asserting the Customer and
+  Project link do not survive — RED `f960892`, GREEN `57f153d`.
+  `test_conversion_rolls_back_customer_and_project_link_if_activity_logging_fails`.
+- No global email/phone dedupe, no `Customer` merge/dedupe workflow, no
+  unique constraint added to `customers.email`/`customers.phone` — all
+  explicitly out of scope per the locked contract (§4/§6 above) and
+  unchanged this sprint.
+- No migration: the entire vertical slice reuses existing nullable
+  `Project.customer_id`; `ActivityType` is a plain Python enum backed by an
+  unconstrained `String` column, so adding `ENQUIRY_CONVERTED` needed no
+  schema change.
+
+Full backend suite: **368 passed, 1 skipped, 0 failed** (`pytest`, from repo
+root, against local Postgres, migrated to `d3e7a9c1f204` — unchanged from
+Sprint 020's head, confirmed no drift throughout).
+
+### Frontend
+
+- `apps/web/lib/api.ts`: `convertProjectToCustomer(id, customer)` — `POST
+  /projects/{id}/convert-to-customer`, existing `request<T>()` abstraction,
+  no separate client.
+- `apps/web/app/projects/[id]/page.tsx`: "Convert to Customer" visible only
+  when `role === "Owner" || role === "Staff"` **and** `project.status ===
+  "enquiry"` **and** `project.customer_id == null` — same
+  local-`const canX`-gate pattern as `QuoteDetailPage`. Clicking it reveals
+  an inline form (Full name/Email/Phone, same `Field`/`Input` components and
+  labels as `customers/new/page.tsx`) with a "Save customer" submit button.
+  On success: the server's returned Customer is applied to local state only
+  *after* the awaited response (never optimistically) — `setCustomer`,
+  `setProject({...project, customer_id: returnedCustomer.id})` — the
+  Customer renders in the existing linked-customer area and the conversion
+  action disappears. On failure: no Customer is attached, `Project` state is
+  untouched, the form stays visible with the user's typed input intact, "Save
+  customer" re-enables, and the existing error `Card` renders the failure —
+  no new toast/modal/notification system. RED `30654a7`, GREEN `617bb0f`
+  (happy path); failure-safety and visibility gating verified as regression
+  coverage without any further production change — `c2d7010` (API-failure
+  safety) and `9016e68` (Staff-positive, role=None-hidden,
+  non-enquiry-hidden, already-linked-hidden).
+- One incidental fix landed alongside the happy-path GREEN: the page's
+  mount `useEffect` listed `router` in its dependency array, which — because
+  a mocked/real `useRouter()` can return a new object identity — caused the
+  effect (and its `load()` call) to re-fire on every re-render, silently
+  overwriting freshly-applied conversion state with a stale re-fetch. Fixed
+  by dropping `router` from the dependency array (it's only used for
+  `router.replace("/login")`, not read reactively) — required for the locked
+  RED test to pass without weakening the test itself.
+- Frontend component suite: **9 passed** across `app/quotes/[id]/page.test.tsx`
+  (3, unaffected) and `app/projects/[id]/page.test.tsx` (6: happy path,
+  failure safety, Staff-positive, role=None-hidden, non-enquiry-hidden,
+  already-linked-hidden).
+- type-check: GREEN. lint: GREEN. runtime-config: 7 passed. Docker contract:
+  5 passed. build: GREEN — all re-run after every backend and frontend
+  change in this sprint, not just once at the end.
+
+### E2E (true browser)
+
+- `apps/web/e2e/enquiry-conversion.spec.ts` —
+  `unlinked_enquiry_can_be_converted_to_customer_and_persists` — `96f7448`.
+  Structural twin of Sprint 020's `quote-handoff.spec.ts`: real Chromium,
+  real Next.js dev server, real FastAPI (`uvicorn app.main:app`), real local
+  Postgres — no mocked fetch, router, or API client anywhere in the spec.
+- Flow: unlinked enquiry Project created via the real API → real UI login →
+  real Project detail page → click "Convert to Customer" → fill synthetic
+  Full name/Email/Phone → click "Save customer" → `page.waitForResponse`
+  *observes* (never intercepts/fulfills) the real `POST
+  .../convert-to-customer` → `200` → returned Customer renders → action
+  hidden → page reload → both still true.
+- API-side verification (not renderable in the UI): `GET
+  /api/v1/projects/{id}` confirms `customer_id`/`status`; `GET
+  /api/v1/customers/{id}` confirms the three submitted fields; `GET
+  /api/v1/activity?type=enquiry_converted` confirms exactly one event with
+  the exact safe description.
+- Playwright suite: **2 passed** (Sprint 020 `quote-handoff.spec.ts` + Sprint
+  021 `enquiry-conversion.spec.ts`), run together every time this sprint's
+  E2E was exercised.
+- Synthetic E2E rows remain (no safe generic delete API exists for
+  tenants/customers/projects) — identified by `Pytest E2E Sprint 021
+  <run-id>` naming, same policy as Sprint 020's `pytest-e2e-sprint020-*` rows.
+
+### Staging
+
+- Deployed SHA: `96f7448`, both `simo-api-staging` and `simo-web-staging`
+  (environment `staging` — the `production` environment has zero deployed
+  services and was never touched, config or otherwise).
+- **Deployment method**: a clean `git archive 96f7448` export, not the
+  working tree — the working tree contains a pre-existing, ACL-locked
+  directory (`.tmp-pytest-task10/`, present since before this sprint,
+  unrelated to Sprint 021) that Railway's local uploader could not traverse
+  (`Access is denied`, OS error 5, reproducible even via `icacls` on the
+  directory itself). The clean archive sidesteps this entirely and is a
+  stricter guarantee of "exactly this commit" than uploading the working
+  tree would have been. See `docs/STAGING_RUNBOOK.md`'s new "Clean-commit
+  staging deployment" note.
+- `/health` / `/ready`: GREEN (`{"status":"healthy"}` /
+  `{"status":"ready","database":"reachable"}`) — **not treated as migration
+  proof**. Actual schema revision was independently verified via `railway
+  ssh -i ~/.ssh/id_ed25519 --service simo-api-staging --environment staging
+  -- alembic current` → `d3e7a9c1f204 (head)`, matching `alembic heads` →
+  `d3e7a9c1f204 (head)`. Sprint 021 required no migration, and staging's
+  revision matches exactly — no drift.
+- Real browser flow (claude-in-chrome, real staging URLs, no mocks): login
+  as a fresh synthetic Owner → unlinked enquiry Project → "Convert to
+  Customer" → filled synthetic Full name/Email/Phone → "Save customer" →
+  observed real `POST .../convert-to-customer` → `200` → Customer rendered →
+  action hidden → page reload → both still true. GREEN.
+- API-verified persistence: `Project.customer_id` == returned Customer id,
+  `Project.status` still `"enquiry"`, Customer's three fields match exactly
+  what was submitted, exactly one `enquiry_converted` activity with the safe
+  identifier-only description. GREEN.
+- Idempotency: a second `POST .../convert-to-customer` on the live staging
+  API returns `200`, the same Customer id (same `created_at`, confirming the
+  same row), no duplicate Customer, `Project.customer_id` unchanged,
+  activity count still exactly 1. GREEN.
+- Non-enquiry guard: a second synthetic Project advanced to `"booked"` then
+  converted returns `409`, no Customer created, no mutation, no activity.
+  GREEN.
+- Cross-tenant isolation: a freshly signed-up Tenant B converting Tenant A's
+  unlinked enquiry Project returns `404`; Tenant A's Project, Customer count,
+  and activity count all unchanged. GREEN.
+- **RBAC 403 on staging: BLOCKED BY STAGING FIXTURE SAFETY, not verified
+  live** — same category of gap as Sprint 020's staging RBAC finding. No
+  approved API path creates a same-tenant `role=None` user (public signup
+  only creates Owner; invitations only create Staff); the automated test's
+  `auth_service.create_user` is direct Python, not an HTTP endpoint, and
+  running it via SSH against staging's live database would be a manual data
+  mutation outside the approved fixture path — deliberately not done. The
+  equivalent backend automated regression
+  (`test_same_tenant_user_without_owner_staff_role_cannot_convert_enquiry`)
+  is GREEN and is the authoritative coverage for this behavior.
+- Staging smoke (`scripts/staging/smoke.py`, no `--quote-material`/
+  `--quote-thickness` supplied — no public materials-catalog endpoint exists
+  to source real values and `SEED_DATA_ENABLED=false`): **14 passed, 0
+  failed, 8 blocked**. Blocked gates, all pre-existing/documented, none a
+  Sprint 021 regression: `migration` (separate remote Alembic evidence
+  required — satisfied independently above), `no_seeding` (requires operator
+  seed-inventory comparison), `quote_invoice` (requires the two optional
+  flags this run omitted), `tenant_isolation` (the smoke runner's own
+  documented partial-coverage limit — Sprint 021's actual cross-tenant
+  conversion was separately verified live as `404` above),
+  `restart_persistence` (requires `--allow-restart` plus a configured
+  bounded restart command), `logs_request_ids` (no approved safe
+  failure-injection mechanism), `repository_secret_scan` (local/repository
+  evidence, not a staging runtime check), `backup_restore` (requires a
+  separately approved destructive-risk restore drill).
+
+### Test-hygiene note (not a product defect)
+
+The browser used for staging verification already held an authenticated
+real-user session ("Simo / Owner") before the synthetic staging login even
+began — visible on a fresh, untouched navigation to `/login`, before any
+form interaction. This is a shared-profile browser-automation hazard, not a
+Sprint 021 application bug: the synthetic staging Owner was logged in as
+instructed (this necessarily replaces the browser's cached JWT), and the
+session was cleared (`localStorage.clear()`) immediately after verification,
+leaving the browser logged out rather than mid-impersonation. No credentials
+or tokens were exposed in any report. See `docs/STAGING_RUNBOOK.md`'s new
+"Browser-session isolation" note for the recommended fix going forward
+(a fresh isolated browser context/profile for staging auth checks, not a
+persistent one that may already hold an unrelated session).
+
+### Technical debt / open items
+
+- **Concurrent conversion race**: idempotency is verified for *sequential*
+  repeat calls only (tenant-scoped pre-check under one transaction, both
+  locally and on staging). Unlike Sprint 020's `Project.quote_id` (unique
+  FK, so a genuine race is caught by the database), `Project.customer_id`
+  has **no unique/exclusion constraint** backing the idempotency check — two
+  truly concurrent first-conversion requests on the same Project could each
+  pass the "customer_id is null" check before either commits, producing two
+  Customers and a last-write-wins link. No explicit application-level
+  locking or retry/recovery path exists for this case; it was not
+  implemented or tested this sprint and is a real gap, not a theoretical one.
+- **E2E / staging synthetic data**: no safe generic delete API exists for
+  customers or projects (same finding as Sprint 020). Rows from this
+  sprint's local Playwright runs and every staging verification pass remain,
+  identified by `Pytest E2E Sprint 021 <run-id>` / `Sprint 021 Staging
+  <run-id>` naming.
+- **Staging RBAC 403 fixture gap**: identical in shape to Sprint 020's
+  finding — blocked by environment safety controls, not application
+  behavior. Still needs a safe, approved way to provision a same-tenant
+  no-role user on staging (e.g., a dedicated, reviewed diagnostic script)
+  before this can be closed for either sprint.
+- **Railway CLI upload vs. working-tree debris**: `railway up`'s local
+  indexer hard-failed on a pre-existing, ACL-locked, non-gitignored
+  directory (`.tmp-pytest-task10/`) unrelated to this sprint's code.
+  Worked around via a clean `git archive` deploy (see Staging section above
+  and the runbook update). The directory itself was left untouched — it
+  could not be inspected or modified even with `icacls`, and deleting an
+  unfamiliar, inaccessible directory without understanding its origin was
+  judged too risky to do unilaterally.
+- **`.railwayignore` local edit**: during diagnosis of the upload failure
+  above, `.railwayignore` was edited locally to exclude
+  `.tmp-pytest-task10/`, `.venv-broken-sprint019/`,
+  `.venv-broken-sprint019-current/`, and `graphify-out/`. This edit was
+  **not** part of the successful deployment (the clean `git archive` route
+  was used instead) and was **deliberately left uncommitted** — it's
+  unrelated to the shipped Sprint 021 feature. It remains a modified,
+  unstaged file in the working tree as of this doc closeout; a maintainer
+  should decide separately whether to commit, discard, or revise it.
+- **Pre-existing staging smoke blocked gates**: same categories as Sprint
+  020 (`no_seeding`, `restart_persistence`, `logs_request_ids`,
+  `repository_secret_scan`, `backup_restore`), plus `quote_invoice` and
+  `tenant_isolation` for the reasons given above — none are Sprint 021
+  regressions.
