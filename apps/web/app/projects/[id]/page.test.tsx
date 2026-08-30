@@ -27,12 +27,18 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: replaceMock, push: pushMock }),
 }));
 
+// Mutable so individual tests can exercise a different role without a
+// second mock setup — same reasoning as fetchMock's currentProjectOverrides
+// below (a nested closure inside a hoisted vi.mock factory reads whatever
+// the variable holds at call time, not at mock-registration time).
+let currentRole: string | null = "Owner";
+
 vi.mock("@/components/auth/AuthProvider", () => ({
   useAuth: () => ({
     isAuthenticated: true,
     isReady: true,
     tenantName: "Pytest Co",
-    role: "Owner",
+    role: currentRole,
     userId: "owner-1",
     login: vi.fn(),
     signup: vi.fn(),
@@ -74,8 +80,14 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
+// Mutable per-test Project fixture overrides (status/customer_id) — read by
+// the default fetchMock's GET handler below, same mutable-fixture pattern
+// as currentRole above.
+let currentProjectOverrides: Record<string, unknown> = {};
 
 beforeEach(() => {
+  currentRole = "Owner";
+  currentProjectOverrides = {};
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
 
@@ -86,7 +98,10 @@ beforeEach(() => {
       return jsonResponse(makeCustomer());
     }
     if (url.endsWith(`/projects/${PROJECT_ID}`)) {
-      return jsonResponse(makeProject());
+      return jsonResponse(makeProject(currentProjectOverrides));
+    }
+    if (url.endsWith(`/customers/${CUSTOMER_ID}`)) {
+      return jsonResponse(makeCustomer());
     }
     throw new Error(`Unexpected fetch in test: ${url}`);
   });
@@ -205,5 +220,49 @@ describe("ProjectDetailPage — enquiry conversion (Sprint 021)", () => {
       expect(screen.getByRole("button", { name: /save customer/i })).toBeEnabled();
     });
     expect(screen.getByLabelText(/full name/i)).toHaveValue("Jane Okafor");
+  });
+
+  it("shows_convert_to_customer_for_staff_on_unlinked_enquiry", async () => {
+    currentRole = "Staff";
+    render(<ProjectDetailPage />);
+
+    expect(
+      await screen.findByRole("button", { name: /convert to customer/i })
+    ).toBeInTheDocument();
+  });
+
+  it("hides_convert_to_customer_from_user_without_owner_or_staff_role", async () => {
+    currentRole = null;
+    render(<ProjectDetailPage />);
+
+    // Wait for the project to actually finish loading before asserting
+    // absence, so "not rendered yet" can't masquerade as correct gating.
+    await screen.findByText("Riverside Kitchen Enquiry");
+
+    expect(
+      screen.queryByRole("button", { name: /convert to customer/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides_convert_to_customer_for_non_enquiry_project", async () => {
+    currentProjectOverrides = { status: "booked" };
+    render(<ProjectDetailPage />);
+
+    await screen.findByText("Riverside Kitchen Enquiry");
+
+    expect(
+      screen.queryByRole("button", { name: /convert to customer/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides_convert_to_customer_when_project_already_has_customer", async () => {
+    currentProjectOverrides = { customer_id: CUSTOMER_ID };
+    render(<ProjectDetailPage />);
+
+    expect(await screen.findByRole("link", { name: /jane okafor/i })).toBeInTheDocument();
+
+    expect(
+      screen.queryByRole("button", { name: /convert to customer/i })
+    ).not.toBeInTheDocument();
   });
 });
