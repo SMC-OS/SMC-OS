@@ -25,6 +25,9 @@ class ActivityType(str, Enum):
     QUOTE_APPROVED = "quote_approved"
     QUOTE_HANDED_OFF = "quote_handed_off"
     ENQUIRY_CONVERTED = "enquiry_converted"
+    SITE_VISIT_SCHEDULED = "site_visit_scheduled"
+    SITE_VISIT_COMPLETED = "site_visit_completed"
+    SITE_VISIT_CANCELLED = "site_visit_cancelled"
 
 
 class ActivityEventCreate(BaseModel):

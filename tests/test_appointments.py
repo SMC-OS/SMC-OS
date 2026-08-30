@@ -11,10 +11,10 @@ real HTTP response body and the pre-existing `Project` row.
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Project
+from app.database.models import ActivityLog, Appointment, Project
 
 TEST_PREFIX = "Pytest Sprint 022"
 TEST_PROJECT_NAME = f"{TEST_PREFIX} Project"
@@ -24,6 +24,11 @@ TEST_NOTES = f"{TEST_PREFIX} Site Visit Notes"
 def _cleanup() -> None:
     db = SessionLocal()
     try:
+        project_ids = db.scalars(
+            select(Project.id).where(Project.name == TEST_PROJECT_NAME)
+        ).all()
+        if project_ids:
+            db.execute(delete(Appointment).where(Appointment.project_id.in_(project_ids)))
         db.execute(delete(Project).where(Project.name == TEST_PROJECT_NAME))
         db.execute(delete(ActivityLog).where(ActivityLog.title.like(f"{TEST_PREFIX}%")))
         db.commit()

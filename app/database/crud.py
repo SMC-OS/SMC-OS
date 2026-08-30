@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from app.database.models import (
     ActivityLog,
+    Appointment,
     Customer,
     Document,
     Invitation,
@@ -686,3 +687,77 @@ def list_quotes_by_customer(db: Session, tenant_id: uuid.UUID, customer_id: uuid
         .order_by(Quote.created_at.desc())
     )
     return list(db.scalars(stmt))
+
+
+def create_appointment(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    project_id: uuid.UUID,
+    created_by_user_id: uuid.UUID,
+    scheduled_at: datetime,
+    notes: str | None = None,
+    commit: bool = True,
+) -> Appointment:
+    row = Appointment(
+        id=id,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        created_by_user_id=created_by_user_id,
+        scheduled_at=scheduled_at,
+        notes=notes,
+    )
+    db.add(row)
+    # Sprint 022 — commit=False lets a caller (ProjectService's Sprint 021
+    # convention, reused by AppointmentService) fold this write into its
+    # own transaction instead of committing here. Every existing caller
+    # keeps the default, unchanged commit-here behavior.
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    db.refresh(row)
+    return row
+
+
+def get_appointment_by_id(
+    db: Session, appointment_id: uuid.UUID, tenant_id: uuid.UUID
+) -> Appointment | None:
+    stmt = select(Appointment).where(
+        Appointment.id == appointment_id, Appointment.tenant_id == tenant_id
+    )
+    return db.scalars(stmt).first()
+
+
+def list_appointments_by_project(
+    db: Session, tenant_id: uuid.UUID, project_id: uuid.UUID
+) -> list[Appointment]:
+    stmt = (
+        select(Appointment)
+        .where(Appointment.tenant_id == tenant_id, Appointment.project_id == project_id)
+        .order_by(Appointment.scheduled_at.asc())
+    )
+    return list(db.scalars(stmt))
+
+
+def update_appointment_status(
+    db: Session,
+    appointment_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    status: str,
+    commit: bool = True,
+) -> Appointment | None:
+    stmt = select(Appointment).where(
+        Appointment.id == appointment_id, Appointment.tenant_id == tenant_id
+    )
+    row = db.scalars(stmt).first()
+    if row is None:
+        return None
+    row.status = status
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    db.refresh(row)
+    return row
