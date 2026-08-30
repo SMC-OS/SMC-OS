@@ -542,3 +542,206 @@ legitimately-blocked gates.
 18. **Merge** — feature branch → `main`, same PR-based, explicit-merge-commit
     discipline Sprint 021 established (including checking CI on the exact
     merge commit, not just the feature branch's own last run).
+
+## 16. Locked contract
+
+The six open decisions from §14 above are resolved below and are binding —
+later RED/GREEN cycles implement them, they do not renegotiate them.
+
+### Decision 1 — list ordering
+
+- **Decision**: how should `GET .../appointments` order its results?
+- **Options identified**: `created_at DESC` (matches every other list
+  endpoint's literal convention) vs. `scheduled_at ASC` (upcoming-first,
+  more useful for what this specific list is *for*).
+- **Selected**: `scheduled_at ASC`.
+- **Reason**: the whole point of an appointments list is "what's coming up"
+  — ordering by insertion time instead would be actively less useful for
+  identical implementation cost (one `order_by` clause either way).
+- **LOCKED.**
+
+### Decision 2 — status-transition schema vs. service symmetry
+
+- **Decision**: should the status-update request schema accept all three
+  status values (`scheduled|completed|cancelled`) for symmetry with
+  `ProjectStatusUpdate`, even though reverting to `scheduled` is out of
+  scope?
+- **Options identified**: (a) schema allows all three, service enforces the
+  real rule; (b) schema itself only allows the two valid targets
+  (`completed|cancelled`).
+- **Selected**: (b) — the request schema only accepts `completed` or
+  `cancelled` as the target status.
+- **Reason**: smallest coherent contract — there is no path in this sprint
+  that ever needs to submit `scheduled` as a target, so a schema that can't
+  even express the invalid request is simpler than a schema that expresses
+  it and then a service that rejects it. (`ProjectStatusUpdate`'s broader
+  schema exists because *every* project status is a valid PATCH target in
+  that domain; this domain has exactly two valid targets, so the narrower
+  schema is the more honest one, not a divergence from convention.)
+- **LOCKED.**
+
+### Decision 3 — idempotency of a repeated status transition
+
+- **Decision**: if `PATCH .../status` is called twice with the *same*
+  target status once already terminal, is the second call a `200` no-op or
+  a `409`? (Distinct from attempting to cross *between* the two terminal
+  states, or revert to `scheduled` — those are always `409`, per the
+  "completed and cancelled are terminal" constraint.)
+- **Options identified**: idempotent `200` (double-click/retry safety net,
+  same reasoning Sprint 021's conversion retry used) vs. `409` on every
+  repeat call regardless of target.
+- **Selected**: idempotent `200` — a repeat call with the *same* status as
+  the appointment's current (terminal) status returns that unchanged row,
+  `200`, no new activity event. A call with the *other* terminal status, or
+  a revert to `scheduled`, is `409` in every case (this is what "terminal"
+  means here — you cannot leave a terminal state for a *different* state).
+- **Reason**: a UI double-click or network retry on "Mark Completed" is a
+  fully expected client-side event, not an error condition — matching why
+  Sprint 021 made its own repeat-call case idempotent rather than a hard
+  reject.
+- **LOCKED.**
+
+### Decision 4 — one vs. two activity types for completed/cancelled
+
+- **Decision**: should completing and cancelling a visit share one generic
+  `SITE_VISIT_STATUS_CHANGED` event, or get their own distinct types?
+- **Options identified**: one generic type parameterized by the new status
+  in its description, vs. two distinct `ActivityType` members.
+- **Selected**: two distinct types — `SITE_VISIT_COMPLETED` and
+  `SITE_VISIT_CANCELLED`.
+- **Reason**: matches the established one-type-per-domain-transition
+  convention exactly (`QUOTE_APPROVED` vs. `QUOTE_HANDED_OFF` are two types
+  for two transitions of the same `Quote`, not one generic
+  `QUOTE_STATUS_CHANGED`) — no precedent anywhere in this codebase for a
+  parameterized generic activity type.
+- **LOCKED.**
+
+### Decision 5 — naive-datetime rejection
+
+- **Decision**: should the API reject a `scheduled_at` submitted without
+  timezone/offset information?
+- **Options identified**: reject (422) vs. silently assume a timezone
+  (e.g. UTC) for a naive value.
+- **Selected**: reject — a naive `scheduled_at` on `POST
+  .../appointments` fails Pydantic validation with `422`.
+- **Reason**: directly required by the locked constraint that `scheduled_at`
+  "must be timezone-aware at the API boundary" — silently assuming a
+  timezone would be exactly the ambiguous-naive-storage outcome that
+  constraint exists to prevent, and there is no existing precedent in this
+  codebase for accepting a client-supplied datetime at all, so there is no
+  competing convention to preserve.
+- **LOCKED.**
+
+### Decision 6 — frontend API client method naming
+
+- **Decision**: one generic `updateAppointmentStatus(id, status)` vs. two
+  dedicated `completeAppointment(id)`/`cancelAppointment(id)` methods.
+- **Options identified**: generic (mirrors the older `updateProjectStatus`
+  precedent) vs. dedicated (mirrors the more recent `approveQuote`/
+  `handoffQuote` precedent).
+- **Selected**: dedicated methods — `completeAppointment(id)` and
+  `cancelAppointment(id)`.
+- **Reason**: matches the more recent convention (Sprint 020/021) over the
+  older one (Sprint 006), and reads more clearly at each call site than a
+  generic status string would for exactly two possible actions.
+- **LOCKED.** (Frontend-only; not exercised by Sprint 022's first backend
+  RED.)
+
+## LOCKED CONTRACT
+
+- **Entity / table**: `Appointment` / `appointments`.
+- **Fields**: `id (UUID, PK), tenant_id (UUID, NOT NULL, FK → tenants.id),
+  project_id (UUID, NOT NULL, FK → projects.id), created_by_user_id (UUID,
+  NOT NULL, FK → users.id), scheduled_at (DateTime(timezone=True), NOT
+  NULL), status (String, NOT NULL, server_default "scheduled"), notes
+  (String, nullable), created_at (DateTime(timezone=True), server_default
+  now())`. No `updated_at` (no table in this schema has one).
+- **Project relationship**: `project_id` only — the sole FK relationship.
+  No `customer_id` on `Appointment`; the customer is reached, when needed,
+  via `project_id → Project.customer_id`, avoiding the exact duplication
+  the discovery pass ruled out.
+- **User relationship(s)**: `created_by_user_id` only (audit — who
+  scheduled it), matching `Invitation.invited_by_user_id`/
+  `PortalLink.created_by_user_id`/`Document.uploaded_by_user_id`'s
+  identical shape. No `assigned_user_id` — no task-assignment precedent
+  exists anywhere in this codebase yet; that's Sprint 023 territory
+  (Project Operations), not pulled forward here.
+- **tenant_id strategy**: `NOT NULL` from creation (no anonymous-creation
+  path exists for this entity, unlike `Customer`/`Project`/`Quote`'s
+  nullable columns, which exist for reasons — anonymous quotes, legacy
+  rows — that don't apply to a brand-new, always-authenticated-caller
+  table).
+- **Statuses**: `scheduled` (initial/default) → `completed` | `cancelled`
+  (both terminal). No `rescheduled`, `no_show`, `confirmed`, or
+  `in_progress` — none required by anything in scope.
+- **Date/time rule**: stored as `DateTime(timezone=True)` (this repo's
+  universal timestamp column type); the API rejects a naive
+  `scheduled_at` on input with `422` (Decision 5); responses serialize it
+  as an ISO 8601 string with explicit UTC offset (Pydantic's existing
+  default behavior, no new serialization code).
+- **Create endpoint**: `POST /api/v1/projects/{project_id}/appointments` —
+  body `{scheduled_at: datetime, notes?: string}`; response `AppointmentOut`
+  `200`/`201` (exact status code decided at RED-writing time by matching
+  the closest sibling convention — `POST /projects` returns `201`, `POST
+  /quotes/{id}/handoff` returns `200`/`201`, both accepted by their own
+  tests; the RED below locks whichever this endpoint actually returns).
+- **List/read endpoint**: `GET /api/v1/projects/{project_id}/appointments`
+  — tenant-scoped, `scheduled_at ASC` (Decision 1), returns
+  `list[AppointmentOut]`.
+- **Status-update endpoint**: `PATCH /api/v1/appointments/{appointment_id}/status`
+  — body `{status: "completed" | "cancelled"}` (Decision 2's narrowed
+  schema), `200`, idempotent on a same-status repeat, `409` on any other
+  transition (Decision 3).
+- **`AppointmentOut` fields**: `id, tenant_id, project_id,
+  created_by_user_id, scheduled_at, status, notes, created_at` — matches
+  `DocumentOut`/`PortalLinkOut`'s shape (both expose `tenant_id` and their
+  creator id directly), the closer structural precedent for a
+  child-of-parent audit entity than `CustomerOut`/`ProjectOut` (which
+  expose neither).
+- **RBAC**: `require_role(UserRole.OWNER, UserRole.STAFF)` on all three
+  routes — create, list, and status-update. No route is Owner-only.
+- **Tenant isolation**: create/list tenant-scope the parent Project first
+  (`crud.get_project_by_id(db, project_id, tenant_id)`, `404` if
+  absent/cross-tenant) before touching `Appointment` at all; the
+  status-update route tenant-scopes the `Appointment` lookup directly via
+  its own `tenant_id` column. Tenant B can never create, list, or update an
+  appointment through Tenant A's Project or Appointment id — both paths
+  404 before any Appointment row is read or written.
+- **Activity events**: `SITE_VISIT_SCHEDULED` (on creation),
+  `SITE_VISIT_COMPLETED` (on `→ completed`), `SITE_VISIT_CANCELLED` (on
+  `→ cancelled`) — one per real transition, none on an idempotent repeat
+  (Decision 4).
+- **Transaction boundary**: creation's `Appointment` row + its
+  `SITE_VISIT_SCHEDULED` `ActivityLog` row are one logical transaction from
+  the first GREEN — `crud.create_appointment(..., commit=False)` then
+  `activity_service.log(..., db=db)` then one `db.commit()`, wrapped in the
+  same try/`db.rollback()`/re-raise shape `ProjectService.convert_to_customer`
+  established in Sprint 021. Each status-transition is a single write (no
+  paired write beyond its own activity event, which uses the same
+  established pattern).
+- **Frontend scope**: `apps/web/app/projects/[id]/page.tsx` gains "Schedule
+  Site Visit" (Owner/Staff, no status/link gating) → inline date/time +
+  notes form → "Site Visits" list (`scheduled_at ASC`) with status badges
+  and "Mark Completed"/"Cancel" on `scheduled` rows only.
+  `apps/web/lib/api.ts` gains `createAppointment`, `getProjectAppointments`,
+  `completeAppointment`, `cancelAppointment` (Decision 6). Not touched in
+  this cycle — later cycles per §15's TDD sequence.
+- **E2E scope**: `apps/web/e2e/site-visit-scheduling.spec.ts` — real
+  browser/API/DB, no mocks, schedule → observe real response → renders →
+  reload persists → complete → persists after reload → API-verified via
+  `GET .../appointments` and `GET /activity?type=site_visit_scheduled`.
+  Not implemented in this cycle.
+- **Explicit out-of-scope** (unchanged from §13, restated as binding):
+  Google/Outlook calendar sync, ICS generation, customer self-booking or
+  rescheduling, recurring appointments, staff availability/conflict
+  engine, SMS/email reminders or automated follow-up, route planning,
+  `assigned_user_id`, editing `scheduled_at` after creation, reopening a
+  terminal status, any change to `Project.status`, and any Sprint 023
+  (Project Operations) work of any kind.
+
+### Verdict
+
+- **Six decisions resolved: YES** — all binding for implementation.
+- **Sprint 022 contract locked: YES.**
+- **Ready for the first backend RED: YES** — proceeding to
+  `test_appointments.py`'s creation contract.
