@@ -85,7 +85,15 @@ class ProjectService:
         — the existing linked Customer is authoritative, never overwritten
         by a retry's payload, and this early return happens before activity
         logging below, so a retry emits no additional ENQUIRY_CONVERTED
-        event — only the first real conversion does."""
+        event — only the first real conversion does.
+
+        The three writes below (Customer, Project.customer_id, the
+        ENQUIRY_CONVERTED activity) are one logical transaction: each write
+        happens with commit=False on this same request-scoped `db`, and
+        this method commits exactly once at the end. If any step raises —
+        including activity_service.log, since it's passed this same `db` —
+        the whole transaction rolls back and the original exception
+        propagates; nothing partial survives."""
         project = crud.get_project_by_id(db, project_id, tenant_id)
         if project is None:
             return None
@@ -98,27 +106,37 @@ class ProjectService:
             if existing_customer is not None:
                 return existing_customer
 
-        customer = crud.create_customer(
-            db,
-            id=uuid.uuid4(),
-            tenant_id=tenant_id,
-            name=data.name,
-            email=data.email,
-            phone=data.phone,
-        )
-        crud.update_project_customer(db, project_id, tenant_id, customer.id)
+        try:
+            customer = crud.create_customer(
+                db,
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                name=data.name,
+                email=data.email,
+                phone=data.phone,
+                commit=False,
+            )
+            crud.update_project_customer(db, project_id, tenant_id, customer.id, commit=False)
 
-        # Sprint 021 — same backend-logs-its-own-ActivityEvent convention as
-        # QUOTE_HANDED_OFF (app/quotes/service.py). Safe content only: no
-        # email/phone/name, just the two ids involved in the transition.
-        activity_service.log(
-            ActivityEventCreate(
-                type=ActivityType.ENQUIRY_CONVERTED,
-                title="Enquiry converted",
-                description=f"Project {project.id} converted to customer {customer.id}",
-            ),
-            tenant_id=tenant_id,
-        )
+            # Sprint 021 — same backend-logs-its-own-ActivityEvent
+            # convention as QUOTE_HANDED_OFF (app/quotes/service.py). Safe
+            # content only: no email/phone/name, just the two ids involved
+            # in the transition. Passing `db` folds this write into the
+            # same not-yet-committed transaction as the two writes above.
+            activity_service.log(
+                ActivityEventCreate(
+                    type=ActivityType.ENQUIRY_CONVERTED,
+                    title="Enquiry converted",
+                    description=f"Project {project.id} converted to customer {customer.id}",
+                ),
+                tenant_id=tenant_id,
+                db=db,
+            )
+
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
 
         return customer
 

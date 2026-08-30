@@ -53,6 +53,7 @@ def create_activity_log(
     title: str,
     description: str | None,
     timestamp: datetime,
+    commit: bool = True,
 ) -> ActivityLog:
     row = ActivityLog(
         id=id,
@@ -63,7 +64,14 @@ def create_activity_log(
         timestamp=timestamp,
     )
     db.add(row)
-    db.commit()
+    # Sprint 021 — commit=False lets a caller (currently only
+    # ProjectService.convert_to_customer) fold this write into its own
+    # transaction instead of committing here. Every existing caller keeps
+    # the default, unchanged commit-here behavior.
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 
@@ -194,10 +202,20 @@ def create_customer(
     name: str,
     email: str | None = None,
     phone: str | None = None,
+    commit: bool = True,
 ) -> Customer:
     row = Customer(id=id, tenant_id=tenant_id, name=name, email=email, phone=phone)
     db.add(row)
-    db.commit()
+    # Sprint 021 — commit=False lets a caller (currently only
+    # ProjectService.convert_to_customer) fold this write into its own
+    # transaction instead of committing here. Every existing caller keeps
+    # the default, unchanged commit-here behavior. flush() still runs so
+    # row.created_at (server_default) and row.id are populated for the
+    # caller before its own commit.
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 
@@ -328,14 +346,25 @@ def update_project_status(
 
 
 def update_project_customer(
-    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, customer_id: uuid.UUID
+    db: Session,
+    project_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    customer_id: uuid.UUID,
+    commit: bool = True,
 ) -> Project | None:
     stmt = select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
     row = db.scalars(stmt).first()
     if row is None:
         return None
     row.customer_id = customer_id
-    db.commit()
+    # Sprint 021 — commit=False lets a caller (currently only
+    # ProjectService.convert_to_customer) fold this write into its own
+    # transaction instead of committing here. Every existing caller keeps
+    # the default, unchanged commit-here behavior.
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 
