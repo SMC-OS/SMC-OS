@@ -74,6 +74,12 @@ export interface AIQuoteDraft {
   warnings: string[];
 }
 
+// Sprint 020: mirrors the two values app/database/models.py's Quote.status
+// column and app/quotes/service.py's approve()/handoff() actually use.
+export const QUOTE_STATUSES = ["draft", "approved"] as const;
+
+export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
+
 /** Shape returned by GET /api/v1/quotes and GET /api/v1/quotes/{id} —
  * the persisted row, not the freshly-calculated response (no `customer`
  * name or `slabs`, since neither is a column on `quotes`). */
@@ -92,5 +98,9 @@ export interface Quote {
   price_before_vat: number;
   vat: number;
   total: number;
+  // Sprint 020 — quote approval (app/quotes/router.py's _serialize()).
+  status: QuoteStatus;
+  approved_at: string | null;
+  approved_by_user_id: string | null;
   created_at: string;
 }

@@ -8,12 +8,14 @@ the pre-database era (ADR-001).
 """
 
 import uuid
-
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
 from app.database import crud
+from app.database.models import Project
+from app.projects.models import ProjectStatus
 from app.quotes.calculator import QuoteCalculator
 from app.quotes.models import QuoteRequest
 
@@ -28,10 +30,94 @@ class CustomerNotFoundError(Exception):
     against, and the resulting quote is itself tenant_id=None — invisible
     to every tenant's authenticated browsing routes either way."""
 
+class QuoteNotFoundError(Exception):
+    pass
+
+
+class QuoteApprovalStateError(Exception):
+    pass
 
 class QuoteService:
     def __init__(self) -> None:
         self.calculator = QuoteCalculator()
+    def approve(
+        self,
+        db: Session,
+        quote_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+    ):
+        quote = crud.get_quote_by_id(db, quote_id, tenant_id)
+        if quote is None:
+            raise QuoteNotFoundError(quote_id)
+
+        if quote.status != "draft":
+            raise QuoteApprovalStateError(quote.status)
+
+        quote.status = "approved"
+        quote.approved_at = datetime.now(timezone.utc)
+        quote.approved_by_user_id = actor_user_id
+        db.commit()
+        db.refresh(quote)
+
+        # Same backend-logs-its-own-ActivityEvent pattern as create() above.
+        activity_service.log(
+            ActivityEventCreate(
+                type=ActivityType.QUOTE_APPROVED,
+                title="Quote approved",
+                description=f"Quote {quote.id}",
+            ),
+            tenant_id=tenant_id,
+        )
+
+        return quote
+
+    def handoff(
+        self,
+        db: Session,
+        quote_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+    ) -> Project:
+        quote = crud.get_quote_by_id(db, quote_id, tenant_id)
+        if quote is None:
+            raise QuoteNotFoundError(quote_id)
+
+        if quote.status != "approved":
+            raise QuoteApprovalStateError(quote.status)
+
+        existing = crud.get_project_by_quote_id(db, quote.id, tenant_id)
+        if existing is not None:
+            return existing
+
+        customer = (
+            crud.get_customer_by_id(db, quote.customer_id, tenant_id)
+            if quote.customer_id is not None
+            else None
+        )
+        name = customer.name if customer is not None else f"Quote {quote.id}"
+
+        project = crud.create_project(
+            db,
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            name=name,
+            customer_id=quote.customer_id,
+            notes=None,
+            status=ProjectStatus.BOOKED.value,
+            quote_id=quote.id,
+        )
+
+        # Same backend-logs-its-own-ActivityEvent pattern as approve() above.
+        activity_service.log(
+            ActivityEventCreate(
+                type=ActivityType.QUOTE_HANDED_OFF,
+                title="Quote handed off",
+                description=f"Quote {quote.id} to project {project.id}",
+            ),
+            tenant_id=tenant_id,
+        )
+
+        return project
 
     def create(self, db: Session, quote: QuoteRequest, tenant_id: uuid.UUID | None = None) -> dict:
         if (

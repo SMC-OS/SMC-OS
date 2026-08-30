@@ -273,9 +273,16 @@ def create_project(
     customer_id: uuid.UUID | None,
     notes: str | None,
     status: str,
+    quote_id: uuid.UUID | None = None,
 ) -> Project:
     row = Project(
-        id=id, tenant_id=tenant_id, name=name, customer_id=customer_id, notes=notes, status=status
+        id=id,
+        tenant_id=tenant_id,
+        name=name,
+        customer_id=customer_id,
+        notes=notes,
+        status=status,
+        quote_id=quote_id,
     )
     db.add(row)
     db.commit()
@@ -285,6 +292,11 @@ def create_project(
 
 def get_project_by_id(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> Project | None:
     stmt = select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
+    return db.scalars(stmt).first()
+
+
+def get_project_by_quote_id(db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID) -> Project | None:
+    stmt = select(Project).where(Project.quote_id == quote_id, Project.tenant_id == tenant_id)
     return db.scalars(stmt).first()
 
 

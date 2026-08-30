@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -81,7 +82,7 @@ def run_runtime_check(values: dict[str, object]) -> subprocess.CompletedProcess[
         }
     )
     return subprocess.run(
-        [str(PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"), "-m", "app.core.runtime_check"],
+        [sys.executable, "-m", "app.core.runtime_check"],
         cwd=PROJECT_ROOT,
         env=environment,
         text=True,

@@ -90,6 +90,16 @@ class Quote(Base):
     vat: Mapped[float | None] = mapped_column(Float, nullable=True)
     total: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="draft"
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -103,6 +113,12 @@ class Project(Base):
     )
     customer_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True
+    )
+    # Sprint 020 — traceable handoff source; nullable so historical projects
+    # (created before handoff existed) remain valid. Unique: the DB-level
+    # duplicate-handoff guard (one quote hands off to at most one project).
+    quote_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=True, unique=True
     )
 
     name: Mapped[str] = mapped_column(String, nullable=False)

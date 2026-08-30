@@ -9,8 +9,11 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+
+POWERSHELL = shutil.which("pwsh") or shutil.which("powershell")
 
 import pytest
 
@@ -265,7 +268,7 @@ def test_health_monitor_requires_both_origins_and_never_uses_credentials():
     assert "Authorization" not in content
     assert "Bearer" not in content
 
-
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is unavailable on this runner")
 @pytest.mark.parametrize(
     "unsafe_origin",
     [
@@ -277,7 +280,7 @@ def test_health_monitor_requires_both_origins_and_never_uses_credentials():
 def test_health_monitor_rejects_unsafe_public_origin_components_before_network(unsafe_origin):
     result = subprocess.run(
         [
-            "powershell",
+            POWERSHELL,
             "-NoProfile",
             "-File",
             str(HEALTH_SCRIPT),

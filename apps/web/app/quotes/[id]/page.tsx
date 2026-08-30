@@ -15,11 +15,13 @@ import type { Quote } from "@/types/quote";
 export default function QuoteDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAuthenticated, isReady } = useAuth();
+  const { isAuthenticated, isReady, role } = useAuth();
   const [quote, setQuote] = useState<Quote | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [handingOff, setHandingOff] = useState(false);
 
   useEffect(() => {
     if (!isReady) return;
@@ -57,6 +59,34 @@ export default function QuoteDetailPage() {
       setDownloading(false);
     }
   }
+
+  async function handleApprove() {
+    if (!quote) return;
+    setApproving(true);
+    try {
+      const approved = await api.approveQuote(quote.id);
+      setQuote(approved);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not approve the quote.");
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleHandoff() {
+    if (!quote) return;
+    setHandingOff(true);
+    try {
+      const project = await api.handoffQuote(quote.id);
+      router.push(`/projects/${project.id}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not hand off the quote.");
+      setHandingOff(false);
+    }
+  }
+
+  const canApprove = role === "Owner" || role === "Staff";
+  const canHandoff = role === "Owner" || role === "Staff";
 
   return (
     <div className="mx-auto max-w-xl">
@@ -110,6 +140,12 @@ export default function QuoteDetailPage() {
                 </dd>
               </div>
               <div>
+                <dt className="text-xs font-medium text-muted">Status</dt>
+                <dd className="text-sm text-foreground">
+                  {quote.status === "approved" ? "Approved" : "Draft"}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-xs font-medium text-muted">Kitchen run length</dt>
                 <dd className="text-sm text-foreground">{quote.kitchen_length}m</dd>
               </div>
@@ -133,7 +169,17 @@ export default function QuoteDetailPage() {
               </div>
             </dl>
 
-            <div className="mt-6 border-t border-border pt-4">
+            <div className="mt-6 flex gap-3 border-t border-border pt-4">
+              {quote.status === "draft" && canApprove && (
+                <Button onClick={handleApprove} disabled={approving}>
+                  {approving ? "Approving…" : "Approve"}
+                </Button>
+              )}
+              {quote.status === "approved" && canHandoff && (
+                <Button onClick={handleHandoff} disabled={handingOff}>
+                  {handingOff ? "Handing off…" : "Hand off to Project"}
+                </Button>
+              )}
               <Button onClick={handleDownload} disabled={downloading} variant="outline">
                 {downloading ? "Downloading…" : "Download Invoice"}
               </Button>
