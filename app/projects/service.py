@@ -83,8 +83,9 @@ class ProjectService:
         Project-level idempotent within that: a Project already linked to a
         Customer returns that same Customer instead of creating another one
         — the existing linked Customer is authoritative, never overwritten
-        by a retry's payload. Still deliberately does not yet handle
-        activity logging — that's a later RED/GREEN cycle."""
+        by a retry's payload, and this early return happens before activity
+        logging below, so a retry emits no additional ENQUIRY_CONVERTED
+        event — only the first real conversion does."""
         project = crud.get_project_by_id(db, project_id, tenant_id)
         if project is None:
             return None
@@ -106,6 +107,18 @@ class ProjectService:
             phone=data.phone,
         )
         crud.update_project_customer(db, project_id, tenant_id, customer.id)
+
+        # Sprint 021 — same backend-logs-its-own-ActivityEvent convention as
+        # QUOTE_HANDED_OFF (app/quotes/service.py). Safe content only: no
+        # email/phone/name, just the two ids involved in the transition.
+        activity_service.log(
+            ActivityEventCreate(
+                type=ActivityType.ENQUIRY_CONVERTED,
+                title="Enquiry converted",
+                description=f"Project {project.id} converted to customer {customer.id}",
+            ),
+            tenant_id=tenant_id,
+        )
 
         return customer
 
