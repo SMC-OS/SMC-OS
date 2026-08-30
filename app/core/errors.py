@@ -10,6 +10,7 @@ never leaks a stack trace to the client.
 import logging
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -22,9 +23,13 @@ logger = logging.getLogger("simo_os")
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        # jsonable_encoder, not raw exc.errors(): a field_validator that
+        # raises ValueError (e.g. app/appointments/models.py's
+        # scheduled_at check) puts the live exception object in each
+        # error's ctx["error"], which plain json.dumps can't serialize.
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": "Invalid request", "errors": exc.errors()},
+            content={"detail": "Invalid request", "errors": jsonable_encoder(exc.errors())},
         )
 
     @app.exception_handler(KeyError)
