@@ -8,7 +8,7 @@ template for this Project->Customer conversion).
 
 import uuid
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.auth.service import auth_service
 from app.database.database import SessionLocal
@@ -54,6 +54,13 @@ TEST_RBAC_CUSTOMER_PHONE = "+44 7000 000025"
 NO_ROLE_EMAIL = "pytest-sprint021-no-role@example.invalid"
 NO_ROLE_PASSWORD = "pytest-sprint021-no-role-password"
 
+# Distinct name/project/email again, for the activity test below — its own
+# unique rows, never entangled with the other tests' counts.
+TEST_ACTIVITY_PROJECT_NAME = f"{TEST_PREFIX} Activity Project"
+TEST_ACTIVITY_CUSTOMER_NAME = f"{TEST_PREFIX} Activity Customer"
+TEST_ACTIVITY_CUSTOMER_EMAIL = "pytest-sprint021-activity-customer@example.invalid"
+TEST_ACTIVITY_CUSTOMER_PHONE = "+44 7000 000026"
+
 
 def _cleanup() -> None:
     db = SessionLocal()
@@ -69,6 +76,7 @@ def _cleanup() -> None:
                         TEST_NON_ENQUIRY_PROJECT_NAME,
                         TEST_CROSS_TENANT_PROJECT_NAME,
                         TEST_RBAC_PROJECT_NAME,
+                        TEST_ACTIVITY_PROJECT_NAME,
                     ]
                 )
             )
@@ -83,6 +91,7 @@ def _cleanup() -> None:
                         TEST_NON_ENQUIRY_CUSTOMER_NAME,
                         TEST_CROSS_TENANT_CUSTOMER_NAME,
                         TEST_RBAC_CUSTOMER_NAME,
+                        TEST_ACTIVITY_CUSTOMER_NAME,
                     ]
                 )
             )
@@ -367,5 +376,61 @@ def test_same_tenant_user_without_owner_staff_role_cannot_convert_enquiry(
             persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
             assert persisted_project.customer_id is None
             assert persisted_project.status == "enquiry"
+    finally:
+        _cleanup()
+
+
+def test_successful_enquiry_conversion_creates_exactly_one_tenant_scoped_activity(
+    client, auth_headers
+):
+    """Sprint 021 activity contract (docs/SPRINTS/sprint-021.md): the first
+    real conversion (unlinked enquiry Project -> Customer created -> Project
+    linked) must be audited through the existing ActivityLog infrastructure
+    — same mechanism as QUOTE_APPROVED/QUOTE_HANDED_OFF
+    (tests/test_quote_handoff.py) — not a parallel audit system, and not a
+    reuse of customer_added/project_created (this is its own domain
+    transition, same reasoning Sprint 020 gave for introducing
+    quote_handed_off instead of reusing project_created). Repeat-conversion
+    idempotency for this activity record is a later RED/GREEN cycle, not
+    this one: a retry on an already-linked Project must emit no additional
+    enquiry_converted activity."""
+    _cleanup()
+    try:
+        project = client.post(
+            "/api/v1/projects",
+            json={"name": TEST_ACTIVITY_PROJECT_NAME},
+            headers=auth_headers,
+        )
+        assert project.status_code == 201
+        project_body = project.json()
+        assert project_body["status"] == "enquiry"
+        assert project_body["customer_id"] is None
+
+        with SessionLocal() as db:
+            tenant_id = db.get(Project, uuid.UUID(project_body["id"])).tenant_id
+            activity_count_before = db.query(ActivityLog).filter_by(tenant_id=tenant_id).count()
+
+        response = client.post(
+            f"/api/v1/projects/{project_body['id']}/convert-to-customer",
+            json={
+                "name": TEST_ACTIVITY_CUSTOMER_NAME,
+                "email": TEST_ACTIVITY_CUSTOMER_EMAIL,
+                "phone": TEST_ACTIVITY_CUSTOMER_PHONE,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        with SessionLocal() as db:
+            activities = list(
+                db.scalars(
+                    select(ActivityLog)
+                    .where(ActivityLog.tenant_id == tenant_id)
+                    .order_by(ActivityLog.timestamp.desc())
+                )
+            )
+        assert len(activities) == activity_count_before + 1
+        assert activities[0].type == "enquiry_converted"
+        assert activities[0].tenant_id == tenant_id
     finally:
         _cleanup()
