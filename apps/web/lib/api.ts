@@ -1,4 +1,9 @@
 import type { ActivityEvent, ActivityType } from "@/types/activity";
+import type {
+  AppointmentCreate,
+  AppointmentOut,
+  AppointmentTransitionTarget,
+} from "@/types/appointment";
 import type { AuthUser, LoginResponse, SignupRequest } from "@/types/auth";
 import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
@@ -296,6 +301,24 @@ export const api = {
     request<Customer>(`/projects/${id}/convert-to-customer`, {
       method: "POST",
       body: JSON.stringify(customer),
+    }),
+
+  // Sprint 022 — site visit scheduling (docs/SPRINTS/sprint-022.md).
+  // Owner/Staff only server-side (require_role(OWNER, STAFF)), same as
+  // convertProjectToCustomer above.
+  getAppointments: (projectId: string) =>
+    request<AppointmentOut[]>(`/projects/${projectId}/appointments`),
+
+  createAppointment: (projectId: string, appointment: AppointmentCreate) =>
+    request<AppointmentOut>(`/projects/${projectId}/appointments`, {
+      method: "POST",
+      body: JSON.stringify(appointment),
+    }),
+
+  updateAppointmentStatus: (id: string, appointmentStatus: AppointmentTransitionTarget) =>
+    request<AppointmentOut>(`/appointments/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: appointmentStatus }),
     }),
 
   // AI Quotation Generator v1: extraction only, pre-fills the manual form

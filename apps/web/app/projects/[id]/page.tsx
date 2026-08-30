@@ -13,8 +13,15 @@ import { ApiError, api } from "@/lib/api";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
 import { formatRelativeTime } from "@/lib/utils";
 import { PROJECT_STATUSES } from "@/types/project";
+import type { AppointmentOut, AppointmentTransitionTarget } from "@/types/appointment";
 import type { Customer } from "@/types/customer";
 import type { Project } from "@/types/project";
+
+const APPOINTMENT_STATUS_TONE: Record<AppointmentOut["status"], "info" | "success" | "neutral"> = {
+  scheduled: "info",
+  completed: "success",
+  cancelled: "neutral",
+};
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -31,6 +38,15 @@ export default function ProjectDetailPage() {
   const [convertEmail, setConvertEmail] = useState("");
   const [convertPhone, setConvertPhone] = useState("");
   const [converting, setConverting] = useState(false);
+
+  // Sprint 022 — site visit scheduling (docs/SPRINTS/sprint-022.md).
+  const [appointments, setAppointments] = useState<AppointmentOut[] | null>(null);
+  const [appointmentError, setAppointmentError] = useState<string | null>(null);
+  const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState("");
+  const [scheduleNotes, setScheduleNotes] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+  const [transitioningId, setTransitioningId] = useState<string | null>(null);
 
   function load() {
     api
@@ -50,6 +66,17 @@ export default function ProjectDetailPage() {
       );
   }
 
+  function loadAppointments() {
+    api
+      .getAppointments(params.id)
+      .then(setAppointments)
+      .catch((err) =>
+        setAppointmentError(err instanceof ApiError ? err.message : "Something went wrong.")
+      );
+  }
+
+  const canManageAppointments = role === "Owner" || role === "Staff";
+
   useEffect(() => {
     if (!isReady) return;
     if (!isAuthenticated) {
@@ -57,8 +84,12 @@ export default function ProjectDetailPage() {
       return;
     }
     load();
+    // Appointments are Owner/Staff only server-side (require_role(OWNER,
+    // STAFF)) — same RBAC gating as convert-to-customer, so a caller
+    // without that role never even requests the list.
+    if (canManageAppointments) loadAppointments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, isAuthenticated, params.id]);
+  }, [isReady, isAuthenticated, params.id, canManageAppointments]);
 
   if (!isReady || !isAuthenticated) return null;
 
@@ -81,9 +112,11 @@ export default function ProjectDetailPage() {
     }
   }
 
-  const canConvert = role === "Owner" || role === "Staff";
   const showConvertAction =
-    !!project && project.status === "enquiry" && project.customer_id == null && canConvert;
+    !!project &&
+    project.status === "enquiry" &&
+    project.customer_id == null &&
+    canManageAppointments;
 
   async function handleConvert(e: React.FormEvent) {
     e.preventDefault();
@@ -104,6 +137,46 @@ export default function ProjectDetailPage() {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
       setConverting(false);
+    }
+  }
+
+  async function handleSchedule(e: React.FormEvent) {
+    e.preventDefault();
+    if (!project || !scheduleAt) return;
+    setScheduling(true);
+    try {
+      // datetime-local has no timezone of its own — Date() interprets it
+      // as local time, and toISOString() converts that to a tz-aware UTC
+      // string, satisfying the backend's naive-datetime rejection
+      // (app/appointments/models.py's scheduled_at validator).
+      const created = await api.createAppointment(project.id, {
+        scheduled_at: new Date(scheduleAt).toISOString(),
+        notes: scheduleNotes || null,
+      });
+      setAppointments((prev) => [...(prev ?? []), created]);
+      setShowScheduleForm(false);
+      setScheduleAt("");
+      setScheduleNotes("");
+    } catch (err) {
+      setAppointmentError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setScheduling(false);
+    }
+  }
+
+  async function handleTransition(id: string, target: AppointmentTransitionTarget) {
+    setTransitioningId(id);
+    try {
+      const updated = await api.updateAppointmentStatus(id, target);
+      // The server's returned Appointment is authoritative — applied only
+      // after a successful response, never optimistically.
+      setAppointments((prev) =>
+        (prev ?? []).map((appointment) => (appointment.id === id ? updated : appointment))
+      );
+    } catch (err) {
+      setAppointmentError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setTransitioningId(null);
     }
   }
 
@@ -217,6 +290,92 @@ export default function ProjectDetailPage() {
                     Convert to Customer
                   </Button>
                 )}
+              </div>
+            )}
+
+            {canManageAppointments && (
+              <div className="mt-6 border-t border-border pt-4">
+                <h2 className="text-sm font-semibold text-foreground">Site Visits</h2>
+
+                {appointmentError && (
+                  <p className="mt-2 text-sm text-danger">{appointmentError}</p>
+                )}
+
+                <ul className="mt-3 space-y-2">
+                  {(appointments ?? []).map((appointment) => (
+                    <li
+                      key={appointment.id}
+                      className="flex items-center justify-between gap-3 rounded-md border border-border p-3"
+                    >
+                      <div>
+                        <p className="text-sm text-foreground">
+                          {new Date(appointment.scheduled_at).toLocaleString()}
+                        </p>
+                        {appointment.notes && (
+                          <p className="text-xs text-muted">{appointment.notes}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge tone={APPOINTMENT_STATUS_TONE[appointment.status]}>
+                          {appointment.status}
+                        </Badge>
+                        {appointment.status === "scheduled" && (
+                          <>
+                            <Button
+                              variant="outline"
+                              onClick={() => handleTransition(appointment.id, "completed")}
+                              disabled={transitioningId === appointment.id}
+                            >
+                              Complete
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => handleTransition(appointment.id, "cancelled")}
+                              disabled={transitioningId === appointment.id}
+                            >
+                              Cancel
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+
+                {appointments && appointments.length === 0 && (
+                  <p className="mt-2 text-sm text-muted">No site visits scheduled yet.</p>
+                )}
+
+                <div className="mt-4">
+                  {showScheduleForm ? (
+                    <form onSubmit={handleSchedule} className="flex flex-col gap-4">
+                      <Field label="Date & time" htmlFor="schedule-at">
+                        <Input
+                          id="schedule-at"
+                          type="datetime-local"
+                          required
+                          value={scheduleAt}
+                          onChange={(e) => setScheduleAt(e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Notes" htmlFor="schedule-notes">
+                        <Input
+                          id="schedule-notes"
+                          value={scheduleNotes}
+                          onChange={(e) => setScheduleNotes(e.target.value)}
+                          placeholder="e.g. Measure kitchen worktop"
+                        />
+                      </Field>
+                      <Button type="submit" disabled={scheduling}>
+                        {scheduling ? "Scheduling…" : "Save site visit"}
+                      </Button>
+                    </form>
+                  ) : (
+                    <Button onClick={() => setShowScheduleForm(true)} variant="outline">
+                      Schedule Site Visit
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </CardContent>
