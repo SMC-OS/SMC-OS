@@ -27,6 +27,15 @@ TEST_RETRY_CUSTOMER_NAME = f"{TEST_PREFIX} Retry Customer"
 TEST_RETRY_CUSTOMER_EMAIL = "pytest-sprint021-retry-customer@example.invalid"
 TEST_RETRY_CUSTOMER_PHONE = "+44 7000 000022"
 
+# Distinct name/project/email again, for the non-enquiry lifecycle-guard
+# test below — its own unique rows, never entangled with the other two
+# tests' counts.
+TEST_NON_ENQUIRY_PROJECT_NAME = f"{TEST_PREFIX} Non-Enquiry Project"
+TEST_NON_ENQUIRY_CUSTOMER_NAME = f"{TEST_PREFIX} Non-Enquiry Customer"
+TEST_NON_ENQUIRY_CUSTOMER_EMAIL = "pytest-sprint021-non-enquiry-customer@example.invalid"
+TEST_NON_ENQUIRY_CUSTOMER_PHONE = "+44 7000 000023"
+TEST_NON_ENQUIRY_STATUS = "booked"
+
 
 def _cleanup() -> None:
     db = SessionLocal()
@@ -34,12 +43,18 @@ def _cleanup() -> None:
         # Projects must go before their Customer — Project.customer_id has
         # no ON DELETE CASCADE (same ordering as tests/test_quote_handoff.py).
         db.execute(
-            delete(Project).where(Project.name.in_([TEST_PROJECT_NAME, TEST_RETRY_PROJECT_NAME]))
+            delete(Project).where(
+                Project.name.in_(
+                    [TEST_PROJECT_NAME, TEST_RETRY_PROJECT_NAME, TEST_NON_ENQUIRY_PROJECT_NAME]
+                )
+            )
         )
         db.execute(delete(ActivityLog).where(ActivityLog.title.like(f"{TEST_PREFIX}%")))
         db.execute(
             delete(Customer).where(
-                Customer.name.in_([TEST_CUSTOMER_NAME, TEST_RETRY_CUSTOMER_NAME])
+                Customer.name.in_(
+                    [TEST_CUSTOMER_NAME, TEST_RETRY_CUSTOMER_NAME, TEST_NON_ENQUIRY_CUSTOMER_NAME]
+                )
             )
         )
         db.commit()
@@ -156,5 +171,57 @@ def test_repeat_conversion_returns_the_same_customer_without_creating_another(
                 db.query(Customer).filter_by(name=TEST_RETRY_CUSTOMER_NAME).count()
             )
             assert customer_count == 1
+    finally:
+        _cleanup()
+
+
+def test_conversion_rejects_a_non_enquiry_project(client, auth_headers):
+    """Sprint 021 lifecycle-state guard (docs/SPRINTS/sprint-021.md §4,
+    Decision 1): conversion is only allowed when Project.status == "enquiry".
+    A Project already advanced past that (here: "booked", a real
+    ProjectStatus member) must be rejected with 409 — no Customer created, no
+    link, no status mutation. Cross-tenant 404, RBAC 403, activity,
+    transaction atomicity, frontend, e2e, and global dedupe are later
+    RED/GREEN cycles, not this one."""
+    _cleanup()
+    try:
+        project = client.post(
+            "/api/v1/projects",
+            json={"name": TEST_NON_ENQUIRY_PROJECT_NAME},
+            headers=auth_headers,
+        )
+        assert project.status_code == 201
+        project_body = project.json()
+        assert project_body["customer_id"] is None
+
+        advanced = client.patch(
+            f"/api/v1/projects/{project_body['id']}/status",
+            json={"status": TEST_NON_ENQUIRY_STATUS},
+            headers=auth_headers,
+        )
+        assert advanced.status_code == 200
+        assert advanced.json()["status"] == TEST_NON_ENQUIRY_STATUS
+
+        response = client.post(
+            f"/api/v1/projects/{project_body['id']}/convert-to-customer",
+            json={
+                "name": TEST_NON_ENQUIRY_CUSTOMER_NAME,
+                "email": TEST_NON_ENQUIRY_CUSTOMER_EMAIL,
+                "phone": TEST_NON_ENQUIRY_CUSTOMER_PHONE,
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 409
+
+        with SessionLocal() as db:
+            customer_count = (
+                db.query(Customer).filter_by(name=TEST_NON_ENQUIRY_CUSTOMER_NAME).count()
+            )
+            assert customer_count == 0
+
+            persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
+            assert persisted_project.customer_id is None
+            assert persisted_project.status == TEST_NON_ENQUIRY_STATUS
     finally:
         _cleanup()
