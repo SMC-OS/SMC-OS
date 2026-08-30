@@ -8,8 +8,10 @@ template for this Project->Customer conversion).
 
 import uuid
 
+import pytest
 from sqlalchemy import delete, select
 
+from app.activity.service import activity_service
 from app.auth.service import auth_service
 from app.database.database import SessionLocal
 from app.database.models import ActivityLog, Customer, Project, User
@@ -61,6 +63,13 @@ TEST_ACTIVITY_CUSTOMER_NAME = f"{TEST_PREFIX} Activity Customer"
 TEST_ACTIVITY_CUSTOMER_EMAIL = "pytest-sprint021-activity-customer@example.invalid"
 TEST_ACTIVITY_CUSTOMER_PHONE = "+44 7000 000026"
 
+# Distinct name/project/email again, for the transaction-atomicity test
+# below — its own unique rows, never entangled with the other tests' counts.
+TEST_ATOMICITY_PROJECT_NAME = f"{TEST_PREFIX} Atomicity Project"
+TEST_ATOMICITY_CUSTOMER_NAME = f"{TEST_PREFIX} Atomicity Customer"
+TEST_ATOMICITY_CUSTOMER_EMAIL = "pytest-sprint021-atomicity-customer@example.invalid"
+TEST_ATOMICITY_CUSTOMER_PHONE = "+44 7000 000027"
+
 
 def _cleanup() -> None:
     db = SessionLocal()
@@ -77,6 +86,7 @@ def _cleanup() -> None:
                         TEST_CROSS_TENANT_PROJECT_NAME,
                         TEST_RBAC_PROJECT_NAME,
                         TEST_ACTIVITY_PROJECT_NAME,
+                        TEST_ATOMICITY_PROJECT_NAME,
                     ]
                 )
             )
@@ -92,6 +102,7 @@ def _cleanup() -> None:
                         TEST_CROSS_TENANT_CUSTOMER_NAME,
                         TEST_RBAC_CUSTOMER_NAME,
                         TEST_ACTIVITY_CUSTOMER_NAME,
+                        TEST_ATOMICITY_CUSTOMER_NAME,
                     ]
                 )
             )
@@ -432,5 +443,94 @@ def test_successful_enquiry_conversion_creates_exactly_one_tenant_scoped_activit
         assert len(activities) == activity_count_before + 1
         assert activities[0].type == "enquiry_converted"
         assert activities[0].tenant_id == tenant_id
+    finally:
+        _cleanup()
+
+
+def test_conversion_rolls_back_customer_and_project_link_if_activity_logging_fails(
+    client, auth_headers, monkeypatch
+):
+    """Sprint 021 transaction-atomicity contract: create Customer, link
+    Project.customer_id, and log enquiry_converted are one logical domain
+    transaction. If the final step (activity logging) fails, the earlier two
+    persistence effects must not survive — a genuine domain-integrity RED
+    today, since crud.create_customer and crud.update_project_customer each
+    commit immediately (app/database/crud.py), and
+    PostgresActivityRepository.add() (app/activity/repository.py) commits in
+    an entirely separate SessionLocal() of its own — there is no shared
+    transaction across the three steps yet. Concurrent conversions, new
+    status states, RBAC, tenant logic, and migrations are out of scope for
+    this cycle."""
+    _cleanup()
+    try:
+        project = client.post(
+            "/api/v1/projects",
+            json={"name": TEST_ATOMICITY_PROJECT_NAME},
+            headers=auth_headers,
+        )
+        assert project.status_code == 201
+        project_body = project.json()
+        assert project_body["status"] == "enquiry"
+        assert project_body["customer_id"] is None
+
+        with SessionLocal() as db:
+            tenant_id = db.get(Project, uuid.UUID(project_body["id"])).tenant_id
+
+        activity_description_prefix = f"Project {project_body['id']}"
+
+        with SessionLocal() as db:
+            assert db.query(Customer).filter_by(name=TEST_ATOMICITY_CUSTOMER_NAME).count() == 0
+            assert (
+                db.query(ActivityLog)
+                .filter(
+                    ActivityLog.tenant_id == tenant_id,
+                    ActivityLog.type == "enquiry_converted",
+                    ActivityLog.description.like(f"{activity_description_prefix}%"),
+                )
+                .count()
+                == 0
+            )
+
+        def fail_activity_log(*args, **kwargs):
+            raise RuntimeError("synthetic activity failure")
+
+        monkeypatch.setattr(activity_service, "log", fail_activity_log)
+
+        # TestClient's default raise_server_exceptions=True re-raises the
+        # original exception to the caller even though app/core/errors.py's
+        # catch-all handler also turns it into a 500 response server-side —
+        # the HTTP status itself isn't this test's contract, the persisted
+        # state after the failure is.
+        with pytest.raises(RuntimeError, match="synthetic activity failure"):
+            client.post(
+                f"/api/v1/projects/{project_body['id']}/convert-to-customer",
+                json={
+                    "name": TEST_ATOMICITY_CUSTOMER_NAME,
+                    "email": TEST_ATOMICITY_CUSTOMER_EMAIL,
+                    "phone": TEST_ATOMICITY_CUSTOMER_PHONE,
+                },
+                headers=auth_headers,
+            )
+
+        with SessionLocal() as db:
+            customer_count = (
+                db.query(Customer).filter_by(name=TEST_ATOMICITY_CUSTOMER_NAME).count()
+            )
+            assert customer_count == 0
+
+            persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
+            assert persisted_project.customer_id is None
+            assert persisted_project.status == "enquiry"
+
+            activity_count = (
+                db.query(ActivityLog)
+                .filter(
+                    ActivityLog.tenant_id == tenant_id,
+                    ActivityLog.type == "enquiry_converted",
+                    ActivityLog.description.like(f"{activity_description_prefix}%"),
+                )
+                .count()
+            )
+            assert activity_count == 0
     finally:
         _cleanup()
