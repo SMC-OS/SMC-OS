@@ -36,6 +36,13 @@ TEST_NON_ENQUIRY_CUSTOMER_EMAIL = "pytest-sprint021-non-enquiry-customer@example
 TEST_NON_ENQUIRY_CUSTOMER_PHONE = "+44 7000 000023"
 TEST_NON_ENQUIRY_STATUS = "booked"
 
+# Distinct name/project/email again, for the cross-tenant isolation test
+# below — its own unique rows, never entangled with the other tests' counts.
+TEST_CROSS_TENANT_PROJECT_NAME = f"{TEST_PREFIX} Cross-Tenant Project"
+TEST_CROSS_TENANT_CUSTOMER_NAME = f"{TEST_PREFIX} Cross-Tenant Customer"
+TEST_CROSS_TENANT_CUSTOMER_EMAIL = "pytest-sprint021-cross-tenant-customer@example.invalid"
+TEST_CROSS_TENANT_CUSTOMER_PHONE = "+44 7000 000024"
+
 
 def _cleanup() -> None:
     db = SessionLocal()
@@ -45,7 +52,12 @@ def _cleanup() -> None:
         db.execute(
             delete(Project).where(
                 Project.name.in_(
-                    [TEST_PROJECT_NAME, TEST_RETRY_PROJECT_NAME, TEST_NON_ENQUIRY_PROJECT_NAME]
+                    [
+                        TEST_PROJECT_NAME,
+                        TEST_RETRY_PROJECT_NAME,
+                        TEST_NON_ENQUIRY_PROJECT_NAME,
+                        TEST_CROSS_TENANT_PROJECT_NAME,
+                    ]
                 )
             )
         )
@@ -53,7 +65,12 @@ def _cleanup() -> None:
         db.execute(
             delete(Customer).where(
                 Customer.name.in_(
-                    [TEST_CUSTOMER_NAME, TEST_RETRY_CUSTOMER_NAME, TEST_NON_ENQUIRY_CUSTOMER_NAME]
+                    [
+                        TEST_CUSTOMER_NAME,
+                        TEST_RETRY_CUSTOMER_NAME,
+                        TEST_NON_ENQUIRY_CUSTOMER_NAME,
+                        TEST_CROSS_TENANT_CUSTOMER_NAME,
+                    ]
                 )
             )
         )
@@ -223,5 +240,51 @@ def test_conversion_rejects_a_non_enquiry_project(client, auth_headers):
             persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
             assert persisted_project.customer_id is None
             assert persisted_project.status == TEST_NON_ENQUIRY_STATUS
+    finally:
+        _cleanup()
+
+
+def test_conversion_of_another_tenants_project_returns_404(
+    client, auth_headers, other_tenant_auth_headers
+):
+    """Tenant B must not be able to convert Tenant A's enquiry Project —
+    same tenant-scoped-lookup-hides-existence convention as
+    test_get_project_cross_tenant_returns_404 (tests/test_projects.py) and
+    test_handoff_of_another_tenants_quote_returns_404
+    (tests/test_quote_handoff.py). RBAC role denial is a later RED/GREEN
+    cycle, not this one — both callers here are OWNER."""
+    _cleanup()
+    try:
+        project = client.post(
+            "/api/v1/projects",
+            json={"name": TEST_CROSS_TENANT_PROJECT_NAME},
+            headers=auth_headers,
+        )
+        assert project.status_code == 201
+        project_body = project.json()
+        assert project_body["status"] == "enquiry"
+        assert project_body["customer_id"] is None
+
+        response = client.post(
+            f"/api/v1/projects/{project_body['id']}/convert-to-customer",
+            json={
+                "name": TEST_CROSS_TENANT_CUSTOMER_NAME,
+                "email": TEST_CROSS_TENANT_CUSTOMER_EMAIL,
+                "phone": TEST_CROSS_TENANT_CUSTOMER_PHONE,
+            },
+            headers=other_tenant_auth_headers,
+        )
+
+        assert response.status_code == 404
+
+        with SessionLocal() as db:
+            customer_count = (
+                db.query(Customer).filter_by(name=TEST_CROSS_TENANT_CUSTOMER_NAME).count()
+            )
+            assert customer_count == 0
+
+            persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
+            assert persisted_project.customer_id is None
+            assert persisted_project.status == "enquiry"
     finally:
         _cleanup()
