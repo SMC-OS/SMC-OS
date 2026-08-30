@@ -3,7 +3,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_role
+from app.auth.models import UserRole
+from app.customers.models import CustomerCreate, CustomerOut
 from app.projects.models import ProjectCreate, ProjectOut, ProjectStatusUpdate
 from app.projects.service import CustomerNotFoundError, project_service
 from app.database.database import get_db
@@ -58,3 +60,18 @@ def update_project_status(
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return project
+
+
+@router.post("/{project_id}/convert-to-customer", response_model=CustomerOut)
+def convert_project_to_customer(
+    project_id: uuid.UUID,
+    data: CustomerCreate,
+    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    db: Session = Depends(get_db),
+):
+    customer = project_service.convert_to_customer(
+        db, project_id, current_user.tenant_id, data
+    )
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return customer

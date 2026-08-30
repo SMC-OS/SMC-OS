@@ -327,6 +327,19 @@ def update_project_status(
     return row
 
 
+def update_project_customer(
+    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, customer_id: uuid.UUID
+) -> Project | None:
+    stmt = select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
+    row = db.scalars(stmt).first()
+    if row is None:
+        return None
+    row.customer_id = customer_id
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def create_quote(
     db: Session,
     *,

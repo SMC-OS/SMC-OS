@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
+from app.customers.models import CustomerCreate
 from app.projects.models import ProjectCreate, ProjectStatus
 from app.database import crud
-from app.database.models import Project
+from app.database.models import Customer, Project
 
 
 class CustomerNotFoundError(Exception):
@@ -62,6 +63,29 @@ class ProjectService:
         self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, status: ProjectStatus
     ) -> Project | None:
         return crud.update_project_status(db, project_id, tenant_id, status.value)
+
+    def convert_to_customer(
+        self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, data: CustomerCreate
+    ) -> Customer | None:
+        """Sprint 021 — first happy-path cycle only (see
+        docs/SPRINTS/sprint-021.md §4-5). Deliberately does not yet handle:
+        an already-linked project (idempotency), a non-"enquiry" status
+        (409), or activity logging — those are later RED/GREEN cycles."""
+        project = crud.get_project_by_id(db, project_id, tenant_id)
+        if project is None:
+            return None
+
+        customer = crud.create_customer(
+            db,
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            name=data.name,
+            email=data.email,
+            phone=data.phone,
+        )
+        crud.update_project_customer(db, project_id, tenant_id, customer.id)
+
+        return customer
 
 
 project_service = ProjectService()
