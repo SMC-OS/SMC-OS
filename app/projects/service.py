@@ -67,13 +67,20 @@ class ProjectService:
     def convert_to_customer(
         self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, data: CustomerCreate
     ) -> Customer | None:
-        """Sprint 021 — first happy-path cycle only (see
-        docs/SPRINTS/sprint-021.md §4-5). Deliberately does not yet handle:
-        an already-linked project (idempotency), a non-"enquiry" status
-        (409), or activity logging — those are later RED/GREEN cycles."""
+        """Sprint 021 (docs/SPRINTS/sprint-021.md §4). Project-level
+        idempotent: a Project already linked to a Customer returns that same
+        Customer instead of creating another one — the existing linked
+        Customer is authoritative, never overwritten by a retry's payload.
+        Still deliberately does not yet handle a non-"enquiry" status (409)
+        or activity logging — those are later RED/GREEN cycles."""
         project = crud.get_project_by_id(db, project_id, tenant_id)
         if project is None:
             return None
+
+        if project.customer_id is not None:
+            existing_customer = crud.get_customer_by_id(db, project.customer_id, tenant_id)
+            if existing_customer is not None:
+                return existing_customer
 
         customer = crud.create_customer(
             db,
