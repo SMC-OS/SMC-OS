@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
+from app.customers.models import CustomerCreate
 from app.projects.models import ProjectCreate, ProjectStatus
 from app.database import crud
-from app.database.models import Project
+from app.database.models import Customer, Project
 
 
 class CustomerNotFoundError(Exception):
@@ -22,6 +23,14 @@ class CustomerNotFoundError(Exception):
     be linked to another tenant's customer by guessing/knowing its id, a
     relationship-level tenant-boundary bypass the id/get_project_by_id
     checks alone don't cover."""
+
+
+class ProjectNotInEnquiryStateError(Exception):
+    """Raised by convert_to_customer() when the tenant-scoped Project's
+    status isn't "enquiry" (Sprint 021, docs/SPRINTS/sprint-021.md §4,
+    Decision 1) — same service-raises-a-domain-error /
+    router-maps-to-HTTP convention as QuoteApprovalStateError
+    (app/quotes/service.py)."""
 
 
 class ProjectService:
@@ -62,6 +71,74 @@ class ProjectService:
         self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, status: ProjectStatus
     ) -> Project | None:
         return crud.update_project_status(db, project_id, tenant_id, status.value)
+
+    def convert_to_customer(
+        self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, data: CustomerCreate
+    ) -> Customer | None:
+        """Sprint 021 (docs/SPRINTS/sprint-021.md §4). Conversion is only
+        allowed while the Project is still "enquiry" — including an
+        already-linked Project that has since advanced past it, which must
+        still be rejected rather than idempotently returning its Customer
+        (status is checked before the idempotency short-circuit below).
+        Project-level idempotent within that: a Project already linked to a
+        Customer returns that same Customer instead of creating another one
+        — the existing linked Customer is authoritative, never overwritten
+        by a retry's payload, and this early return happens before activity
+        logging below, so a retry emits no additional ENQUIRY_CONVERTED
+        event — only the first real conversion does.
+
+        The three writes below (Customer, Project.customer_id, the
+        ENQUIRY_CONVERTED activity) are one logical transaction: each write
+        happens with commit=False on this same request-scoped `db`, and
+        this method commits exactly once at the end. If any step raises —
+        including activity_service.log, since it's passed this same `db` —
+        the whole transaction rolls back and the original exception
+        propagates; nothing partial survives."""
+        project = crud.get_project_by_id(db, project_id, tenant_id)
+        if project is None:
+            return None
+
+        if project.status != ProjectStatus.ENQUIRY.value:
+            raise ProjectNotInEnquiryStateError(project.status)
+
+        if project.customer_id is not None:
+            existing_customer = crud.get_customer_by_id(db, project.customer_id, tenant_id)
+            if existing_customer is not None:
+                return existing_customer
+
+        try:
+            customer = crud.create_customer(
+                db,
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                name=data.name,
+                email=data.email,
+                phone=data.phone,
+                commit=False,
+            )
+            crud.update_project_customer(db, project_id, tenant_id, customer.id, commit=False)
+
+            # Sprint 021 — same backend-logs-its-own-ActivityEvent
+            # convention as QUOTE_HANDED_OFF (app/quotes/service.py). Safe
+            # content only: no email/phone/name, just the two ids involved
+            # in the transition. Passing `db` folds this write into the
+            # same not-yet-committed transaction as the two writes above.
+            activity_service.log(
+                ActivityEventCreate(
+                    type=ActivityType.ENQUIRY_CONVERTED,
+                    title="Enquiry converted",
+                    description=f"Project {project.id} converted to customer {customer.id}",
+                ),
+                tenant_id=tenant_id,
+                db=db,
+            )
+
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        return customer
 
 
 project_service = ProjectService()

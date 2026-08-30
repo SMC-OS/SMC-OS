@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
+import { Field, Input } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
 import { formatRelativeTime } from "@/lib/utils";
@@ -18,11 +19,18 @@ import type { Project } from "@/types/project";
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAuthenticated, isReady } = useAuth();
+  const { isAuthenticated, isReady, role } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
+
+  // Sprint 021 — enquiry-to-customer conversion (docs/SPRINTS/sprint-021.md).
+  const [showConvertForm, setShowConvertForm] = useState(false);
+  const [convertName, setConvertName] = useState("");
+  const [convertEmail, setConvertEmail] = useState("");
+  const [convertPhone, setConvertPhone] = useState("");
+  const [converting, setConverting] = useState(false);
 
   function load() {
     api
@@ -50,7 +58,7 @@ export default function ProjectDetailPage() {
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, isAuthenticated, router, params.id]);
+  }, [isReady, isAuthenticated, params.id]);
 
   if (!isReady || !isAuthenticated) return null;
 
@@ -70,6 +78,32 @@ export default function ProjectDetailPage() {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
       setAdvancing(false);
+    }
+  }
+
+  const canConvert = role === "Owner" || role === "Staff";
+  const showConvertAction =
+    !!project && project.status === "enquiry" && project.customer_id == null && canConvert;
+
+  async function handleConvert(e: React.FormEvent) {
+    e.preventDefault();
+    if (!project) return;
+    setConverting(true);
+    try {
+      const convertedCustomer = await api.convertProjectToCustomer(project.id, {
+        name: convertName,
+        email: convertEmail || null,
+        phone: convertPhone || null,
+      });
+      // The server's returned Customer is authoritative — applied only
+      // after a successful response, never optimistically.
+      setCustomer(convertedCustomer);
+      setProject({ ...project, customer_id: convertedCustomer.id });
+      setShowConvertForm(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setConverting(false);
     }
   }
 
@@ -143,6 +177,48 @@ export default function ProjectDetailPage() {
                 </p>
               )}
             </div>
+
+            {showConvertAction && (
+              <div className="mt-6 border-t border-border pt-4">
+                {showConvertForm ? (
+                  <form onSubmit={handleConvert} className="flex flex-col gap-4">
+                    <Field label="Full name" htmlFor="convert-name">
+                      <Input
+                        id="convert-name"
+                        required
+                        value={convertName}
+                        onChange={(e) => setConvertName(e.target.value)}
+                        placeholder="e.g. James Okafor"
+                      />
+                    </Field>
+                    <Field label="Email" htmlFor="convert-email">
+                      <Input
+                        id="convert-email"
+                        type="email"
+                        value={convertEmail}
+                        onChange={(e) => setConvertEmail(e.target.value)}
+                        placeholder="james@example.com"
+                      />
+                    </Field>
+                    <Field label="Phone" htmlFor="convert-phone">
+                      <Input
+                        id="convert-phone"
+                        value={convertPhone}
+                        onChange={(e) => setConvertPhone(e.target.value)}
+                        placeholder="07123 456789"
+                      />
+                    </Field>
+                    <Button type="submit" disabled={converting}>
+                      {converting ? "Saving…" : "Save customer"}
+                    </Button>
+                  </form>
+                ) : (
+                  <Button onClick={() => setShowConvertForm(true)} variant="outline">
+                    Convert to Customer
+                  </Button>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

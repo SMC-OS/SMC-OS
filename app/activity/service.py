@@ -1,5 +1,7 @@
 import uuid
 
+from sqlalchemy.orm import Session
+
 from app.activity.models import ActivityEvent, ActivityEventCreate, ActivityType
 from app.activity.repository import ActivityRepository, PostgresActivityRepository
 
@@ -20,8 +22,18 @@ class ActivityService:
             events = [e for e in events if e.type == type]
         return events[:limit]
 
-    def log(self, event: ActivityEventCreate, tenant_id: uuid.UUID | None = None) -> ActivityEvent:
-        return self.repository.add(ActivityEvent(**event.model_dump()), tenant_id=tenant_id)
+    def log(
+        self,
+        event: ActivityEventCreate,
+        tenant_id: uuid.UUID | None = None,
+        db: Session | None = None,
+    ) -> ActivityEvent:
+        # Sprint 021 — db=None (every existing caller) preserves the
+        # original open-its-own-session-and-commit behavior exactly. A
+        # caller passing its own request-scoped db (currently only
+        # ProjectService.convert_to_customer) instead folds this write into
+        # that caller's own transaction — see PostgresActivityRepository.add.
+        return self.repository.add(ActivityEvent(**event.model_dump()), tenant_id=tenant_id, db=db)
 
 
 # Singleton used by the router. Sprint 002: now backed by Postgres by

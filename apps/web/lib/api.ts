@@ -288,6 +288,16 @@ export const api = {
       body: JSON.stringify({ status: projectStatus }),
     }),
 
+  // Sprint 021 — Owner/Staff only (require_role(OWNER, STAFF) server-side; a
+  // caller without that role gets a 403 handled by the caller, same as
+  // approveQuote/handoffQuote). Returns the created/linked Customer
+  // (CustomerOut), not the Project — that Customer is authoritative.
+  convertProjectToCustomer: (id: string, customer: CustomerCreate) =>
+    request<Customer>(`/projects/${id}/convert-to-customer`, {
+      method: "POST",
+      body: JSON.stringify(customer),
+    }),
+
   // AI Quotation Generator v1: extraction only, pre-fills the manual form
   // for human review — never auto-submitted, never priced by the AI.
   generateQuoteDraft: (text: string) =>

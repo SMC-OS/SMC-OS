@@ -24,6 +24,7 @@ class ActivityType(str, Enum):
     CUSTOMER_MESSAGE_RECEIVED = "customer_message_received"
     QUOTE_APPROVED = "quote_approved"
     QUOTE_HANDED_OFF = "quote_handed_off"
+    ENQUIRY_CONVERTED = "enquiry_converted"
 
 
 class ActivityEventCreate(BaseModel):
