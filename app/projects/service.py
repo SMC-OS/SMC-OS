@@ -25,6 +25,14 @@ class CustomerNotFoundError(Exception):
     checks alone don't cover."""
 
 
+class ProjectNotInEnquiryStateError(Exception):
+    """Raised by convert_to_customer() when the tenant-scoped Project's
+    status isn't "enquiry" (Sprint 021, docs/SPRINTS/sprint-021.md §4,
+    Decision 1) — same service-raises-a-domain-error /
+    router-maps-to-HTTP convention as QuoteApprovalStateError
+    (app/quotes/service.py)."""
+
+
 class ProjectService:
     def list_all(self, db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[Project]:
         return crud.list_projects(db, tenant_id, limit=limit)
@@ -67,15 +75,22 @@ class ProjectService:
     def convert_to_customer(
         self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, data: CustomerCreate
     ) -> Customer | None:
-        """Sprint 021 (docs/SPRINTS/sprint-021.md §4). Project-level
-        idempotent: a Project already linked to a Customer returns that same
-        Customer instead of creating another one — the existing linked
-        Customer is authoritative, never overwritten by a retry's payload.
-        Still deliberately does not yet handle a non-"enquiry" status (409)
-        or activity logging — those are later RED/GREEN cycles."""
+        """Sprint 021 (docs/SPRINTS/sprint-021.md §4). Conversion is only
+        allowed while the Project is still "enquiry" — including an
+        already-linked Project that has since advanced past it, which must
+        still be rejected rather than idempotently returning its Customer
+        (status is checked before the idempotency short-circuit below).
+        Project-level idempotent within that: a Project already linked to a
+        Customer returns that same Customer instead of creating another one
+        — the existing linked Customer is authoritative, never overwritten
+        by a retry's payload. Still deliberately does not yet handle
+        activity logging — that's a later RED/GREEN cycle."""
         project = crud.get_project_by_id(db, project_id, tenant_id)
         if project is None:
             return None
+
+        if project.status != ProjectStatus.ENQUIRY.value:
+            raise ProjectNotInEnquiryStateError(project.status)
 
         if project.customer_id is not None:
             existing_customer = crud.get_customer_by_id(db, project.customer_id, tenant_id)
