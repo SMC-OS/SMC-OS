@@ -1,7 +1,7 @@
 # Sprint 021 — Enquiry → Customer Conversion
 
-Status: **ENGINEERING COMPLETE — STAGING VERIFIED — READY TO MERGE.** Not yet
-merged to `main` and not deployed to production — see
+Status: **CLOSED — merged to `main`.** Not deployed to production (Sprint 030
+is the planned production-launch milestone — see `docs/ROADMAP.md`) — see
 [Implementation evidence](#implementation-evidence) below for what was
 actually run, and the discovery/contract-lock sections that follow (§1-6,
 originally written before implementation started) for the reasoning behind
@@ -10,6 +10,13 @@ the design.
 Branch: `sprint-021-enquiry-customer-conversion`
 Baseline: `main` @ `77a5a25` (Sprint 020 merge, confirmed via `git rev-parse HEAD`)
 Feature HEAD: `96f7448`
+Integration HEAD (after the Node-22 CI-runtime fix was merged into the
+branch, see `43da4fb`/`0bcab15`): `33b5adf`
+Merge commit: `3b5e864` — `Merge Sprint 021 enquiry customer conversion`
+(PR #2), two parents: `0bcab15` (main, carrying the CI fix) and `33b5adf`
+(Sprint 021's own history). Post-merge `main`-branch CI: GREEN
+(backend/frontend/e2e all `success`, run confirmed for the merge commit
+itself, not inferred from the feature branch's own run).
 
 ## 1. Domain reality check
 
