@@ -139,3 +139,19 @@ jobs:
       # separate "start backend"/"start frontend" steps of its own.
       - name: Run Playwright E2E
         run: pnpm --filter web test:e2e
+
+      # Sprint 027 (docs/SPRINTS/sprint-027.md §6.8/§8 finding) —
+      # playwright.config.ts already sets trace: "retain-on-failure" and
+      # screenshot: "only-on-failure", but until this step existed a CI
+      # E2E failure produced a red check and nothing else to inspect: the
+      # trace/screenshot were written to the ephemeral runner and
+      # discarded. `if: failure()` so a green run uploads nothing.
+      - name: Upload Playwright failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 14
