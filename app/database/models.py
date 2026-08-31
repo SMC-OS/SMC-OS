@@ -354,3 +354,34 @@ class NotificationRecord(Base):
     read: Mapped[bool] = mapped_column(Boolean, default=False)
 
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Appointment(Base):
+    """A staff-scheduled site visit against a Project (Sprint 022,
+    docs/SPRINTS/sprint-022.md). No `customer_id` — the customer is reached
+    via `project_id -> Project.customer_id`, avoiding duplication of a
+    relationship the Project already provides. `tenant_id` is NOT NULL from
+    creation (unlike Customer/Project/Quote's nullable columns, which exist
+    for an anonymous-creation path this entity has no equivalent of). No
+    `updated_at` — no table in this schema has one; a status transition is
+    represented via ActivityLog, the same convention every other mutation
+    in this codebase already follows."""
+
+    __tablename__ = "appointments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+    )
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="scheduled")
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
