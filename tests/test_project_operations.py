@@ -508,6 +508,13 @@ def test_successful_status_transition_logs_exactly_one_project_status_changed_ac
             )
         assert len(activities) == activity_count_before + 1
         assert activities[0].type == "project_status_changed"
+        # Regression lock: previous_status must be captured before
+        # crud.update_project_status mutates the same identity-mapped
+        # Project row (a real bug caught by e2e/project-operations.spec.ts
+        # — the description read "moved from templated to templated"
+        # instead of "moved from booked to templated" because `project`
+        # and the updated row were the same Python object).
+        assert activities[0].description == f"Project {project['id']} moved from booked to templated"
     finally:
         _cleanup()
 

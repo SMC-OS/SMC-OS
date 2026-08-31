@@ -101,14 +101,20 @@ class ProjectService:
         if project is None:
             return None
 
-        current_index = _STATUS_SEQUENCE.index(ProjectStatus(project.status))
+        # Captured as a plain str, not read from `project` again below:
+        # crud.update_project_status's query re-fetches the same row via
+        # SQLAlchemy's identity map, so `project` and that row are the same
+        # Python object — mutating one's `.status` mutates both in place.
+        previous_status = project.status
+
+        current_index = _STATUS_SEQUENCE.index(ProjectStatus(previous_status))
         next_status = (
             _STATUS_SEQUENCE[current_index + 1]
             if current_index + 1 < len(_STATUS_SEQUENCE)
             else None
         )
         if status != next_status:
-            raise InvalidProjectTransitionError(project.status, status.value)
+            raise InvalidProjectTransitionError(previous_status, status.value)
 
         try:
             updated = crud.update_project_status(
@@ -118,7 +124,7 @@ class ProjectService:
                 ActivityEventCreate(
                     type=ActivityType.PROJECT_STATUS_CHANGED,
                     title="Project status changed",
-                    description=f"Project {project_id} moved from {project.status} to {status.value}",
+                    description=f"Project {project_id} moved from {previous_status} to {status.value}",
                 ),
                 tenant_id=tenant_id,
                 db=db,
