@@ -324,3 +324,46 @@ retryability, disabled-state behavior, reload persistence, terminal-action
 visibility, navigation correctness. Fix only objectively broken/confusing
 behavior on existing workflows — this sprint does not redesign pages for
 subjective preference.
+
+---
+
+## LOCKED ACCEPTANCE CONTRACT
+
+This section is the sprint's frozen scope. It is committed separately from
+the discovery draft above and, once committed, is not renegotiated mid-sprint
+except by explicitly re-opening discovery in a follow-up commit.
+
+1. **Scope is closed.** The acceptance matrix (§ "Acceptance matrix (Phase 6)",
+   72 rows across categories A–L) is the complete set of scenarios Sprint 028
+   evaluates. No row is silently dropped; a row that cannot run is recorded
+   BLOCKED with a stated reason, never omitted.
+2. **Severity is fixed.** The BLOCKER/HIGH/MEDIUM/LOW definitions in
+   "Severity definitions (Phase 4 — LOCKED)" are final for this sprint. No
+   defect is downgraded to ease closeout.
+3. **No product code changes before this commit.** Everything before this
+   point in the sprint is documentation only. Phase 7 (local regression
+   baseline) is the first phase permitted to touch anything outside
+   `docs/SPRINTS/sprint-028.md`, and only to run — not modify — existing
+   suites. Product code changes begin only once a genuine `UAT-XXX` defect is
+   identified per the Defect handling rules above.
+4. **Journey reuse is mandatory.** The Sprint 027 connected E2E journey
+   (`apps/web/e2e/full-system-journey.spec.ts`) and the 27-gate staging smoke
+   suite (`scripts/staging/smoke.py`) are reused as-is and extended only for a
+   proven acceptance gap — never duplicated or replaced.
+5. **No feature creep.** Anything the matrix surfaces that was never part of
+   a shipped contract (Sprints 008–027) is logged as
+   **PRODUCT ENHANCEMENT — DEFERRED**, not built in this sprint.
+6. **Exit criteria are fixed** as stated in "Exit criteria" above: this
+   sprint closes only at BLOCKER = 0, HIGH = 0, and every core scenario,
+   persona, tenant-isolation, portal-token, follow-up, connected-journey,
+   Command Centre, and staging check at PASS (or explicitly justified
+   BLOCKED), with all MEDIUM/LOW dispositioned.
+7. **Both personas, both layers.** Every RBAC-gated scenario in categories B
+   and G is verified at the frontend (visibility) and backend (enforcement)
+   independently; a hidden button is never accepted as proof of enforcement.
+8. **Production is out of reach.** Sprint 028 targets the `sprint-028-uat-bugfix-cycle`
+   branch and, for staging verification, Railway's `simo-os` staging
+   environment only (`simo-api-staging`, `simo-web-staging`). No production
+   service is created, deployed to, or modified under this contract.
+
+Locked by this commit. Execution (Phase 7 onward) begins next.
