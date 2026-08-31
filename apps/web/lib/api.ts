@@ -5,6 +5,7 @@ import type {
   AppointmentTransitionTarget,
 } from "@/types/appointment";
 import type { AuthUser, LoginResponse, SignupRequest } from "@/types/auth";
+import type { CommandCentreStats } from "@/types/command-centre";
 import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
 import type { DocumentOut } from "@/types/document";
@@ -79,6 +80,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getDashboardStats: () => request<DashboardStats>("/dashboard"),
+
+  getCommandCentre: () => request<CommandCentreStats>("/dashboard/command-centre"),
 
   getActivity: (limit = 10, type?: ActivityType) =>
     request<ActivityEvent[]>(
