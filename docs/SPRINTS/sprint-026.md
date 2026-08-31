@@ -260,6 +260,165 @@ Ranked by the sprint's own priority order:
   APM** — all previously and correctly deferred by Sprint 018 and not
   reopened here.
 
+## Phase 2 — Contract lock
+
+Status: locked.
+
+Three narrow, verified behaviors, each independently testable, independently
+revertible, and each addressing a real gap confirmed by reading the actual
+code in Phase 1 (not assumed).
+
+### Contract A — `/api/v1/dashboard` RBAC gate
+
+- **Exact behavior changed.** `GET /api/v1/dashboard`
+  (`app/api/v1/core.py:77-85`) currently depends on `get_current_user` only.
+  It will depend on `require_role(UserRole.OWNER, UserRole.STAFF)` instead —
+  the same gate already used by its sibling
+  `GET /api/v1/dashboard/command-centre` (`app/dashboard/router.py:18`).
+  Both roles that can be authenticated at all today (`OWNER`, `STAFF`) keep
+  identical access; only a `role=None` account's access changes, from 200 to
+  403.
+- **Exact tests.** New tests in `tests/test_dashboard.py`, mirroring
+  `tests/test_command_centre.py`'s existing pattern:
+  - `test_dashboard_role_none_is_forbidden` — build a user with no role via
+    `auth_service.create_user(db, tenant_id=..., name=..., email=..., password=...)`
+    (role omitted → `None`), log in, `GET /api/v1/dashboard` → expect 403.
+  - `test_dashboard_staff_can_access` — build a `role="Staff"` user via the
+    same helper, log in, `GET /api/v1/dashboard` → expect 200 (locks in that
+    the fix doesn't regress the one role besides Owner that must keep
+    working).
+- **Expected RED reason.** Before the change, `test_dashboard_role_none_is_forbidden`
+  fails because the endpoint returns 200 (no role check exists yet) instead
+  of the expected 403.
+- **Implementation boundary.** One dependency swap in
+  `app/api/v1/core.py`, plus the import of `require_role`/`UserRole`
+  already used elsewhere in that pattern. No other route, service, or
+  schema touched.
+- **Migration impact.** None — no schema change.
+- **Staging verification.** `GET /api/v1/dashboard` with an Owner token →
+  200; with a Staff token → 200; with no token → 401 (already covered);
+  with a deliberately role-less token (created the same way as the new
+  unit test, via a direct DB session against staging) → 403.
+- **Rollback.** Revert the single dependency line and the two new test
+  functions; no data or migration rollback needed.
+
+### Contract B — Login brute-force throttling
+
+- **Exact behavior changed.** `POST /api/v1/auth/login`
+  (`app/auth/router.py:26-35`) currently has no limit on failed attempts.
+  A new in-process, per-email, fixed-window limiter
+  (`app/auth/rate_limit.py`, `LoginRateLimiter`) is checked before
+  credentials are verified and incremented only on a failed attempt (401);
+  a successful login always clears that email's counter. Default:
+  5 failed attempts per 60-second window (new `Settings` fields
+  `login_rate_limit_max_attempts=5`, `login_rate_limit_window_seconds=60.0`
+  in `app/core/config.py`, following the existing plain-field convention —
+  not secrets, no new production-validation branch needed). Exceeding the
+  limit returns `429` with a `Retry-After` header, before `authenticate()`
+  runs (also avoids wasted bcrypt work under attack).
+  **Scope note:** `POST /api/v1/auth/signup` is deliberately NOT
+  throttled in this sprint — see Deferred work below.
+- **Exact tests.**
+  - New `tests/test_login_rate_limit.py`:
+    - Unit tests against `LoginRateLimiter` directly with an injected fake
+      clock (no real sleeps): allows up to `max_attempts` failures then
+      blocks; a window reset (fake clock advanced past `window_seconds`)
+      allows again; `reset()` clears a key; two different emails are
+      tracked independently.
+    - HTTP integration tests against a real running app (default
+      settings): fail login 5 times for one freshly created test account →
+      each 401; the 6th attempt (even with the correct password) → 429
+      with a `Retry-After` header present; a second, different test
+      account is unaffected in the same window (isolation); a passing
+      login after 2 failures (below the limit) resets the counter, so a
+      subsequent single failure afterward does not immediately 429
+      (proves reset-on-success).
+- **Expected RED reason.** Before the change, the "6th attempt" HTTP test
+  fails because the endpoint returns 401 (wrong password checked normally)
+  instead of the expected 429 — no limiter exists yet to short-circuit it.
+- **Implementation boundary.** One new file (`app/auth/rate_limit.py`,
+  ~50 lines, no external dependency — no Redis/`slowapi` exists in
+  `requirements.txt` and none is added), two new `Settings` fields, and a
+  ~6-line change to `app/auth/router.py`'s `login` handler. Signup is not
+  touched. No other route touched.
+- **Migration impact.** None — in-memory only, no schema change.
+- **Known, accepted limitation (documented, not fixed this sprint).**
+  Per-process only: does not share state across horizontally scaled
+  instances (matches the existing accepted `UPLOAD_DIR` single-instance
+  limitation, ADR-032) and resets on redeploy/restart. Meaningful against
+  today's actual deployment (single Railway API instance) and against an
+  unthrottled brute-force script, which is the verified real gap; not a
+  distributed rate limiter.
+- **Staging verification.** From a real HTTP client against staging: 5
+  failed logins against a disposable staging test account → 401 each; 6th
+  → 429 with `Retry-After`; a valid login for a different account in the
+  same window → 200 (unaffected); confirm a normal single mistyped-password
+  retry by a real user is never blocked (only the 6th+ consecutive failure
+  is).
+- **Rollback.** Revert `app/auth/router.py`'s three added lines, delete
+  `app/auth/rate_limit.py`, and revert the two `Settings` fields
+  (defaults only, no data implication). No migration rollback needed.
+
+### Contract C — Security response headers
+
+- **Exact behavior changed.** Every HTTP response (including error
+  responses and `/health`/`/ready`) gains:
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: strict-origin-when-cross-origin` always, plus
+  `Strict-Transport-Security: max-age=63072000; includeSubDomains` added
+  only when `app_env == production` (HSTS on `http://localhost` in
+  development would be actively harmful — it caches in the browser).
+  Implemented as a new `SecurityHeadersMiddleware` in
+  `app/core/middleware.py`, registered in `app/main.py` alongside
+  `RequestContextMiddleware`.
+- **Exact tests.** New `tests/test_security_headers.py`, using the
+  existing `make_development_settings`/`make_production_settings` helpers
+  from `tests/test_runtime_http.py` (imported, not duplicated) plus
+  `create_app`:
+  - `test_security_headers_present_on_a_normal_response` (dev settings,
+    `GET /health`) — asserts the three always-on headers and their exact
+    values.
+  - `test_security_headers_present_on_an_error_response` — asserts the
+    same headers survive a 404/500, not just 200s.
+  - `test_hsts_present_in_production` (production settings) — asserts
+    `Strict-Transport-Security` is present with the exact value.
+  - `test_hsts_absent_outside_production` (development settings) —
+    asserts the header is absent.
+- **Expected RED reason.** Before the change, every new assertion fails
+  because the header is simply missing from the response (`KeyError`/
+  membership assertion failure) — no such middleware exists yet.
+- **Implementation boundary.** One new middleware class (~15 lines) plus
+  one `add_middleware` call in `app/main.py`. Response-header-only; does
+  not touch routing, auth, or any business logic. Verified low blast
+  radius: cannot change CORS behavior (registered independently of
+  `CORSMiddleware`) and cannot alter status codes or bodies.
+- **Migration impact.** None.
+- **Staging verification.** `curl -i` (or the staging smoke suite) against
+  a real staging response confirms all three always-on headers and,
+  because staging runs with `APP_ENV=production`
+  (`deploy/railway/staging.env.example:2`), the HSTS header too. Confirm
+  the frontend (staging web) still loads and authenticates normally (HSTS/
+  frame-ancestors headers on the API don't affect a separate-origin
+  frontend's own headers).
+- **Rollback.** Revert the `app/main.py` `add_middleware` call and delete
+  the middleware class; no data or migration rollback needed.
+
+### Deferred work (restated from Phase 1, unchanged by contract lock)
+
+Host-header/`TrustedHostMiddleware` validation, CI dependency/secret
+scanning, JWT httpOnly-cookie storage, signup throttling, refresh tokens,
+password reset, malware scanning, global request-body-size middleware,
+quotas, billing, WebSockets/SSE, full APM. None of these are started or
+partially started by this contract.
+
+### Production untouched requirement
+
+No contract above touches `deploy/railway/api.railway.toml`,
+`deploy/railway/web.railway.toml`, any production Railway service/variable,
+any production database, or DNS. All three are pure application-code
+changes verified first on the local test suite, then on staging only,
+per Phase 6.
+
 ## Production safety boundary (restated)
 
 No production Railway service, database, DNS, or credential is touched by
