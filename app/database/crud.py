@@ -506,6 +506,77 @@ def sum_quotes_revenue(db: Session, tenant_id: uuid.UUID) -> float:
     return float(total) if total is not None else 0.0
 
 
+# Sprint 025 (docs/SPRINTS/sprint-025.md) — Business Command Centre
+# aggregates. Each is a single grouped/aggregate SQL query, never a
+# per-row Python loop, so none of these introduce an N+1 pattern
+# regardless of how many Projects/Quotes/Appointments a tenant has.
+
+
+def count_projects_by_status(db: Session, tenant_id: uuid.UUID) -> dict[str, int]:
+    rows = (
+        db.query(Project.status, func.count())
+        .filter(Project.tenant_id == tenant_id)
+        .group_by(Project.status)
+        .all()
+    )
+    return {status: count for status, count in rows}
+
+
+def count_quotes_by_status(db: Session, tenant_id: uuid.UUID) -> dict[str, int]:
+    rows = (
+        db.query(Quote.status, func.count())
+        .filter(Quote.tenant_id == tenant_id)
+        .group_by(Quote.status)
+        .all()
+    )
+    return {status: count for status, count in rows}
+
+
+def count_handed_off_projects(db: Session, tenant_id: uuid.UUID) -> int:
+    # Project.quote_id is a nullable, unique FK (Sprint 020) — set exactly
+    # when a quote has been handed off into this Project (docs/SPRINTS/
+    # sprint-025.md §1). A single indexed count, no join to quotes needed.
+    return (
+        db.query(Project)
+        .filter(Project.tenant_id == tenant_id, Project.quote_id.isnot(None))
+        .count()
+    )
+
+
+def sum_approved_quotes_value(db: Session, tenant_id: uuid.UUID) -> float:
+    total = (
+        db.query(func.sum(Quote.total))
+        .filter(Quote.tenant_id == tenant_id, Quote.status == "approved")
+        .scalar()
+    )
+    return float(total) if total is not None else 0.0
+
+
+def count_appointments_by_status(db: Session, tenant_id: uuid.UUID) -> dict[str, int]:
+    rows = (
+        db.query(Appointment.status, func.count())
+        .filter(Appointment.tenant_id == tenant_id)
+        .group_by(Appointment.status)
+        .all()
+    )
+    return {status: count for status, count in rows}
+
+
+def count_unread_follow_up_notifications(db: Session, tenant_id: uuid.UUID) -> int:
+    # Tenant-wide, not scoped to a single recipient (docs/SPRINTS/
+    # sprint-025.md §1/§3) — an operational "how much is outstanding
+    # across the team" count, not a personal inbox count.
+    return (
+        db.query(NotificationRecord)
+        .filter(
+            NotificationRecord.tenant_id == tenant_id,
+            NotificationRecord.source_type == "project",
+            NotificationRecord.read.is_(False),
+        )
+        .count()
+    )
+
+
 def create_tenant(
     db: Session,
     *,
