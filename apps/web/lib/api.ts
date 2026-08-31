@@ -305,8 +305,10 @@ export const api = {
 
   // Sprint 022 — site visit scheduling (docs/SPRINTS/sprint-022.md).
   // Owner/Staff only server-side (require_role(OWNER, STAFF)), same as
-  // convertProjectToCustomer above.
-  getAppointments: (projectId: string) =>
+  // convertProjectToCustomer above. Decision 6: dedicated
+  // completeAppointment/cancelAppointment methods over one generic
+  // updateAppointmentStatus(id, status).
+  getProjectAppointments: (projectId: string) =>
     request<AppointmentOut[]>(`/projects/${projectId}/appointments`),
 
   createAppointment: (projectId: string, appointment: AppointmentCreate) =>
@@ -315,10 +317,16 @@ export const api = {
       body: JSON.stringify(appointment),
     }),
 
-  updateAppointmentStatus: (id: string, appointmentStatus: AppointmentTransitionTarget) =>
+  completeAppointment: (id: string) =>
     request<AppointmentOut>(`/appointments/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status: appointmentStatus }),
+      body: JSON.stringify({ status: "completed" satisfies AppointmentTransitionTarget }),
+    }),
+
+  cancelAppointment: (id: string) =>
+    request<AppointmentOut>(`/appointments/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "cancelled" satisfies AppointmentTransitionTarget }),
     }),
 
   // AI Quotation Generator v1: extraction only, pre-fills the manual form

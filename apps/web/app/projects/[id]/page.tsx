@@ -68,7 +68,7 @@ export default function ProjectDetailPage() {
 
   function loadAppointments() {
     api
-      .getAppointments(params.id)
+      .getProjectAppointments(params.id)
       .then(setAppointments)
       .catch((err) =>
         setAppointmentError(err instanceof ApiError ? err.message : "Something went wrong.")
@@ -167,7 +167,8 @@ export default function ProjectDetailPage() {
   async function handleTransition(id: string, target: AppointmentTransitionTarget) {
     setTransitioningId(id);
     try {
-      const updated = await api.updateAppointmentStatus(id, target);
+      const updated =
+        target === "completed" ? await api.completeAppointment(id) : await api.cancelAppointment(id);
       // The server's returned Appointment is authoritative — applied only
       // after a successful response, never optimistically.
       setAppointments((prev) =>
