@@ -1,7 +1,8 @@
 # Sprint 024 — Notifications / Follow-up Automation
 
-Status: **DISCOVERY ONLY — no production code, no migrations, no tests
-written.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence.
+Status: **CONTRACT LOCKED — no production code, no migrations, no tests
+written yet.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence.
+See LOCKED CONTRACT at the end of this document.
 
 Branch: `sprint-024-notifications-follow-up`
 Baseline: `main` @ `36802bb` (Sprint 023 merge, confirmed via
