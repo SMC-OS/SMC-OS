@@ -6,9 +6,16 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user, require_role
 from app.auth.models import UserRole
 from app.customers.models import CustomerCreate, CustomerOut
-from app.projects.models import ProjectCreate, ProjectOut, ProjectStatusUpdate
+from app.projects.models import (
+    ProjectAssignmentUpdate,
+    ProjectCreate,
+    ProjectOut,
+    ProjectStatusUpdate,
+)
 from app.projects.service import (
+    AssignedUserNotFoundError,
     CustomerNotFoundError,
+    InvalidProjectTransitionError,
     ProjectNotInEnquiryStateError,
     project_service,
 )
@@ -55,12 +62,36 @@ def create_project(
 def update_project_status(
     project_id: uuid.UUID,
     data: ProjectStatusUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
     db: Session = Depends(get_db),
 ):
-    project = project_service.update_status(
-        db, project_id, current_user.tenant_id, data.status
-    )
+    try:
+        project = project_service.update_status(
+            db, project_id, current_user.tenant_id, data.status
+        )
+    except InvalidProjectTransitionError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invalid status transition",
+        )
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return project
+
+
+@router.patch("/{project_id}/assign", response_model=ProjectOut)
+def assign_project(
+    project_id: uuid.UUID,
+    data: ProjectAssignmentUpdate,
+    current_user: User = Depends(require_role(UserRole.OWNER)),
+    db: Session = Depends(get_db),
+):
+    try:
+        project = project_service.assign(
+            db, project_id, current_user.tenant_id, data.assigned_user_id
+        )
+    except AssignedUserNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return project

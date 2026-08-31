@@ -8,7 +8,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
-import { Field, Input } from "@/components/ui/Field";
+import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
 import { formatRelativeTime } from "@/lib/utils";
@@ -16,6 +16,7 @@ import { PROJECT_STATUSES } from "@/types/project";
 import type { AppointmentOut, AppointmentTransitionTarget } from "@/types/appointment";
 import type { Customer } from "@/types/customer";
 import type { Project } from "@/types/project";
+import type { TeamMemberOut } from "@/types/user";
 
 const APPOINTMENT_STATUS_TONE: Record<AppointmentOut["status"], "info" | "success" | "neutral"> = {
   scheduled: "info",
@@ -48,6 +49,11 @@ export default function ProjectDetailPage() {
   const [scheduling, setScheduling] = useState(false);
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
 
+  // Sprint 023 — project operations (docs/SPRINTS/sprint-023.md).
+  const [teamMembers, setTeamMembers] = useState<TeamMemberOut[] | null>(null);
+  const [operationsError, setOperationsError] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState(false);
+
   function load() {
     api
       .getProject(params.id)
@@ -76,6 +82,7 @@ export default function ProjectDetailPage() {
   }
 
   const canManageAppointments = role === "Owner" || role === "Staff";
+  const canAssign = role === "Owner";
 
   useEffect(() => {
     if (!isReady) return;
@@ -88,8 +95,16 @@ export default function ProjectDetailPage() {
     // STAFF)) — same RBAC gating as convert-to-customer, so a caller
     // without that role never even requests the list.
     if (canManageAppointments) loadAppointments();
+    // The team-member list backs the Owner-only Assign control — a
+    // non-Owner never requests it.
+    if (canAssign) {
+      api
+        .getUsers()
+        .then(setTeamMembers)
+        .catch(() => {});
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, isAuthenticated, params.id, canManageAppointments]);
+  }, [isReady, isAuthenticated, params.id, canManageAppointments, canAssign]);
 
   if (!isReady || !isAuthenticated) return null;
 
@@ -106,9 +121,26 @@ export default function ProjectDetailPage() {
       const updated = await api.updateProjectStatus(project.id, nextStatus);
       setProject(updated);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      setOperationsError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
       setAdvancing(false);
+    }
+  }
+
+  async function handleAssign(e: React.ChangeEvent<HTMLSelectElement>) {
+    if (!project) return;
+    const value = e.target.value;
+    const assignedUserId = value === "" ? null : value;
+    setAssigning(true);
+    try {
+      const updated = await api.assignProject(project.id, assignedUserId);
+      // The server's returned Project is authoritative — applied only
+      // after a successful response, never optimistically.
+      setProject(updated);
+    } catch (err) {
+      setOperationsError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setAssigning(false);
     }
   }
 
@@ -239,17 +271,51 @@ export default function ProjectDetailPage() {
             </dl>
 
             <div className="mt-6 border-t border-border pt-4">
-              {nextStatus ? (
-                <Button onClick={handleAdvance} disabled={advancing}>
-                  {advancing
-                    ? "Advancing…"
-                    : `Advance to ${PROJECT_STATUS_LABEL[nextStatus]}`}
-                </Button>
-              ) : (
-                <p className="text-sm text-muted">
-                  This project has completed the pipeline.
-                </p>
+              <h2 className="text-sm font-semibold text-foreground">Project Operations</h2>
+
+              {operationsError && (
+                <p className="mt-2 text-sm text-danger">{operationsError}</p>
               )}
+
+              <dl className="mt-3 space-y-3">
+                <div>
+                  <dt className="text-xs font-medium text-muted">Assigned to</dt>
+                  <dd className="text-sm text-foreground">
+                    {canAssign ? (
+                      <Select
+                        aria-label="Assigned to"
+                        value={project.assigned_user_id ?? ""}
+                        onChange={handleAssign}
+                        disabled={assigning || !teamMembers}
+                      >
+                        <option value="">Unassigned</option>
+                        {(teamMembers ?? []).map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      (teamMembers?.find((m) => m.id === project.assigned_user_id)?.name ??
+                        (project.assigned_user_id ? project.assigned_user_id : "Unassigned"))
+                    )}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="mt-4">
+                {!canManageAppointments ? null : nextStatus ? (
+                  <Button onClick={handleAdvance} disabled={advancing}>
+                    {advancing
+                      ? "Advancing…"
+                      : `Advance to ${PROJECT_STATUS_LABEL[nextStatus]}`}
+                  </Button>
+                ) : (
+                  <p className="text-sm text-muted">
+                    This project has completed the pipeline.
+                  </p>
+                )}
+              </div>
             </div>
 
             {showConvertAction && (

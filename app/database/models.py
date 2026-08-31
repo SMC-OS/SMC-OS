@@ -120,6 +120,13 @@ class Project(Base):
     quote_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=True, unique=True
     )
+    # Sprint 023 (docs/SPRINTS/sprint-023.md) — the responsible Staff/Owner
+    # member, if any. No assigned_at column — ActivityLog's own timestamp
+    # on each PROJECT_ASSIGNED event already gives an exact audit trail,
+    # same no-updated_at-anywhere convention as every other table.
+    assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(String, nullable=True)

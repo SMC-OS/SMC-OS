@@ -32,7 +32,15 @@ class ProjectOut(ProjectCreate):
     status: ProjectStatus
     created_at: datetime
     quote_id: uuid.UUID | None = None
+    assigned_user_id: uuid.UUID | None = None
 
 
 class ProjectStatusUpdate(BaseModel):
     status: ProjectStatus
+
+
+class ProjectAssignmentUpdate(BaseModel):
+    """Sprint 023 (docs/SPRINTS/sprint-023.md). `assigned_user_id: null` is
+    a valid, explicit unassignment — not "field omitted"."""
+
+    assigned_user_id: uuid.UUID | None

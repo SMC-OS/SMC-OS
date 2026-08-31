@@ -21,4 +21,7 @@ export interface Project extends ProjectCreate {
   quote_id: string | null;
   status: ProjectStatus;
   created_at: string;
+  // Sprint 023 (docs/SPRINTS/sprint-023.md) — the responsible Staff/Owner
+  // member, if any.
+  assigned_user_id: string | null;
 }

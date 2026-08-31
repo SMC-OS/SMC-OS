@@ -334,15 +334,44 @@ def count_projects(db: Session, tenant_id: uuid.UUID) -> int:
 
 
 def update_project_status(
-    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, status: str
+    db: Session,
+    project_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    status: str,
+    *,
+    commit: bool = True,
 ) -> Project | None:
     stmt = select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
     row = db.scalars(stmt).first()
     if row is None:
         return None
     row.status = status
-    db.commit()
-    db.refresh(row)
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
+    return row
+
+
+def update_project_assignment(
+    db: Session,
+    project_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    assigned_user_id: uuid.UUID | None,
+    *,
+    commit: bool = True,
+) -> Project | None:
+    stmt = select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
+    row = db.scalars(stmt).first()
+    if row is None:
+        return None
+    row.assigned_user_id = assigned_user_id
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
     return row
 
 

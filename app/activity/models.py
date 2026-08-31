@@ -28,6 +28,8 @@ class ActivityType(str, Enum):
     SITE_VISIT_SCHEDULED = "site_visit_scheduled"
     SITE_VISIT_COMPLETED = "site_visit_completed"
     SITE_VISIT_CANCELLED = "site_visit_cancelled"
+    PROJECT_ASSIGNED = "project_assigned"
+    PROJECT_STATUS_CHANGED = "project_status_changed"
 
 
 class ActivityEventCreate(BaseModel):

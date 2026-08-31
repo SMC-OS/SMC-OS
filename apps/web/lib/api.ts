@@ -293,6 +293,15 @@ export const api = {
       body: JSON.stringify({ status: projectStatus }),
     }),
 
+  // Sprint 023 — Owner-only server-side (require_role(OWNER)), distinct
+  // from updateProjectStatus's Owner+Staff gating (docs/SPRINTS/sprint-023.md
+  // Decision 2). assignedUserId: null is a valid, explicit unassignment.
+  assignProject: (id: string, assignedUserId: string | null) =>
+    request<Project>(`/projects/${id}/assign`, {
+      method: "PATCH",
+      body: JSON.stringify({ assigned_user_id: assignedUserId }),
+    }),
+
   // Sprint 021 — Owner/Staff only (require_role(OWNER, STAFF) server-side; a
   // caller without that role gets a 403 handled by the caller, same as
   // approveQuote/handoffQuote). Returns the created/linked Customer
