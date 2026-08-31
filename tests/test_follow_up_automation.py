@@ -117,7 +117,17 @@ def test_run_creates_exactly_one_notification_for_a_stale_enquiry_with_assigned_
         with SessionLocal() as db:
             result = follow_up_service.run(db, now=_stale_now(created_at))
 
-        assert result.created == 1
+        # Sprint 027 (docs/SPRINTS/sprint-027.md §3 finding): run() scans
+        # *globally* across every tenant (by design, see this file's module
+        # docstring), so `result.created` is a whole-database count, not
+        # this test's own count — a stale enquiry left behind anywhere by
+        # an earlier interrupted run (this is a long-lived shared dev
+        # Postgres, not a fresh database per run) makes `== 1` fail without
+        # this test doing anything wrong. The scoped query directly below,
+        # filtered to this test's own project_id, is what actually proves
+        # the locked contract ("exactly one notification for *this*
+        # project") and is unaffected by any other tenant's data.
+        assert result.created >= 1
 
         with SessionLocal() as db:
             notifications = (
@@ -155,7 +165,9 @@ def test_running_twice_creates_no_duplicate_notification(client):
 
         with SessionLocal() as db:
             first = follow_up_service.run(db, now=now)
-        assert first.created == 1
+        # See the Sprint 027 note above test_run_creates_exactly_one_...:
+        # a global-scan count, not scoped to this test's own project.
+        assert first.created >= 1
 
         with SessionLocal() as db:
             second = follow_up_service.run(db, now=now)
@@ -351,7 +363,9 @@ def test_unassigned_project_falls_back_to_tenant_owner(client):
 
         with SessionLocal() as db:
             result = follow_up_service.run(db, now=_stale_now(created_at))
-        assert result.created == 1
+        # See the Sprint 027 note above test_run_creates_exactly_one_...:
+        # a global-scan count, not scoped to this test's own project.
+        assert result.created >= 1
 
         with SessionLocal() as db:
             notification = (
@@ -385,7 +399,9 @@ def test_failure_creating_one_notification_does_not_affect_another_already_commi
         # notification commits successfully.
         with SessionLocal() as db:
             first_result = follow_up_service.run(db, now=_stale_now(good_created_at))
-        assert first_result.created == 1
+        # See the Sprint 027 note above test_run_creates_exactly_one_...:
+        # a global-scan count, not scoped to this test's own project.
+        assert first_result.created >= 1
 
         bad_project = client.post(
             "/api/v1/projects", json={"name": f"{TEST_PREFIX} Bad Project"}, headers=headers
@@ -436,7 +452,9 @@ def test_failure_creating_one_notification_does_not_affect_another_already_commi
 
         with SessionLocal() as db:
             third_result = follow_up_service.run(db, now=_stale_now(max(good_created_at, bad_created_at)))
-        assert third_result.created == 1
+        # See the Sprint 027 note above test_run_creates_exactly_one_...:
+        # a global-scan count, not scoped to this test's own project.
+        assert third_result.created >= 1
 
         with SessionLocal() as db:
             bad_count_after = (

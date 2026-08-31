@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
@@ -42,8 +44,20 @@ def auth_headers(client):
 # up a brand-new company/owner distinct from the seeded owner `auth_headers`
 # uses, so a test can assert Tenant A's records are invisible/unreachable
 # from Tenant B and vice versa.
-OTHER_TENANT_EMAIL = "pytest-other-tenant-owner@example.com"
-OTHER_TENANT_COMPANY = "Pytest Other Tenant Co"
+#
+# Sprint 027 (docs/SPRINTS/sprint-027.md §6.2 finding) — the email/company
+# below used to be a fixed literal, cleaned up before and after each use,
+# unlike every Playwright spec's own RUN_ID-randomized convention. Safe
+# under today's sequential pytest execution, but a real determinism risk
+# if this suite is ever parallelized (pytest-xdist) or if a crashed prior
+# run left the fixed row behind before its own teardown ran. A
+# session-scoped RUN_ID (computed once at import time, stable for every
+# test in this run) removes the collision risk without changing the
+# fixture's cleanup contract — cleanup still runs before and after, just
+# against this session's own row.
+_CONFTEST_RUN_ID = uuid.uuid4().hex[:10]
+OTHER_TENANT_EMAIL = f"pytest-other-tenant-owner-{_CONFTEST_RUN_ID}@example.invalid"
+OTHER_TENANT_COMPANY = f"Pytest Other Tenant Co {_CONFTEST_RUN_ID}"
 OTHER_TENANT_PASSWORD = "pytest-other-tenant-password-1"
 
 
