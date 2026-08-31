@@ -1,7 +1,7 @@
 # Sprint 027 — Full-System E2E / UAT Preparation
 
-Status: **Phase 1/2 — discovery complete, contract not yet locked.** No
-implementation has started. See `docs/ROADMAP.md`'s locked v1.0 table —
+Status: **Phase 2 — discovery and contract locked. Implementation not
+yet started (Phase 3).** See `docs/ROADMAP.md`'s locked v1.0 table —
 this is the next scheduled sprint after Sprint 026, and it is a
 verification sprint, not a new business capability.
 
@@ -159,18 +159,20 @@ or staging deployment during Phase 2 (discovery/contract-lock only —
 deployment is a later phase of this same sprint, gated on its own
 approval).
 
-## 5. Open decisions to resolve before the first RED
+## 5. Open decisions — resolved
 
-1. **Follow-up job trigger in the connected E2E spec.** `jobs/follow_up.py`
-   has no HTTP route — only a CLI entrypoint. The connected spec must
-   either shell out to the CLI mid-test or a test-only invocation
-   path must be added. Recommend: shell out to the same CLI command
-   staging/production would run (`python -m app.jobs.follow_up` or
-   equivalent), keeping the job itself unchanged — confirmed as the
-   locked approach below.
+1. **Follow-up job trigger in the connected E2E spec.**
+   `apps/web/e2e/follow-up-automation.spec.ts` already establishes the
+   pattern: `execFileSync("python", ["-m", "app.jobs.follow_up", "--now", now], { cwd: REPO_ROOT })`
+   as a real subprocess against the same database the running FastAPI
+   server uses, using the job's own documented `--now` verification
+   escape hatch (`app/jobs/follow_up.py`'s docstring: "verification
+   only... production operation always uses the real current time").
+   The connected journey and any new follow-up-adjacent test reuse
+   this exact invocation — no product-code change, no new test seam.
 2. **`smoke.py` gate additions are additive only.** New gates append
-   to the existing `SMOKE_GATES` tuple and `SmokeRunner` class;
-   no existing gate's behavior changes. Confirmed below.
+   to the existing `SMOKE_GATES` tuple and `SmokeRunner` class; no
+   existing gate's behavior changes.
 3. **RBAC integration sweep scope.** A new backend test enumerates
    every route in `app/api/v1/__init__.py`'s `api_router` plus
    `app/activity/router.py`/`app/notifications/router.py` and asserts
@@ -178,4 +180,220 @@ approval).
    expected table (role requirement, tenant-scoping expectation) —
    not a fully automatic route-introspection assertion, since FastAPI
    dependency graphs aren't trivially diffable against an "expected
-   role" without hand-authored intent per route. Confirmed below.
+   role" without hand-authored intent per route.
+
+---
+
+## 6. Locked TDD sequence
+
+Backend and frontend work proceed independently; both land before the
+new E2E specs, which depend on real UI and real routes existing.
+Every RED is a real failing test against real Postgres/FastAPI/
+Next.js — no mocked layer, matching every prior sprint's convention
+(`docs/SYSTEM_ARCHITECTURE.md` §8.3's verification bar).
+
+1. RED/GREEN: `tests/test_rbac_matrix.py` — one parametrized test
+   over a hand-authored `EXPECTED_ROUTE_AUTH` table (route, method,
+   expected: `public` / `authenticated` / `require_role(OWNER)` /
+   `require_role(OWNER, STAFF)` / `token-scoped-public`) asserting a
+   `role=None` or wrong-role caller gets the expected `401`/`403`,
+   and a valid caller of the *correct* role gets past the gate (not
+   asserting full 200 business logic — that's each module's own
+   suite's job). Covers all 13 routers plus the 2 activity/
+   notifications routers plus the 2 public portal-token route groups.
+2. RED/GREEN: extend `tests/conftest.py`'s `other_tenant_auth_headers`
+   fixture to a `RUN_ID`-suffixed email/company (matching every
+   Playwright spec's own convention), removing the fixed-email
+   determinism risk (finding §3.8) without changing its cleanup
+   contract.
+3. Frontend RED/GREEN: `apps/web/app/login/page.test.tsx` — renders,
+   submits, shows a field-level error on a 401.
+4. Frontend RED/GREEN: `apps/web/app/signup/page.test.tsx` — renders,
+   submits, redirects on success.
+5. Frontend RED/GREEN: `apps/web/app/invite/[token]/page.test.tsx` —
+   valid/expired/already-accepted token states.
+6. Frontend RED/GREEN: `apps/web/app/settings/page.test.tsx` —
+   invitation create/list, team list/deactivate, Owner-only controls
+   hidden for a Staff-role session.
+7. Frontend RED/GREEN: `apps/web/app/portal/[token]/page.test.tsx` —
+   active/expired/revoked link states, document list, message thread.
+8. CI RED/GREEN: `.github/workflows/ci.yml`'s `e2e` job — add an
+   `actions/upload-artifact@v4` step (`if: failure()`) for
+   `apps/web/playwright-report/` and `apps/web/test-results/`;
+   verified by deliberately failing a spec locally/in a scratch run
+   and confirming the artifact is produced, then reverting the
+   deliberate failure.
+9. `scripts/staging/smoke.py` RED/GREEN (against a local run, not
+   staging, until Phase 4's real staging pass): add gates
+   `quote_approve_handoff`, `appointment`, `project_assignment_status`,
+   `follow_up_notification`, `command_centre` to `SMOKE_GATES` and
+   corresponding `SmokeRunner` methods, reusing the existing
+   `gate()`/`blocked()`/`sanitize_evidence()` machinery unchanged.
+   `login_throttle`/security-headers verification is added as
+   assertions inside the existing `https_reachability`/`liveness`
+   gates' evidence (a new header-presence check), not a new gate, to
+   avoid tripping the real rate limiter during an otherwise-clean
+   smoke run.
+10. Playwright RED/GREEN: `apps/web/e2e/unauthenticated-redirect.spec.ts`
+    — one test, every staff-only frontend route (`/customers`,
+    `/projects`, `/quotes`, `/settings`) redirects to `/login` with no
+    token present.
+11. Playwright RED/GREEN: `apps/web/e2e/cross-tenant-boundary.spec.ts`
+    — one test, Tenant B's authenticated session cannot browse to
+    Tenant A's customer/project/quote/appointment/document IDs
+    through the real UI (not just the API), asserting the UI's
+    not-found/error state, not just an HTTP status.
+12. Playwright RED/GREEN: `apps/web/e2e/role-boundary-owner-vs-staff.spec.ts`
+    — one test, a Staff-role browser session sees Owner-only controls
+    (invite teammate, deactivate teammate, assign project) either
+    absent or rejected with a correct UI-level message.
+13. Playwright RED/GREEN: `apps/web/e2e/portal-token-lifecycle.spec.ts`
+    — one test, an expired and a revoked portal link both render a
+    clear "link no longer valid" UI state, not a raw error or blank
+    page.
+14. Playwright RED/GREEN: `apps/web/e2e/full-system-journey.spec.ts`
+    — one test, the connected journey (§7 below), the sprint's
+    centrepiece.
+15. Full local regression: backend (`pytest`), frontend
+    (`pnpm lint`, `pnpm check-types`, `pnpm --filter web test`,
+    `pnpm --filter web test:runtime-config`,
+    `pnpm --filter web test:docker-contract`, `pnpm build`), full
+    Playwright suite (all 11 specs: 6 existing + 5 new), Alembic
+    heads/check (no migration expected — confirm none was
+    accidentally introduced).
+16. Exact-head CI (push branch, confirm `backend`/`frontend`/`e2e`
+    all green, confirm the new artifact-upload step is present in the
+    job graph even on a green run).
+17. Staging deploy + extended smoke run (`scripts/staging/smoke.py`
+    against the real staging origin) + UAT checklist (§9) + browser
+    verification.
+18. Docs closeout: this file's closeout section, plus the minimum
+    `docs/ROADMAP.md`/`USER_ROLES.md`/`DATABASE_SCHEMA.md` updates
+    needed to close this sprint's own record honestly (§4 — not a
+    full historical reconciliation).
+19. Final feature CI.
+20. PR, explicit merge commit, `origin/main` verification, post-merge
+    CI.
+
+## 7. LOCKED CONTRACT — the connected full-system E2E journey
+
+`apps/web/e2e/full-system-journey.spec.ts`, one `RUN_ID`-seeded
+tenant/company/owner/customer/project carried through every step
+(deliberately *not* isolated per-step, unlike the other new specs —
+the point here is proving hand-off, not isolation):
+
+1. Signup through the real `/signup` UI form (not raw API — the one
+   thing every existing spec skips). Confirm redirect + session.
+2. Reload the page; confirm the session persists (token survives a
+   refresh, per `components/auth/AuthProvider.tsx`'s documented
+   mount-time `GET /api/v1/auth/me` resolution).
+3. Create a Customer through the `/customers/new` UI.
+4. Create a Project through the `/projects/new` UI, linked to that
+   Customer (starts `enquiry`, per `ProjectStatus.ENQUIRY`).
+5. On `/projects/[id]`, schedule an Appointment/Site Visit; mark it
+   completed.
+6. Create a Quote (`/quotes/new`) linked to the Customer; on
+   `/quotes/[id]`, approve it (`POST /quotes/{id}/approve` through
+   the UI action, not raw API).
+7. Hand off the Quote to the Project through the UI
+   (`POST /quotes/{id}/handoff`); confirm the Project's status is now
+   `booked` and it is reachable from `/projects/[id]`.
+8. On `/projects/[id]`: Owner assigns Staff (`assigned_user_id`);
+   advance status `booked → templated → fabricated → installed →
+   complete`, one UI action per transition, asserting each is
+   reflected on reload. Attempt one invalid transition (e.g. skip a
+   stage) and confirm the UI surfaces the backend's `409` cleanly.
+9. Upload a Document to the Customer through the UI.
+10. Create a Portal Link for the Customer through the UI. In a
+    **second, unauthenticated Playwright browser context**, open
+    `/portal/[token]`: confirm the Project, Quote, and Document are
+    visible; post a customer message; back in the staff context,
+    confirm the message appears and produced a notification.
+11. Run `python -m app.jobs.follow_up --now <iso>` (per §5.1) against
+    a **separately-seeded** stale `enquiry`-status Project in the
+    same tenant (created earlier than the threshold, assigned to the
+    Staff user) — not the Project from steps 4–8, which has already
+    moved past `enquiry`. Confirm the resulting notification appears
+    in the staff UI, is navigable, and reaches the correct recipient.
+12. Load `/`; assert the Command Centre reflects the exact state
+    built above (pipeline counts including the completed Project,
+    quote funnel including the approved+handed-off Quote, one
+    completed site visit, one follow-up notification) — exact
+    assertions against known values, not a loose "is not empty"
+    check, per Sprint 025's own established E2E precedent.
+13. Revoke the Portal Link through the UI; in the second browser
+    context, reload `/portal/[token]` and confirm it now renders the
+    "link no longer valid" state.
+
+Setup that has no UI path yet stays via direct API call, matching
+every prior spec's own precedent (e.g. there is no UI form to create
+a second, backdated stale-enquiry Project for step 11 — that stays
+API-seeded, same as `follow-up-automation.spec.ts` already does).
+
+## 8. LOCKED CONTRACT — role/isolation specs, RBAC sweep, CI, smoke
+
+- **`test_rbac_matrix.py`**: `EXPECTED_ROUTE_AUTH` is a plain Python
+  list of tuples (method, path template, expected-auth) hand-authored
+  from this document's §2 matrix — kept as a literal table in the
+  test file itself (not derived from route introspection), so a
+  future route that forgets its gate fails this test the same way
+  the legacy `/dashboard` gap was found in Sprint 026, rather than
+  silently passing because the sweep only checks routes it already
+  knew about. Adding a new route without updating this table is a
+  known, accepted limitation — flagged in the test's own docstring.
+- **CI artifact upload**: `if: failure()`, `actions/upload-artifact@v4`,
+  `name: playwright-report`, `path: |\n  apps/web/playwright-report/\n  apps/web/test-results/`,
+  `retention-days: 14` (matches this repo's existing preference for
+  short, explicit retention over defaults — no other workflow step
+  sets a custom retention, so 14 is a new, documented choice, not a
+  silent default).
+- **`smoke.py` new gates** append to `SMOKE_GATES` in this exact
+  order, after `tenant_isolation` and before `cors_allowed`:
+  `quote_approve_handoff`, `appointment`, `project_assignment_status`,
+  `follow_up_notification` (`BLOCKED` by default — the CLI job isn't
+  reachable from a public HTTPS smoke run without SSH/exec access;
+  same treatment as the existing `migration`/`no_seeding` gates),
+  `command_centre`. Each new `SmokeRunner` method follows the
+  existing `gate()`/gate-name/evidence-dict shape exactly (see
+  `smoke.py:94-105`'s `gate()` helper) — no new error-handling
+  pattern introduced.
+- **Login-throttle/security-headers evidence**: added as extra keys
+  in the existing `liveness`/`https_reachability` gates' evidence
+  dicts (e.g. presence of `X-Request-ID`, a hardened-headers
+  presence check against a known Sprint 026 header set), not a
+  request that actually trips the throttle — tripping a real rate
+  limiter on every staging smoke run would itself be a production
+  hazard, explicitly avoided.
+
+---
+
+## 9. UAT checklist & evidence requirements (Phase 4)
+
+Mirrors the "End-to-end delivery closeout" format already established
+in `docs/SPRINTS/sprint-025.md` §5 and `sprint-026.md`'s closeout:
+git history (baseline/branch/every named commit), full local
+regression output, exact-head CI run link, staging deploy commit +
+Alembic-heads confirmation (no migration expected this sprint — an
+explicit statement that none was introduced, not silence), extended
+`smoke.py` JSON report (sanitized, per its existing redaction
+contract), and the new Playwright trace/screenshot artifacts now
+retained per §8's CI change.
+
+## 10. Risks / blockers
+
+- The 13-step connected spec risks flakiness under `workers: 1`/
+  sequential timing — mitigated by existing `trace: retain-on-failure`
+  plus the new CI artifact retention (§8).
+- `smoke.py` gate additions touch real staging (Railway) once run
+  for real in Phase 4 — must stay read/create-synthetic-only, per its
+  existing contract; no schema or config change is implied by this
+  sprint.
+- The RBAC sweep (§8) is a hand-maintained table, not a self-updating
+  one — accepted as a known limitation, not silently glossed over.
+
+## 11. End-to-end delivery closeout
+
+*Pending — recorded here once Phases 3-5 (implementation, local
+regression, staging verification) are complete and approved. Not
+populated by this Phase 2 contract-lock commit.*
+
