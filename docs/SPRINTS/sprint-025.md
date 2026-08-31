@@ -327,3 +327,215 @@ a failure state.
    known Quote states, one Appointment, one unread project-sourced
    notification), exact assertions, cross-tenant absence, reload
    persistence, live API cross-check.
+
+## 5. End-to-end delivery closeout
+
+### Git history
+
+- Baseline: `main` @ `36f27ee` (Sprint 024, merged).
+- Branch: `sprint-025-business-command-centre`.
+- Discovery commit: `e255989` — `docs: define Sprint 025 business command centre`.
+- Contract-lock commit: `c0fa0f7` — `docs: lock Sprint 025 command centre contract`.
+- Backend RED: `b34fb5a`. Backend GREEN: `2ca0cdb`. Remaining backend
+  metric/RBAC/empty-state tests: `ac5faf1`.
+- Frontend GREEN: `f65144f`.
+- Pre-existing bug fix found by this sprint's E2E: `a0722d4` — `fix: cover
+  the full ActivityType enum in dashboard icon/tone maps`.
+- True E2E: `5a0ff8b`.
+- Final feature HEAD before this closeout commit: `5a0ff8b`.
+- PR: sprint-025-business-command-centre → main (opened after this commit).
+- Merge SHA: recorded below once merged.
+- `origin/main` post-merge: recorded below once merged.
+
+### Command Centre
+
+- Endpoint: `GET /api/v1/dashboard/command-centre`, new module
+  `app/dashboard/{models,service,router}.py`, mounted in
+  `app/api/v1/__init__.py`. The pre-existing `GET /api/v1/dashboard`
+  (`app/api/v1/core.py`) is untouched.
+- Metric groups delivered: pipeline (7-value Project status counts),
+  quote funnel (draft/approved/handed-off counts), business value
+  (quoted value, approved quoted value), site visits (3-value Appointment
+  status counts), follow-up attention (tenant-wide unread project-sourced
+  notification count), customers (reused existing `crud.count_customers`).
+- Time window: all-time totals only, as locked in §3 — no recent-window
+  metric was built.
+
+### Metric semantics
+
+- Definitions match §3's locked contract exactly (`quotes.handed_off` is
+  an independent count of `Project.quote_id IS NOT NULL`, not derived
+  arithmetic; `value.quoted_value`/`value.approved_quoted_value` are
+  never labeled "revenue").
+- Deferred/unsupported this sprint (documented in §2/§3, not built):
+  conversion-rate percentages, a third "booked value" money figure, any
+  30-day/recent window, per-user (as opposed to tenant-wide) follow-up
+  scoping, any chart/trend/history.
+- Money handling: reuses the existing plain-`Float` + `float()` coercion
+  pattern from `sum_quotes_revenue` — no new Decimal precision semantic
+  introduced; documented as an existing, honest limitation.
+- Conversion calculations: none built this sprint (see deferred list
+  above).
+
+### Security
+
+- Tenant isolation: every crud aggregate filters by `tenant_id` from
+  `current_user.tenant_id`. Backend regression
+  (`test_pipeline_counts_are_exact_and_tenant_scoped`) and staging
+  verification (a second synthetic tenant) both confirm Tenant A's
+  counts never appear in Tenant B's response.
+- RBAC: `require_role(OWNER, STAFF)` — confirmed identical 200 access for
+  both roles (`test_owner_and_staff_can_both_access_command_centre`),
+  `role=None` → 403 (`test_role_none_is_forbidden`). On staging,
+  no-token/invalid-token access confirmed 401 (existing `get_current_user`
+  behavior); a true `role=None` re-test was not performed directly on
+  staging (would require a direct DB row edit via SSH for a state the
+  invitation flow doesn't produce) — this is the same code path already
+  covered by the backend test and full local regression, so it was not
+  re-verified independently on staging.
+
+### Backend
+
+- Query strategy: 6 aggregate SQL queries per request (2 `GROUP BY status`
+  counts for Projects and Quotes, 1 count for Appointments, 1 indexed
+  count for handed-off Projects, 2 `SUM` queries for the two value
+  figures, 1 count for unread follow-ups, plus the existing
+  `count_customers`) — no per-row Python loops, no N+1 pattern. Staging
+  server-side timing for `GET /dashboard/command-centre` across 3 real
+  requests: 11.7ms, 13.8ms, 15.8ms.
+- Indexes/migration: none added. `tenant_id` was already indexed on every
+  table involved; `status` columns are unindexed but the query is a
+  single `GROUP BY` over an already tenant-scoped set, and this system's
+  real data volumes give no evidence a new index is needed (documented
+  reasoning in §1/§3, per the brief's "do not add indexes without
+  evidence" instruction).
+- Empty-state: verified both in the backend test suite
+  (`test_empty_tenant_gets_all_zeros_not_nulls_or_500`) and implicitly on
+  staging (Tenant B's fresh signup returned real zeros for every
+  metric it hadn't populated, e.g. `quotes`/`value`/`site_visits`).
+
+### Frontend
+
+- Route: extends the existing dashboard (`apps/web/app/page.tsx`, the
+  `/` route) — no new route created, per the locked contract.
+- Cards/sections: `CommandCentrePanel` renders Pipeline, Quote Funnel
+  (+ value figures), Site Visits, and Follow-up Attention as four cards
+  below the existing `StatGrid`. Pipeline/Quote Funnel headers link to
+  the existing `/projects`/`/quotes` list pages (no invented filter
+  routes); Site Visits/Follow-up have no destination link since no
+  dedicated page exists yet for either.
+- Loading state: 4 skeleton cards, matching `StatCardSkeleton`'s visual
+  convention.
+- Error state: a real error banner ("Couldn't load the Business Command
+  Centre") when the API call fails and no prior data exists — never a
+  silently-zeroed card.
+- Empty state: renders real zeros (visually normal, not an error) —
+  confirmed both by a dedicated Vitest test and by Tenant B's staging
+  render.
+- Navigation/actionability: verified in the true E2E and in the manual
+  staging browser session — "View projects"/"View quotes" links render
+  and the Follow-up Attention badge shows the exact unread count.
+
+### Tests
+
+- Backend: 7 new tests in `tests/test_command_centre.py`, all passing.
+  Full local backend regression (all 30 test files, batched into 3
+  groups per this session's established resource-contention workaround):
+  82 + 118 + 214 = 414 passed, 1 skipped. One isolated intermittent
+  failure was observed once in `test_follow_up_automation.py` during
+  batch reruns and did not reproduce on two subsequent identical
+  reruns of the same batch (including with `test_command_centre.py`
+  present) — treated as a pre-existing local flake consistent with this
+  session's documented resource-contention pattern, not a Sprint 025
+  regression.
+- Frontend: 3 new tests in `CommandCentrePanel.test.tsx`, plus 18 new
+  tests in `lib/activity.test.ts` (the ActivityType coverage fix). Full
+  local Vitest regression: 49/49 passed. `tsc --noEmit` clean. `eslint`
+  clean. `test:runtime-config` (7/7) and `test:docker-contract` (5/5)
+  node tests clean. Production build (`next build`) clean.
+- Playwright: 1 new true E2E spec
+  (`e2e/business-command-centre.spec.ts`), run twice locally to confirm
+  determinism (both passed). Full local Playwright regression (all 6
+  specs): 6/6 passed.
+- Alembic: `alembic heads` = `2243d66f83da (head)` (unchanged from
+  Sprint 024 — no migration this sprint). `alembic check`: "No new
+  upgrade operations detected." `git diff --check origin/main...HEAD`:
+  clean.
+- Feature CI (GitHub Actions, commit `5a0ff8b`): backend, frontend, and
+  e2e checks all green.
+
+### Staging
+
+- Deployed SHA: `5a0ff8b` (clean `git archive` export, deployed
+  separately to `simo-api-staging` and `simo-web-staging` per the
+  established clean-commit technique).
+- `/health` = 200, `/ready` = 200, web root = 200.
+- Alembic hard schema gate: staging `alembic current` =
+  `2243d66f83da (head)`, exactly matching the local `alembic heads` value
+  for the deployed commit — no drift, verified via
+  `railway ssh -- alembic current` per the mandatory gate.
+- Controlled dataset: a fresh synthetic tenant/Owner with 4 Projects (2
+  enquiry — one of which was pushed 8 days stale to trigger the real
+  follow-up automation via `railway ssh -- python -m app.jobs.follow_up
+  --now ...`, 1 quoted, 1 booked via a real quote handoff), 4 Quotes (2
+  draft, 2 approved, 1 of the approved ones handed off), 3 Appointments
+  (1 scheduled, 1 completed, 1 cancelled), 1 Customer, recorded via the
+  live API before opening the browser: `{"customers":2,"pipeline":
+  {"enquiry":2,"quoted":1,"booked":1,...0},"quotes":{"draft":2,
+  "approved":2,"handed_off":1},"value":{"quoted_value":4800.0,
+  "approved_quoted_value":2400.0},"site_visits":{"scheduled":1,
+  "completed":1,"cancelled":1},"follow_up":{"unread_follow_ups":2}}`.
+- Real browser (isolated tab, `localStorage` checked clean before login
+  and cleared after): logged in as the synthetic Owner through the real
+  `/login` UI, the Business Command Centre rendered every figure above
+  exactly (Pipeline, Quote Funnel + £4,800/£2,400 value figures, Site
+  Visits, "2 unread" Follow-up Attention). Reload confirmed the same
+  values persisted (real server data, not client state).
+- Tenant isolation: a second synthetic Tenant B, checked via the live
+  API, showed only its own 1 Project and zero of Tenant A's
+  customers/quotes/site-visits/value — confirmed on staging, not just
+  locally.
+- Staging security: role=None re-verification not performed directly on
+  staging (see Security section above); unauthenticated/invalid-token
+  access confirmed 401.
+- Smoke suite (`scripts/staging/smoke.py`): 16 passed, 0 failed, 6
+  blocked — identical pattern to the Sprint 020 baseline; all 6 blocked
+  gates are the same pre-existing, operator-authorization-gated items
+  (migration-evidence cross-check, seed-inventory comparison, restart
+  persistence, log request-ID mechanism, local-only secret scan, backup
+  restore drill) — no new blocks or failures introduced by Sprint 025.
+- Performance sanity: 3 real `GET /dashboard/command-centre` requests
+  logged server-side at 11.7ms/13.8ms/15.8ms — consistent with the
+  6-fixed-aggregate-query design; no evidence of N+1 behavior.
+
+### Limitations / technical debt (not blocking this sprint)
+
+- The pre-existing `GET /dashboard` endpoint (`app/api/v1/core.py`) still
+  has no RBAC gate and still labels an all-quotes sum "revenue" — left
+  untouched as explicitly out of scope; the new Command Centre uses
+  honest labels instead.
+- Conversion-rate metrics, a "booked value" figure, and a recent-window
+  metric are deferred (see §2/§3) — no product-defined semantics existed
+  for them yet, and building them would have doubled the metric surface
+  without a stated need.
+- `role=None` was not independently re-verified against the deployed
+  staging commit (only against local/CI); the code path is identical and
+  already covered there.
+
+### Production safety
+
+- Production deployed: no (0 services, confirmed via
+  `mcp__railway__get-status` both before and after this sprint's work).
+- Production DB touched: no.
+- Production config changed: no.
+- Unrelated files included: no (diff reviewed — only files listed above).
+- Force push used: no.
+
+### Status
+
+Sprint 025 backend/frontend/tests/staging work is complete pending: PR
+open + merge, post-merge main CI verification, and this section's final
+Git/Status fields. Sprint 025 is CLOSED once those are recorded below.
+
+**Do NOT deploy production. Do NOT start Sprint 026 until Sprint 025 is
+CLOSED.**
