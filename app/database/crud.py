@@ -101,6 +101,11 @@ def create_notification(
     type: str,
     timestamp: datetime,
     read: bool = False,
+    recipient_user_id: uuid.UUID | None = None,
+    source_type: str | None = None,
+    source_id: uuid.UUID | None = None,
+    dedupe_key: str | None = None,
+    commit: bool = True,
 ) -> NotificationRecord:
     row = NotificationRecord(
         id=id,
@@ -110,19 +115,39 @@ def create_notification(
         type=type,
         timestamp=timestamp,
         read=read,
+        recipient_user_id=recipient_user_id,
+        source_type=source_type,
+        source_id=source_id,
+        dedupe_key=dedupe_key,
     )
     db.add(row)
-    db.commit()
-    db.refresh(row)
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
     return row
 
 
+def get_notification_by_dedupe_key(db: Session, dedupe_key: str) -> NotificationRecord | None:
+    stmt = select(NotificationRecord).where(NotificationRecord.dedupe_key == dedupe_key)
+    return db.scalars(stmt).first()
+
+
 def list_notifications(
-    db: Session, tenant_id: uuid.UUID, limit: int = 50
+    db: Session, tenant_id: uuid.UUID, user_id: uuid.UUID, limit: int = 50
 ) -> list[NotificationRecord]:
+    # Sprint 024 — tenant-wide broadcasts (recipient_user_id IS NULL, the
+    # only kind that existed before this sprint) stay visible to every
+    # tenant member, unchanged; a set recipient_user_id scopes a row to
+    # exactly that user (docs/SPRINTS/sprint-024.md §6).
     stmt = (
         select(NotificationRecord)
-        .where(NotificationRecord.tenant_id == tenant_id)
+        .where(
+            NotificationRecord.tenant_id == tenant_id,
+            (NotificationRecord.recipient_user_id.is_(None))
+            | (NotificationRecord.recipient_user_id == user_id),
+        )
         .order_by(NotificationRecord.timestamp.desc())
         .limit(limit)
     )
@@ -134,10 +159,13 @@ def count_notifications(db: Session) -> int:
 
 
 def mark_notification_read(
-    db: Session, notification_id: uuid.UUID, tenant_id: uuid.UUID
+    db: Session, notification_id: uuid.UUID, tenant_id: uuid.UUID, user_id: uuid.UUID
 ) -> NotificationRecord | None:
     stmt = select(NotificationRecord).where(
-        NotificationRecord.id == notification_id, NotificationRecord.tenant_id == tenant_id
+        NotificationRecord.id == notification_id,
+        NotificationRecord.tenant_id == tenant_id,
+        (NotificationRecord.recipient_user_id.is_(None))
+        | (NotificationRecord.recipient_user_id == user_id),
     )
     row = db.scalars(stmt).first()
     if row is None:
@@ -326,6 +354,15 @@ def list_projects(db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[Pr
         .order_by(Project.created_at.desc())
         .limit(limit)
     )
+    return list(db.scalars(stmt))
+
+
+def list_projects_by_status(db: Session, status: str) -> list[Project]:
+    """Sprint 024 (docs/SPRINTS/sprint-024.md) — deliberately not
+    tenant-scoped: the follow-up automation is an internal job that scans
+    every tenant, tagging each created notification with that Project's
+    own tenant_id (never the caller's, since there is no caller)."""
+    stmt = select(Project).where(Project.status == status)
     return list(db.scalars(stmt))
 
 

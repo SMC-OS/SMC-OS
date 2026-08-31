@@ -360,6 +360,24 @@ class NotificationRecord(Base):
     type: Mapped[str] = mapped_column(String, nullable=False, default="info")
     read: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Sprint 024 (docs/SPRINTS/sprint-024.md) — all four nullable, existing
+    # rows (tenant-wide broadcasts) stay valid untouched. NULL
+    # recipient_user_id means "visible to the whole tenant", exactly
+    # today's behavior; a set value scopes it to one user. source_id is
+    # deliberately not an FK — it can point to different tables depending
+    # on source_type (the first polymorphic reference in this schema), so
+    # a single FK constraint can't express it; tenant/existence validation
+    # happens in the service, not the schema.
+    recipient_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+    source_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Idempotency invariant for automated notifications (unset for manual/
+    # portal ones). Postgres treats multiple NULLs in a UNIQUE column as
+    # distinct, so existing non-deduped rows are unaffected.
+    dedupe_key: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

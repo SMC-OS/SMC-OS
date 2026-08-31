@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
@@ -13,7 +14,7 @@ import {
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useNotifications } from "@/hooks/useNotifications";
 import { cn, formatRelativeTime } from "@/lib/utils";
-import type { NotificationType } from "@/types/notification";
+import type { AppNotification, NotificationSourceType, NotificationType } from "@/types/notification";
 
 const TYPE_ICON: Record<NotificationType, typeof CheckCircleIcon> = {
   success: CheckCircleIcon,
@@ -29,10 +30,23 @@ const TYPE_TONE: Record<NotificationType, string> = {
   error: "text-danger",
 };
 
+// Sprint 024 (docs/SPRINTS/sprint-024.md §10/§14) — a closed, server-
+// computed mapping from a fixed set of known source_type values to a
+// fixed route template. Never a client-supplied or stored URL.
+const SOURCE_ROUTE: Record<NotificationSourceType, (id: string) => string> = {
+  project: (id) => `/projects/${id}`,
+};
+
+function notificationHref(notification: AppNotification): string | null {
+  if (!notification.source_type || !notification.source_id) return null;
+  return SOURCE_ROUTE[notification.source_type](notification.source_id);
+}
+
 export function NotificationsPanel() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, () => setOpen(false));
+  const router = useRouter();
 
   const { notifications, unreadCount, markRead, pendingReadIds, status } =
     useNotifications();
@@ -74,13 +88,34 @@ export function NotificationsPanel() {
             {notifications.map((notification) => {
               const TypeIcon = TYPE_ICON[notification.type];
               const isPending = pendingReadIds.has(notification.id);
+              const href = notificationHref(notification);
+
+              async function handleClick() {
+                // Mark-read stays server-response-authoritative (existing
+                // behavior, unchanged: a failed request leaves `read`
+                // false until the next poll, never faked client-side) —
+                // but navigation is independent of whether it succeeds,
+                // so a blip marking read never blocks getting to the
+                // linked entity.
+                if (!notification.read) {
+                  try {
+                    await markRead(notification.id);
+                  } catch {
+                    // Swallowed deliberately — see comment above.
+                  }
+                }
+                if (href) {
+                  setOpen(false);
+                  router.push(href);
+                }
+              }
 
               return (
                 <button
                   key={notification.id}
                   type="button"
-                  disabled={notification.read || isPending}
-                  onClick={() => markRead(notification.id)}
+                  disabled={isPending}
+                  onClick={handleClick}
                   className={cn(
                     "flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-surface-hover disabled:cursor-default",
                     !notification.read && "bg-accent/5"

@@ -16,6 +16,13 @@ class NotificationCreate(BaseModel):
     title: str
     message: str
     type: NotificationType = NotificationType.INFO
+    # Sprint 024 (docs/SPRINTS/sprint-024.md) — all optional so every
+    # existing caller (app/portal/service.py's tenant-wide broadcast) is
+    # unaffected. recipient_user_id: None means tenant-wide, unchanged.
+    recipient_user_id: uuid.UUID | None = None
+    source_type: str | None = None
+    source_id: uuid.UUID | None = None
+    dedupe_key: str | None = None
 
 
 class Notification(NotificationCreate):
