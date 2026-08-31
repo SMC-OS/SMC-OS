@@ -8,7 +8,9 @@ from app.notifications.service import notification_service
 # Sprint 012 (ADR-029) — this router had no auth at all before this sprint
 # (docs/USER_ROLES.md §1's "still true" list). Now gated like every other
 # business-data module, and every read/write is scoped to the caller's
-# tenant.
+# tenant. Sprint 024 additionally scopes reads/marks to the caller's own
+# user id (docs/SPRINTS/sprint-024.md §6) — tenant-wide broadcasts (the
+# only kind that existed before Sprint 024) are unaffected.
 router = APIRouter(
     prefix="/notifications", tags=["notifications"], dependencies=[Depends(get_current_user)]
 )
@@ -16,12 +18,18 @@ router = APIRouter(
 
 @router.get("", response_model=list[Notification])
 def list_notifications(limit: int = 50, current_user: User = Depends(get_current_user)):
-    return notification_service.list_all(tenant_id=current_user.tenant_id, limit=limit)
+    return notification_service.list_all(
+        tenant_id=current_user.tenant_id, user_id=current_user.id, limit=limit
+    )
 
 
 @router.get("/unread-count")
 def unread_count(current_user: User = Depends(get_current_user)):
-    return {"unread": notification_service.unread_count(tenant_id=current_user.tenant_id)}
+    return {
+        "unread": notification_service.unread_count(
+            tenant_id=current_user.tenant_id, user_id=current_user.id
+        )
+    }
 
 
 @router.post("", response_model=Notification)
@@ -33,7 +41,9 @@ def create_notification(
 
 @router.patch("/{notification_id}/read", response_model=Notification)
 def mark_read(notification_id: str, current_user: User = Depends(get_current_user)):
-    updated = notification_service.mark_read(notification_id, tenant_id=current_user.tenant_id)
+    updated = notification_service.mark_read(
+        notification_id, tenant_id=current_user.tenant_id, user_id=current_user.id
+    )
     if not updated:
         raise HTTPException(status_code=404, detail="Notification not found")
     return updated

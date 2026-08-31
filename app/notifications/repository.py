@@ -17,10 +17,16 @@ class NotificationRepository(ABC):
     every caller is an authenticated route reading/mutating its own
     tenant's notifications. `add()` keeps `tenant_id` optional (`None`
     default) — seed rows have no tenant.
+
+    Sprint 024 (docs/SPRINTS/sprint-024.md §6) — `list()`/`mark_read()`
+    also require `user_id`: a notification with a set `recipient_user_id`
+    is now visible/markable only by that user; `recipient_user_id is None`
+    (every notification created before this sprint) stays tenant-wide,
+    unchanged.
     """
 
     @abstractmethod
-    def list(self, tenant_id: uuid.UUID, limit: int = 50) -> list[Notification]: ...
+    def list(self, tenant_id: uuid.UUID, user_id: uuid.UUID, limit: int = 50) -> list[Notification]: ...
 
     @abstractmethod
     def add(
@@ -28,18 +34,20 @@ class NotificationRepository(ABC):
     ) -> Notification: ...
 
     @abstractmethod
-    def mark_read(self, notification_id: str, tenant_id: uuid.UUID) -> Notification | None: ...
+    def mark_read(
+        self, notification_id: str, tenant_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Notification | None: ...
 
 
 class InMemoryNotificationRepository(NotificationRepository):
     """Not used by default (see service.py) and has no tenant_id field on
-    the stored Notification — tenant_id is accepted for interface parity
-    but has nothing to filter/tag against."""
+    the stored Notification — tenant_id/user_id are accepted for interface
+    parity but there's nothing to filter/tag against."""
 
     def __init__(self) -> None:
         self._notifications: list[Notification] = []
 
-    def list(self, tenant_id: uuid.UUID, limit: int = 50) -> list[Notification]:
+    def list(self, tenant_id: uuid.UUID, user_id: uuid.UUID, limit: int = 50) -> list[Notification]:
         return sorted(
             self._notifications, key=lambda n: n.timestamp, reverse=True
         )[:limit]
@@ -50,7 +58,9 @@ class InMemoryNotificationRepository(NotificationRepository):
         self._notifications.append(notification)
         return notification
 
-    def mark_read(self, notification_id: str, tenant_id: uuid.UUID) -> Notification | None:
+    def mark_read(
+        self, notification_id: str, tenant_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Notification | None:
         for notification in self._notifications:
             if notification.id == notification_id:
                 notification.read = True
@@ -66,20 +76,10 @@ class PostgresNotificationRepository(NotificationRepository):
     so there's no request-scoped session to receive here.
     """
 
-    def list(self, tenant_id: uuid.UUID, limit: int = 50) -> list[Notification]:
+    def list(self, tenant_id: uuid.UUID, user_id: uuid.UUID, limit: int = 50) -> list[Notification]:
         with SessionLocal() as db:
-            rows = crud.list_notifications(db, tenant_id, limit=limit)
-            return [
-                Notification(
-                    id=str(row.id),
-                    title=row.title,
-                    message=row.message,
-                    type=NotificationType(row.type),
-                    timestamp=row.timestamp,
-                    read=row.read,
-                )
-                for row in rows
-            ]
+            rows = crud.list_notifications(db, tenant_id, user_id, limit=limit)
+            return [_to_pydantic(row) for row in rows]
 
     def add(
         self, notification: Notification, tenant_id: uuid.UUID | None = None
@@ -94,10 +94,16 @@ class PostgresNotificationRepository(NotificationRepository):
                 type=notification.type.value,
                 timestamp=notification.timestamp,
                 read=notification.read,
+                recipient_user_id=notification.recipient_user_id,
+                source_type=notification.source_type,
+                source_id=notification.source_id,
+                dedupe_key=notification.dedupe_key,
             )
         return notification
 
-    def mark_read(self, notification_id: str, tenant_id: uuid.UUID) -> Notification | None:
+    def mark_read(
+        self, notification_id: str, tenant_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Notification | None:
         try:
             parsed_id = uuid.UUID(notification_id)
         except ValueError:
@@ -107,14 +113,22 @@ class PostgresNotificationRepository(NotificationRepository):
             # raised, it just returned None.
             return None
         with SessionLocal() as db:
-            row = crud.mark_notification_read(db, parsed_id, tenant_id)
+            row = crud.mark_notification_read(db, parsed_id, tenant_id, user_id)
             if row is None:
                 return None
-            return Notification(
-                id=str(row.id),
-                title=row.title,
-                message=row.message,
-                type=NotificationType(row.type),
-                timestamp=row.timestamp,
-                read=row.read,
-            )
+            return _to_pydantic(row)
+
+
+def _to_pydantic(row) -> Notification:
+    return Notification(
+        id=str(row.id),
+        title=row.title,
+        message=row.message,
+        type=NotificationType(row.type),
+        timestamp=row.timestamp,
+        read=row.read,
+        recipient_user_id=row.recipient_user_id,
+        source_type=row.source_type,
+        source_id=row.source_id,
+        dedupe_key=row.dedupe_key,
+    )
