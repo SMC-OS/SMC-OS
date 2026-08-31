@@ -1,10 +1,30 @@
+// Sprint 025 finding (docs/SPRINTS/sprint-025.md): this union had drifted
+// out of sync with the backend's ActivityType enum (app/activity/models.py)
+// since Sprint 020 — 13 real, long-emitted event types were missing here,
+// which crashed the entire dashboard page (not just Recent Activity) the
+// first time any of them appeared in a real activity feed, because
+// lib/activity.ts's icon/tone lookups returned undefined for an unmapped
+// type. Fixed by widening this union and the two lookup maps to the full
+// backend enum.
 export type ActivityType =
   | "quote_created"
   | "customer_added"
   | "project_created"
   | "invoice_generated"
   | "ai_request"
-  | "user_login";
+  | "user_login"
+  | "tenant_created"
+  | "portal_link_created"
+  | "team_member_deactivated"
+  | "customer_message_received"
+  | "quote_approved"
+  | "quote_handed_off"
+  | "enquiry_converted"
+  | "site_visit_scheduled"
+  | "site_visit_completed"
+  | "site_visit_cancelled"
+  | "project_assigned"
+  | "project_status_changed";
 
 export interface ActivityEvent {
   id: string;
