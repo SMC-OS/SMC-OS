@@ -419,6 +419,84 @@ any production database, or DNS. All three are pure application-code
 changes verified first on the local test suite, then on staging only,
 per Phase 6.
 
+## Phase 3 — TDD implementation evidence
+
+For each contract: RED confirmed first for the expected reason, then a
+minimal GREEN implementation.
+
+- **Contract A.** `test_dashboard_role_none_is_forbidden` RED: 200 instead
+  of 403 (no gate existed). Implementation: swapped `get_current_user` for
+  `require_role(UserRole.OWNER, UserRole.STAFF)` in
+  `app/api/v1/core.py`. GREEN: `tests/test_dashboard.py` 5/5 passed
+  (including the pre-existing `test_dashboard_staff_can_access`-equivalent
+  regression coverage added alongside it).
+- **Contract B.** RED: `tests/test_login_rate_limit.py` failed to even
+  collect (`ModuleNotFoundError: app.auth.rate_limit`) — the clearest
+  possible "feature missing" signal. Implementation: new
+  `app/auth/rate_limit.py` (`LoginRateLimiter`), two new `Settings`
+  fields, and a ~6-line change to `app/auth/router.py`'s `login` handler.
+  GREEN: 8/8 new tests passed (4 unit tests against the limiter with an
+  injected fake clock, 4 HTTP integration tests against the real
+  endpoint). `tests/test_auth.py`'s existing single-failure login tests
+  re-verified unaffected (10/10 passed).
+- **Contract C.** RED: `tests/test_security_headers.py` — 3/4 new
+  assertions failed with `KeyError` on the missing header (the 4th,
+  "HSTS absent outside production," passed trivially both before and
+  after, since no HSTS header exists anywhere yet). Implementation: new
+  `SecurityHeadersMiddleware` in `app/core/middleware.py`, registered as
+  the outermost middleware in `app/main.py`. GREEN: 4/4 passed.
+  `tests/test_runtime_http.py`/`test_runtime_startup.py`/
+  `test_runtime_config.py` (71 tests covering CORS/request-ID/logging/
+  production-config behavior this middleware sits alongside) re-verified
+  unaffected.
+
+## Phase 4 — Full local verification
+
+- **Backend.** Full suite: 428 passed, 1 skipped, 0 failed
+  (`pytest`, local Postgres via `docker-compose.yml`, `.venv` from
+  `requirements.txt`). One test,
+  `test_follow_up_automation.py::test_run_creates_exactly_one_notification_for_a_stale_enquiry_with_assigned_staff`,
+  failed once on an earlier full-suite run and passed both standalone and
+  on a subsequent full-suite re-run — an existing order-dependent flake
+  (the same class of shared-seeded-tenant pollution
+  `tests/test_command_centre.py` already documents from Sprint 024),
+  unrelated to any Sprint 026 file; not introduced by this sprint.
+- **Alembic.** `alembic heads` → single head `2243d66f83da`; `alembic
+  current` → matches; `alembic check` → "No new upgrade operations
+  detected." Confirms Phase 1's reconstructed-from-files chain live
+  against a real database, and confirms zero migration impact from all
+  three contracts, as specified.
+- **Frontend.** `pnpm lint` clean; `pnpm --filter web test` (Vitest) 49
+  passed; `pnpm --filter web test:runtime-config` 7 passed;
+  `pnpm --filter web test:docker-contract` 5 passed; `pnpm build`
+  (Next.js production build) succeeded. No frontend file was changed by
+  this sprint, so these are confirmation that an unrelated backend change
+  didn't regress anything, not new coverage. (The workspace's
+  `check-types` step only has a script defined for the shared `@repo/ui`
+  package, not the `web` app itself — pre-existing repo structure, not a
+  Sprint 026 gap; `pnpm build`'s own `tsc` pass, which did run against
+  `web`, is what actually type-checks the app and passed.)
+- **Playwright E2E.** `pnpm --filter web test:e2e` — 6/6 passed against a
+  real local FastAPI server and a real local Next.js dev server
+  (`http://127.0.0.1:8000` / `http://localhost:3000`, per
+  `playwright.config.ts`'s hardcoded loopback-only URLs), covering
+  enquiry conversion, project operations, quote handoff, site-visit
+  scheduling, follow-up automation, and the business command centre — the
+  last of which exercises real login + an authenticated dashboard-style
+  fetch, directly adjacent to Contracts A and B. First two local attempts
+  hit environment-only failures unrelated to this sprint's code: (1) a
+  transient Windows Turbopack dev-server worker crash (exit code
+  `0xc0000142`) resolved by clearing `apps/web/.next` and retrying, and
+  (2) a missing `apps/web/.env.local` (this worktree had never been run
+  locally before) resolved by copying `.env.local.example`. Neither is a
+  Sprint 026 regression; both are local-environment setup gaps specific
+  to this fresh worktree, not present in CI.
+- **Repository.** `git diff --check` clean (no whitespace errors);
+  `git status --short` after each commit showed only the files each
+  contract's boundary specified — no debris, no accidentally-added
+  secret/config file; `git diff -- deploy/railway/ .github/workflows/`
+  empty — no production/CI-config file touched by Phase 3.
+
 ## Production safety boundary (restated)
 
 No production Railway service, database, DNS, or credential is touched by
