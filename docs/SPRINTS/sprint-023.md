@@ -1,9 +1,8 @@
-# Sprint 023 — Project Operations (Discovery / Contract Lock)
+# Sprint 023 — Project Operations
 
-Status: **CONTRACT LOCKED — no production code, no migrations, no tests
-written yet.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence. All
-open decisions (§9) resolved; see LOCKED CONTRACT at the end of this
-document.
+Status: **END-TO-END DELIVERED — staging-verified, pending final merge
+gate.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence. Full
+end-to-end evidence in §18 below.
 
 Branch: `sprint-023-project-operations`
 Baseline: `main` @ `ddb3fc2` (Sprint 022 merge, confirmed via
@@ -397,3 +396,168 @@ payments, AI workforce.
 - **All open decisions resolved: YES** — binding for implementation.
 - **Sprint 023 contract locked: YES.**
 - **Ready for the first backend RED: YES.**
+
+## 18. End-to-end delivery closeout
+
+Full vertical delivered per the locked contract above: designed →
+implemented → tested → browser-E2E verified → staging verified →
+documented. Commits below are all on `sprint-023-project-operations`.
+
+### Git history
+
+| Stage | Commit | Summary |
+|---|---|---|
+| Discovery | `a52a28a` | Discovery doc (§1–17) |
+| Contract lock | `5dfa51c` | Open decisions resolved (§9, LOCKED CONTRACT) |
+| First RED | `5675c9c` | `test_project_operations.py` assignment contract — confirmed `404` (route missing) |
+| Backend + frontend GREEN | `97d700e` | `Project.assigned_user_id` migration `081460e0e63a`, assign/status routes, RBAC, validated transitions, activity, atomicity; "Project Operations" UI section; `TEST_NON_ENQUIRY_STATUS` fix |
+| Bug fix + true E2E | `39da851` | Fixed an identity-map bug (status-change activity descriptions read "X to X"), found by `e2e/project-operations.spec.ts` |
+
+### Project Operations contract
+
+Exactly as locked in the LOCKED CONTRACT section above, implemented
+without further deviation: `Project.assigned_user_id` (nullable FK →
+`users.id`), strict single-step-forward status transitions over the
+existing 7-value pipeline, `PATCH .../assign` (Owner-only), `PATCH
+.../status` (now Owner/Staff — closes a pre-existing zero-RBAC gap).
+
+### API details
+
+- `PATCH /api/v1/projects/{id}/assign` → `200` (including unassignment),
+  `404` on cross-tenant Project or cross-tenant/unknown `assigned_user_id`,
+  `403` for a non-Owner caller.
+- `PATCH /api/v1/projects/{id}/status` → `200` only for the exact next
+  pipeline value; `409` on repeat/skip/backward/terminal; `404` cross-tenant
+  (regression-locked, was already true); `403` for `role=None` (closes the
+  gap found in discovery §1).
+
+### Activity details
+
+`PROJECT_ASSIGNED` on every assignment change (including to `null`),
+`PROJECT_STATUS_CHANGED` once per real transition — both verified for
+exact description content (`Project {id} moved from {previous} to
+{new}` / `assigned to {user_id}` / `unassigned`), not just event type,
+after the identity-map bug below was found.
+
+### A real bug found and fixed (not scope creep)
+
+`ProjectService.update_status` read `project.status` for the activity
+description *after* calling `crud.update_project_status`, which re-fetches
+the same row through SQLAlchemy's identity map — `project` and the
+updated row were the same Python object, so mutating one's `.status`
+silently mutated the other before the description string was built.
+Every transition's activity read "moved from X to X" instead of "moved
+from &lt;previous&gt; to X". Found by `e2e/project-operations.spec.ts` (real
+browser/API/DB, no mocks) checking the live activity log after a real UI
+action — not caught by the backend unit test, which only asserted the
+event's `type`, not its `description`. Fixed by capturing the previous
+status into a plain `str` before the mutating call; the backend test now
+asserts the exact description text so this can't silently regress again.
+
+### Atomicity details
+
+Reused Sprint 021/022's caller-owned-transaction pattern for both routes.
+Failure-injection tests prove neither the assignment nor the status
+change survives a failed activity write.
+
+### Frontend details
+
+`apps/web/app/projects/[id]/page.tsx` — "Project Operations" section:
+current stage (existing status `Badge`), an Owner-only "Assigned to"
+`<select>` (options from `api.getUsers()`, "Unassigned" mapping to
+`assigned_user_id: null`), and the existing "Advance" button now gated to
+`role === "Owner" || "Staff"` (previously ungated — closed to match the
+backend RBAC fix). Both mutations server-response-authoritative, failure
+leaves state unchanged with the existing error-card pattern, action
+re-enabled for retry.
+
+### Test totals
+
+- Backend: `tests/test_project_operations.py` — 17 passed. Full suite —
+  399 passed, 1 skipped, 0 failed (regression-clean; verified in three
+  batches due to this session's local machine running under heavy,
+  unrelated resource contention — see note below).
+- Frontend: both `page.test.tsx` files — 24 passed. Typecheck, lint,
+  `test:runtime-config`, `test:docker-contract` all clean.
+- True E2E (local, real browser/API/DB): 4 passed —
+  `enquiry-conversion.spec.ts`, `quote-handoff.spec.ts`,
+  `site-visit-scheduling.spec.ts` (all regression), and the new
+  `project-operations.spec.ts`.
+
+### CI
+
+Green on every pushed commit's exact HEAD, including the final commit
+`39da851` (frontend/backend/e2e jobs all `success`).
+
+### Local-environment-only instability (not a code defect)
+
+This session's local machine was under heavy resource contention for an
+extended period — several days-old orphaned Node processes (left over
+from earlier sprint sessions, since killed) were competing for CPU, and
+a single full `pytest` run repeatedly failed to reach its final summary
+line before being killed by the environment despite showing zero
+failures throughout. Verified instead in three sequential batches
+(95 + 82 + 222 = 399 passed, 1 skipped, matching the full 400-item
+collection) and via isolated single-file reruns for the frontend suite
+(a `userEvent.type` race in an unrelated Sprint 021 test appeared only
+when two Vitest test files ran in parallel under load; all 24 tests pass
+both in isolation and with `--no-file-parallelism`). None of this
+reproduced in CI, which runs on its own machine.
+
+### Staging evidence
+
+- Deployed via the documented clean-commit `git archive` + `railway up`
+  procedure (`docs/STAGING_RUNBOOK.md`) at commit `39da851`.
+- `simo-api-staging` deployment `8e38420f…`, `simo-web-staging` deployment
+  `11269f7d…`, both `SUCCESS`, both `online`.
+- Public `/health` → `200`, `/ready` → `200`.
+- **Migration-drift gap recurred a fourth time** (same class of issue
+  `docs/STAGING_RUNBOOK.md` documents from Sprint 020, and Sprint 022
+  hit again): the CLI deploy's pre-deploy command did not apply migration
+  `081460e0e63a`; `alembic current` read `3a56d7ee9bba` post-deploy.
+  Remediated exactly per the runbook's prescribed procedure — `railway
+  ssh ... -- alembic upgrade head`, then re-verified `alembic current` ==
+  `alembic heads` == `081460e0e63a`. No runbook change needed; the
+  already-mandatory post-deploy verification step is precisely what
+  caught it, for the fourth consecutive sprint that shipped a migration.
+- Real browser flow verified against staging (fresh synthetic tenant, no
+  mocks): signup → new Project → advanced to `booked` → real Staff user
+  created via a real invitation-accept (`POST /invitations` +
+  `POST /invitations/token/{token}/accept`, both real API calls) → Owner
+  assigns that Staff member through the UI → **persists across reload**
+  → Owner advances the Project's status through the UI → **persists
+  across a second reload**.
+- Security checks against the live staging API: a second synthetic
+  tenant got `404` assigning to or advancing Tenant A's Project (2
+  checks); Tenant A's Owner got `404` assigning Tenant B's own user
+  (cross-tenant `assigned_user_id`); the Staff user got `403` attempting
+  to assign but `200` advancing status (confirms the RBAC split in §7);
+  an invalid skip transition and a backward transition both returned
+  `409`.
+- Activity verified live: `project_assigned`/`project_status_changed`
+  records all carry correct, non-self-referential from/to descriptions
+  (confirms the identity-map bug fix holds in the deployed build, not
+  just locally).
+- Staging smoke suite (`scripts/staging/smoke.py`): 14 passed, 0 failed,
+  8 blocked (same pre-existing optional
+  `--quote-material`/`--quote-thickness` gate as Sprints 021/022, not a
+  new gap).
+- Per `docs/STAGING_RUNBOOK.md`'s browser-session-isolation lesson: the
+  verification browser tab's `localStorage` was checked for a stray
+  token before starting (none found) and cleared again after finishing.
+
+### Safety confirmations
+
+- Production was not touched — `simo-os/production` has zero deployed
+  services throughout this sprint.
+- No destructive git operations — every commit is additive, pushed with a
+  plain `git push` (no force), no rebases, no squashes.
+- No secrets, tokens, or customer data committed or logged.
+
+### Final status
+
+**Sprint 023 is functionally CLOSED** pending only the mechanical final
+merge gate (CI check on this exact HEAD, PR open, explicit merge commit,
+post-merge `main` CI verification). Sprint 024 does not start until that
+merge lands and this status line is updated to "CLOSED — merged to
+main."
