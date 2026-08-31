@@ -109,7 +109,6 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.getByLabel("Customer (optional)").selectOption({ label: CUSTOMER_NAME });
   await page.getByRole("button", { name: /save project|create project/i }).click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/, { timeout: 15_000 });
-  const projectId = page.url().match(/\/projects\/([0-9a-f-]+)$/)![1];
   await expect(page.getByText("Enquiry", { exact: true })).toBeVisible();
 
   // ==== 5. Schedule and complete a site visit ====
