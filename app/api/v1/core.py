@@ -23,7 +23,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.assistant.estimator import EstimatorAssistant
-from app.auth.dependencies import get_current_user, get_current_user_optional
+from app.auth.dependencies import get_current_user_optional, require_role
+from app.auth.models import UserRole
 from app.brain.manager import BrainManager
 from app.database import crud
 from app.database.database import get_db
@@ -75,7 +76,10 @@ def estimate(
 
 
 @router.get("/dashboard")
-def dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def dashboard(
+    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    db: Session = Depends(get_db),
+):
     tenant_id = current_user.tenant_id
     return {
         "quotes_today": crud.count_quotes_today(db, tenant_id),

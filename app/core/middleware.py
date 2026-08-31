@@ -1,4 +1,4 @@
-"""HTTP request correlation and safe completion logging."""
+"""HTTP request correlation, safe completion logging, and security headers."""
 
 import logging
 import re
@@ -9,6 +9,7 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
+from app.core.config import AppEnvironment
 from app.core.logging import request_id_context
 
 
@@ -65,3 +66,30 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 )
             finally:
                 request_id_context.reset(token)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Sprint 026 (docs/SPRINTS/sprint-026.md Contract C) — standard
+    hardening response headers on every response, including error
+    responses. Strict-Transport-Security is added only in production:
+    sending it over plain HTTP in development would make browsers cache a
+    forced-HTTPS policy for localhost."""
+
+    def __init__(self, app, *, app_env: AppEnvironment):
+        super().__init__(app)
+        self._app_env = app_env
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if self._app_env is AppEnvironment.PRODUCTION:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=63072000; includeSubDomains"
+            )
+        return response
