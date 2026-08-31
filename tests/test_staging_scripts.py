@@ -75,10 +75,13 @@ def test_smoke_runner_redacts_sensitive_values_from_evidence():
     assert "[REDACTED]" in safe
 
 
-def test_smoke_runner_declares_the_approved_twenty_two_named_gates():
+def test_smoke_runner_declares_the_approved_twenty_seven_named_gates():
+    """Sprint 027 (docs/SPRINTS/sprint-027.md §6.9/§8) added 5 gates,
+    additive only, in a locked position (after tenant_isolation, before
+    cors_allowed) — the original 22 Sprint-019 gates are unchanged."""
     smoke = load_smoke_module()
 
-    assert len(smoke.SMOKE_GATES) == 22
+    assert len(smoke.SMOKE_GATES) == 27
     assert smoke.SMOKE_GATES == (
         "https_reachability",
         "liveness",
@@ -97,6 +100,11 @@ def test_smoke_runner_declares_the_approved_twenty_two_named_gates():
         "portal_messaging",
         "token_enforcement",
         "tenant_isolation",
+        "quote_approve_handoff",
+        "appointment",
+        "project_assignment_status",
+        "follow_up_notification",
+        "command_centre",
         "cors_allowed",
         "cors_denied",
         "logs_request_ids",
@@ -153,8 +161,8 @@ def test_smoke_runner_dry_run_emits_all_gates_and_machine_readable_safe_report(t
 
     assert result.returncode == 0
     payload = json.loads(report.read_text(encoding="utf-8"))
-    assert len(payload["gates"]) == 22
-    assert payload["totals"] == {"passed": 0, "failed": 0, "blocked": 22}
+    assert len(payload["gates"]) == 27
+    assert payload["totals"] == {"passed": 0, "failed": 0, "blocked": 27}
     assert all(gate["status"] == "BLOCKED" for gate in payload["gates"])
     assert "https://web.staging.example.invalid" in result.stdout
     assert "Authorization" not in result.stdout
