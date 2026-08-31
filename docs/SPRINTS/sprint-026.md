@@ -497,6 +497,103 @@ minimal GREEN implementation.
   secret/config file; `git diff -- deploy/railway/ .github/workflows/`
   empty — no production/CI-config file touched by Phase 3.
 
+## Phase 5 — Feature CI
+
+Pushed `sprint-026-security-production-hardening-ii` to `origin` (5
+commits ahead of `origin/main`'s baseline `ea4160f`). GitHub Actions run
+[`33392972458`](https://github.com/SMC-OS/SMC-OS/actions/runs/33392972458)
+on commit `3378677` (docs-closeout-so-far HEAD at push time): all three
+jobs completed `success` — `backend` (12:40:58Z→12:43:48Z), `frontend`
+(12:40:58Z→12:42:00Z), `e2e` (12:40:59Z→12:43:14Z). Feature CI green
+before any staging action, per the phase ordering requirement.
+
+## Phase 6 — Staging verification
+
+Linked to the existing `simo-os` Railway project (workspace SMC-OS).
+Confirmed the project's `production` environment has **zero service
+instances** — nothing to accidentally touch there regardless of command
+scope. All actions below explicitly targeted the `staging` environment
+(`58f1f618-f823-4c02-80b6-b1d6b630bb76`) and, since this sprint changed no
+frontend file, only the `simo-api-staging` service was redeployed
+(`simo-web-staging` was left at its existing Sprint-025 deployment and
+verified compatible, not redeployed).
+
+- **Clean-commit deploy.** Per `docs/STAGING_RUNBOOK.md`'s "Clean-commit
+  staging deployment" finding: `git archive 3378677 | tar -x -C
+  <clean-dir>`, then `railway up -c` from that clean export against
+  `simo-api-staging` in `staging` — guarantees the uploaded artifact is
+  byte-for-byte the reviewed commit. Build and deploy both reported
+  `SUCCESS` (deployment `389cb7c9-3c75-45fd-ab07-cb0e774acda4`).
+- **`/health` = 200, `/ready` = 200** against the public staging origin
+  (`simo-api-staging-staging.up.railway.app`), both with request IDs.
+- **Alembic — explicit remote verification (not inferred from health),
+  per the runbook's Sprint 020 rule.** `railway ssh --service
+  simo-api-staging --environment staging -- alembic current` →
+  `2243d66f83da (head)`, exactly matching local `alembic heads`/`current`
+  from Phase 4. Zero migration drift, as the contract specified.
+- **Contract C (security headers) on real staging HTTP.** `curl -sD -
+  https://simo-api-staging-staging.up.railway.app/health` returned all
+  four headers, including `strict-transport-security: max-age=63072000;
+  includeSubDomains` (confirms the production-only HSTS branch is live,
+  since staging runs `APP_ENV=production` per the runbook's release
+  invariants).
+- **Contract A (RBAC) on real staging HTTP, with genuinely separate
+  synthetic tenants.** Signed up two fresh synthetic tenants (A, B) via
+  `POST /auth/signup`. `GET /api/v1/dashboard`: Owner A → 200, Owner B →
+  200, no token → 401. Created a customer in tenant A only; A's dashboard
+  count incremented by exactly 1, B's stayed unchanged — tenant isolation
+  confirmed live, not just in the local suite. Invited and accepted a
+  real Staff user in tenant A via the actual `POST /invitations` +
+  `POST /invitations/token/{token}/accept` HTTP flow (not a direct DB
+  construction, since staging offers no such access) — Staff `GET
+  /api/v1/dashboard` → 200, confirming the require_role gate change
+  didn't regress the one non-Owner role that must keep working. The
+  `role=None` → 403 case has no live HTTP path to construct on staging
+  (confirmed unreachable in Phase 1) and stays covered by the local
+  service-layer test only — expected, not a gap.
+- **Contract B (login throttle) on real staging HTTP.** Fresh synthetic
+  account: 5 wrong-password attempts → 401 each; 6th attempt, this time
+  with the *correct* password → `429` with `retry-after: 54`. A separate,
+  uninvolved account logged in normally (`200`) in the same window,
+  confirming the limiter is scoped per-email and a real user's valid
+  login is never blocked by someone else's failed attempts.
+- **Staging smoke suite.** Ran `scripts/staging/smoke.py` (Sprint 019's
+  22-gate harness) against the live staging origins: **14 passed, 0
+  failed, 8 blocked**. Every blocked gate self-reports a specific,
+  legitimate reason — five require an operator opt-in flag or
+  out-of-band evidence this run didn't need (`restart_persistence`
+  needs `--allow-restart`; `repository_secret_scan` must run locally,
+  not against a live origin; `backup_restore` is deliberately gated
+  behind the runbook's separate owner-approval drill; `migration` and
+  `no_seeding` ask for evidence already independently gathered above via
+  `railway ssh`). The other two (`quote_invoice`, `tenant_isolation`)
+  were investigated directly: staging runs with `SEED_DATA_ENABLED=false`,
+  which (per `app/core/startup.py`'s uniform seeder gate) means the
+  material catalogue was never seeded on staging at all — a pre-existing
+  staging-environment condition unrelated to Sprint 026, not a
+  regression from this sprint's changes. Tenant isolation itself was
+  already independently confirmed above via the dashboard-endpoint check
+  with two real synthetic tenants.
+- **Performance sanity.** `/health` and login latency sampled 5x/3x
+  directly against staging: `/health` 0.17s-0.46s, `/auth/login`
+  0.44s-0.70s (bcrypt-dominated, as expected — the new middleware header
+  writes and the rate-limiter's in-memory dict lookup add no measurable
+  overhead).
+- **Browser verification (auth behavior changed).** Per the runbook's
+  Sprint 021 browser-isolation finding, used a fresh MCP tab group (not a
+  persistent profile) — confirmed `localStorage` held no pre-existing
+  session before starting. Logged in through the real staging web UI
+  (`simo-web-staging-staging.up.railway.app/login`) with a fresh
+  synthetic account: sign-in succeeded, redirected into the app, the
+  dashboard/command-centre page rendered real (empty-state) data with no
+  console/network errors. `localStorage.clear()`'d and the tab closed
+  immediately after, per the same finding.
+
+**PRODUCTION UNTOUCHED.** Every command above named `staging` explicitly
+(environment ID `58f1f618-…`); the `production` environment (`c5f88dea-…`)
+was never referenced by any deploy, SSH, or link command and independently
+confirmed to have zero services throughout.
+
 ## Production safety boundary (restated)
 
 No production Railway service, database, DNS, or credential is touched by
