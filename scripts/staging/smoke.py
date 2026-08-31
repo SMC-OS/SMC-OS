@@ -23,7 +23,14 @@ SMOKE_GATES = (
     "https_reachability", "liveness", "readiness", "postgresql", "migration",
     "no_seeding", "signup_login_auth", "customer", "project", "quote_invoice",
     "staff_document", "restart_persistence", "portal_token", "portal_documents",
-    "portal_messaging", "token_enforcement", "tenant_isolation", "cors_allowed",
+    "portal_messaging", "token_enforcement", "tenant_isolation",
+    # Sprint 027 (docs/SPRINTS/sprint-027.md §6.9/§8) — this smoke matrix
+    # was Sprint 019-vintage and never exercised Sprints 020-025's own
+    # journeys (quote approve/handoff had *no* staging smoke coverage at
+    # all before this). Additive only — every gate above is unchanged.
+    "quote_approve_handoff", "appointment", "project_assignment_status",
+    "follow_up_notification", "command_centre",
+    "cors_allowed",
     "cors_denied", "logs_request_ids", "repository_secret_scan", "backup_restore",
 )
 SENSITIVE_KEY = re.compile(r"(?:authorization|token|password|secret|email|database|credential)", re.I)
@@ -109,6 +116,10 @@ class SmokeRunner:
         signup = self.request("POST", "/api/v1/auth/signup", json={"company_name": f"{self.prefix}-{tenant}", "name": "Synthetic Operator", "email": email, "password": password})
         login = self.request("POST", "/api/v1/auth/login", json={"email": email, "password": password}).json()
         self.state[f"{tenant}_token"] = login["access_token"]
+        # Sprint 027 — needed by project_assignment_status, which
+        # self-assigns the synthetic Owner (no second Staff account is
+        # created by this harness, keeping its footprint minimal).
+        self.state[f"{tenant}_user_id"] = login["user"]["id"]
         self.created.append({"kind": "tenant_user", "synthetic_prefix": self.prefix, "tenant": tenant})
         return {"signup_status": signup.status_code, "login_token_received": bool(login.get("access_token"))}
 
@@ -175,6 +186,81 @@ class SmokeRunner:
         responses = [self.client.get(f"{self.api_url}/api/v1/{kind}/{item_id}", headers=self.headers("b"), timeout=self.timeout) for kind, item_id in zip(protected, ids, strict=True)]
         return {"checks": len(responses), "all_not_found": all(item.status_code == 404 for item in responses)}
 
+    # Sprint 027 (docs/SPRINTS/sprint-027.md §6.9/§7/§8) — additive gates
+    # covering Sprints 020, 022, 023, 025's own journeys, none of which
+    # this Sprint-019-vintage harness ever exercised in staging before.
+
+    def quote_approve_handoff(self) -> dict[str, Any]:
+        """Sprint 020's own objective had zero staging smoke coverage
+        before this: quote_invoice only ever created + invoiced a quote,
+        never approved or handed it off."""
+        quote_id = self.state["quote_id"]
+        approved = self.request("POST", f"/api/v1/quotes/{quote_id}/approve", headers=self.headers()).json()
+        project = self.request("POST", f"/api/v1/quotes/{quote_id}/handoff", headers=self.headers()).json()
+        self.state["booked_project_id"] = project["id"]
+        return {
+            "approved": approved.get("status") == "approved",
+            "handed_off_status": project.get("status"),
+        }
+
+    def appointment(self) -> dict[str, Any]:
+        """Sprint 022 — schedule and complete a site visit against the
+        Project created earlier this run (not the quote-handoff Project;
+        appointments attach to any Project, and this keeps the gate
+        independent of whether quote_approve_handoff ran)."""
+        project_id = self.state["project_id"]
+        scheduled_at = f"{datetime.now(timezone.utc).isoformat()}"
+        created = self.request(
+            "POST",
+            f"/api/v1/projects/{project_id}/appointments",
+            headers=self.headers(),
+            json={"scheduled_at": scheduled_at},
+        ).json()
+        self.state["appointment_id"] = created["id"]
+        completed = self.request(
+            "PATCH",
+            f"/api/v1/appointments/{created['id']}/status",
+            headers=self.headers(),
+            json={"status": "completed"},
+        ).json()
+        return {"created": bool(created.get("id")), "completed_status": completed.get("status")}
+
+    def project_assignment_status(self) -> dict[str, Any]:
+        """Sprint 023 — Owner self-assigns (no second Staff account exists
+        in this harness) then advances the booked-from-handoff Project one
+        real step. Depends on quote_approve_handoff having run; blocked
+        otherwise rather than silently skipped."""
+        if "booked_project_id" not in self.state:
+            raise KeyError("booked project prerequisite unavailable")
+        project_id = self.state["booked_project_id"]
+        assigned = self.request(
+            "PATCH",
+            f"/api/v1/projects/{project_id}/assign",
+            headers=self.headers(),
+            json={"assigned_user_id": self.state["a_user_id"]},
+        ).json()
+        advanced = self.request(
+            "PATCH",
+            f"/api/v1/projects/{project_id}/status",
+            headers=self.headers(),
+            json={"status": "templated"},
+        ).json()
+        return {
+            "assigned_user_id_matches": assigned.get("assigned_user_id") == self.state["a_user_id"],
+            "advanced_status": advanced.get("status"),
+        }
+
+    def command_centre(self) -> dict[str, Any]:
+        """Sprint 025 — light shape check only (not exact values, unlike
+        the local Playwright suite's controlled dataset): staging carries
+        real accumulated synthetic data across smoke runs, so this gate
+        proves the endpoint is reachable and RBAC-gated, not specific
+        numbers."""
+        response = self.request("GET", "/api/v1/dashboard/command-centre", headers=self.headers())
+        body = response.json()
+        expected_keys = {"customers", "pipeline", "quotes", "value", "site_visits", "follow_up"}
+        return {"status_code": response.status_code, "has_expected_shape": expected_keys.issubset(body.keys())}
+
     def cors(self, allowed: bool) -> dict[str, Any]:
         origin = self.web_url if allowed else "https://untrusted.example.invalid"
         response = self.client.options(f"{self.api_url}/api/v1/customers", headers={"Origin": origin, "Access-Control-Request-Method": "GET"}, timeout=self.timeout)
@@ -183,7 +269,20 @@ class SmokeRunner:
 
     def health(self, path: str, expected: dict[str, str]) -> dict[str, Any]:
         response = self.client.get(f"{self.api_url}{path}", timeout=self.timeout)
-        return {"status_code": response.status_code, "body_matches": response.json() == expected, "request_id_present": bool(response.headers.get("x-request-id"))}
+        # Sprint 027 — evidence that Sprint 026's hardening headers
+        # (SecurityHeadersMiddleware, app/core/middleware.py) are actually
+        # present in staging, without tripping the real login rate limiter
+        # by making an authentication attempt on every smoke run.
+        hardening_headers_present = all(
+            response.headers.get(header) for header in
+            ("x-content-type-options", "x-frame-options", "referrer-policy")
+        )
+        return {
+            "status_code": response.status_code,
+            "body_matches": response.json() == expected,
+            "request_id_present": bool(response.headers.get("x-request-id")),
+            "hardening_headers_present": hardening_headers_present,
+        }
 
     def https(self) -> dict[str, Any]:
         web = self.client.get(self.web_url, timeout=self.timeout, follow_redirects=False)
@@ -215,6 +314,25 @@ class SmokeRunner:
                 self.gate("tenant_isolation", self.tenant_isolation)
             else:
                 self.blocked("tenant_isolation", "partial customer/project checks cannot satisfy full quote isolation coverage")
+            # Sprint 027 — see SmokeRunner.quote_approve_handoff/appointment/
+            # project_assignment_status/command_centre docstrings above.
+            if "quote_id" in self.state:
+                self.gate("quote_approve_handoff", self.quote_approve_handoff)
+            else:
+                self.blocked("quote_approve_handoff", "requires --quote-material and --quote-thickness")
+            self.gate("appointment", self.appointment)
+            if "booked_project_id" in self.state:
+                self.gate("project_assignment_status", self.project_assignment_status)
+            else:
+                self.blocked("project_assignment_status", "requires quote_approve_handoff to have produced a booked project")
+            self.blocked(
+                "follow_up_notification",
+                "no HTTP trigger exists by design (app/jobs/follow_up.py is a "
+                "CLI-only entrypoint, docs/SPRINTS/sprint-024.md §7/§9/§11); "
+                "verify separately via `railway ssh` running "
+                "`python -m app.jobs.follow_up`, per docs/SPRINTS/sprint-027.md §6",
+            )
+            self.gate("command_centre", self.command_centre)
             for name, action in (("cors_allowed", lambda: self.cors(True)), ("cors_denied", lambda: self.cors(False))):
                 self.gate(name, action)
             self.blocked("restart_persistence", "requires a configured bounded API-only Railway restart command" if self.allow_restart else "requires --allow-restart and a configured bounded API-only Railway restart command")
