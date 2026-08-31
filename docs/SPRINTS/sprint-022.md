@@ -1,8 +1,9 @@
-# Sprint 022 — Appointment / Site Visit Scheduling (Discovery / Contract Lock)
+# Sprint 022 — Appointment / Site Visit Scheduling
 
-Status: **DISCOVERY ONLY — no production code, no migrations, no tests
-written.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence
-(`docs/ROADMAP.md`, reconciliation merged `843439d`).
+Status: **END-TO-END DELIVERED — staging-verified, pending final merge
+gate.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence
+(`docs/ROADMAP.md`, reconciliation merged `843439d`). Full end-to-end
+evidence in §17 below.
 
 Branch: `sprint-022-appointment-site-visit`
 Baseline: `main` @ `843439d` (roadmap reconciliation merge, confirmed via
@@ -745,3 +746,169 @@ later RED/GREEN cycles implement them, they do not renegotiate them.
 - **Sprint 022 contract locked: YES.**
 - **Ready for the first backend RED: YES** — proceeding to
   `test_appointments.py`'s creation contract.
+
+## 17. End-to-end delivery closeout
+
+Full vertical delivered per the locked contract above: designed →
+implemented → tested → browser-E2E verified → staging verified →
+documented. Commits below are all on `sprint-022-appointment-site-visit`.
+
+### Git history
+
+| Stage | Commit | Summary |
+|---|---|---|
+| Discovery | `15b71c8` | Discovery doc (§1–15) |
+| Contract lock | `b4edae5` | Six decisions locked (§16, LOCKED CONTRACT) |
+| First RED | `34f9786` | `test_appointments.py` creation contract — confirmed `404` (route missing) |
+| Backend GREEN | `80e44ae` | `Appointment` model, CRUD, service, router, activity types, migration `3a56d7ee9bba` |
+| Backend hardening | `7db7482` | Tenant isolation, RBAC, list ordering, status transitions (idempotent/409), activity, atomicity — plus a latent `app/core/errors.py` fix (see below) |
+| Frontend GREEN | `9b8330d` | "Site Visits" section on the project detail page — schedule form, list, Complete/Cancel |
+| True E2E | `a85cced` | `e2e/site-visit-scheduling.spec.ts` — real browser/API/DB |
+| Contract-conformance fix | `4052609` | Renamed frontend API client methods to match locked Decision 6 (`completeAppointment`/`cancelAppointment`/`getProjectAppointments`, not the generic shape the first pass had drifted to) — no behavior change |
+
+### Domain details
+
+Exactly as locked in §16 (LOCKED CONTRACT), implemented without further
+deviation except the Decision 6 naming catch above: `Appointment` /
+`appointments` table, `scheduled` → `completed`/`cancelled` lifecycle, no
+`updated_at`, no `customer_id`, no `assigned_user_id`.
+
+### API details
+
+- `POST /api/v1/projects/{project_id}/appointments` → `201`
+- `GET /api/v1/projects/{project_id}/appointments` → `200`, `scheduled_at ASC`
+- `PATCH /api/v1/appointments/{appointment_id}/status` → `200` (including
+  idempotent same-status retry), `409` on a genuine conflicting transition
+- Naive `scheduled_at` → `422` (see error-handler fix below)
+- Cross-tenant access on any of the three routes → `404`
+- Caller without `OWNER`/`STAFF` → `403`
+
+### Security details
+
+- Tenant isolation: create/list tenant-scope the parent Project first;
+  status-update tenant-scopes the Appointment row directly. Verified both
+  in `tests/test_appointments.py` and live against staging (§ below).
+- RBAC: `require_role(OWNER, STAFF)` on all three routes, verified with a
+  real `role=None` user (not a fabricated role) in both the backend suite
+  and the frontend visibility tests.
+- No new secrets, no new PII fields, no change to existing auth/JWT flow.
+
+### A latent bug found and fixed (not scope creep)
+
+Sprint 022 is the first sprint whose Pydantic model raises a plain
+`ValueError` from a `field_validator` (the `scheduled_at` timezone check).
+`app/core/errors.py`'s `validation_exception_handler` passed pydantic's raw
+`exc.errors()` straight to `JSONResponse`, but such an error's `ctx.error`
+is a live exception object, which plain `json.dumps` can't serialize —
+every naive-datetime `422` was actually crashing into an unhandled `500`.
+Fixed by passing the errors through `jsonable_encoder` first (`7db7482`).
+This was required for Sprint 022's own locked contract (Decision 5) to
+actually work, not an unrelated cleanup.
+
+### Activity details
+
+`SITE_VISIT_SCHEDULED` on creation, `SITE_VISIT_COMPLETED` /
+`SITE_VISIT_CANCELLED` on their respective real transitions, none on an
+idempotent repeat — verified by dedicated tests and independently
+confirmed live on staging via `GET /activity?type=...`.
+
+### Atomicity details
+
+Reused Sprint 021's caller-owned-transaction pattern
+(`commit=False`/`db=`/`rollback`+re-raise). Both create+activity and
+transition+activity are covered by failure-injection tests
+(`monkeypatch.setattr(activity_service, "log", ...)`) proving the
+Appointment row/status change does not survive a failed activity write.
+
+### Frontend details
+
+`apps/web/app/projects/[id]/page.tsx` — "Site Visits" section, Owner/Staff
+gated identically to Convert to Customer: list (empty state, status
+badges), "Schedule Site Visit" form (`datetime-local` → tz-aware ISO string
+via `toISOString()`), "Complete"/"Cancel" on `scheduled` rows only, all
+mutations server-response-authoritative (never optimistic), failure-safe
+(error surfaced, form/state preserved, action re-enabled for retry).
+
+### Test totals
+
+- Backend: `tests/test_appointments.py` — 14 passed. Full suite — 382
+  passed, 1 skipped, 0 failed (regression-clean).
+- Frontend: `apps/web/app/projects/[id]/page.test.tsx` +
+  `app/quotes/[id]/page.test.tsx` — 15 passed (2 test files). Typecheck,
+  lint, `test:runtime-config`, `test:docker-contract` all clean.
+- True E2E (local, real browser/API/DB): 3 passed —
+  `enquiry-conversion.spec.ts`, `quote-handoff.spec.ts` (regression),
+  `site-visit-scheduling.spec.ts` (new).
+
+### CI
+
+Green on every pushed commit's exact HEAD, including the final
+Decision-6-fix commit `4052609` (frontend/backend/e2e jobs all `success`).
+
+### A local-environment-only build artifact (not a code defect)
+
+`next build`/`next dev` failed with a Turbopack workspace-root-inference
+error when run from this sprint's git worktree
+(`.../AppData/Local/Temp/.../scratchpad/sprint022`), but succeeded cleanly
+from both the original repo checkout and a shallow `git archive` export of
+the identical commit — and GitHub Actions CI's `frontend`/`e2e` jobs (a
+clean, shallow checkout) both passed. This is a path-depth/sibling-lockfile
+artifact of the specific Windows Temp worktree location, not a defect in
+the shipped code; local verification (build, E2E) was completed from clean
+shallow exports instead, per `docs/STAGING_RUNBOOK.md`'s existing
+clean-commit-export precedent.
+
+### Staging evidence
+
+- Deployed via the documented clean-commit `git archive` + `railway up`
+  procedure (`docs/STAGING_RUNBOOK.md`) at commit `4052609` (frontend-only
+  change from `a85cced`'s already-deployed backend; the API deploy shipped
+  `4052609`'s tree too since both services deploy from the same export).
+- `simo-api-staging` deployment `38ef4853…`, `simo-web-staging` deployment
+  `c5e88232…`, both `SUCCESS`, both `online`, 0 issues, 0 recent failures.
+- Public `/health` → `200`, `/ready` → `200`.
+- **Migration-drift gap recurred a third time** (same class of issue
+  `docs/STAGING_RUNBOOK.md` already documents from Sprint 020): the CLI
+  deploy's pre-deploy command did not apply migration `3a56d7ee9bba`;
+  `alembic current` read `d3e7a9c1f204` post-deploy. Remediated exactly per
+  the runbook's prescribed procedure — `railway ssh ... -- alembic upgrade
+  head`, then re-verified `alembic current` == `alembic heads` ==
+  `3a56d7ee9bba`. No runbook change needed; the already-mandatory
+  post-deploy verification step is precisely what caught this.
+- Real browser flow verified against staging (fresh synthetic tenant, no
+  mocks): signup → new Project → Schedule Site Visit → visible in list →
+  **persists across reload** → Complete → status flips, actions removed →
+  **persists across a second reload**.
+- Security checks against the live staging API: a second synthetic tenant
+  got `404` on create/list/status-update against tenant A's
+  Project/Appointment (3 checks); an invalid `completed → cancelled`
+  transition returned `409`; a repeated `completed → completed` returned
+  `200` unchanged (idempotent).
+- Activity verified live: exactly one `site_visit_scheduled` and one
+  `site_visit_completed` record for the test appointment.
+- Staging smoke suite (`scripts/staging/smoke.py`): 14 passed, 0 failed, 8
+  blocked (all 8 are the pre-existing `--quote-material`/`--quote-thickness`
+  optional gate, not run — same as Sprint 021's recorded smoke run, not a
+  new gap).
+- Per `docs/STAGING_RUNBOOK.md`'s browser-session-isolation lesson: the
+  verification browser tab's `localStorage` was checked for a stray token
+  before starting (none found — the topbar's apparent "Simo / Owner" text
+  is static placeholder UI in `UserProfileMenu.tsx`, unrelated to auth
+  state) and cleared again after finishing.
+
+### Safety confirmations
+
+- Production was not touched — `simo-os/production` has zero deployed
+  services throughout this sprint.
+- No destructive git operations — every commit is additive, pushed with a
+  plain `git push` (no force), no rebases, no squashes.
+- No secrets, tokens, or customer data committed or logged.
+
+### Final status
+
+**Sprint 022 is functionally CLOSED** pending only the mechanical final
+merge gate (CI check on this exact HEAD, PR open/update, explicit merge
+commit, post-merge `main` CI verification) — Phase 21/22 of the delivery
+plan, executed immediately after this doc commit. Sprint 023 does not
+start until that merge lands and this status line is updated to "CLOSED —
+merged to main."
