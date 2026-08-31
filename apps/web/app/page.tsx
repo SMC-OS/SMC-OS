@@ -1,5 +1,6 @@
 "use client";
 
+import { CommandCentrePanel } from "@/components/dashboard/command-centre/CommandCentrePanel";
 import { DashboardStatusBar } from "@/components/dashboard/DashboardStatusBar";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { RecentActivityPanel } from "@/components/dashboard/RecentActivityPanel";
@@ -23,6 +24,10 @@ export default function DashboardPage() {
       <DashboardStatusBar status={status} error={error} />
 
       <StatGrid />
+
+      <div className="mt-6">
+        <CommandCentrePanel />
+      </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
