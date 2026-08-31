@@ -1,8 +1,8 @@
 # Sprint 024 — Notifications / Follow-up Automation
 
-Status: **CONTRACT LOCKED — no production code, no migrations, no tests
-written yet.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence.
-See LOCKED CONTRACT at the end of this document.
+Status: **END-TO-END DELIVERED — staging-verified, pending final merge
+gate.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence. Full
+end-to-end evidence in §19 below.
 
 Branch: `sprint-024-notifications-follow-up`
 Baseline: `main` @ `36802bb` (Sprint 023 merge, confirmed via
@@ -440,3 +440,202 @@ CLI job. Any change to `Quote` or `Appointment` schemas. Any Sprint
 - **Automation rule selected: YES** — Stale Enquiry Follow-up.
 - **Sprint 024 contract locked: YES.**
 - **Ready for the first backend RED: YES.**
+
+## 19. End-to-end delivery closeout
+
+Full vertical delivered per the locked contract above: designed →
+implemented → tested → browser-E2E verified → staging verified →
+documented. Commits below are all on `sprint-024-notifications-follow-up`.
+
+### Git history
+
+| Stage | Commit | Summary |
+|---|---|---|
+| Discovery | `9e5cf34` | Discovery doc (§1–17), all three candidate rules evaluated |
+| Contract lock | `031cf0e` | Locked contract (LOCKED CONTRACT section) |
+| First RED | `5e97b3a` | `test_follow_up_automation.py`'s first contract — confirmed `ModuleNotFoundError` (service missing) |
+| Backend GREEN | `f978143` | `NotificationRecord` extension, migration `2243d66f83da`, `FollowUpService`, `app/jobs/follow_up.py` CLI, recipient-scoped notification API |
+| Frontend GREEN | `0bd35af` | Notification click now navigates to the linked entity via a closed source-type route map |
+| True E2E | `8fc2fb1` | `e2e/follow-up-automation.spec.ts` — real browser/API/DB, real CLI subprocess |
+
+### Automation contract
+
+Exactly as locked: Stale Enquiry Follow-up only (candidates B and C
+formally deferred, §2/§14). Eligibility: `Project.status == "enquiry"`
+AND `created_at <= now - 7 days`. Recipient: `assigned_user_id` if set,
+else the tenant's earliest-created Owner, else skip.
+
+### Notification schema
+
+`NotificationRecord` gains `recipient_user_id` (nullable FK →
+`users.id`), `source_type`, `source_id` (nullable, no FK — polymorphic),
+and `dedupe_key` (nullable, `UNIQUE`) — migration `2243d66f83da`, all
+four nullable, zero backfill needed. Dedupe key:
+`stale_enquiry_follow_up:{project_id}` — no window component, justified
+by the Project lifecycle's monotonic forward-only pipeline (Sprint 023).
+
+### Security details
+
+- **Tenant isolation**: the automation query is global by design, but
+  every notification it writes carries its own Project's `tenant_id`;
+  the read/mark-read API filters `tenant_id == caller AND
+  (recipient_user_id IS NULL OR recipient_user_id == caller.id)`.
+  Verified both in the backend suite and live against staging — a second
+  synthetic tenant saw an empty notification list and got `404` on the
+  first tenant's Project.
+- **Recipient isolation**: a same-tenant Staff user who is *not* the
+  notification's recipient sees an empty list and gets `404` attempting
+  to mark it read — verified live on staging with a real Staff account
+  created via a real invitation accept.
+- **RBAC**: unchanged (`get_current_user` only, no new `require_role`
+  gate) — the automation itself has no HTTP boundary at all, matching
+  the locked "no public run-automation backdoor" contract (§11).
+
+### Idempotency
+
+- First run: creates the notification.
+- Second run (identical `now`): zero additional notifications,
+  `skipped_existing` increments — verified locally (backend suite,
+  E2E) and live on staging (12 pre-existing stale enquiries across
+  staging's accumulated synthetic data all went from `created` to
+  `skipped_existing` on the second run, with zero duplicates for any of
+  them).
+- DB-level invariant: a direct duplicate-`dedupe_key` insert raises
+  `IntegrityError` at the database layer, not just skipped by a
+  service-level pre-check — proven by a dedicated test.
+
+### Atomicity
+
+Per the locked contract, each notification is a single-write operation
+(no `ActivityLog` event added — the notification row is its own
+sufficient evidence, §12). No multi-write transaction wraps a run: a
+failure processing one Project can never remove or corrupt another
+Project's already-committed notification from the same or an earlier
+run — proven by a failure-injection test using `monkeypatch` on
+`crud.create_notification`.
+
+### Frontend details
+
+`NotificationsPanel.tsx`: clicking a notification now marks it read
+(existing behavior, unchanged, server-response-authoritative) and — if
+`source_type`/`source_id` are set — navigates via a closed, hardcoded
+`source_type → route` mapping (`project` → `/projects/{id}`), never a
+client-supplied or stored URL. A failed mark-read never blocks
+navigation and never fakes the read state client-side. Existing
+tenant-wide broadcasts (both fields `null`, every notification created
+before this sprint) behave exactly as before.
+
+### Test totals
+
+- Backend: `tests/test_follow_up_automation.py` — 8 passed (all using
+  freshly-signed-up, fully isolated tenants — see the note below on why
+  that isolation is load-bearing, not incidental). Full suite — 407
+  passed, 1 skipped, 0 failed (verified in three batches; see note).
+- Frontend: `NotificationsPanel.test.tsx` — 4 passed. Full frontend suite
+  — 28 passed. Typecheck, lint, `test:runtime-config`,
+  `test:docker-contract`, production `build` all clean.
+- True E2E (local, real browser/API/DB, real CLI subprocess): 5 passed —
+  `enquiry-conversion.spec.ts`, `quote-handoff.spec.ts`,
+  `project-operations.spec.ts`, `site-visit-scheduling.spec.ts` (all
+  regression), and the new `follow-up-automation.spec.ts`.
+
+### CI
+
+Green on every pushed commit's exact HEAD, including the final E2E
+commit `8fc2fb1` (frontend/backend/e2e jobs all `success`).
+
+### A test-isolation lesson worth keeping (found and fixed mid-sprint)
+
+`FollowUpService.run()` scans **globally** across every tenant, by
+design (§6). The first version of `test_follow_up_automation.py` used
+the shared seeded `auth_headers` tenant every other test file also
+uses — running the automation there created a real, persistent
+`NotificationRecord` in that shared tenant, with a synthetic
+*future* `timestamp` (the whole point of the `now` override). That
+future-dated row then sorted ahead of any real-time notification another
+test file created later in the same suite run, breaking
+`tests/test_messages.py`'s exact "most recent notification" assertion.
+Fixed by having every automation test sign up its own fresh, disposable
+tenant (never the shared seeded one) and clean it up fully afterward.
+**Any future test of a globally-scanning job must follow the same rule**
+— this is now the precedent for candidates B/C if built later.
+
+### Local-environment-only instability (not a code defect)
+
+This session's local machine was under heavy resource contention for an
+extended period (a recurring condition across recent sprints on this
+workstation, already documented in Sprint 023's closeout). A single full
+`pytest` run again repeatedly failed to reach its summary line before
+being killed by the environment despite showing zero failures
+throughout; verified instead in three sequential batches (95 + 90 + 222
+= 407 passed, 1 skipped, matching the full 408-item collection — 400
+pre-Sprint-024 plus 8 new). None of this reproduced in CI, which runs on
+its own machine.
+
+### Staging evidence
+
+- Deployed via the documented clean-commit `git archive` + `railway up`
+  procedure (`docs/STAGING_RUNBOOK.md`) at commit `8fc2fb1`.
+- Public `/health` → `200`, `/ready` → `200`.
+- **Migration-drift gap recurred a fifth time** (Sprints 020, 022, 023,
+  and now 024 — a fully consistent pattern for this specific CLI
+  deployment method, not a fluke): `alembic current` read
+  `081460e0e63a` post-deploy, one revision behind. Remediated exactly
+  per the runbook's prescribed procedure — `railway ssh ... -- alembic
+  upgrade head`, then re-verified `alembic current` == `alembic heads`
+  == `2243d66f83da`. No runbook change needed; the already-mandatory
+  post-deploy verification step is precisely what caught it, for the
+  fifth consecutive sprint that shipped a migration.
+- Real automation run against staging via `railway ssh -- python -m
+  app.jobs.follow_up --now ...`: first run examined 12 pre-existing
+  stale enquiries (accumulated synthetic data from this and prior
+  sprints' staging verification) and created 12 notifications
+  (including the dedicated test Project created for this sprint); second
+  run created zero, all 12 correctly `skipped_existing`.
+- Real browser flow verified against staging (fresh synthetic tenant, no
+  mocks): signup → new Project → automation run (via SSH) → notification
+  visible with correct unread state and content → clicked → **real
+  navigation to the correct Project** → mark-read confirmed via the live
+  API → **read state persists across reload**.
+- Security checks against the live staging API: a second synthetic
+  tenant saw an empty notification list and got `404` reading the first
+  tenant's Project; a real Staff account (created via a real invitation
+  accept) in the *same* tenant as the recipient Owner also saw an empty
+  list and got `404` attempting to mark the Owner's notification read.
+- Staging smoke suite (`scripts/staging/smoke.py`): 14 passed, 0 failed,
+  8 blocked (same pre-existing optional
+  `--quote-material`/`--quote-thickness` gate as prior sprints).
+- Per `docs/STAGING_RUNBOOK.md`'s browser-session-isolation lesson: the
+  verification browser tab's `localStorage` was checked for a stray
+  token before starting (none found) and cleared again after finishing.
+
+### Technical debt / follow-ups (not blocking this sprint)
+
+- Candidates B (quote follow-up) and C (site visit reminder) remain
+  deferred, not built — §2/§14. Both can reuse `FollowUpService`'s shape
+  and the same `NotificationRecord` extension.
+- No persistent Railway scheduled-job service exists yet for
+  `app/jobs/follow_up.py` — it is currently a manually-invoked CLI
+  (locally, in CI implicitly via the test suite, and via `railway ssh`
+  for staging verification). Wiring it to run periodically (Railway cron
+  or equivalent) is deliberately out of scope this sprint (§9/§14) and
+  would be a natural, low-risk follow-up once this vertical has proven
+  itself.
+
+### Safety confirmations
+
+- Production was not touched — `simo-os/production` has zero deployed
+  services throughout this sprint.
+- No new scheduler/cron service was configured anywhere, staging or
+  production.
+- No destructive git operations — every commit is additive, pushed with
+  a plain `git push` (no force), no rebases, no squashes.
+- No secrets, tokens, or customer data committed or logged.
+
+### Final status
+
+**Sprint 024 is functionally CLOSED** pending only the mechanical final
+merge gate (CI check on this exact HEAD, PR open, explicit merge commit,
+post-merge `main` CI verification). Sprint 025 does not start until that
+merge lands and this status line is updated to "CLOSED — merged to
+main."
