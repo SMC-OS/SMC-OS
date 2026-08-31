@@ -1,6 +1,8 @@
 # Sprint 026 — Security & Production Hardening II
 
-Status: Phase 1 (discovery) complete.
+Status: implementation, CI, and staging verification complete. See
+Closeout at the end of this document for the final summary and evidence
+index.
 
 This sprint follows Sprint 018 ("Production Runtime Hardening"). Sprint 018
 covered fail-closed production config, non-root Docker, `/health`/`/ready`,
@@ -593,6 +595,98 @@ verified compatible, not redeployed).
 (environment ID `58f1f618-…`); the `production` environment (`c5f88dea-…`)
 was never referenced by any deploy, SSH, or link command and independently
 confirmed to have zero services throughout.
+
+## Phase 7 — Closeout
+
+### Final commits (this branch, ahead of `origin/main` baseline `ea4160f`)
+
+1. `803fa98` — Phase 1 discovery
+2. `825b770` — Phase 2 contract lock
+3. `c1db592` — Phase 3 implementation (all three contracts, TDD)
+4. `3378677` — Phase 3/4 evidence (RED/GREEN, local verification)
+5. `c97eb52` — Phase 5/6 evidence (feature CI, staging verification)
+
+### Security changes, in one place
+
+- `app/api/v1/core.py`: legacy `GET /api/v1/dashboard` now requires
+  `require_role(UserRole.OWNER, UserRole.STAFF)` instead of bare
+  `get_current_user` — closes the RBAC-gate outlier documented since
+  Sprint 022.
+- `app/auth/rate_limit.py` (new) + `app/auth/router.py` +
+  `app/core/config.py`: `POST /auth/login` now enforces an in-process,
+  per-email, fixed-window brute-force throttle — 5 failed attempts per
+  60s by default, `429` + `Retry-After` beyond that, cleared on success.
+  Signup is not throttled (deliberate scope decision, see Contract B).
+- `app/core/middleware.py` (new `SecurityHeadersMiddleware`) +
+  `app/main.py`: every response now carries
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and
+  `Referrer-Policy: strict-origin-when-cross-origin`; production
+  responses additionally carry
+  `Strict-Transport-Security: max-age=63072000; includeSubDomains`.
+
+### RED/GREEN evidence
+
+See "Phase 3 — TDD implementation evidence" above for the specific RED
+failure (and why) and GREEN result for each of the three contracts.
+
+### Regression counts
+
+- Backend: 428 passed, 1 skipped, 0 failed (one order-dependent
+  pre-existing flake observed once and ruled out — passes standalone and
+  on re-run; not caused by this sprint).
+- Frontend: lint clean; Vitest 49 passed; runtime-config 7 passed;
+  docker-contract 5 passed; production build succeeded.
+- Playwright E2E: 6/6 passed locally.
+- Feature CI (GitHub Actions run `33392972458`): backend, frontend, and
+  e2e jobs all `success`.
+- Staging smoke suite: 14 passed, 0 failed, 8 blocked (each for a
+  specific, documented, non-regression reason).
+
+### CI results
+
+Run [`33392972458`](https://github.com/SMC-OS/SMC-OS/actions/runs/33392972458)
+on commit `3378677`: `backend` success, `frontend` success, `e2e`
+success. (A further CI run on this closeout commit, `c97eb52`, is
+required before opening the PR — see the final report for that run's
+result.)
+
+### Staging verification
+
+See "Phase 6 — Staging verification" above. Summary: clean-commit deploy
+of `simo-api-staging` only; `/health`/`/ready` 200; Alembic
+`2243d66f83da` confirmed live via `railway ssh` (not inferred); all three
+contracts exercised with real HTTP against real synthetic tenants
+including a real Owner+Staff invitation flow and live tenant isolation;
+login throttle produced a real `429`+`Retry-After` on staging; production
+headers (including HSTS) confirmed live; browser golden-path login
+verified with session isolation; performance sanity showed no measurable
+overhead.
+
+### Alembic result
+
+Single head `2243d66f83da` both locally and on staging; `alembic check`
+reports no new operations. Zero migration impact from all three
+contracts, exactly as the locked contract specified.
+
+### Deferred security risks (unchanged from Phase 1/2, explicitly not started)
+
+Host-header/`TrustedHostMiddleware` validation (needs Railway domain
+env-wiring decision first); CI dependency/secret scanning; JWT
+httpOnly-cookie storage (architectural); signup throttling; refresh
+tokens; password reset; malware scanning; global request-body-size
+middleware; quotas; billing; WebSockets/SSE; full APM.
+
+### Production safety confirmation
+
+No production Railway service, database, DNS, or credential was deployed
+to, modified, or accessed at any point in this sprint. The `production`
+environment on the `simo-os` Railway project was confirmed to have zero
+service instances throughout and was never named by any deploy, SSH, or
+link command — every staging action explicitly targeted the `staging`
+environment ID. No credential was rotated (none was found exposed). This
+sprint's own scope explicitly excluded `deploy/railway/*.toml` and
+`.github/workflows/*` — confirmed by an empty `git diff` against both
+paths for the entire branch.
 
 ## Production safety boundary (restated)
 
