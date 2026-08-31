@@ -37,7 +37,13 @@ TEST_NON_ENQUIRY_PROJECT_NAME = f"{TEST_PREFIX} Non-Enquiry Project"
 TEST_NON_ENQUIRY_CUSTOMER_NAME = f"{TEST_PREFIX} Non-Enquiry Customer"
 TEST_NON_ENQUIRY_CUSTOMER_EMAIL = "pytest-sprint021-non-enquiry-customer@example.invalid"
 TEST_NON_ENQUIRY_CUSTOMER_PHONE = "+44 7000 000023"
-TEST_NON_ENQUIRY_STATUS = "booked"
+TEST_NON_ENQUIRY_STATUS = "quoted"
+# Sprint 023 (docs/SPRINTS/sprint-023.md §4): status transitions are now
+# strictly the exact next value in the pipeline, so this must be the one
+# status immediately after "enquiry" — any later stage would need an
+# intermediate transition first. Only "not enquiry" matters to this test's
+# purpose (conversion is rejected once a Project has left the enquiry
+# stage); which specific later status was never load-bearing.
 
 # Distinct name/project/email again, for the cross-tenant isolation test
 # below — its own unique rows, never entangled with the other tests' counts.

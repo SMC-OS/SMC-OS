@@ -17,6 +17,7 @@ import ProjectDetailPage from "./page";
 const PROJECT_ID = "project-1";
 const CUSTOMER_ID = "customer-1";
 const APPOINTMENT_ID = "appointment-1";
+const STAFF_ID = "staff-1";
 
 // Hoisted so a test can assert on the exact call — same reasoning as
 // app/quotes/[id]/page.test.tsx.
@@ -56,6 +57,19 @@ function makeProject(overrides: Record<string, unknown> = {}) {
     name: "Riverside Kitchen Enquiry",
     notes: null,
     status: "enquiry",
+    assigned_user_id: null,
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function makeTeamMember(overrides: Record<string, unknown> = {}) {
+  return {
+    id: STAFF_ID,
+    name: "Jordan Staff",
+    email: "jordan@example.com",
+    role: "Staff",
+    is_active: true,
     created_at: new Date().toISOString(),
     ...overrides,
   };
@@ -131,6 +145,18 @@ beforeEach(() => {
     ) {
       const body = JSON.parse(init.body as string) as { status: string };
       return jsonResponse(makeAppointment({ status: body.status }));
+    }
+    if (
+      url.endsWith(`/projects/${PROJECT_ID}/assign`) &&
+      init?.method === "PATCH"
+    ) {
+      const body = JSON.parse(init.body as string) as { assigned_user_id: string | null };
+      return jsonResponse(
+        makeProject({ ...currentProjectOverrides, assigned_user_id: body.assigned_user_id })
+      );
+    }
+    if (url.endsWith("/users")) {
+      return jsonResponse([makeTeamMember()]);
     }
     if (url.endsWith(`/projects/${PROJECT_ID}`)) {
       return jsonResponse(makeProject(currentProjectOverrides));
@@ -472,6 +498,204 @@ describe("ProjectDetailPage — site visit scheduling (Sprint 022)", () => {
     // The action remains available for a retry.
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /^complete$/i })).toBeEnabled();
+    });
+  });
+});
+
+describe("ProjectDetailPage — project operations (Sprint 023)", () => {
+  it("lets_owner_assign_a_staff_member_and_it_persists", async () => {
+    currentProjectOverrides = { status: "booked" };
+    render(<ProjectDetailPage />);
+
+    const select = await screen.findByLabelText(/assigned to/i);
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Jordan Staff" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(select, { target: { value: STAFF_ID } });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/projects/${PROJECT_ID}/assign`),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ assigned_user_id: STAFF_ID }),
+        })
+      );
+    });
+
+    // The server's returned Project is authoritative.
+    await waitFor(() => {
+      expect(select).toHaveValue(STAFF_ID);
+    });
+  });
+
+  it("keeps_the_previous_assignment_and_shows_an_error_when_assignment_fails", async () => {
+    currentProjectOverrides = { status: "booked" };
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith(`/projects/${PROJECT_ID}/assign`) && init?.method === "PATCH") {
+        return jsonResponse({ detail: "Assignment failed" }, 500);
+      }
+      if (url.endsWith("/users")) {
+        return jsonResponse([makeTeamMember()]);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}`)) {
+        return jsonResponse(makeProject(currentProjectOverrides));
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`);
+    });
+
+    render(<ProjectDetailPage />);
+
+    const select = await screen.findByLabelText(/assigned to/i);
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Jordan Staff" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(select, { target: { value: STAFF_ID } });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/projects/${PROJECT_ID}/assign`),
+        expect.objectContaining({ method: "PATCH" })
+      );
+    });
+
+    expect(await screen.findByText(/failed with 500/i)).toBeInTheDocument();
+
+    // A failed assignment must never render as if it succeeded, and the
+    // control remains usable for a retry.
+    await waitFor(() => {
+      expect(select).not.toBeDisabled();
+    });
+  });
+
+  it("shows_the_assign_control_only_for_owner", async () => {
+    currentProjectOverrides = { status: "booked" };
+    render(<ProjectDetailPage />);
+
+    await screen.findByText("Project Operations");
+    expect(await screen.findByLabelText(/assigned to/i)).toBeInTheDocument();
+  });
+
+  it("hides_the_assign_control_for_staff", async () => {
+    currentRole = "Staff";
+    currentProjectOverrides = { status: "booked" };
+    render(<ProjectDetailPage />);
+
+    await screen.findByText("Project Operations");
+    expect(screen.queryByLabelText(/assigned to/i)).not.toBeInTheDocument();
+  });
+
+  it("shows_unassigned_for_a_staff_viewer_when_no_one_is_assigned", async () => {
+    currentRole = "Staff";
+    currentProjectOverrides = { status: "booked", assigned_user_id: null };
+    render(<ProjectDetailPage />);
+
+    expect(await screen.findByText("Unassigned")).toBeInTheDocument();
+  });
+
+  it("shows_the_advance_button_for_owner_and_staff", async () => {
+    currentProjectOverrides = { status: "booked" };
+    render(<ProjectDetailPage />);
+
+    expect(
+      await screen.findByRole("button", { name: /advance to templated/i })
+    ).toBeInTheDocument();
+
+    currentRole = "Staff";
+    cleanup();
+    render(<ProjectDetailPage />);
+    expect(
+      await screen.findByRole("button", { name: /advance to templated/i })
+    ).toBeInTheDocument();
+  });
+
+  it("hides_the_advance_button_from_a_user_without_owner_or_staff_role", async () => {
+    currentRole = null;
+    currentProjectOverrides = { status: "booked" };
+    render(<ProjectDetailPage />);
+
+    await screen.findByText("Riverside Kitchen Enquiry");
+
+    expect(
+      screen.queryByRole("button", { name: /advance to/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("advancing_status_updates_the_badge_and_persists", async () => {
+    currentProjectOverrides = { status: "booked" };
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith(`/projects/${PROJECT_ID}/status`) && init?.method === "PATCH") {
+        return jsonResponse(makeProject({ status: "templated" }));
+      }
+      if (url.endsWith("/users")) {
+        return jsonResponse([makeTeamMember()]);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}`)) {
+        return jsonResponse(makeProject(currentProjectOverrides));
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`);
+    });
+
+    render(<ProjectDetailPage />);
+
+    const advanceButton = await screen.findByRole("button", { name: /advance to templated/i });
+    await userEvent.click(advanceButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/projects/${PROJECT_ID}/status`),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ status: "templated" }),
+        })
+      );
+    });
+
+    expect(await screen.findByText("Templated")).toBeInTheDocument();
+  });
+
+  it("keeps_the_current_status_and_shows_an_error_when_advancing_fails", async () => {
+    currentProjectOverrides = { status: "booked" };
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith(`/projects/${PROJECT_ID}/status`) && init?.method === "PATCH") {
+        return jsonResponse({ detail: "Invalid status transition" }, 409);
+      }
+      if (url.endsWith("/users")) {
+        return jsonResponse([makeTeamMember()]);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}`)) {
+        return jsonResponse(makeProject(currentProjectOverrides));
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`);
+    });
+
+    render(<ProjectDetailPage />);
+
+    const advanceButton = await screen.findByRole("button", { name: /advance to templated/i });
+    await userEvent.click(advanceButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/projects/${PROJECT_ID}/status`),
+        expect.objectContaining({ method: "PATCH" })
+      );
+    });
+
+    // A failed transition must never advance the displayed status.
+    expect(screen.queryByText("Templated")).not.toBeInTheDocument();
+    expect(await screen.findByText("Booked")).toBeInTheDocument();
+    expect(await screen.findByText(/failed with 409/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /advance to templated/i })).toBeEnabled();
     });
   });
 });
