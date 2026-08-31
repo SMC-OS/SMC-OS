@@ -1,7 +1,9 @@
 # Sprint 023 — Project Operations (Discovery / Contract Lock)
 
-Status: **DISCOVERY ONLY — no production code, no migrations, no tests
-written.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence.
+Status: **CONTRACT LOCKED — no production code, no migrations, no tests
+written yet.** Locked per `docs/ROADMAP.md`'s reconciled v1.0 sequence. All
+open decisions (§9) resolved; see LOCKED CONTRACT at the end of this
+document.
 
 Branch: `sprint-023-project-operations`
 Baseline: `main` @ `ddb3fc2` (Sprint 022 merge, confirmed via
