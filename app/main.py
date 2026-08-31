@@ -15,7 +15,7 @@ from app.core.config import Settings, settings
 from app.core.errors import register_exception_handlers
 from app.core.health import ReadinessProbe, create_health_router, probe_database
 from app.core.logging import configure_logging
-from app.core.middleware import RequestContextMiddleware
+from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from app.core.startup import create_lifespan
 from app.materials.seed import seed_materials
 from app.notifications.router import router as notifications_router
@@ -80,6 +80,11 @@ def create_app(
     # Added after CORS so request context is the outer user middleware and
     # therefore also covers preflight responses.
     application.add_middleware(RequestContextMiddleware)
+    # Sprint 026 — added last (outermost) so every response, including
+    # CORS preflight and error responses, carries the hardening headers.
+    application.add_middleware(
+        SecurityHeadersMiddleware, app_env=runtime_settings.app_env
+    )
 
     register_exception_handlers(application)
 

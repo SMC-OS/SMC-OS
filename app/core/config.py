@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
 
+    # Sprint 026 (docs/SPRINTS/sprint-026.md Contract B) — POST /auth/login
+    # brute-force throttle: this many failed attempts per email within this
+    # many seconds before further attempts are rejected with 429. Not a
+    # secret; safe defaults, no production-only validation needed.
+    login_rate_limit_max_attempts: int = 5
+    login_rate_limit_window_seconds: float = 60.0
+
     seed_admin_email: str = _DEVELOPMENT_SEED_EMAIL
     seed_admin_password: str = _DEVELOPMENT_SEED_PASSWORD
 
