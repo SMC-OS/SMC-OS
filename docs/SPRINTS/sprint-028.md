@@ -158,143 +158,283 @@ never invents coverage for unbuilt behavior.
 
 ---
 
-## Acceptance matrix (Phase 6)
+## Acceptance matrix (Phase 6) — Phase 8 local execution results
 
-Status legend: `PENDING` = not yet executed (filled in during Phase 8 local
-run and Phase 25 staging run). Persona `SYS` = system/automation (no logged-in
-user). Persona `ANON` = unauthenticated portal-token holder.
+Status legend: `PASS` = executed against real FastAPI/Next.js/PostgreSQL
+(and real Chromium where noted) this sprint, evidence cited. `PENDING (staging)`
+= locally PASS, re-verified against Railway staging in Phase 25. Persona
+`SYS` = system/automation (no logged-in user). Persona `ANON` = unauthenticated
+portal-token holder. Evidence file paths are repo-relative; `pytest` and
+`vitest` evidence was captured from real runs against the local
+Postgres-backed stack (docker-compose `simo-os-postgres`), and `e2e` evidence
+from the real Chromium/Next.js-dev/FastAPI-dev stack
+(`apps/web/playwright.config.ts`) — no mocks in either case.
 
 ### A. Auth / Tenant
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| AT-01 | ANON | Signup creates a new tenant + Owner user | Tenant and Owner persisted, session established | | PENDING | | |
-| AT-02 | Owner/Staff | Login with valid credentials | Session established, redirected to app | | PENDING | | |
-| AT-03 | Owner/Staff | Session persists across reload | User remains authenticated after page reload | | PENDING | | |
-| AT-04 | Owner/Staff | Logout | Session terminated, protected routes redirect to login | | PENDING | | |
-| AT-05 | ANON | Request a protected route while unauthenticated | Redirected to login, no data leak | | PENDING | | |
-| AT-06 | Owner (Tenant A) | Attempt to access a Tenant B resource by ID | 404, no cross-tenant data returned | | PENDING | | |
+| AT-01 | ANON | Signup creates a new tenant + Owner user | Tenant and Owner persisted, session established | Matches | PASS | pytest `test_auth.py::test_signup_creates_tenant_and_user`; e2e `full-system-journey.spec.ts` step 1 | |
+| AT-02 | Owner/Staff | Login with valid credentials | Session established, redirected to app | Matches | PASS | pytest `test_auth.py::test_login_success`; vitest `app/login/page.test.tsx::submits_credentials_and_redirects_to_customers_on_success`; every e2e spec's own login step | |
+| AT-03 | Owner/Staff | Session persists across reload | User remains authenticated after page reload | Matches | PASS | e2e `full-system-journey.spec.ts` step 2 ("Session persists across a reload") | |
+| AT-04 | Owner/Staff | Logout | Session terminated, protected routes redirect to login | Matches (previously untested — see below) | PASS | e2e `logout.spec.ts` (added this sprint, PASS, no defect) | |
+| AT-05 | ANON | Request a protected route while unauthenticated | Redirected to login, no data leak | Matches | PASS | e2e `unauthenticated-redirect.spec.ts` (4 protected routes) | |
+| AT-06 | Owner (Tenant A) | Attempt to access a Tenant B resource by ID | 404, no cross-tenant data returned | Matches | PASS | pytest `test_tenants.py::test_tenant_detail_cross_tenant_returns_404`; e2e `cross-tenant-boundary.spec.ts` | |
 
 ### B. Users / Staff / RBAC
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| RB-01 | Owner | Invite a Staff member | Invitation created and deliverable (token/link) | | PENDING | | |
-| RB-02 | ANON→Staff | Accept a Staff invitation | Staff account created, tenant-scoped, session established | | PENDING | | |
-| RB-03 | Owner | Perform an Owner-only action | Succeeds, persisted | | PENDING | | |
-| RB-04 | Owner & Staff | Perform an action allowed to both roles | Succeeds for both | | PENDING | | |
-| RB-05 | Staff | Attempt an Owner-only action (UI + API) | Blocked in UI and rejected (403) at API | | PENDING | | |
-| RB-06 | SYS | `role=None` behavior at automated-test layer (if a safe fixture exists) | Access denied consistently; BLOCKED-with-reason if no safe fixture | | PENDING | | |
+| RB-01 | Owner | Invite a Staff member | Invitation created and deliverable (token/link) | Matches | PASS | pytest `test_invitations.py::test_create_invitation_success`; vitest `app/settings/page.test.tsx::owner_can_create_an_invitation_and_sees_the_generated_link` | |
+| RB-02 | ANON→Staff | Accept a Staff invitation | Staff account created, tenant-scoped, session established | Matches | PASS | pytest `test_invitations.py::test_accept_invitation_creates_staff_user_and_logs_in`; vitest `app/invite/[token]/page.test.tsx::renders_the_accept_form_for_a_pending_invitation_and_submits`; e2e `role-boundary-owner-vs-staff.spec.ts` (real accept via API, real browser session) | |
+| RB-03 | Owner | Perform an Owner-only action | Succeeds, persisted | Matches | PASS | pytest `test_invitations.py::test_create_invitation_success`; `test_users.py::test_deactivate_user_flips_is_active_and_logs_activity`; `test_project_operations.py::test_owner_can_assign_a_same_tenant_staff_member_to_a_booked_project` | |
+| RB-04 | Owner & Staff | Perform an action allowed to both roles | Succeeds for both | Matches | PASS | pytest `test_project_operations.py::test_staff_can_advance_status` + `test_valid_forward_status_transition_still_succeeds_for_owner` | |
+| RB-05 | Staff | Attempt an Owner-only action (UI + API) | Blocked in UI and rejected (403) at API | Matches | PASS | pytest `test_rbac_matrix.py` (119 parametrized route/role checks) + `test_project_operations.py::test_same_tenant_staff_cannot_assign`; vitest `app/settings/page.test.tsx::staff_session_sees_no_invite_or_team_management_controls`; e2e `role-boundary-owner-vs-staff.spec.ts` (UI absence, not just 403) | |
+| RB-06 | SYS | `role=None` behavior at automated-test layer (if a safe fixture exists) | Access denied consistently; BLOCKED-with-reason if no safe fixture | A safe service-layer `role=None` fixture exists and is exercised — not blocked | PASS | pytest `test_rbac_matrix.py::test_no_role_caller_is_forbidden[...]` (14 parametrized routes) + `test_command_centre.py::test_role_none_is_forbidden` + `test_dashboard.py::test_dashboard_role_none_is_forbidden` | |
 
 ### C. Customers / Enquiries
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| CE-01 | Owner/Staff | Create a Customer | Persisted, tenant-scoped | | PENDING | | |
-| CE-02 | Owner/Staff | Create an unlinked enquiry Project | Persisted with no Customer relationship | | PENDING | | |
-| CE-03 | Owner/Staff | Convert enquiry → Customer | Customer + `Project.customer_id` + Activity created atomically | | PENDING | | |
-| CE-04 | Owner/Staff | Reload after conversion | Converted state persists across reload | | PENDING | | |
-| CE-05 | Owner/Staff | Retry the same conversion | Idempotent — no duplicate Customer/Activity | | PENDING | | |
-| CE-06 | Owner/Staff | Attempt to convert a non-enquiry Project | Rejected | | PENDING | | |
+| CE-01 | Owner/Staff | Create a Customer | Persisted, tenant-scoped | Matches | PASS | pytest `test_customers.py::test_create_customer`; e2e `full-system-journey.spec.ts` | |
+| CE-02 | Owner/Staff | Create an unlinked enquiry Project | Persisted with no Customer relationship | Matches | PASS | pytest `test_projects.py::test_create_project_defaults_to_enquiry` | |
+| CE-03 | Owner/Staff | Convert enquiry → Customer | Customer + `Project.customer_id` + Activity created atomically | Matches | PASS | pytest `test_enquiry_conversion.py::test_staff_can_convert_an_unlinked_enquiry_project_into_a_customer` + `test_successful_enquiry_conversion_creates_exactly_one_tenant_scoped_activity`; e2e `enquiry-conversion.spec.ts` | |
+| CE-04 | Owner/Staff | Reload after conversion | Converted state persists across reload | Matches | PASS | e2e `enquiry-conversion.spec.ts` (explicit `page.reload()` persistence check) | |
+| CE-05 | Owner/Staff | Retry the same conversion | Idempotent — no duplicate Customer/Activity | Matches | PASS | pytest `test_enquiry_conversion.py::test_repeat_conversion_returns_the_same_customer_without_creating_another` | |
+| CE-06 | Owner/Staff | Attempt to convert a non-enquiry Project | Rejected | Matches | PASS | pytest `test_enquiry_conversion.py::test_conversion_rejects_a_non_enquiry_project` | |
 
 ### D. Appointment / Site Visit
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| AV-01 | Owner/Staff | Schedule a Site Visit | Appointment persisted, linked to Project | | PENDING | | |
-| AV-02 | Owner/Staff | Reload after scheduling | State persists | | PENDING | | |
-| AV-03 | Owner/Staff | Complete a Site Visit | Status transitions, Activity recorded atomically | | PENDING | | |
-| AV-04 | Owner/Staff | Cancel a Site Visit | Cancel path completes correctly | | PENDING | | |
-| AV-05 | Owner/Staff | Attempt an invalid terminal transition | Rejected | | PENDING | | |
-| AV-06 | Owner (Tenant A) | Attempt cross-tenant Appointment access | 404 | | PENDING | | |
+| AV-01 | Owner/Staff | Schedule a Site Visit | Appointment persisted, linked to Project | Matches | PASS | pytest `test_appointments.py::test_staff_can_create_a_scheduled_appointment_against_a_same_tenant_project`; e2e `site-visit-scheduling.spec.ts` | |
+| AV-02 | Owner/Staff | Reload after scheduling | State persists | Matches | PASS | e2e `site-visit-scheduling.spec.ts` (explicit `page.reload()` persistence check) | |
+| AV-03 | Owner/Staff | Complete a Site Visit | Status transitions, Activity recorded atomically | Matches | PASS | pytest `test_appointments.py::test_appointment_can_transition_to_completed_and_then_repeat_call_is_idempotent` + `test_completing_an_appointment_logs_exactly_one_site_visit_completed_activity`; e2e `site-visit-scheduling.spec.ts` | |
+| AV-04 | Owner/Staff | Cancel a Site Visit | Cancel path completes correctly | Matches (previously untested — see below) | PASS | pytest `test_appointments.py::test_a_scheduled_appointment_can_be_cancelled` (added this sprint, PASS, no defect) | |
+| AV-05 | Owner/Staff | Attempt an invalid terminal transition | Rejected | Matches | PASS | pytest `test_appointments.py::test_completed_appointment_cannot_transition_to_cancelled` | |
+| AV-06 | Owner (Tenant A) | Attempt cross-tenant Appointment access | 404 | Matches | PASS | pytest `test_appointments.py::test_create_appointment_against_another_tenants_project_returns_404` + `test_status_update_for_another_tenants_appointment_returns_404` | |
 
 ### E. Quote
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| QT-01 | Owner/Staff | Create a Quote | Persisted, draft status | | PENDING | | |
-| QT-02 | Owner/Staff | Load an existing Quote | Correct data returned | | PENDING | | |
-| QT-03 | Owner/Staff | Approve a Quote | Status transitions to approved | | PENDING | | |
-| QT-04 | Owner/Staff | Reload after approval | Approved state persists | | PENDING | | |
-| QT-05 | Owner/Staff | Repeat approval / act on invalid state | Rejected or safely idempotent per contract | | PENDING | | |
+| QT-01 | Owner/Staff | Create a Quote | Persisted, draft status | Matches | PASS | pytest `test_quotes_api.py::test_create_quote_persists_and_is_listed`; e2e `quote-handoff.spec.ts` | |
+| QT-02 | Owner/Staff | Load an existing Quote | Correct data returned | Matches | PASS | pytest `test_quotes_api.py::test_get_quote_by_id` | |
+| QT-03 | Owner/Staff | Approve a Quote | Status transitions to approved | Matches | PASS | pytest `test_quote_handoff.py::test_staff_can_approve_a_draft_quote`; e2e `quote-handoff.spec.ts` | |
+| QT-04 | Owner/Staff | Reload after approval | Approved state persists | Matches | PASS | e2e `quote-handoff.spec.ts` (explicit `page.reload()` persistence check) | |
+| QT-05 | Owner/Staff | Repeat approval / act on invalid state | Rejected or safely idempotent per contract | Rejected (409), no mutation — matches contract | PASS | pytest `test_quote_handoff.py::test_repeat_approval_of_an_already_approved_quote_is_rejected` (added this sprint, PASS, no defect) | |
 
 ### F. Quote → Project handoff
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| HO-01 | Owner/Staff | Hand off an approved Quote | New Project created | | PENDING | | |
-| HO-02 | Owner/Staff | Inspect resulting Project | Correct initial status/fields | | PENDING | | |
-| HO-03 | Owner/Staff | Verify Customer relationship | Correct Customer linked | | PENDING | | |
-| HO-04 | Owner/Staff | Verify Quote relationship | Project references originating Quote | | PENDING | | |
-| HO-05 | Owner/Staff | Retry handoff on the same Quote | Idempotent — returns the same Project | | PENDING | | |
-| HO-06 | Owner/Staff | Attempt handoff on a draft Quote | Rejected | | PENDING | | |
+| HO-01 | Owner/Staff | Hand off an approved Quote | New Project created | Matches | PASS | pytest `test_quote_handoff.py::test_staff_can_hand_off_an_approved_quote_into_a_project`; e2e `quote-handoff.spec.ts` | |
+| HO-02 | Owner/Staff | Inspect resulting Project | Correct initial status/fields | Matches | PASS | pytest `test_quote_handoff.py::test_staff_can_hand_off_an_approved_quote_into_a_project` | |
+| HO-03 | Owner/Staff | Verify Customer relationship | Correct Customer linked | Matches | PASS | e2e `quote-handoff.spec.ts` (asserts Project's Customer) | |
+| HO-04 | Owner/Staff | Verify Quote relationship | Project references originating Quote | Matches | PASS | pytest `test_quote_handoff.py::test_staff_can_hand_off_an_approved_quote_into_a_project` | |
+| HO-05 | Owner/Staff | Retry handoff on the same Quote | Idempotent — returns the same Project | Matches | PASS | pytest `test_quote_handoff.py::test_repeat_handoff_of_the_same_quote_is_idempotent` | |
+| HO-06 | Owner/Staff | Attempt handoff on a draft Quote | Rejected | Matches | PASS | pytest `test_quote_handoff.py::test_handoff_rejects_a_draft_quote` | |
 
 ### G. Project operations
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| PO-01 | Owner | Assign Staff to a Project | Assignment persisted | | PENDING | | |
-| PO-02 | Owner | Reload after assignment | Assignment persists | | PENDING | | |
-| PO-03 | Staff | Perform an allowed operation on an assigned Project | Succeeds, Activity recorded | | PENDING | | |
-| PO-04 | Owner/Staff | Advance status strictly forward one step | Succeeds, Activity recorded atomically | | PENDING | | |
-| PO-05 | Owner/Staff | Attempt to skip or move status backward | Rejected | | PENDING | | |
-| PO-06 | Owner/Staff | Act on a terminal-status Project | Terminal behavior enforced | | PENDING | | |
+| PO-01 | Owner | Assign Staff to a Project | Assignment persisted | Matches | PASS | pytest `test_project_operations.py::test_owner_can_assign_a_same_tenant_staff_member_to_a_booked_project`; e2e `project-operations.spec.ts` | |
+| PO-02 | Owner | Reload after assignment | Assignment persists | Matches | PASS | e2e `project-operations.spec.ts` (explicit `page.reload()` persistence check) | |
+| PO-03 | Staff | Perform an allowed operation on an assigned Project | Succeeds, Activity recorded | Matches | PASS | pytest `test_project_operations.py::test_staff_can_advance_status` | |
+| PO-04 | Owner/Staff | Advance status strictly forward one step | Succeeds, Activity recorded atomically | Matches | PASS | pytest `test_project_operations.py::test_valid_forward_status_transition_still_succeeds_for_owner` + `test_successful_status_transition_logs_exactly_one_project_status_changed_activity`; e2e `project-operations.spec.ts` | |
+| PO-05 | Owner/Staff | Attempt to skip or move status backward | Rejected | Matches | PASS | pytest `test_project_operations.py::test_skipping_a_status_stage_returns_409` + `test_reverting_a_status_backward_returns_409`; e2e `project-operations.spec.ts` (invalid-transition check) | |
+| PO-06 | Owner/Staff | Act on a terminal-status Project | Terminal behavior enforced | Matches | PASS | pytest `test_project_operations.py::test_transition_from_complete_is_rejected` | |
 
 ### H. Follow-up automation
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| FU-01 | SYS | Seed a legitimately stale enquiry fixture | Fixture created, meets staleness criteria | | PENDING | | |
-| FU-02 | SYS | Run the real follow-up CLI/job (first run) | Expected notification(s) created | | PENDING | | |
-| FU-03 | SYS | Verify intended recipient | Correct tenant user(s) notified | | PENDING | | |
-| FU-04 | SYS | Verify notification creation details | Correct source/type, unread initially | | PENDING | | |
-| FU-05 | SYS | Run the job a second time | Zero duplicates created | | PENDING | | |
-| FU-06 | Owner/Staff | Click through from notification | Correct navigation to the source Project | | PENDING | | |
-| FU-07 | Owner/Staff | Mark notification read | Read state persists across reload | | PENDING | | |
+| FU-01 | SYS | Seed a legitimately stale enquiry fixture | Fixture created, meets staleness criteria | Matches | PASS | pytest `test_follow_up_automation.py::test_project_younger_than_threshold_is_not_due`; e2e `follow-up-automation.spec.ts` | |
+| FU-02 | SYS | Run the real follow-up CLI/job (first run) | Expected notification(s) created | Matches | PASS | pytest `test_follow_up_automation.py::test_run_creates_exactly_one_notification_for_a_stale_enquiry_with_assigned_staff`; e2e `follow-up-automation.spec.ts` runs the real `python -m app.jobs.follow_up` subprocess | |
+| FU-03 | SYS | Verify intended recipient | Correct tenant user(s) notified | Matches | PASS | pytest `test_follow_up_automation.py::test_unassigned_project_falls_back_to_tenant_owner` + `test_two_tenants_each_get_their_own_correctly_scoped_notification` | |
+| FU-04 | SYS | Verify notification creation details | Correct source/type, unread initially | Matches | PASS | e2e `follow-up-automation.spec.ts` (asserts `source_type`, `recipient_user_id`, initial unread state) | |
+| FU-05 | SYS | Run the job a second time | Zero duplicates created | Matches | PASS | pytest `test_follow_up_automation.py::test_running_twice_creates_no_duplicate_notification` + `test_duplicate_dedupe_key_is_rejected_at_the_database_level`; e2e `follow-up-automation.spec.ts` (second real subprocess run) | |
+| FU-06 | Owner/Staff | Click through from notification | Correct navigation to the source Project | Matches | PASS | e2e `follow-up-automation.spec.ts` (click → URL assertion) | |
+| FU-07 | Owner/Staff | Mark notification read | Read state persists across reload | Matches | PASS | e2e `follow-up-automation.spec.ts` (reload + live API re-check) | |
 
 ### I. Client portal
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| PT-01 | ANON | Access with a valid portal token | Scoped data loads correctly | | PENDING | | |
-| PT-02 | ANON | Access with a revoked token | Rejected, no data exposed | | PENDING | | |
-| PT-03 | ANON | Access with an expired token | Rejected, no data exposed | | PENDING | | |
-| PT-04 | ANON | Verify scoped data matches only the linked Customer/Project | Correctly scoped, nothing extra | | PENDING | | |
-| PT-05 | ANON (Tenant A token) | Attempt to reach Tenant B data via the portal | No leakage | | PENDING | | |
+| PT-01 | ANON | Access with a valid portal token | Scoped data loads correctly | Matches | PASS | pytest `test_portal.py::test_get_portal_by_token_public`; e2e `full-system-journey.spec.ts` | |
+| PT-02 | ANON | Access with a revoked token | Rejected, no data exposed | Matches | PASS | pytest `test_portal.py::test_revoked_portal_link_reads_as_revoked_and_returns_no_data`; e2e `portal-token-lifecycle.spec.ts` | |
+| PT-03 | ANON | Access with an expired token | Rejected, no data exposed | Matches | PASS | pytest `test_portal.py::test_expired_portal_link_reads_as_expired_and_returns_no_data`; e2e `portal-token-lifecycle.spec.ts` | |
+| PT-04 | ANON | Verify scoped data matches only the linked Customer/Project | Correctly scoped, nothing extra | Matches | PASS | pytest `test_portal.py::test_portal_returns_only_that_customers_projects_and_quotes` | |
+| PT-05 | ANON (Tenant A token) | Attempt to reach Tenant B data via the portal | No leakage | Matches | PASS | pytest `test_portal.py::test_portal_cross_tenant_isolation` | |
 
 ### J. Messaging / Documents
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| MD-01 | ANON | Access documents via the portal | Only the linked Customer's documents visible, download works | | PENDING | | |
-| MD-02 | ANON & Staff | Customer posts a portal message; Staff views it | Message persisted, staff-visible, triggers Activity + notification | | PENDING | | |
-| MD-03 | ANON | Attempt document/message access with an invalid/revoked/expired token | Rejected, no data exposed | | PENDING | | |
-| MD-04 | Staff | Post a staff message; reload | Persists in thread order, no unintended side effects (no activity/notification per shipped contract) | | PENDING | | |
+| MD-01 | ANON | Access documents via the portal | Only the linked Customer's documents visible, download works | Matches | PASS | pytest `test_documents.py::test_portal_lists_only_that_customers_documents` + `test_portal_downloads_document_successfully` | |
+| MD-02 | ANON & Staff | Customer posts a portal message; Staff views it | Message persisted, staff-visible, triggers Activity + notification | Matches | PASS | pytest `test_messages.py::test_portal_message_has_null_sender_user_id_and_exact_side_effects` (asserts exactly 1 new Activity + 1 new Notification) | |
+| MD-03 | ANON | Attempt document/message access with an invalid/revoked/expired token | Rejected, no data exposed | Matches | PASS | pytest `test_documents.py::test_portal_revoked_link_cannot_access_documents`; `test_messages.py::test_revoked_portal_token_cannot_list_or_post` + `test_expired_portal_token_cannot_list_or_post` | |
+| MD-04 | Staff | Post a staff message; reload | Persists in thread order, no unintended side effects (no activity/notification per shipped contract) | Matches | PASS | pytest `test_messages.py::test_staff_message_creates_no_activity_or_notification` + `test_messages_are_listed_oldest_to_newest` | |
 
 ### K. Business Command Centre
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| CC-01 | Owner | Project pipeline counts vs. controlled fixture | Exact match to independently-calculated fixture truth | | PENDING | | |
-| CC-02 | Owner | Quote metrics (draft/approved/handed_off/quoted_value/approved_quoted_value) | Exact match; `handed_off` independently queried, not derived | | PENDING | | |
-| CC-03 | Owner | Site-visit (Appointment status) metrics | Exact match | | PENDING | | |
-| CC-04 | Owner | Follow-up metric (tenant-wide unread notifications) | Exact match | | PENDING | | |
-| CC-05 | Owner | Supported monetary totals are correctly labeled | `quoted_value`/`approved_quoted_value` never mislabeled as "revenue" | | PENDING | | |
-| CC-06 | Owner | Empty-state (zero data) tenant | Correct empty-state rendering, no errors | | PENDING | | |
-| CC-07 | Owner (Tenant A) | Command Centre values with a populated Tenant B | No Tenant B values appear in Tenant A's dashboard | | PENDING | | |
+| CC-01 | Owner | Project pipeline counts vs. controlled fixture | Exact match to independently-calculated fixture truth | Matches | PASS | pytest `test_command_centre.py::test_pipeline_counts_are_exact_and_tenant_scoped`; e2e `business-command-centre.spec.ts` | |
+| CC-02 | Owner | Quote metrics (draft/approved/handed_off/quoted_value/approved_quoted_value) | Exact match; `handed_off` independently queried, not derived | Matches | PASS | pytest `test_command_centre.py::test_quote_funnel_and_value_are_exact`; e2e `business-command-centre.spec.ts` | |
+| CC-03 | Owner | Site-visit (Appointment status) metrics | Exact match | Matches | PASS | pytest `test_command_centre.py::test_site_visit_counts_are_exact` | |
+| CC-04 | Owner | Follow-up metric (tenant-wide unread notifications) | Exact match | Matches | PASS | pytest `test_command_centre.py::test_follow_up_attention_counts_unread_project_sourced_notifications_tenant_wide` | |
+| CC-05 | Owner | Supported monetary totals are correctly labeled | `quoted_value`/`approved_quoted_value` never mislabeled as "revenue" | The Sprint 025 Command Centre itself never mislabeled this — but the older, still-live home-page dashboard (`GET /api/v1/dashboard` + `StatGrid`) did, under the key/label "revenue" | **UAT-002 found and fixed** | pytest `test_dashboard.py::test_dashboard_never_labels_a_quote_total_as_revenue` (added this sprint); `test_command_centre.py` (Command Centre itself was already correct, per `app/dashboard/models.py`'s `QuotedValue` docstring) | UAT-002 |
+| CC-06 | Owner | Empty-state (zero data) tenant | Correct empty-state rendering, no errors | Matches | PASS | pytest `test_command_centre.py::test_empty_tenant_gets_all_zeros_not_nulls_or_500` | |
+| CC-07 | Owner (Tenant A) | Command Centre values with a populated Tenant B | No Tenant B values appear in Tenant A's dashboard | Matches | PASS | pytest `test_command_centre.py::test_pipeline_counts_are_exact_and_tenant_scoped` (tenant-scoping assertions); e2e `business-command-centre.spec.ts` (excludes other tenants) | |
 
 ### L. Security / Hardening
 
 | ID | Persona | Scenario | Expected | Actual | Status | Evidence | Defect |
 |---|---|---|---|---|---|---|---|
-| SH-01 | SYS | Inspect security headers on API responses | Sprint 026/027 header contract intact | | PENDING | | |
-| SH-02 | SYS | CORS from an allowed origin | Allowed | | PENDING | | |
-| SH-03 | SYS | CORS from a disallowed origin | Denied | | PENDING | | |
-| SH-04 | ANON | Call a protected endpoint without auth | Enforced (401/403), no data leak | | PENDING | | |
-| SH-05 | Owner (Tenant A) | Cross-tenant boundary spot-check on a protected endpoint | Enforced (404), no leak | | PENDING | | |
-| SH-06 | SYS | Trigger a server error | Sanitized error, no stack trace/internal detail exposed | | PENDING | | |
-| SH-07 | SYS | Inspect runtime config / repository for exposed secrets | None found | | PENDING | | |
-| SH-08 | SYS | Staging `/health` and `/ready` | Both 200 | | PENDING | | |
+| SH-01 | SYS | Inspect security headers on API responses | Sprint 026/027 header contract intact | Matches | PASS | pytest `test_security_headers.py::test_security_headers_present_on_a_normal_response` + `test_security_headers_present_on_an_error_response` | |
+| SH-02 | SYS | CORS from an allowed origin | Allowed | Matches | PASS | pytest `test_runtime_http.py::test_cors_preflight_allows_configured_origin` | |
+| SH-03 | SYS | CORS from a disallowed origin | Denied | Matches | PASS | pytest `test_runtime_http.py::test_cors_preflight_rejects_origin_outside_configuration` | |
+| SH-04 | ANON | Call a protected endpoint without auth | Enforced (401/403), no data leak | Matches | PASS | pytest `test_rbac_matrix.py::test_no_token_matches_expected_category[...]` (every protected route) | |
+| SH-05 | Owner (Tenant A) | Cross-tenant boundary spot-check on a protected endpoint | Enforced (404), no leak | Matches | PASS | pytest `test_projects.py::test_get_project_cross_tenant_returns_404`; `test_customers.py::test_get_customer_cross_tenant_returns_404`; e2e `cross-tenant-boundary.spec.ts` | |
+| SH-06 | SYS | Trigger a server error | Sanitized error, no stack trace/internal detail exposed | Matches | PASS | pytest `test_runtime_http.py::test_unhandled_exception_is_structured_redacted_and_keeps_safe_response` + `test_ready_redacts_database_errors_and_logs_only_the_exception_type` | |
+| SH-07 | SYS | Inspect runtime config / repository for exposed secrets | None found | Matches — `.env` gitignored and untracked; repo-wide scan for common key/token patterns (`sk-`, `AKIA`, private-key headers, Slack tokens) found none | PASS | pytest `test_railway_contract.py::test_staging_environment_inventory_is_complete_and_secret_free`; manual repo-wide secret-pattern scan (this sprint) | |
+| SH-08 | SYS | Staging `/health` and `/ready` | Both 200 | | PENDING (staging) | Verified in Phase 25 against the deployed staging commit | |
+
+**Matrix totals (Phase 8 local execution):** 72 rows. 71 PASS, 1 PENDING
+(staging) (SH-08, which by definition can only run once deployed). 0 FAIL. 0
+BLOCKED. 3 rows (AT-04, AV-04, QT-05) had no prior automated coverage and were
+verified live this sprint, adding durable regression tests with no defect
+found. 1 row (CC-05) surfaced a genuine defect (UAT-002) on a sibling legacy
+endpoint, fixed this sprint.
+
+## Phase 7 — local regression baseline (before any Sprint 028 code changes)
+
+Run against the discovery-locked contract commit (`e4a0463`), before any
+product code changes, per the locked contract's Phase 7 rule:
+
+- Backend: `pytest` — **547 passed, 1 skipped, 0 failed** (identical to the
+  Sprint 027 closeout baseline — no pre-existing regression).
+- Frontend type-check (`pnpm --filter web exec tsc --noEmit`): clean.
+- Frontend lint (`pnpm --filter web lint`): clean.
+- Frontend component tests (`pnpm --filter web test`): **66/66 passed**
+  (10 files).
+- `pnpm --filter web test:runtime-config`: **7/7 passed**.
+- `pnpm --filter web test:docker-contract`: **5/5 passed**.
+- `pnpm build`: clean, all 14 routes generated.
+- Playwright (`pnpm --filter web exec playwright test`, full suite):
+  **12/12 passed** across all 11 spec files.
+- `alembic heads` / `alembic current`: single head `2243d66f83da`, local DB at
+  head. `alembic check`: no new upgrade operations detected.
+- `git diff --check` (`7f24ac6..HEAD`): clean.
+
+Baseline confirmed identical to Sprint 027's closeout state — any FAIL found
+from here on is Sprint 028's own finding, not inherited noise.
+
+## UAT defects found and fixed
+
+### UAT-001 — profile menu shows hardcoded identity
+
+- **Severity:** MEDIUM (misleading operational state — no access-control
+  impact; RBAC is separately enforced server-side and by other, correct,
+  `useAuth()`-driven UI gates elsewhere).
+- **Matrix scenario:** Category B frontend-visibility check (RB-05/B general).
+- **Reproduction:** Sign in as any user (Staff, or an Owner at a tenant other
+  than the original seed tenant) and open the header profile menu
+  (`components/shell/UserProfileMenu.tsx`). It always rendered a fixed
+  `{ name: "Simo", role: "Owner", tenant: "Simo Marble & Construction Ltd" }`
+  regardless of who was actually signed in — `AuthProvider` already exposed
+  the real `role`/`tenantName` (and the backend already returns the real
+  `name` on every auth response, `app/auth/models.py`), but the component
+  never consumed any of them.
+- **Expected:** The header shows the real signed-in user's name, role, and
+  tenant.
+- **Actual (before fix):** Always "Simo" / "Owner" / "Simo Marble &
+  Construction Ltd", for every user in every tenant.
+- **Layer:** Frontend only (display) — backend RBAC/tenant data were never
+  wrong.
+- **User impact:** A Staff user sees themselves labeled "Owner" (and every
+  user sees someone else's name/company) in their own account menu —
+  confusing, but does not grant or deny any actual capability.
+- **RED commit:** `cc00dfa` — `test: reproduce UAT-001 profile menu shows hardcoded identity`.
+- **GREEN commit:** `d6e7c09` — `fix: resolve UAT-001 profile menu shows hardcoded identity`.
+- **Test-correctness follow-up:** `0d776f7` (RED test needed to open the
+  dropdown before asserting dropdown-only content — test infra fix, not a
+  behavior change).
+- **Retest:** `vitest run components/shell/UserProfileMenu.test.tsx` — 2/2
+  passed. Full `pnpm --filter web test` re-run: 68/68 passed. `tsc --noEmit`,
+  lint, build: all clean.
+
+### UAT-002 — legacy dashboard mislabels quote totals as "revenue"
+
+- **Severity:** MEDIUM (misleading financial/operational state — the system
+  has no payment/invoicing recognition anywhere; `docs/ROADMAP.md` still
+  lists payment tracking as unbuilt/deferred, so no total in the product can
+  legitimately be called revenue).
+- **Matrix scenario:** CC-05 (supported monetary totals correctly labeled).
+- **Reproduction:** As any Owner/Staff, load the home dashboard (`/`, not the
+  Sprint 025 Command Centre). `GET /api/v1/dashboard` sums every quote's
+  `total` regardless of status — draft included — via
+  `crud.sum_quotes_revenue`, and returns it under the key `"revenue"`; the
+  frontend `StatGrid` then displays it under the label "Revenue".
+- **Expected:** Per the exact principle Sprint 025 already established for
+  its own replacement metric (`app/dashboard/models.py`'s `QuotedValue`
+  docstring: "a quote total is a price offered or committed to, not
+  recognized income"), no quote-total figure may be labeled revenue.
+- **Actual (before fix):** Labeled "revenue" in both the API response and the
+  UI.
+- **Layer:** Backend (response field name) + frontend (display label).
+- **User impact:** Overstates the business's actual financial position by
+  presenting unapproved draft-quote value as if it were earned income.
+- **RED commit:** `57b6d86` — `test: reproduce UAT-002 legacy dashboard mislabels quote totals as revenue`.
+- **GREEN commit:** `28e1c15` — `fix: resolve UAT-002 legacy dashboard mislabels quote totals as revenue`.
+- **Retest:** `pytest tests/test_dashboard.py` — 6/6 passed. Full `pytest` —
+  550 passed, 1 skipped, 0 failed. `tsc --noEmit`, lint, `vitest`, `build`:
+  all clean.
+
+### UAT-003 — dashboard greeting shows hardcoded identity
+
+- **Severity:** LOW (cosmetic wording only — no access-control or financial
+  impact; same underlying root cause as UAT-001, different location).
+- **Matrix scenario:** UX acceptance (Phase 14) general check, surfaced while
+  investigating UAT-001.
+- **Reproduction:** Load the home dashboard (`/`) as any user. The greeting
+  always read "Welcome back, Simo" regardless of who was signed in.
+- **Expected:** Greets the actual signed-in user by their real name.
+- **Actual (before fix):** Always "Welcome back, Simo".
+- **Layer:** Frontend only.
+- **User impact:** Cosmetic confusion only ("why does it call me Simo?");
+  never affects data, permissions, or workflow correctness.
+- **RED commit:** `a63dab0` — `test: reproduce UAT-003 dashboard greeting shows hardcoded identity`.
+- **GREEN commit:** `66a19d5` — `fix: resolve UAT-003 dashboard greeting shows hardcoded identity`.
+- **Retest:** `vitest run app/page.test.tsx` — 1/1 passed. Full
+  `pnpm --filter web test`: 69/69 passed. `tsc --noEmit`, lint, `build`: all
+  clean.
+
+### Coverage additions with no defect found
+
+Three matrix rows had no prior automated coverage. Each was verified live
+against the real stack this sprint; all three PASS — no product defect,
+durable regression test added so the gap doesn't reopen silently:
+
+- **AT-04 (logout):** `9e29728` — `test: cover AT-04 logout via Sprint 028 UAT execution` (`apps/web/e2e/logout.spec.ts`).
+- **QT-05 (repeat quote approval):** `a4ce752` — `test: cover QT-05 repeat quote approval via Sprint 028 UAT execution` (`tests/test_quote_handoff.py`).
+- **AV-04 (site visit cancellation):** `b78f8a9` — `test: cover AV-04 site visit cancellation via Sprint 028 UAT execution` (`tests/test_appointments.py`).
+
+### Deferred / accepted findings
+
+None. No MEDIUM or LOW finding was left unaddressed — both UAT-002 (MEDIUM)
+and UAT-003 (LOW) were fixed rather than deferred, since both fixes were
+small, low-risk, and directly informed by an existing, already-correct
+pattern elsewhere in the codebase (Sprint 025's `QuotedValue` convention for
+UAT-002; `AuthProvider`'s already-exposed `name` field, added for UAT-001,
+for UAT-003).
+
+No PRODUCT ENHANCEMENT — DEFERRED items were logged: every UAT execution path
+this sprint traced back to either already-shipped, correctly-working behavior,
+or a genuine labeling/coverage defect in already-shipped behavior — nothing
+UAT surfaced asked for new capability.
 
 ---
 
@@ -316,6 +456,10 @@ re-confirmed, not assumed, during Phase 8/25 execution:
 - **Portal:** token state (valid/revoked/expired) never exposes invalid data;
   no partial persistence survives an injected failure path.
 
+**All six invariants reconfirmed this sprint** — same evidence cited against
+CE-03/AV-03/PO-04/HO-05/FU-05 above, plus `test_portal.py`'s revoked/expired
+tests for the portal invariant. No regression found in any of them.
+
 ## UX acceptance (Phase 14)
 
 For every major journey inspected above, additionally check: discoverability,
@@ -324,6 +468,14 @@ retryability, disabled-state behavior, reload persistence, terminal-action
 visibility, navigation correctness. Fix only objectively broken/confusing
 behavior on existing workflows — this sprint does not redesign pages for
 subjective preference.
+
+Checked across the connected journey and per-feature Playwright specs (all of
+which assert loading/error/disabled states explicitly, e.g.
+`DashboardStatusBar`'s error state, `StatCardSkeleton` loading state, and
+every reload-persistence check already cited per matrix row above). Two
+label-clarity defects were found and fixed this sprint: UAT-001 (identity
+labels) and UAT-002 (financial-total label). No other objectively
+broken/confusing UX found — no redesign performed.
 
 ---
 
