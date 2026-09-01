@@ -142,3 +142,60 @@ framework, no CI/CD pipeline rewrite. `GET /health`/`/ready` remain exactly as
 Sprint 018 left them — the manifest lives entirely in the repository, not in
 the running service.
 
+---
+
+## LOCKED RELEASE CANDIDATE CONTRACT
+
+This section is the sprint's frozen scope, committed separately from the
+discovery draft above. Once committed, it is not renegotiated mid-sprint
+except by explicitly re-opening discovery in a follow-up commit.
+
+1. **RC version format:** `X.Y.Z-rc.N` (semver pre-release). This candidate:
+   `1.0.0-rc.1`.
+2. **RC tag:** `v1.0.0-rc.1`, created only after local verification (Phase 12)
+   and feature CI (Phase 13) are both GREEN, on the exact reviewed candidate
+   commit. Never force-pushed, never moved. A changed candidate after
+   publication gets `v1.0.0-rc.2`, not a rewritten `rc.1`.
+3. **Candidate SHA rule:** the exact commit on
+   `sprint-029-release-candidate-recovery` at the moment Phase 12+13 both
+   pass — recorded in full (40-character) form in the RC manifest and in
+   this document. The tag points at this SHA and nothing else.
+4. **Migration head rule:** the candidate's `alembic heads` **must** equal
+   `2243d66f83da` (the value already confirmed identical between local and
+   staging in Sprint 028). If any change this sprint alters that value, the
+   contract is void and must be re-locked — this sprint is not authorized to
+   ship a migration.
+5. **Release artifact rule:** the deployed artifact is the exact `git
+   archive <candidate-sha>` clean export (per `docs/STAGING_RUNBOOK.md`'s
+   Sprint 021 clean-commit procedure) — never an uncommitted working tree,
+   never a working tree with local modifications layered on top of the
+   candidate commit.
+6. **Rollback target:** the current live staging deployment as of this
+   sprint's start — commit `737ac10bcbde682564d3bac6a9a6bb2fda59628f`
+   (Sprint 028's final reviewed HEAD, verified via Railway deployment
+   history in Phase 19, not assumed).
+7. **DB backup mechanism:** `pg_dump --format=custom --no-owner` against the
+   real `simo-postgres-staging` database, reached over a private SSH tunnel
+   (`railway connect --tunnel-only --ssh`, or `railway ssh` executing the
+   dump directly) — never over a newly-created public TCP proxy (staging
+   Postgres stays on private networking only, per
+   `docs/STAGING_RUNBOOK.md`'s release invariants, unchanged by this
+   sprint).
+8. **Restore target:** a disposable local Docker Postgres container, created
+   fresh for this drill and torn down after validation — never the active
+   local dev database (`simo-os-postgres`), never active staging, never
+   production.
+9. **Recovery validation:** Alembic revision match, representative
+   tenant/customer/project/quote/appointment/notification row **counts**
+   (not necessarily byte-for-byte equality — see Phase 25's chosen
+   deterministic method), and foreign-key integrity (`ALTER TABLE ...
+   VALIDATE CONSTRAINT`-equivalent read: no orphaned FK values) on the
+   restored copy.
+10. **Production prohibition:** no command in this sprint targets Railway's
+    `production` environment, any production-named service, or any
+    production database, under any circumstance. Every Railway MCP/CLI call
+    this sprint explicitly names `staging` (environment id
+    `58f1f618-f823-4c02-80b6-b1d6b630bb76`) or a disposable local resource.
+    If any command's target is ambiguous, it is not run.
+
+Locked by this commit. Execution (Phase 12 onward) begins next.
