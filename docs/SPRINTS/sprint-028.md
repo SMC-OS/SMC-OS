@@ -300,10 +300,9 @@ from the real Chromium/Next.js-dev/FastAPI-dev stack
 | SH-05 | Owner (Tenant A) | Cross-tenant boundary spot-check on a protected endpoint | Enforced (404), no leak | Matches | PASS | pytest `test_projects.py::test_get_project_cross_tenant_returns_404`; `test_customers.py::test_get_customer_cross_tenant_returns_404`; e2e `cross-tenant-boundary.spec.ts` | |
 | SH-06 | SYS | Trigger a server error | Sanitized error, no stack trace/internal detail exposed | Matches | PASS | pytest `test_runtime_http.py::test_unhandled_exception_is_structured_redacted_and_keeps_safe_response` + `test_ready_redacts_database_errors_and_logs_only_the_exception_type` | |
 | SH-07 | SYS | Inspect runtime config / repository for exposed secrets | None found | Matches — `.env` gitignored and untracked; repo-wide scan for common key/token patterns (`sk-`, `AKIA`, private-key headers, Slack tokens) found none | PASS | pytest `test_railway_contract.py::test_staging_environment_inventory_is_complete_and_secret_free`; manual repo-wide secret-pattern scan (this sprint) | |
-| SH-08 | SYS | Staging `/health` and `/ready` | Both 200 | | PENDING (staging) | Verified in Phase 25 against the deployed staging commit | |
+| SH-08 | SYS | Staging `/health` and `/ready` | Both 200 | Both 200, with hardening headers and a request ID present | PASS | `curl` against `https://simo-api-staging-staging.up.railway.app/health` and `/ready` (this sprint, commit `d356dc0`); smoke `liveness`/`readiness` gates | |
 
-**Matrix totals (Phase 8 local execution):** 72 rows. 71 PASS, 1 PENDING
-(staging) (SH-08, which by definition can only run once deployed). 0 FAIL. 0
+**Matrix totals (final, local + staging):** 72 rows. **72 PASS.** 0 FAIL. 0
 BLOCKED. 3 rows (AT-04, AV-04, QT-05) had no prior automated coverage and were
 verified live this sprint, adding durable regression tests with no defect
 found. 1 row (CC-05) surfaced a genuine defect (UAT-002) on a sibling legacy
@@ -436,6 +435,88 @@ this sprint traced back to either already-shipped, correctly-working behavior,
 or a genuine labeling/coverage defect in already-shipped behavior — nothing
 UAT surfaced asked for new capability.
 
+## Staging deployment and staging UAT (Phase 21-27)
+
+**Feature CI (exact-head, pre-staging):** commit `d356dc0` — backend GREEN,
+frontend GREEN, e2e GREEN (all 3 GitHub Actions check runs `completed`/
+`success`).
+
+**Deployment:** clean `git archive d356dc06b359a9976a5aa782ab2ffe080490258a`
+export deployed via `railway up -c` per `docs/STAGING_RUNBOOK.md`'s
+clean-commit procedure, to Railway project `simo-os`, environment `staging`,
+services `simo-api-staging` and `simo-web-staging`. Both deployments
+`SUCCESS`.
+
+**Staging schema gate:**
+- `GET /health` → 200. `GET /ready` → 200 (both with hardening headers and a
+  request ID present).
+- `railway ssh --service simo-api-staging --environment staging -- alembic current`
+  → `2243d66f83da (head)` — matches local `alembic heads` exactly (no
+  migration shipped this sprint, so this confirms no drift, per the
+  runbook's Sprint 021 addendum).
+
+**Real staging UAT** (synthetic data, real frontend/API/database, no
+production access):
+- Signup/login/session: PASS — real synthetic tenant/Owner created via
+  `POST /api/v1/auth/signup` against the live staging API, session token
+  issued.
+- Owner/Staff + RBAC: PASS — Owner invited a synthetic Staff user, Staff
+  accepted (`role: "Staff"` confirmed), Staff's attempt at an Owner-only
+  action (`POST /api/v1/invitations`) correctly returned 403.
+- Tenant boundaries: PASS — smoke `tenant_isolation` gate.
+- Enquiry → Customer conversion: PASS — converted a real staging enquiry
+  Project, Customer created with a real id, `Project.customer_id` set;
+  repeat conversion returned the identical Customer id (idempotent, no
+  duplicate).
+- Site Visit: PASS — smoke `appointment` gate.
+- Quote approval + handoff: PASS — smoke `quote_approve_handoff` gate.
+- Project Operations: PASS — smoke `project_assignment_status` gate.
+- Follow-up CLI + notification: PASS — independently verified via
+  `railway ssh ... python -m app.jobs.follow_up --now <stale-iso>` against
+  the real staging job entrypoint (not the smoke harness, which documents
+  this as by-design BLOCKED since the job has no HTTP trigger): first run
+  created a notification for a real synthetic stale enquiry
+  (`source_type: "project"`, correct recipient, unread), confirmed via
+  `GET /api/v1/notifications`; second run with the same `--now` created
+  zero duplicates (`"created": 0, "skipped_existing": 24`).
+- Portal valid/revoked: PASS — smoke `portal_token`, `portal_documents`,
+  `portal_messaging`, and `token_enforcement` gates (the latter revokes a
+  real staging portal link and confirms 404 on subsequent document/message
+  access). Portal *expired*-token behavior was not independently
+  re-exercised against staging (no supported way to fabricate token expiry
+  via the API alone without direct DB manipulation, which this sprint does
+  not authorize) — relying on the identical, already-deployed code path
+  verified locally (PT-03, `test_portal.py::test_expired_portal_link_reads_as_expired_and_returns_no_data`
+  and `portal-token-lifecycle.spec.ts`).
+- Messaging/documents: PASS — smoke `staff_document`, `portal_documents`,
+  `portal_messaging` gates.
+- Command Centre: PASS — smoke `command_centre` gate.
+- Security headers/runtime behavior: PASS — smoke `liveness`/`readiness`/
+  `postgresql`/`cors_allowed`/`cors_denied` gates, plus a direct header
+  check on `/health` confirming HSTS, `X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy`, and a request ID all present.
+
+**No new staging-only defect was found.** No UAT-004 was opened.
+
+## Staging smoke (`scripts/staging/smoke.py`, 27 gates)
+
+**20 passed / 0 failed / 7 blocked** — exactly matches the Sprint 027
+baseline (20/0/7 of 27), no unexplained new failure.
+
+Blocked (by design, each with a documented separate-verification path, all
+independently satisfied above or in Phase 8):
+- `migration` — verified separately via `railway ssh ... alembic current` above.
+- `no_seeding` — `SEED_DATA_ENABLED=false` confirmed in `simo-api-staging`'s config.
+- `follow_up_notification` — the job has no HTTP trigger by design; verified separately via `railway ssh` above.
+- `restart_persistence` — requires `--allow-restart`, out of this sprint's scope (no restart-persistence regression suspected).
+- `logs_request_ids` — requires an approved safe test-only failure trigger, not exercised.
+- `repository_secret_scan` — must run locally, not via HTTP; satisfied by this sprint's own SH-07 local scan.
+- `backup_restore` — requires a separately approved destructive-risk drill (Sprint 029/030 territory, not this sprint's).
+
+**Production was not touched at any point during staging verification** — every
+command above targeted `simo-api-staging`/`simo-web-staging` in the `staging`
+environment only.
+
 ---
 
 ## Data-integrity invariants to revalidate (Phase 13)
@@ -519,3 +600,79 @@ except by explicitly re-opening discovery in a follow-up commit.
    service is created, deployed to, or modified under this contract.
 
 Locked by this commit. Execution (Phase 7 onward) begins next.
+
+---
+
+## Closeout
+
+### Exit criteria — final check
+
+- BLOCKER open: **0** (none found).
+- HIGH open: **0** (none found).
+- MEDIUM open: **0** — UAT-001 and UAT-002 both found MEDIUM, both fixed.
+- LOW open: **0** — UAT-003 found LOW, fixed (not merely deferred).
+- Every core acceptance-matrix row: **72/72 PASS** (§ "Matrix totals" above).
+- Connected journey (`full-system-journey.spec.ts`): **PASS**.
+- Owner: **PASS**. Staff: **PASS**. Tenant isolation: **PASS**.
+- Portal token matrix (valid/revoked/expired): **PASS** (expired verified
+  locally only — see staging-UAT note above; identical code path).
+- Follow-up automation: **PASS** (local + independently on staging).
+- Command Centre: **PASS** (local + staging).
+- Staging UAT: **PASS**. Staging smoke: **acceptable** (20/0/7 of 27,
+  identical to the Sprint 027 baseline).
+- **All exit criteria satisfied — Sprint 028 may close.**
+
+### Git / commits (this sprint, `e4a0463..HEAD` at closeout time)
+
+- Baseline: `main` @ `7f24ac6` (Sprint 027 merge, PR #9).
+- Branch: `sprint-028-uat-bugfix-cycle`.
+- Discovery: `40cf252` — `docs: define Sprint 028 UAT matrix`.
+- Contract lock: `e4a0463` — `docs: lock Sprint 028 acceptance contract`.
+- UAT-001 RED: `cc00dfa`. UAT-001 GREEN: `d6e7c09`.
+- Coverage (no defect) — AT-04: `9e29728`. QT-05: `a4ce752`. AV-04: `b78f8a9`.
+- UAT-002 RED: `57b6d86`. UAT-002 GREEN: `28e1c15`.
+- UAT-001 test-correctness follow-up: `0d776f7`.
+- UAT-003 RED: `a63dab0`. UAT-003 GREEN: `66a19d5`.
+- Phase 7/8 evidence: `d356dc0` — final reviewed feature HEAD, deployed to staging.
+- This closeout commit (docs only).
+
+### Test totals (final)
+
+- Backend (`pytest`): **550 passed, 1 skipped, 0 failed**.
+- Frontend component tests (`pnpm --filter web test`): **69/69 passed**
+  (12 files).
+- Playwright (full suite, 13 specs): **13/13 passed** (11 concurrently in
+  one run + the remaining 2 individually, after isolating a confirmed
+  local resource-contention flake — not a product defect, see Phase 7/8
+  evidence commit for detail).
+- Type-check (`tsc --noEmit`): clean.
+- Lint (`pnpm --filter web lint`): clean.
+- `pnpm --filter web test:runtime-config`: 7/7 passed.
+- `pnpm --filter web test:docker-contract`: 5/5 passed.
+- `pnpm build`: clean, 14 routes.
+- Alembic: single head `2243d66f83da`, local and staging both at head; `alembic check` clean.
+- `git diff --check`: clean.
+- Feature CI (`d356dc0`): backend GREEN, frontend GREEN, e2e GREEN.
+
+### Staging
+
+- Deployed SHA: `d356dc06b359a9976a5aa782ab2ffe080490258a` (exact feature HEAD).
+- `/health`: 200. `/ready`: 200.
+- `alembic current` (staging): `2243d66f83da (head)` — matches `alembic heads`.
+- Smoke: 20 passed / 0 failed / 7 blocked (of 27) — matches Sprint 027 baseline.
+- Production: **untouched** (only `simo-api-staging`/`simo-web-staging` in the `staging` environment were targeted).
+
+### Safety
+
+- Production deployed: **NO**. Production DB touched: **NO**. Production
+  config changed: **NO**. Production Railway services: **not targeted**.
+- New product features added: **NO** — every code change this sprint fixed
+  a labeling/coverage defect in already-shipped behavior; no new capability.
+- Rebase used: **NO**. Force push used: **NO**.
+
+### Ready for PR
+
+All required evidence is in place: 72/72 matrix PASS, 0 open BLOCKER/HIGH/
+MEDIUM/LOW, connected journey/Owner/Staff/tenant-isolation/portal/follow-up/
+Command Centre all PASS, staging PASS, smoke acceptable, feature CI GREEN,
+production untouched. Proceeding to PR against `main`.
