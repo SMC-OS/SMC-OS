@@ -306,6 +306,35 @@ def test_appointment_can_transition_to_completed_and_then_repeat_call_is_idempot
         _cleanup()
 
 
+def test_a_scheduled_appointment_can_be_cancelled(client, auth_headers):
+    """Sprint 028 UAT acceptance matrix AV-04: cancelling a Site Visit had
+    no automated coverage on the success path — only the completed path
+    (above) and the terminal-conflict path (below) did. 'cancelled' is
+    reachable from 'scheduled' the same way 'completed' is
+    (app/appointments/service.py's only restriction is leaving an
+    already-terminal appointment for a *different* status)."""
+    _cleanup()
+    try:
+        project = _create_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
+        created = client.post(
+            f"/api/v1/projects/{project['id']}/appointments",
+            json={"scheduled_at": _future_iso()},
+            headers=auth_headers,
+        )
+        assert created.status_code == 201
+        appointment_id = created.json()["id"]
+
+        cancelled = client.patch(
+            f"/api/v1/appointments/{appointment_id}/status",
+            json={"status": "cancelled"},
+            headers=auth_headers,
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.json()["status"] == "cancelled"
+    finally:
+        _cleanup()
+
+
 def test_completed_appointment_cannot_transition_to_cancelled(client, auth_headers):
     """A terminal appointment (completed) transitioning to the *other*
     terminal status (cancelled) is a real conflict, not an idempotent
