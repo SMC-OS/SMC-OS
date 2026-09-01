@@ -1,0 +1,18 @@
+{
+  "rc_version": "1.0.0-rc.1",
+  "rc_tag": "v1.0.0-rc.1",
+  "git_sha": "a8f12776c548e91c0558fd43a05b84b7a6c2d1c7",
+  "migration_head": "2243d66f83da",
+  "created_at": "2026-09-01T22:59:46Z",
+  "expected_services": [
+    "simo-api-staging",
+    "simo-web-staging"
+  ],
+  "required_ci_jobs": [
+    "backend",
+    "frontend",
+    "e2e"
+  ],
+  "expected_smoke_gate_count": 27,
+  "rollback_target_sha": "737ac10bcbde682564d3bac6a9a6bb2fda59628f"
+}
