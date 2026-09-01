@@ -1,6 +1,6 @@
 export interface DashboardStats {
   quotes_today: number;
-  revenue: number;
+  quoted_value: number;
   customers: number;
   projects: number;
 }

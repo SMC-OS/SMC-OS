@@ -81,7 +81,7 @@ def test_dashboard_reflects_real_data(client, auth_headers):
         assert after["customers"] == before["customers"] + 1
         assert after["projects"] == before["projects"] + 1
         assert after["quotes_today"] == before["quotes_today"] + 1
-        assert after["revenue"] == pytest.approx(before["revenue"] + quote["total"])
+        assert after["quoted_value"] == pytest.approx(before["quoted_value"] + quote["total"])
     finally:
         _cleanup()
 
