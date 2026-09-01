@@ -77,6 +77,30 @@ def test_staff_can_approve_a_draft_quote(client, auth_headers):
         _cleanup()
 
 
+def test_repeat_approval_of_an_already_approved_quote_is_rejected(client, auth_headers):
+    """Sprint 028 UAT acceptance matrix QT-05: approve() only transitions a
+    quote out of 'draft' (app/quotes/service.py) — re-approving an
+    already-approved quote must be rejected (409), never silently
+    re-applied or treated as idempotent, since re-approval has no defined
+    meaning once a quote has already moved to 'approved'."""
+    _cleanup()
+    try:
+        _customer, quote = _create_linked_quote(client, auth_headers)
+        first = client.post(f"/api/v1/quotes/{quote['id']}/approve", headers=auth_headers)
+        assert first.status_code == 200
+        assert first.json()["status"] == "approved"
+
+        second = client.post(f"/api/v1/quotes/{quote['id']}/approve", headers=auth_headers)
+        assert second.status_code == 409
+
+        refetched = client.get(f"/api/v1/quotes/{quote['id']}", headers=auth_headers)
+        assert refetched.status_code == 200
+        assert refetched.json()["status"] == "approved"
+        assert refetched.json()["approved_at"] == first.json()["approved_at"]
+    finally:
+        _cleanup()
+
+
 def test_approving_quote_creates_exactly_one_tenant_scoped_activity_record(client, auth_headers):
     """Approval must be audited through the existing ActivityLog
     infrastructure — same mechanism as QUOTE_CREATED (app/quotes/service.py)

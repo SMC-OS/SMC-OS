@@ -37,6 +37,22 @@ def test_dashboard_requires_auth(client):
     assert client.get("/api/v1/dashboard").status_code == 401
 
 
+def test_dashboard_never_labels_a_quote_total_as_revenue(client, auth_headers):
+    """Sprint 028 UAT-002: this legacy GET /api/v1/dashboard endpoint
+    sums every quote's total regardless of status (draft included) and
+    returned it under the key "revenue" — the exact mislabeling Sprint
+    025 deliberately avoided for its own replacement endpoint
+    (app/dashboard/models.py's QuotedValue docstring: "a quote total is
+    a price offered or committed to, not recognized income"). The system
+    has no payment/invoicing recognition at all (docs/ROADMAP.md still
+    lists payment tracking as unbuilt), so no field here may be called
+    revenue."""
+    response = client.get("/api/v1/dashboard", headers=auth_headers)
+    assert response.status_code == 200
+    assert "revenue" not in response.json()
+    assert "quoted_value" in response.json()
+
+
 def test_dashboard_reflects_real_data(client, auth_headers):
     _cleanup()
     try:
@@ -65,7 +81,7 @@ def test_dashboard_reflects_real_data(client, auth_headers):
         assert after["customers"] == before["customers"] + 1
         assert after["projects"] == before["projects"] + 1
         assert after["quotes_today"] == before["quotes_today"] + 1
-        assert after["revenue"] == pytest.approx(before["revenue"] + quote["total"])
+        assert after["quoted_value"] == pytest.approx(before["quoted_value"] + quote["total"])
     finally:
         _cleanup()
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import { CommandCentrePanel } from "@/components/dashboard/command-centre/CommandCentrePanel";
 import { DashboardStatusBar } from "@/components/dashboard/DashboardStatusBar";
 import { QuickActions } from "@/components/dashboard/QuickActions";
@@ -9,12 +10,13 @@ import { useDashboardStats } from "@/hooks/useDashboardStats";
 
 export default function DashboardPage() {
   const { status, error } = useDashboardStats();
+  const { name } = useAuth();
 
   return (
     <div className="mx-auto max-w-6xl">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Welcome back, Simo
+          Welcome back{name ? `, ${name}` : ""}
         </h1>
         <p className="mt-1 text-sm text-muted">
           Here&rsquo;s what&rsquo;s happening across SIMO OS right now.

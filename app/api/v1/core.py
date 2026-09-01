@@ -83,7 +83,7 @@ def dashboard(
     tenant_id = current_user.tenant_id
     return {
         "quotes_today": crud.count_quotes_today(db, tenant_id),
-        "revenue": crud.sum_quotes_revenue(db, tenant_id),
+        "quoted_value": crud.sum_quotes_revenue(db, tenant_id),
         "customers": crud.count_customers(db, tenant_id),
         "projects": crud.count_projects(db, tenant_id),
     }

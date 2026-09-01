@@ -41,8 +41,8 @@ export function StatGrid() {
             loading={status === "error"}
           />
           <StatCard
-            label="Revenue"
-            value={data.revenue}
+            label="Quoted Value"
+            value={data.quoted_value}
             format="currency"
             icon={GBPIcon}
             loading={status === "error"}
