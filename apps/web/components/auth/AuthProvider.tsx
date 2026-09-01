@@ -17,6 +17,9 @@ interface AuthContextValue {
   // Sprint 009 — the signed-in user's company name, null until resolved
   // (no token, or the token turned out to be invalid/expired).
   tenantName: string | null;
+  // Sprint 028 (UAT-001) — the signed-in user's own name, for display
+  // (e.g. the header profile menu) — never used for access decisions.
+  name: string | null;
   // Sprint 011 — "Owner" | "Staff" | null, used to gate the invitations UI
   // client-side (the server enforces this for real via require_role()).
   role: string | null;
@@ -41,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [tenantName, setTenantName] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
 
   useEffect(() => {
     // One-time sync from a browser-only API (localStorage isn't available
@@ -63,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTenantName(me.tenant_name);
         setRole(me.role);
         setUserId(me.id);
+        setName(me.name);
       })
       .catch(() => setIsAuthenticated(false))
       .finally(() => setIsReady(true));
@@ -75,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTenantName(response.user.tenant_name);
     setRole(response.user.role);
     setUserId(response.user.id);
+    setName(response.user.name);
   }
 
   async function signup(data: SignupRequest) {
@@ -84,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTenantName(response.user.tenant_name);
     setRole(response.user.role);
     setUserId(response.user.id);
+    setName(response.user.name);
   }
 
   async function acceptInvite(token: string, data: AcceptInvitationRequest) {
@@ -93,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTenantName(response.user.tenant_name);
     setRole(response.user.role);
     setUserId(response.user.id);
+    setName(response.user.name);
   }
 
   function logout() {
@@ -101,6 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTenantName(null);
     setRole(null);
     setUserId(null);
+    setName(null);
   }
 
   return (
@@ -111,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         tenantName,
         role,
         userId,
+        name,
         login,
         signup,
         acceptInvite,
