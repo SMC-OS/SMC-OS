@@ -9,6 +9,7 @@
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
@@ -50,7 +51,7 @@ describe("UserProfileMenu — Sprint 028 UAT-001", () => {
     expect(screen.queryByText("Simo Marble & Construction Ltd")).not.toBeInTheDocument();
   });
 
-  it("renders_a_different_owners_own_name_and_tenant", () => {
+  it("renders_a_different_owners_own_name_and_tenant", async () => {
     mockAuth = {
       name: "Alex Owner",
       role: "Owner",
@@ -59,8 +60,9 @@ describe("UserProfileMenu — Sprint 028 UAT-001", () => {
     };
 
     render(<UserProfileMenu />);
+    await userEvent.click(screen.getByRole("button", { name: /Alex Owner/i }));
 
-    expect(screen.getByText("Alex Owner")).toBeInTheDocument();
+    expect(screen.getAllByText("Alex Owner").length).toBeGreaterThan(0);
     expect(screen.getByText("Coastal Granite Co")).toBeInTheDocument();
     expect(screen.queryByText("Simo")).not.toBeInTheDocument();
   });
