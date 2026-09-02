@@ -506,3 +506,46 @@ from an earlier, code-identical deploy.
 | Production environment verified | ✅ Phase 5 — zero services, clean slate, reverified |
 
 **Every checklist item is satisfied. Proceeding to the Phase 21 hard gate.**
+
+---
+
+## Execution record (Phases 21+) — production launch
+
+### Phase 21 — production provisioning incidents (uploads volume + database wiring)
+
+The first production deploy of candidate `e2f5a6f` (deployment `e2edd895`) failed at startup: `RuntimeError: UPLOAD_DIR must be writable in production`, root cause a `PermissionError` on `/var/lib/simo-os/uploads`. The Railway-provisioned volume mounts root-owned; the container's non-root `simo` (uid 10001) user could not write to it. This is a one-time fresh-volume condition, not a code defect.
+
+**Fix — one-time root initializer, never serving traffic as root.** A temporary deployment set `RAILWAY_RUN_UID=0` and a start command limited to exactly `chown 10001:10001 /var/lib/simo-os/uploads && chmod 0750 /var/lib/simo-os/uploads && echo SIMO_VOLUME_INIT_OK` — no application code, and `preDeployCommand` was temporarily cleared to guarantee no migration ran under root. Full deploy-log inspection confirmed Uvicorn never started under that deployment; `stat` confirmed `uid=10001 gid=10001 mode=0750` afterward. `RAILWAY_RUN_UID` and the start-command override were then reverted, and a **genuinely fresh** deployment (`railway up` from a clean `git archive` export — `redeploy` was confirmed to silently reuse a stale build/command and must not be relied on for a config change) brought the normal non-root candidate back up.
+
+A second, independent issue then surfaced: `/ready` returned 503 (`OperationalError`, database unreachable) even though `/health` passed. Root cause: production's Postgres service has no custom private-network endpoint alias (staging's does — `postgres.railway.internal`), so production's own self-reported `DATABASE_URL` (host `postgres.railway.internal`) does not actually route to it. Fix: corrected `simo-api-production`'s `DATABASE_URL` to a proper Railway reference expression using the real routable domain and the correct driver scheme — `postgresql+psycopg://${{simo-postgres-production.PGUSER}}:${{simo-postgres-production.PGPASSWORD}}@${{simo-postgres-production.RAILWAY_PRIVATE_DOMAIN}}:${{simo-postgres-production.PGPORT}}/${{simo-postgres-production.PGDATABASE}}` (an intermediate attempt that dropped the `+psycopg` qualifier was caught and corrected before being left in place — `requirements.txt` ships `psycopg[binary]`, not `psycopg2`, matching staging's proven scheme). Verified via a fresh deployment: `/health` 200, `/ready` 200 (`{"status":"ready","database":"reachable"}`), clean logs.
+
+**Follow-up recommended (not blocking):** add the same private-network alias to `simo-postgres-production` that staging already has, so `DATABASE_URL` doesn't depend on an unaliased-by-default routable domain matching by convention.
+
+### Phase 22 — Web deployment, HTTPS, CORS
+
+- `simo-web-production` deployed fresh from candidate `e2f5a6f` (deployment `2b48a72e-3615-4dba-be53-f67c9e3e8334`, SUCCESS). `NEXT_PUBLIC_API_URL` was already correctly set to the production API only.
+- HTTPS confirmed (200, valid edge TLS). `CORS_ALLOWED_ORIGINS` was already locked to exactly the production Web origin; verified positively (approved origin gets `access-control-allow-origin`) and negatively (`https://evil.example.com` gets neither the CORS header nor a permitted response — 400).
+- API security headers confirmed live: HSTS, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`.
+- **Web security-header gap — investigated, not a launch blocker.** Sprint 026's Contract C ("Security response headers") is explicitly scoped to `app/core/middleware.py` / `app/main.py` — the FastAPI backend only; it does not mention `apps/web` anywhere, and its tests (`tests/test_security_headers.py`) only assert against the backend. The accepted contract does **not** require these headers on Web. Confirmed `apps/web` has no `next.config.ts` `headers()` and no `middleware.ts` today. Documented here as a real follow-up item for a future sprint, not invented as a new Sprint 030 requirement.
+
+### Phase 23 — synthetic production acceptance journey
+
+One synthetic material fixture was required to exercise Quote creation — the production `materials` catalogue was empty (Phase 5/20 already recorded production as a verified clean slate with zero prior data, so this is expected, not a regression). Created via the application's own `crud.create_material` ORM path (the same path `app/materials/seed.py` uses), one row: `SIMO-LAUNCH-QA-MATERIAL-001` / `QA-FIXTURE-NOT-REAL` / `20mm` / `3200x1600` / `QA-SENTINEL` / price `1.00` — an unmistakable sentinel, not real SMC catalogue or commercial pricing. `quotes.material`/`quotes.thickness` are plain `String` columns (confirmed in `app/database/models.py`, no FK to `materials`), so this row is safely independent of any Quote/Project history.
+
+Full connected journey run against **live production** with two synthetic tenants (`SIMO-LAUNCH-QA-TENANT-A`, `SIMO-LAUNCH-QA-TENANT-B`):
+
+- Signup → login → Customer → Enquiry (Project, `enquiry`) → Site Visit appointment scheduled → completed.
+- Quote created against the synthetic material (slabs=2, price_before_vat £1102.00, VAT £220.40, total £1322.40 — verified by hand against `SlabCalculator`'s formula before comparing) → approved → handed off (creates a new Project, `booked`) → assigned → walked through the full pipeline (`booked→templated→fabricated→installed→complete`), all 200.
+- Portal link created for the customer → valid-token access returns full project/quote data (`status: active`) → revoked → same token now returns `status: revoked` with empty `projects`/`quotes` (no data leak, soft-fail by design, not an HTTP error code).
+- Command Centre fixture truth: expected values hand-calculated from the above *before* calling the endpoint, then compared — **exact match**: `customers=1, pipeline={enquiry:1, complete:1, rest 0}, quotes={draft:0, approved:1, handed_off:1}, value={quoted_value:1322.4, approved_quoted_value:1322.4}, site_visits={completed:1, rest 0}, follow_up={unread_follow_ups:0}`.
+- `python -m app.jobs.follow_up` via `railway ssh` (the documented, by-design way to run it — no HTTP trigger exists): `{"examined": 1, "created": 0, "skipped_not_due": 1}`, run twice with an identical result — correct behavior (the synthetic enquiry is hours old, not the 7-day stale threshold), not a duplicate-creation test (that requires genuinely stale data, which this session did not fabricate via `--now` against production, consistent with `app/jobs/follow_up.py`'s own docstring that `--now` is verification-only, staging/E2E, not production).
+- Tenant isolation (Tenant B against Tenant A's data): customer/project lists empty, direct-ID access to Tenant A's records returns 404 (not leaked), Command Centre all zeros.
+- Owner/Staff RBAC, both API and UI: a Staff user (via Owner-issued invitation, accepted) got 200 on shared routes (customers, command-centre) and **403 on every Owner-only route** (`GET /users`, `GET /invitations`, project assign, user deactivate) — Owner got 200 on the same routes (positive control). UI-level: logged in as Staff via the browser, sidebar and `/settings` show no team/invitation management, consistent with the API-level 403s.
+- `scripts/staging/smoke.py` (the existing secret-safe smoke harness) run against production for the first time: **20 passed / 0 failed / 7 blocked (of 27)** — an exact match to Phase 18's staging baseline. The 7 blocked gates are all by-design (require a separately-approved destructive drill, a safe-restart flag not exercised this pass, or a local-only check) — of those, `migration`, `no_seeding`, and `follow_up_notification` were independently verified above via `railway ssh`; `repository_secret_scan` was run locally against the tracked candidate commit (pattern scan for AWS/OpenAI/Slack keys and PEM blocks — none found; no `.env` tracked; `.env.example` values are placeholders) and is clean; `restart_persistence` has stronger evidence than a single controlled restart would give — this session's data survived roughly six full container replacements during the Phase 21 incident response; `logs_request_ids` and `backup_restore` remain correctly deferred (no safe test mechanism / destructive-risk drill, same as Phase 18).
+
+**Cleanup:** the codebase has no delete path anywhere in `app/database/crud.py` for tenants, customers, projects, quotes, or materials (append-only/status-field pattern, consistent with the rest of the system's design — see `app/users/service.py`'s soft-deactivate docstring). No raw destructive SQL was used to force cleanup. All synthetic Sprint 030 launch-verification data — both tenants, the customer, both projects, both quotes, the appointment, the invitation, the revoked portal link, and the one material row — is retained in production, unmistakably named/tagged (`SIMO-LAUNCH-QA-*`), and documented here as the retained fixture rather than force-removed.
+
+### Phase 24 — production acceptance
+
+- BLOCKER = 0, HIGH = 0.
+- **Production acceptance: GREEN.**
