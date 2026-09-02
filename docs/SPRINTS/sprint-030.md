@@ -324,3 +324,84 @@ coincide with `a8f1277`'s own application code, but the commit actually
 tagged/deployed will still be Sprint 030's own reviewed HEAD, verified
 through the complete Phase 16/17 gate again — no shortcut through
 already-passed Sprint 029 verification is taken for granted.
+
+---
+
+## LOCKED PRODUCTION LAUNCH CONTRACT
+
+This section is the sprint's frozen scope, committed separately from the
+discovery draft above. Once committed, it is not renegotiated mid-sprint
+except by explicitly re-opening discovery in a follow-up commit.
+
+1. **Production candidate rule:** the exact commit on
+   `sprint-030-production-launch` at the moment Phase 16 (full local
+   verification) and Phase 17 (feature CI) both pass — the same discipline
+   Sprint 029 used for the RC. If this sprint adds no code (docs only), the
+   candidate's application code is byte-identical to `a8f1277`'s, but the
+   candidate SHA, CI run, and staging rehearsal are still this sprint's own,
+   never inherited without re-verification.
+2. **Service topology:** exactly three new production services —
+   `simo-api-production`, `simo-web-production`, `simo-postgres-production`
+   — mirroring staging's proven shape. No additional service, no
+   test/smoke-fixture service, no synthetic data generator, ever created in
+   the `production` Railway environment under this contract.
+3. **Database strategy:** production Postgres starts **empty**. No staging
+   data, no synthetic business records, no seed rows beyond what
+   `alembic upgrade head` itself creates (none — every migration in this
+   repo's history is schema-only, confirmed via `grep -r "INSERT INTO"
+   alembic/` finding no matches). Real data enters production only through
+   the application itself, from real usage, after launch.
+4. **Migration strategy:** `alembic upgrade head` runs only via the
+   standard `preDeployCommand` (`python -m app.core.runtime_check &&
+   alembic upgrade head && alembic current`) — never as a manual/ad-hoc
+   step, never before the candidate commit is finalized. The migration head
+   must be `2243d66f83da` unless this sprint's own candidate adds a new
+   migration (permitted only as a genuine `LAUNCH-XXX` fix per Phase 15,
+   never as unreviewed feature work).
+5. **Config requirements (hard, no exception):** `APP_ENV=production`,
+   `SEED_DATA_ENABLED=false`, every secret (`JWT_SECRET_KEY`,
+   `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`) freshly generated and
+   distinct from staging's and from the code's development defaults,
+   `DATABASE_URL`/`CORS_ALLOWED_ORIGINS`/`NEXT_PUBLIC_API_URL` all wired as
+   live Railway reference variables pointing at the new production
+   services — never a copied static staging value, never a loopback/dev
+   URL. `OPENAI_API_KEY` is omitted entirely (optional, never required).
+6. **Domain strategy:** Railway-generated `*.up.railway.app` domains for
+   launch, per Phase 9. Custom-domain configuration is explicitly
+   out-of-scope follow-up, never claimed as live by this sprint.
+7. **Smoke contract:** the same 27-gate `scripts/staging/smoke.py` suite,
+   pointed at production's own generated domains once deployed — run
+   **non-destructively first** (Phase 27: health/ready/homepage/security-
+   headers/auth-rejection/CORS/runtime-config/DB-connectivity gates only)
+   before any gate that creates data.
+8. **Production UAT contract:** exactly one clearly-synthetic launch-
+   verification workspace (Phase 28), exercising the minimal core journey
+   (signup → login → Customer/Enquiry → Site Visit → Quote → approval →
+   Project handoff → Project operation → portal → Command Centre) — no
+   additional synthetic data beyond what that single journey needs, no real
+   customer data, ever.
+9. **Monitoring:** Railway deployment status + `/health`/`/ready` polling +
+   `railway get-logs`, per Phase 11 — no new observability platform stood
+   up for this launch.
+10. **Rollback target/process:** for this **first-ever** production
+    deployment, there is no previous production version to roll back to —
+    "rollback" for this launch means taking the affected service offline
+    (or leaving the previous, non-existent state, which is simply "no
+    production service") rather than redeploying an older production
+    commit that has never existed. Documented honestly per Phase 19, not
+    invented. Post-launch, the Sprint 029 rollback procedure (redeploy the
+    previous known-good clean export) becomes the standard mechanism for
+    every subsequent production release.
+11. **Backup requirement:** a first production database backup baseline is
+    established immediately after schema initialization (Phase 23), using
+    the exact Sprint 029-proven `pg_dump`/private-SSH-tunnel mechanism —
+    never a new public database proxy on production, ever.
+12. **Production GO criteria (Phase 20/21):** every checklist item in
+    Phase 20 must be checked before the Phase 21 report is produced, and
+    Phase 21's report is a **hard stop** — no production service is
+    created, no production database is provisioned, no production API/Web
+    is deployed, and no production migration runs, until the user
+    explicitly authorizes crossing that gate. This holds regardless of how
+    clean every preceding phase's evidence looks.
+
+Locked by this commit. Execution (Phase 15 onward) begins next.
