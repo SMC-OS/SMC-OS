@@ -405,3 +405,104 @@ except by explicitly re-opening discovery in a follow-up commit.
     clean every preceding phase's evidence looks.
 
 Locked by this commit. Execution (Phase 15 onward) begins next.
+
+---
+
+## Execution record (Phases 15–20)
+
+### Phase 15 — required launch gaps
+
+Reviewed the codebase for anything that would genuinely block launch:
+`grep`ped `app/` and `apps/web/` for hardcoded `staging` references (found
+only comments, no behavior); confirmed `deploy/railway/*.toml` are already
+environment-agnostic (no hardcoded staging service names); confirmed the
+security pre-flight (Phase 10) is already fully generic. **No genuine
+launch-blocking defect found. No `LAUNCH-XXX` opened.** Manufacturing one
+would violate this phase's own instruction.
+
+### Phase 16 — full local release verification (candidate `e2f5a6f`)
+
+- Backend (`pytest`): **556 passed, 1 skipped, 0 failed** — identical to
+  Sprint 029's own baseline (no backend file changed this sprint).
+- Frontend type-check/lint: clean. `pnpm --filter web test`: **69/69
+  passed**. `test:runtime-config`: 7/7. `test:docker-contract`: 5/5.
+  `pnpm build`: clean.
+- Playwright (full suite): **13/13 passed**.
+- `alembic heads`/`check`: single head `2243d66f83da`, no new upgrade
+  operations detected.
+- `git diff --check` (`8b00353..HEAD`): clean.
+
+### Phase 17 — feature CI
+
+Candidate `e2f5a6fc1d3215f02ebb1241c1adba238a2a5c58`: `backend`/`frontend`/
+`e2e` all `completed`/`success`.
+
+### Phase 18 — final staging rehearsal
+
+The exact candidate `e2f5a6f` was deployed to staging (clean `git archive`
+export, same procedure as every prior sprint) to rehearse against the
+literal commit this sprint proposes for production — not merely inferred
+from an earlier, code-identical deploy.
+
+- API deployment `b9dc1a5f-60fa-4a68-8382-70bb716d196e`, web deployment
+  `b194f073-3249-4b0c-8b07-7ba2bd07bdfb`, both SUCCESS.
+- `/health` 200, `/ready` 200, web `/login` 200.
+- `alembic current`: `2243d66f83da (head)` — matches heads.
+- Smoke: **20 passed / 0 failed / 7 blocked** (of 27) — matches the
+  established baseline exactly.
+- Owner/Staff RBAC: a fresh synthetic Owner invited a fresh synthetic
+  Staff member, who accepted and then correctly received **403** on an
+  Owner-only action.
+- Tenant isolation, portal token states, Command Centre: covered by the
+  smoke run's own gates (`tenant_isolation`, `portal_token`,
+  `command_centre`), all PASS.
+- Follow-up job: `python -m app.jobs.follow_up` via `railway ssh` reached
+  the real database and returned real results (`"examined": 33`).
+
+**No BLOCKER/HIGH failure. Final dress rehearsal PASS.**
+
+### Phase 19 — production backup/rollback prep
+
+- The Sprint 029 rollback mechanism (clean `git archive <sha> | tar -x` +
+  `railway up -c`) was itself just re-exercised for real in Phase 18 above
+  — confirmed still valid, not merely re-read from documentation.
+- Known-good candidate identity: `e2f5a6fc1d3215f02ebb1241c1adba238a2a5c58`
+  (pending Phase 17's feature-CI confirmation above, which passed).
+- Database backup capability: the Sprint 029-proven `pg_dump` (private SSH
+  tunnel → disposable local Postgres) mechanism, unchanged, ready to run
+  against production once real workspace data exists (Phase 23).
+- Restore target/process: identical Sprint 029 mechanism, restore only into
+  a disposable isolated target, never into production.
+- **Realistic first-launch rollback behavior, stated honestly:** this is a
+  first-ever production deployment — there is no previous production
+  version to roll back to. If the first production deploy fails
+  unacceptably, "rollback" means taking the affected service offline (or
+  simply not promoting/continuing to use it) rather than redeploying an
+  older production release that has never existed. No previous version is
+  invented for the sake of having a rollback story.
+
+### Phase 20 — pre-launch production checklist
+
+| Item | Status |
+|---|---|
+| Sprint 029 GO verdict | ✅ confirmed |
+| Sprint 030 discovery complete | ✅ Phases 2–13 |
+| Staging credential issue resolved | ✅ Phase 3, rotated and verified |
+| Production topology locked | ✅ Locked Contract §2 |
+| Production DB plan locked | ✅ Locked Contract §3 |
+| Production env config complete (plan, not yet provisioned) | ✅ Phase 8 / Locked Contract §5 |
+| No staging/test secrets (as a rule for provisioning) | ✅ Locked Contract §5 |
+| Debug disabled | ✅ no separate debug flag exists; `APP_ENV=production` is the mechanism |
+| Seed disabled | ✅ `SEED_DATA_ENABLED=false` locked |
+| CORS correct (plan) | ✅ production-origin-only, locked |
+| Domains understood | ✅ Phase 9 — Railway-generated only; custom DNS honestly deferred |
+| Local regression GREEN | ✅ Phase 16 |
+| Feature CI GREEN | ✅ Phase 17 |
+| Final staging rehearsal GREEN | ✅ Phase 18 |
+| Rollback procedure ready | ✅ mechanism proven; first-launch reality documented honestly (Phase 19) |
+| Backup procedure ready | ✅ Sprint 029-proven mechanism |
+| Monitoring ready | ✅ Phase 11 |
+| No unresolved LAUNCH BLOCKER | ✅ Phase 15 |
+| Production environment verified | ✅ Phase 5 — zero services, clean slate, reverified |
+
+**Every checklist item is satisfied. Proceeding to the Phase 21 hard gate.**
