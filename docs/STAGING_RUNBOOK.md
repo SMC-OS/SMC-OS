@@ -171,6 +171,47 @@ Do not proceed without fresh written owner approval for cleanup after presenting
 
 Application rollback selects a schema-compatible Railway deployment and retains the current database and upload volume. Re-check restored variables, `/health`, `/ready`, migration head/current, authenticated access, CORS, and persisted download before accepting rollback. A database downgrade is never automatic; it requires reviewed reversibility, a current backup, stopped incompatible writers, and explicit operator authorization.
 
+### Proven procedure (Sprint 029)
+
+`simo-api-staging`/`simo-web-staging` are not git-connected — there is no Railway "promote a previous deployment" list to click through. **A rollback here means re-running the normal clean-commit deploy procedure (above) against the previous known-good commit instead of the current one.** This was executed for real in Sprint 029 (RC `v1.0.0-rc.1` / `a8f1277` → previous known-good `737ac10` → back to the RC) and completed in under two minutes end-to-end per service pair:
+
+1. Identify the previous known-good commit from your own deployment records (Railway's deployment history shows *when* each service last deployed, not the source git SHA, since deploys aren't git-linked — the operator/agent that performed each deploy is the source of truth for which SHA it was). Do not guess.
+2. `git archive <previous-known-good-sha> | tar -x -C <clean-target-dir>` (never a working tree with local changes).
+3. `railway up --project <id> --service <api-service-id> --environment <staging-environment-id> -c` from that export, then the same for the web service.
+4. Verify `/health` = 200, `/ready` = 200, and `railway ssh --service simo-api-staging --environment staging -- alembic current` still matches `alembic heads` (a same-schema rollback — no migration between the two commits — is the simplest and safest case; if the previous commit predates a migration the current one requires, stop and treat it as a release BLOCKER rather than deploying it).
+5. Run `scripts/staging/smoke.py` against the rolled-back deployment; expect the same passed/failed/blocked totals as the RC's own baseline run (a new failure here means the previous version is not actually compatible with the current data/schema state — a real finding, not something to explain away).
+6. To return to the RC: repeat steps 2–5 with the RC's own tagged commit. The system must return to exactly the state it was in before the drill (same deployment health, same schema, same smoke result).
+
+## Database backup/restore drill (lightweight — distinct from the PITR design below)
+
+This is the mechanism Sprint 029 used, and the one to reuse for a routine "does our backup actually work" check. It is **not** the heavier PITR + scratch-Railway-service + Google-Drive drill in the "Backup and restore" section below — that stays gated behind its own STOP-approval checkpoints and untouched by this section. This lightweight drill needs no owner approval beyond the standing authorization to operate on staging, because it never creates paid resources, never leaves staging, and restores only into a disposable local target:
+
+1. Open a private tunnel to staging Postgres — never a new public TCP proxy (`simo-postgres-staging` stays private-networking-only, per the release invariants above): `railway connect simo-postgres-staging --project <id> --environment <staging-environment-id> --tunnel-only --ssh --port <local-port>`. This prints the tunnel's one-time local credentials to its own output — treat that output as sensitive, avoid re-displaying it, and prefer piping it straight into a variable/file rather than a terminal that gets echoed back into a transcript or log a human will read.
+2. Because staging Postgres may run a newer major version than the `postgres:16-alpine` pinned for local dev (confirmed: staging ran 18.6 as of Sprint 029, a real version-skew finding, not simulated), run `pg_dump`/`pg_restore` from a disposable container matching the *server's* major version, not the repo's pinned dev version — check with `pg_dump: server version mismatch` if it happens and bump the image tag accordingly.
+3. `docker run --rm -e PGPASSWORD=... -v <local-dir>:/backup --add-host=host.docker.internal:host-gateway postgres:<matching-major>-alpine pg_dump --format=custom --no-owner -h host.docker.internal -p <local-port> -U postgres -d railway -f /backup/<name>.dump`. Record the resulting file's size and SHA-256 for the record; never commit the dump itself to git.
+4. Start a disposable local Postgres container for the restore target, distinct from the shared local dev database (`simo-os-postgres`) and on a distinct port — this container is created fresh for the drill and removed afterward, never reused.
+5. `pg_restore --host=... --port=<disposable-port> --username=... --dbname=... --no-owner --verbose <dump-file>` into it.
+6. Validate the restored copy independently of the restore tool's own success message: `SELECT version_num FROM alembic_version` must equal the source's `alembic heads`; `\dt` must list every expected table; representative business-table row counts should be re-queried from the *live source* at drill time and compared for an exact match (staging is a low-write environment during a short drill window, so exact equality is the appropriate bar — a busier source would instead need a chosen, documented tolerance); and a set of `LEFT JOIN ... WHERE <fk-column> IS NOT NULL AND <parent>.id IS NULL` orphan checks across the real foreign-key graph should all return zero, alongside `SELECT conname FROM pg_constraint WHERE contype = 'f' AND NOT convalidated` returning zero rows.
+7. Tear down: remove the disposable container, delete the local dump file, close the tunnel. Nothing from this drill persists outside the drill itself.
+
+## Failure and recovery procedures (Sprint 029)
+
+Every command below names `staging` explicitly (environment id or service name); none defaults to or infers an environment. Never substitute a production id/name into any of these commands.
+
+**A. Application deployment failure** (the `railway up -c` command itself errors, or the build fails): the previous deployment stays live automatically — Railway does not cut traffic to a build that never finished. Fix the underlying cause (the build log linked in the CLI's own output names the exact failing step) and redeploy the same commit; no rollback action is needed since nothing was promoted.
+
+**B. Bad application release** (the build/deploy succeeded but the app misbehaves once live — a failed `/health`/`/ready`, a broken workflow, an unexpected error rate): follow the Rollback procedure above to the last commit confirmed good by its own smoke run. Do not attempt a forward "fix" deploy under live incident pressure; roll back first, diagnose calmly, then ship a reviewed fix through the normal branch/PR/CI process.
+
+**C. Migration failure** (`alembic upgrade head` in the pre-deploy command fails or leaves `alembic current` short of `alembic heads`): the deploy's own `preDeployCommand` gate should have already blocked traffic promotion (`deploy/railway/api.railway.toml`) — confirm with `railway ssh --service simo-api-staging --environment staging -- alembic current` vs `alembic heads` from the reviewed commit. Do not deploy application code that expects the failed migration. Fix the migration, verify it locally against a copy of representative data, and redeploy — never hand-patch the schema.
+
+**D. Database loss/corruption incident**: stop further writes if practical, do not attempt an in-place repair, and follow the "Database backup/restore drill" procedure above using the most recent good backup, restoring first into a disposable target to confirm the backup is actually usable before considering any restore into staging itself — and only into staging (never production) with explicit operator authorization for that specific restore.
+
+**E. Rollback to known-good app**: see "Rollback" → "Proven procedure (Sprint 029)" above.
+
+**F. Restoring from backup**: see "Database backup/restore drill" above for the disposable-target drill; see "Backup and restore" below for the heavier PITR/scratch-service drill, which stays gated behind its own owner-approval STOP checkpoints and is not implied or shortcut by anything in this section.
+
+**G. Re-promoting a release candidate**: redeploy the RC's own immutable tag/SHA (never a moved tag) via the same clean-commit procedure, then re-verify `/health`, `/ready`, `alembic current == alembic heads`, and a full smoke run before considering the RC live again — the system must return to exactly the state it was in before any drill.
+
 ## Evidence and redaction
 
 Store deployment IDs, safe request IDs, commit SHA, domains, backup IDs, migration revision, health results, and smoke results outside Git. Never retain JWTs, portal tokens, authorization headers, database URLs, secret values, raw dumps, or customer data in repository files, CI artifacts, or routine logs.
