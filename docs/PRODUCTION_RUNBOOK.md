@@ -138,3 +138,18 @@ Routine logs contain route templates rather than concrete URLs and omit query st
 The provider-neutral production image runs as a dedicated non-root user, exposes port 8000, and starts only Uvicorn by default. Its liveness health check calls `/health`; the deployment traffic gate must separately call `/ready`.
 
 Use the same image with an operator override for the one-off `alembic upgrade head` release job. Never add Alembic, seed commands, or an entrypoint wrapper to normal backend startup. Production `SEED_DATA_ENABLED` must remain `false`; production application startup creates no users, materials, activities, notifications, or other sample rows.
+
+## 9. Appendix — Railway-specific first-deployment notes (Sprint 030)
+
+These are operational lessons from this project's actual first production deployment on Railway. They supplement, not replace, the provider-neutral gates above.
+
+**Fresh volumes mount root-owned.** A brand-new Railway volume is not automatically owned by the container's non-root user, so `/health`/`/ready` will fail with a permission error on first boot even though the image and config are correct. Fix it with a **temporary, minimal, one-shot initializer deployment**, not by running the real application as root:
+
+1. Set `RAILWAY_RUN_UID=0` on the service.
+2. Set a start command that does *only* `chown <uid>:<uid> <UPLOAD_DIR> && chmod 0750 <UPLOAD_DIR>` — nothing else. Temporarily clear `preDeployCommand` too, so a migration step can't run under root.
+3. Deploy, confirm the chown/chmod succeeded and that the application process never started (inspect the full deploy log — it should contain no `Uvicorn running` line).
+4. Revert `RAILWAY_RUN_UID` and the start-command/`preDeployCommand` overrides, then deploy a **genuinely fresh** build (see below) to bring the normal non-root process back up.
+
+**A same-service "redeploy" can silently reuse a stale build/command.** If a start-command or `preDeployCommand` change doesn't seem to take effect after a redeploy, don't assume the config is wrong — the redeploy action itself may have reused a previous build snapshot's runtime command. Trigger a genuinely new build instead (e.g. `railway up` from a clean `git archive <sha> | tar -x` export of the exact candidate commit) whenever a start-command-level change must be guaranteed to apply.
+
+**A Postgres service's private-network hostname is not always what it looks like it should be.** Railway's official Postgres template self-reports a `DATABASE_URL` using a conventional short hostname (e.g. `postgres.railway.internal`), but that hostname only resolves for other services in the same project/environment if the Postgres service has a matching custom private-network endpoint alias configured. A service without that alias is only reachable at its actual platform-assigned `RAILWAY_PRIVATE_DOMAIN` (its own service name, e.g. `<service-name>.railway.internal`). Before trusting a self-reported `DATABASE_URL`, compare it against `RAILWAY_PRIVATE_DOMAIN` for the same service, and prefer a variable reference built from the latter (e.g. `postgresql+psycopg://${{db-service.PGUSER}}:${{db-service.PGPASSWORD}}@${{db-service.RAILWAY_PRIVATE_DOMAIN}}:${{db-service.PGPORT}}/${{db-service.PGDATABASE}}`) over copying the former verbatim. Also double-check the SQLAlchemy driver qualifier (e.g. `+psycopg`) matches what's actually installed (`psycopg[binary]` vs. the legacy `psycopg2`) — a bare `postgresql://` scheme defaults to `psycopg2` regardless of what the host is.
