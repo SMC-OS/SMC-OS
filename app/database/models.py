@@ -78,11 +78,28 @@ class Quote(Base):
 
     material: Mapped[str] = mapped_column(String, nullable=False)
     thickness: Mapped[str] = mapped_column(String, nullable=False)
+    # Sprint 032 (Workstream C) — kitchen_length (metres) is kept as a
+    # derived/mirrored column for backward compatibility with existing
+    # rows/reports; length_mm is now the source of truth for every new
+    # quote (see app/quotes/service.py). Never write one without the
+    # other — QuoteService keeps them in sync.
     kitchen_length: Mapped[float] = mapped_column(Float, nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    length_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    width_mm: Mapped[float] = mapped_column(Float, nullable=False, server_default="650")
+    thickness_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # What unit the caller originally entered dimensions in ("mm"/"cm"/
+    # "m") — provenance only, canonical storage is always length_mm/
+    # width_mm/thickness_mm in millimetres.
+    unit_input: Mapped[str] = mapped_column(String, nullable=False, server_default="mm")
     island: Mapped[bool] = mapped_column(Boolean, default=False)
     waterfall: Mapped[int] = mapped_column(Integer, default=0)
     splashback: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Independent linear dimensions — Sprint 032 fixes the bug where a
+    # splashback/upstand silently reused the worktop run's own length.
+    splashback_length_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     upstands: Mapped[bool] = mapped_column(Boolean, default=False)
+    upstands_length_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     postcode: Mapped[str | None] = mapped_column(String, nullable=True)
 
     price_per_slab: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -410,3 +427,58 @@ class Appointment(Base):
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Subscription(Base):
+    """A Tenant's SIMO OS commercial subscription (Sprint 032, Workstream
+    A). One row per tenant (unique tenant_id) — v1 billing is a single
+    plan per business account, not per-user. `plan`/`billing_period`/
+    `status` are plain strings (same no-native-enum convention as
+    Project.status etc.) validated at the Pydantic/API boundary
+    (app/billing/models.py). `stripe_subscription_id` is nullable because
+    a tenant can exist with no subscription at all (pre-billing/legacy —
+    see app/billing/entitlements.py for how that's treated) or with an
+    Enterprise plan that has no Stripe object (contact-sales, not
+    self-service checkout).
+    """
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, unique=True, index=True
+    )
+
+    plan: Mapped[str] = mapped_column(String, nullable=False)
+    billing_period: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="incomplete")
+
+    stripe_customer_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, unique=True, index=True
+    )
+    stripe_price_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ProcessedStripeEvent(Base):
+    """Idempotency ledger for Stripe webhooks (Sprint 032, Workstream A).
+    Stripe explicitly recommends/expects retries — the same event id can
+    arrive more than once. `id` is Stripe's own event id (e.g.
+    "evt_..."), used as the primary key purely so a second delivery's
+    INSERT fails on the existing-row constraint rather than needing a
+    separate SELECT-then-INSERT race window.
+    """
+
+    __tablename__ = "processed_stripe_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

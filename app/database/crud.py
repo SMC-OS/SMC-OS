@@ -38,8 +38,10 @@ from app.database.models import (
     Message,
     NotificationRecord,
     PortalLink,
+    ProcessedStripeEvent,
     Project,
     Quote,
+    Subscription,
     Tenant,
     User,
 )
@@ -445,10 +447,17 @@ def create_quote(
     material: str,
     thickness: str,
     kitchen_length: float,
+    quantity: int,
+    length_mm: float,
+    width_mm: float,
+    thickness_mm: float | None,
+    unit_input: str,
     island: bool,
     waterfall: int,
     splashback: bool,
+    splashback_length_mm: float | None,
     upstands: bool,
+    upstands_length_mm: float | None,
     postcode: str | None,
     price_per_slab: float,
     price_before_vat: float,
@@ -462,10 +471,17 @@ def create_quote(
         material=material,
         thickness=thickness,
         kitchen_length=kitchen_length,
+        quantity=quantity,
+        length_mm=length_mm,
+        width_mm=width_mm,
+        thickness_mm=thickness_mm,
+        unit_input=unit_input,
         island=island,
         waterfall=waterfall,
         splashback=splashback,
+        splashback_length_mm=splashback_length_mm,
         upstands=upstands,
+        upstands_length_mm=upstands_length_mm,
         postcode=postcode,
         price_per_slab=price_per_slab,
         price_before_vat=price_before_vat,
@@ -898,3 +914,71 @@ def update_appointment_status(
         db.flush()
     db.refresh(row)
     return row
+
+
+# Sprint 032 (Workstream A) — subscriptions/billing.
+
+
+def get_subscription_by_tenant_id(db: Session, tenant_id: uuid.UUID) -> Subscription | None:
+    stmt = select(Subscription).where(Subscription.tenant_id == tenant_id)
+    return db.scalars(stmt).first()
+
+
+def get_subscription_by_stripe_subscription_id(
+    db: Session, stripe_subscription_id: str
+) -> Subscription | None:
+    stmt = select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id)
+    return db.scalars(stmt).first()
+
+
+def get_subscription_by_stripe_customer_id(
+    db: Session, stripe_customer_id: str
+) -> Subscription | None:
+    stmt = select(Subscription).where(Subscription.stripe_customer_id == stripe_customer_id)
+    return db.scalars(stmt).first()
+
+
+def upsert_subscription(
+    db: Session,
+    *,
+    tenant_id: uuid.UUID,
+    plan: str,
+    billing_period: str,
+    status: str,
+    stripe_customer_id: str | None = None,
+    stripe_subscription_id: str | None = None,
+    stripe_price_id: str | None = None,
+    current_period_end=None,
+    cancel_at_period_end: bool = False,
+) -> Subscription:
+    row = get_subscription_by_tenant_id(db, tenant_id)
+    if row is None:
+        row = Subscription(id=uuid.uuid4(), tenant_id=tenant_id)
+        db.add(row)
+
+    row.plan = plan
+    row.billing_period = billing_period
+    row.status = status
+    if stripe_customer_id is not None:
+        row.stripe_customer_id = stripe_customer_id
+    if stripe_subscription_id is not None:
+        row.stripe_subscription_id = stripe_subscription_id
+    if stripe_price_id is not None:
+        row.stripe_price_id = stripe_price_id
+    row.current_period_end = current_period_end
+    row.cancel_at_period_end = cancel_at_period_end
+
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def mark_stripe_event_processed(db: Session, event_id: str, event_type: str) -> bool:
+    """Returns True if this call recorded the event (first delivery),
+    False if it was already processed (a retried webhook delivery) — the
+    caller must skip re-applying side effects in the False case."""
+    if db.get(ProcessedStripeEvent, event_id) is not None:
+        return False
+    db.add(ProcessedStripeEvent(id=event_id, event_type=event_type))
+    db.commit()
+    return True

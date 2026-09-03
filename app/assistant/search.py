@@ -1,45 +1,41 @@
 from sqlalchemy.orm import Session
 
-from app.materials.service import material_service
+from app.materials.search import material_search_service
 
 
 class SearchAssistant:
+    """Thin presentation layer over MaterialSearchService — the canonical,
+    deterministic material retrieval path (Sprint 032, Workstream B). This
+    class must never reimplement matching logic; it only shapes the
+    service's FOUND/MULTIPLE/NOT_FOUND result for the /process response.
+    """
 
     def search(self, db: Session, text: str):
+        result = material_search_service.search(db, text)
 
-        text = text.lower()
+        def _shape(match):
+            m = match.material
+            return {
+                "material": m.name,
+                "price": m.price,
+                "details": {
+                    "category": m.category,
+                    "thickness": m.thickness,
+                    "slab_size": m.slab_size,
+                    "finish": m.finish,
+                },
+            }
 
-        results = []
+        if result.status == "found":
+            return {"status": "found", "result": _shape(result.matches[0])}
 
-        for material in material_service.list_all(db):
+        if result.status == "multiple":
+            return {
+                "status": "multiple",
+                "results": [_shape(m) for m in result.matches],
+            }
 
-            score = 0
-
-            if material.name.lower() in text:
-                score += 5
-
-            if material.category and material.category.lower() in text:
-                score += 2
-
-            if material.finish and material.finish.lower() in text:
-                score += 1
-
-            if material.thickness and material.thickness.lower() in text:
-                score += 1
-
-            if score > 0:
-                results.append({
-                    "material": material.name,
-                    "price": material.price,
-                    "details": {
-                        "category": material.category,
-                        "thickness": material.thickness,
-                        "slab_size": material.slab_size,
-                        "finish": material.finish,
-                    },
-                    "score": score
-                })
-
-        results.sort(key=lambda x: x["score"], reverse=True)
-
-        return results
+        return {
+            "status": "not_found",
+            "message": "No matching product was found in the SIMO OS catalogue.",
+        }

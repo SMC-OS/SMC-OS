@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.logging import request_id_context
 from app.core.middleware import matched_route_path
+from app.quotes.validator import DimensionError
 
 logger = logging.getLogger("simo_os")
 
@@ -37,6 +38,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"detail": f"Unrecognised value: {exc.args[0]!r}"},
+        )
+
+    @app.exception_handler(DimensionError)
+    async def dimension_error_handler(request: Request, exc: DimensionError):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": str(exc)},
         )
 
     @app.exception_handler(Exception)

@@ -2,11 +2,13 @@ from sqlalchemy.orm import Session
 
 from app.materials.service import material_service
 from app.quotes.slab_calculator import SlabCalculator
+from app.quotes.validator import validate_dimensions
 
 
 class QuoteCalculator:
 
     def calculate(self, db: Session, quote):
+        validate_dimensions(quote)
 
         material = material_service.get_by_name_and_thickness(
             db, quote.material, quote.thickness
@@ -45,5 +47,17 @@ class QuoteCalculator:
             "price_per_slab": base_price,
             "price_before_vat": round(total, 2),
             "vat": round(vat, 2),
-            "total": round(total + vat, 2)
+            "total": round(total + vat, 2),
+            # Interpreted dimensions echoed back verbatim — the caller
+            # (manual form or AI draft flow) must be able to show these to
+            # the user before/at quote creation (Sprint 032, Workstream C).
+            "dimensions": {
+                "quantity": quote.quantity,
+                "length_mm": quote.length_mm,
+                "width_mm": quote.width_mm,
+                "thickness_mm": quote.thickness_mm,
+                "unit_input": quote.unit_input,
+                "splashback_length_mm": quote.splashback_length_mm,
+                "upstands_length_mm": quote.upstands_length_mm,
+            },
         }

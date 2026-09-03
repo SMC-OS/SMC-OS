@@ -1,31 +1,43 @@
 from sqlalchemy.orm import Session
 
 from app.data.services import SERVICES
-from app.materials.service import material_service
+from app.materials.search import material_search_service
 
 
 class SalesAssistant:
+    """Pricing-oriented reply over MaterialSearchService — the canonical,
+    deterministic material retrieval path (Sprint 032, Workstream B). This
+    class must never reimplement matching logic itself.
+    """
 
     def reply(self, db: Session, text: str):
+        result = material_search_service.search(db, text)
 
-        text = text.lower()
+        if result.status == "found":
+            m = result.material
+            return {
+                "material": m.name,
+                "price": f"£{m.price}",
+                "details": {
+                    "category": m.category,
+                    "thickness": m.thickness,
+                    "slab_size": m.slab_size,
+                    "finish": m.finish,
+                },
+                "includes": SERVICES,
+            }
 
-        for material in material_service.list_all(db):
+        if result.status == "multiple":
+            return {
+                "message": "I found more than one matching material — which one did you mean?",
+                "candidates": [
+                    {
+                        "material": match.material.name,
+                        "thickness": match.material.thickness,
+                        "price": f"£{match.material.price}",
+                    }
+                    for match in result.matches
+                ],
+            }
 
-            if material.name.lower() in text:
-
-                return {
-                    "material": material.name,
-                    "price": f"£{material.price}",
-                    "details": {
-                        "category": material.category,
-                        "thickness": material.thickness,
-                        "slab_size": material.slab_size,
-                        "finish": material.finish,
-                    },
-                    "includes": SERVICES
-                }
-
-        return {
-            "message": "I couldn't find that material."
-        }
+        return {"message": "I couldn't find that material."}

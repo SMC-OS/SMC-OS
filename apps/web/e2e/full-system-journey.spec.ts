@@ -136,7 +136,7 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.getByLabel("Link to existing customer (optional)").selectOption({
     label: CUSTOMER_NAME,
   });
-  await page.getByLabel("Kitchen run length (m)").fill("3.2");
+  await page.getByLabel("Length (mm)").fill("3200");
   const quoteCreated = page.waitForResponse(
     (res) => res.url().endsWith("/api/v1/quote") && res.request().method() === "POST"
   );

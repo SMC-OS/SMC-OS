@@ -146,9 +146,31 @@ export default function QuoteDetailPage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-xs font-medium text-muted">Kitchen run length</dt>
-                <dd className="text-sm text-foreground">{quote.kitchen_length}m</dd>
+                <dt className="text-xs font-medium text-muted">Dimensions</dt>
+                <dd className="text-sm text-foreground">
+                  {quote.length_mm != null ? (
+                    <>
+                      {quote.quantity && quote.quantity > 1 ? `${quote.quantity} x ` : ""}
+                      {quote.length_mm}mm x {quote.width_mm ?? 650}mm
+                      {quote.thickness_mm ? ` x ${quote.thickness_mm}mm` : ""}
+                    </>
+                  ) : (
+                    `${quote.kitchen_length}m`
+                  )}
+                </dd>
               </div>
+              {quote.splashback && quote.splashback_length_mm != null && (
+                <div>
+                  <dt className="text-xs font-medium text-muted">Splashback length</dt>
+                  <dd className="text-sm text-foreground">{quote.splashback_length_mm}mm</dd>
+                </div>
+              )}
+              {quote.upstands && quote.upstands_length_mm != null && (
+                <div>
+                  <dt className="text-xs font-medium text-muted">Upstand length</dt>
+                  <dd className="text-sm text-foreground">{quote.upstands_length_mm}mm</dd>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-y-1">
                 <dt className="text-xs text-muted">Price per slab</dt>
                 <dd className="text-right text-sm text-foreground">

@@ -1,6 +1,11 @@
 """AI Quotation Generator v1 tests — fully mocked, zero real OpenAI calls
 or API key required. ai_draft_service._client is injected directly with a
 MagicMock per test, bypassing the lazy real-client construction entirely.
+
+Sprint 032 (Workstream C): the LLM mock only ever supplies entities
+(customer/material/thickness/flags) — every dimension and every material
+resolution comes from real, deterministic code running against the real
+seeded catalogue, so these tests exercise that code for real, not a mock.
 """
 
 from unittest.mock import MagicMock
@@ -26,6 +31,12 @@ def _fake_completion(extraction, refusal=None):
     return completion
 
 
+def _mock_draft(extraction):
+    mock_client = MagicMock()
+    mock_client.chat.completions.parse.return_value = _fake_completion(extraction)
+    ai_draft_service._client = mock_client
+
+
 @pytest.fixture(autouse=True)
 def _reset_ai_client():
     """Every test starts and ends with no client injected, so the 'no key
@@ -36,10 +47,10 @@ def _reset_ai_client():
     ai_draft_service._client = None
 
 
-def _cleanup_activity():
+def _cleanup_activity(text=TEST_TEXT):
     db = SessionLocal()
     try:
-        db.execute(delete(ActivityLog).where(ActivityLog.description == TEST_TEXT))
+        db.execute(delete(ActivityLog).where(ActivityLog.description == text))
         db.commit()
     finally:
         db.close()
@@ -70,12 +81,9 @@ def test_ai_draft_successful_extraction(client, auth_headers):
         customer="Pytest AI Customer",
         material="Calacatta Gold",
         thickness="20mm",
-        kitchen_length=3.5,
         island=True,
     )
-    mock_client = MagicMock()
-    mock_client.chat.completions.parse.return_value = _fake_completion(extraction)
-    ai_draft_service._client = mock_client
+    _mock_draft(extraction)
 
     _cleanup_activity()
     try:
@@ -86,8 +94,10 @@ def test_ai_draft_successful_extraction(client, auth_headers):
         body = r.json()
         assert body["customer"] == "Pytest AI Customer"
         assert body["material"] == "Calacatta Gold"
+        assert body["material_match_status"] == "found"
         assert body["thickness"] == "20mm"
-        assert body["kitchen_length"] == 3.5
+        assert body["length_mm"] == 3500
+        assert body["unit_input"] == "m"
         assert body["island"] is True
         assert body["warnings"] == []
 
@@ -104,11 +114,8 @@ def test_ai_draft_unrecognised_material_is_flagged(client, auth_headers):
         customer="Pytest AI Customer",
         material="Unobtainium Deluxe",
         thickness="20mm",
-        kitchen_length=3.5,
     )
-    mock_client = MagicMock()
-    mock_client.chat.completions.parse.return_value = _fake_completion(extraction)
-    ai_draft_service._client = mock_client
+    _mock_draft(extraction)
 
     _cleanup_activity()
     try:
@@ -119,16 +126,19 @@ def test_ai_draft_unrecognised_material_is_flagged(client, auth_headers):
         body = r.json()
         assert body["material"] is None
         assert body["material_raw"] == "Unobtainium Deluxe"
+        assert body["material_match_status"] == "not_found"
         assert any("Unobtainium Deluxe" in w for w in body["warnings"])
     finally:
         _cleanup_activity()
 
 
-def test_ai_draft_missing_fields_produce_warnings(client, auth_headers):
-    extraction = _AIExtraction(customer=None, material=None, thickness=None, kitchen_length=None)
-    mock_client = MagicMock()
-    mock_client.chat.completions.parse.return_value = _fake_completion(extraction)
-    ai_draft_service._client = mock_client
+def test_ai_draft_ambiguous_material_returns_real_candidates_never_fabricated(
+    client, auth_headers
+):
+    # No thickness stated -> "Calacatta Gold" ties across its own two
+    # thickness rows in the real seeded catalogue -> multiple, not a guess.
+    extraction = _AIExtraction(customer="Pytest AI Customer", material="Calacatta Gold")
+    _mock_draft(extraction)
 
     _cleanup_activity()
     try:
@@ -137,10 +147,32 @@ def test_ai_draft_missing_fields_produce_warnings(client, auth_headers):
         )
         assert r.status_code == 200
         body = r.json()
-        # customer, material, thickness, kitchen_length all missing -> 4 warnings
-        assert len(body["warnings"]) == 4
+        assert body["material"] is None
+        assert body["material_match_status"] == "multiple"
+        assert len(body["material_candidates"]) == 2
+        assert any("pick one manually" in w for w in body["warnings"])
     finally:
         _cleanup_activity()
+
+
+def test_ai_draft_missing_fields_produce_warnings(client, auth_headers):
+    text = "Please could you help me with a quote"
+    extraction = _AIExtraction(customer=None, material=None, thickness=None)
+    _mock_draft(extraction)
+
+    _cleanup_activity(text)
+    try:
+        r = client.post(
+            "/api/v1/quotes/ai-draft", json={"text": text}, headers=auth_headers
+        )
+        assert r.status_code == 200
+        body = r.json()
+        # customer, material, thickness, length all missing -> 4 warnings
+        assert len(body["warnings"]) == 4
+        assert body["length_mm"] is None
+        assert body["material_match_status"] is None
+    finally:
+        _cleanup_activity(text)
 
 
 def test_ai_draft_client_exception_returns_502(client, auth_headers):
@@ -163,3 +195,89 @@ def test_ai_draft_refusal_returns_502(client, auth_headers):
         "/api/v1/quotes/ai-draft", json={"text": TEST_TEXT}, headers=auth_headers
     )
     assert r.status_code == 502
+
+
+# --- Natural-language dimension parsing (Sprint 032, Workstream C) -------
+
+
+@pytest.mark.parametrize(
+    "text,expected_length_mm,expected_width_mm,expected_unit",
+    [
+        ("Calacatta Oro 20mm, 2400 x 600", 2400, 600, "mm"),
+        ("Calacatta Oro 20mm, 2400mm x 600mm", 2400, 600, "mm"),
+        ("Calacatta Oro 20mm, 2.4m by 600mm", 2400, 600, "m"),
+    ],
+)
+def test_ai_draft_parses_dimension_pairs_in_various_units(
+    client, auth_headers, text, expected_length_mm, expected_width_mm, expected_unit
+):
+    extraction = _AIExtraction(customer="Test", material="Calacatta Oro", thickness="20mm")
+    _mock_draft(extraction)
+
+    _cleanup_activity(text)
+    try:
+        r = client.post("/api/v1/quotes/ai-draft", json={"text": text}, headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["material"] == "Calacatta Oro"
+        assert body["length_mm"] == expected_length_mm
+        assert body["width_mm"] == expected_width_mm
+        assert body["unit_input"] == expected_unit
+    finally:
+        _cleanup_activity(text)
+
+
+def test_ai_draft_parses_quantity_from_natural_language(client, auth_headers):
+    text = "two pieces 1200 x 600, Nero Marquina 20mm"
+    extraction = _AIExtraction(customer="Test", material="Nero Marquina", thickness="20mm")
+    _mock_draft(extraction)
+
+    _cleanup_activity(text)
+    try:
+        r = client.post("/api/v1/quotes/ai-draft", json={"text": text}, headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["quantity"] == 2
+        assert body["length_mm"] == 1200
+        assert body["width_mm"] == 600
+    finally:
+        _cleanup_activity(text)
+
+
+def test_ai_draft_parses_length_width_and_thickness_triple(client, auth_headers):
+    text = "island 2200 x 1000 x 20mm, Kashmir White"
+    extraction = _AIExtraction(customer="Test", material="Kashmir White", island=True)
+    _mock_draft(extraction)
+
+    _cleanup_activity(text)
+    try:
+        r = client.post("/api/v1/quotes/ai-draft", json={"text": text}, headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["length_mm"] == 2200
+        assert body["width_mm"] == 1000
+        assert body["thickness_mm"] == 20
+        assert body["island"] is True
+    finally:
+        _cleanup_activity(text)
+
+
+def test_ai_draft_missing_product_never_fabricated_end_to_end(client, auth_headers):
+    text = "Create a quote for SuperGalaxy Diamond Quartz 2400 x 600"
+    extraction = _AIExtraction(customer=None, material="SuperGalaxy Diamond Quartz")
+    _mock_draft(extraction)
+
+    _cleanup_activity(text)
+    try:
+        r = client.post("/api/v1/quotes/ai-draft", json={"text": text}, headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["material"] is None
+        assert body["material_match_status"] == "not_found"
+        assert body["material_raw"] == "SuperGalaxy Diamond Quartz"
+        # Dimensions are still parsed and shown even though the product
+        # doesn't exist — never blocked, never silently dropped.
+        assert body["length_mm"] == 2400
+        assert body["width_mm"] == 600
+    finally:
+        _cleanup_activity(text)
