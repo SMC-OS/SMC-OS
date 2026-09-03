@@ -37,6 +37,10 @@ const getUsersMock = vi.fn();
 const createInvitationMock = vi.fn();
 const revokeInvitationMock = vi.fn();
 const deactivateUserMock = vi.fn();
+const getSubscriptionMock = vi.fn();
+const createPortalSessionMock = vi.fn();
+const cancelSubscriptionMock = vi.fn();
+const resumeSubscriptionMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -48,6 +52,10 @@ vi.mock("@/lib/api", async () => {
       createInvitation: (...args: unknown[]) => createInvitationMock(...args),
       revokeInvitation: (...args: unknown[]) => revokeInvitationMock(...args),
       deactivateUser: (...args: unknown[]) => deactivateUserMock(...args),
+      getSubscription: (...args: unknown[]) => getSubscriptionMock(...args),
+      createPortalSession: (...args: unknown[]) => createPortalSessionMock(...args),
+      cancelSubscriptionAtPeriodEnd: (...args: unknown[]) => cancelSubscriptionMock(...args),
+      resumeSubscription: (...args: unknown[]) => resumeSubscriptionMock(...args),
     },
   };
 });
@@ -72,8 +80,13 @@ beforeEach(() => {
   createInvitationMock.mockReset();
   revokeInvitationMock.mockReset();
   deactivateUserMock.mockReset();
+  getSubscriptionMock.mockReset();
+  createPortalSessionMock.mockReset();
+  cancelSubscriptionMock.mockReset();
+  resumeSubscriptionMock.mockReset();
   getInvitationsMock.mockResolvedValue([]);
   getUsersMock.mockResolvedValue([]);
+  getSubscriptionMock.mockResolvedValue(null);
 });
 
 afterEach(() => {

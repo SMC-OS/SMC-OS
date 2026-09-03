@@ -1,5 +1,5 @@
-"""Slab-yield estimate for a worktop quote (Sprint 005).
-
+"""Slab-yield estimate for a worktop quote (Sprint 005; structured-dimension
+inputs since Sprint 032 Workstream C — see docs/SPRINTS/sprint-032.md §2.2).
 Replaces the Sprint 001 placeholder (`if total_length > 3.2: slabs = 2 else
 1`, no depth, no extras). This is a real area-based formula with documented
 constants — an estimate for quoting, not a fabrication-grade cutting/nesting
@@ -16,27 +16,30 @@ import math
 
 
 class SlabCalculator:
-    DEPTH_M = 0.65  # standard UK worktop depth
     WASTAGE_FACTOR = 1.15  # 15% allowance for cuts, seams, pattern-matching
-    ISLAND_EXTRA_RUN_M = 1.8  # typical extra run an island adds to the total
+    ISLAND_EXTRA_RUN_MM = 1800  # typical extra run an island adds to the total
     WATERFALL_PANEL_AREA_M2 = 0.9 * 0.65  # island-height x depth, per waterfall end
-    SPLASHBACK_HEIGHT_M = 0.15
-    UPSTAND_HEIGHT_M = 0.06
+    SPLASHBACK_HEIGHT_MM = 150
+    UPSTAND_HEIGHT_MM = 60
 
     def calculate(self, request, material) -> int:
-        total_length = request.kitchen_length
+        length_mm = request.length_mm * request.quantity
         if request.island:
-            total_length += self.ISLAND_EXTRA_RUN_M
+            length_mm += self.ISLAND_EXTRA_RUN_MM
 
-        worktop_area = total_length * self.DEPTH_M
+        worktop_area_m2 = (length_mm / 1000) * (request.width_mm / 1000)
 
-        extra_area = request.waterfall * self.WATERFALL_PANEL_AREA_M2
-        if request.splashback:
-            extra_area += request.kitchen_length * self.SPLASHBACK_HEIGHT_M
-        if request.upstands:
-            extra_area += request.kitchen_length * self.UPSTAND_HEIGHT_M
+        extra_area_m2 = request.waterfall * self.WATERFALL_PANEL_AREA_M2
+        if request.splashback and request.splashback_length_mm:
+            extra_area_m2 += (request.splashback_length_mm / 1000) * (
+                self.SPLASHBACK_HEIGHT_MM / 1000
+            )
+        if request.upstands and request.upstands_length_mm:
+            extra_area_m2 += (request.upstands_length_mm / 1000) * (
+                self.UPSTAND_HEIGHT_MM / 1000
+            )
 
-        required_area = (worktop_area + extra_area) * self.WASTAGE_FACTOR
+        required_area = (worktop_area_m2 + extra_area_m2) * self.WASTAGE_FACTOR
 
         slab_length_m, slab_width_m = self._parse_slab_size(material.slab_size)
         slab_area = slab_length_m * slab_width_m

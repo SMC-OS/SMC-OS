@@ -18,11 +18,15 @@ const initialForm = {
   customerId: "",
   material: MATERIAL_OPTIONS[0] as string,
   thickness: THICKNESS_OPTIONS[0] as string,
-  kitchen_length: "",
+  quantity: "1",
+  length_mm: "",
+  width_mm: "650",
   island: false,
   waterfall: "0",
   splashback: false,
+  splashback_length_mm: "",
   upstands: false,
+  upstands_length_mm: "",
   postcode: "",
 };
 
@@ -42,6 +46,9 @@ export default function NewQuotePage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiWarnings, setAiWarnings] = useState<string[]>([]);
+  const [aiMatchStatus, setAiMatchStatus] = useState<string | null>(null);
+  const [aiCandidates, setAiCandidates] = useState<string[]>([]);
+  const [aiInterpreted, setAiInterpreted] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -72,11 +79,16 @@ export default function NewQuotePage() {
         customer_id: form.customerId || null,
         material: form.material,
         thickness: form.thickness,
-        kitchen_length: Number(form.kitchen_length) || 0,
+        quantity: Number(form.quantity) || 1,
+        length_mm: Number(form.length_mm) || 0,
+        width_mm: Number(form.width_mm) || 650,
+        unit_input: "mm",
         island: form.island,
         waterfall: Number(form.waterfall) || 0,
         splashback: form.splashback,
+        splashback_length_mm: form.splashback ? Number(form.splashback_length_mm) || null : null,
         upstands: form.upstands,
+        upstands_length_mm: form.upstands ? Number(form.upstands_length_mm) || null : null,
         postcode: form.postcode || undefined,
       });
 
@@ -94,6 +106,9 @@ export default function NewQuotePage() {
     setAiLoading(true);
     setAiError(null);
     setAiWarnings([]);
+    setAiMatchStatus(null);
+    setAiCandidates([]);
+    setAiInterpreted(null);
 
     try {
       const draft = await api.generateQuoteDraft(aiText);
@@ -105,8 +120,9 @@ export default function NewQuotePage() {
         customer: draft.customer ?? f.customer,
         material: draft.material ?? f.material,
         thickness: draft.thickness ?? f.thickness,
-        kitchen_length:
-          draft.kitchen_length !== null ? String(draft.kitchen_length) : f.kitchen_length,
+        quantity: draft.quantity !== null ? String(draft.quantity) : f.quantity,
+        length_mm: draft.length_mm !== null ? String(draft.length_mm) : f.length_mm,
+        width_mm: draft.width_mm !== null ? String(draft.width_mm) : f.width_mm,
         island: draft.island,
         waterfall: String(draft.waterfall),
         splashback: draft.splashback,
@@ -114,6 +130,20 @@ export default function NewQuotePage() {
         postcode: draft.postcode ?? f.postcode,
       }));
       setAiWarnings(draft.warnings);
+      setAiMatchStatus(draft.material_match_status);
+      setAiCandidates(draft.material_candidates);
+
+      // Sprint 032 (Workstream C): the AI must show its interpreted
+      // dimensions back to the user before/at quote creation, so an
+      // incorrect parse is visible rather than silently trusted.
+      if (draft.length_mm !== null) {
+        const widthPart = draft.width_mm !== null ? ` x ${draft.width_mm}mm` : "";
+        const qtyPart = draft.quantity && draft.quantity > 1 ? `${draft.quantity} x ` : "";
+        const unitNote = draft.unit_input && draft.unit_input !== "mm"
+          ? ` (entered as ${draft.unit_input})`
+          : "";
+        setAiInterpreted(`${qtyPart}${draft.length_mm}mm${widthPart}${unitNote}`);
+      }
     } catch (err) {
       setAiError(
         err instanceof ApiError
@@ -169,7 +199,7 @@ export default function NewQuotePage() {
                 className="h-20 flex-1 rounded-lg border border-border bg-background p-3 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent"
                 value={aiText}
                 onChange={(e) => setAiText(e.target.value)}
-                placeholder="e.g. 3.5m kitchen in calacatta gold with an island, customer Sarah Whitfield"
+                placeholder="e.g. Calacatta Oro 20mm worktop, 2400 x 600mm, customer Sarah Whitfield"
               />
               <Button
                 type="button"
@@ -184,6 +214,27 @@ export default function NewQuotePage() {
             {aiError && (
               <p className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
                 {aiError}
+              </p>
+            )}
+
+            {aiInterpreted && (
+              <p className="mt-3 rounded-lg bg-accent/10 px-3 py-2 text-sm text-foreground">
+                Interpreted dimensions: <strong>{aiInterpreted}</strong> — check
+                this against the form below before calculating.
+              </p>
+            )}
+
+            {aiMatchStatus === "multiple" && aiCandidates.length > 0 && (
+              <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-sm text-foreground">
+                Matched more than one product — pick one manually:{" "}
+                {aiCandidates.join(", ")}
+              </p>
+            )}
+
+            {aiMatchStatus === "not_found" && (
+              <p className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+                No matching product was found in the SIMO OS catalogue — pick
+                a material manually rather than guessing.
               </p>
             )}
 
@@ -262,18 +313,39 @@ export default function NewQuotePage() {
               </Select>
             </Field>
 
-            <Field label="Kitchen run length (m)" htmlFor="kitchen_length">
+            <Field label="Quantity" htmlFor="quantity">
               <Input
-                id="kitchen_length"
+                id="quantity"
                 type="number"
-                step="0.1"
+                min="1"
+                step="1"
+                value={form.quantity}
+                onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
+              />
+            </Field>
+
+            <Field label="Length (mm)" htmlFor="length_mm">
+              <Input
+                id="length_mm"
+                type="number"
+                step="1"
                 min="0"
                 required
-                value={form.kitchen_length}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, kitchen_length: e.target.value }))
-                }
-                placeholder="3.5"
+                value={form.length_mm}
+                onChange={(e) => setForm((f) => ({ ...f, length_mm: e.target.value }))}
+                placeholder="e.g. 2400"
+              />
+            </Field>
+
+            <Field label="Width/Depth (mm)" htmlFor="width_mm">
+              <Input
+                id="width_mm"
+                type="number"
+                step="1"
+                min="0"
+                value={form.width_mm}
+                onChange={(e) => setForm((f) => ({ ...f, width_mm: e.target.value }))}
+                placeholder="e.g. 600 (standard worktop depth is 650mm)"
               />
             </Field>
 
@@ -319,6 +391,44 @@ export default function NewQuotePage() {
               />
             </div>
 
+            {/* Sprint 032 (Workstream C): splashback/upstands each need
+               their own length — never silently reuse the worktop run's
+               length — so these only appear (and are required) once the
+               corresponding checkbox is on. */}
+            {form.splashback && (
+              <Field label="Splashback length (mm)" htmlFor="splashback_length_mm">
+                <Input
+                  id="splashback_length_mm"
+                  type="number"
+                  step="1"
+                  min="0"
+                  required
+                  value={form.splashback_length_mm}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, splashback_length_mm: e.target.value }))
+                  }
+                  placeholder="e.g. 3000"
+                />
+              </Field>
+            )}
+
+            {form.upstands && (
+              <Field label="Upstand length (mm)" htmlFor="upstands_length_mm">
+                <Input
+                  id="upstands_length_mm"
+                  type="number"
+                  step="1"
+                  min="0"
+                  required
+                  value={form.upstands_length_mm}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, upstands_length_mm: e.target.value }))
+                  }
+                  placeholder="e.g. 3000"
+                />
+              </Field>
+            )}
+
             {error && (
               <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger sm:col-span-2">
                 {error}
@@ -343,6 +453,11 @@ export default function NewQuotePage() {
             <dl className="grid grid-cols-2 gap-y-2 text-sm">
               <dt className="text-muted">Material</dt>
               <dd className="text-right text-foreground">{result.material}</dd>
+              <dt className="text-muted">Dimensions</dt>
+              <dd className="text-right text-foreground">
+                {result.dimensions.quantity > 1 ? `${result.dimensions.quantity} x ` : ""}
+                {result.dimensions.length_mm}mm x {result.dimensions.width_mm}mm
+              </dd>
               <dt className="text-muted">Slabs required</dt>
               <dd className="text-right text-foreground">{result.slabs}</dd>
               <dt className="text-muted">Price per slab</dt>

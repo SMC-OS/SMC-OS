@@ -29,7 +29,15 @@ def test_calculate_known_material_math(db):
 def test_extras_increase_the_price(db):
     base = QuoteCalculator().calculate(db, _base_request())
     loaded = QuoteCalculator().calculate(
-        db, _base_request(island=True, waterfall=1, splashback=True, upstands=True)
+        db,
+        _base_request(
+            island=True,
+            waterfall=1,
+            splashback=True,
+            splashback_length_mm=3500,
+            upstands=True,
+            upstands_length_mm=3500,
+        ),
     )
     assert loaded["price_before_vat"] > base["price_before_vat"]
 

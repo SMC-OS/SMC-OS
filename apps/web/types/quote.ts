@@ -26,20 +26,42 @@ export const MATERIAL_OPTIONS = [
 
 export const THICKNESS_OPTIONS = ["20mm", "30mm"] as const;
 
+export const DIMENSION_UNITS = ["mm", "cm", "m"] as const;
+export type DimensionUnit = (typeof DIMENSION_UNITS)[number];
+
+/** Sprint 032 (Workstream C): structured dimensions replace the old
+ * ambiguous single `kitchen_length` float as the request's source of
+ * truth. Canonical unit is millimetres — `unit_input` is provenance only. */
 export interface QuoteRequest {
   customer: string;
   material: string;
   thickness: string;
-  kitchen_length: number;
+  quantity: number;
+  length_mm: number;
+  width_mm?: number;
+  thickness_mm?: number | null;
+  unit_input?: DimensionUnit;
   island: boolean;
   waterfall: number;
   splashback: boolean;
+  splashback_length_mm?: number | null;
   upstands: boolean;
+  upstands_length_mm?: number | null;
   postcode?: string;
   // Sprint 007: optional link to a real customer record. `customer` (free
   // text) stays required — the quotes table has no name column, only this
   // FK, so an unlinked quote's name lives only in the calculated response.
   customer_id?: string | null;
+}
+
+export interface QuoteDimensions {
+  quantity: number;
+  length_mm: number;
+  width_mm: number;
+  thickness_mm: number | null;
+  unit_input: string;
+  splashback_length_mm: number | null;
+  upstands_length_mm: number | null;
 }
 
 export interface QuoteResult {
@@ -50,6 +72,7 @@ export interface QuoteResult {
   price_before_vat: number;
   vat: number;
   total: number;
+  dimensions: QuoteDimensions;
   // Sprint 007: present once the quote is persisted.
   id: string;
   customer_id?: string | null;
@@ -59,13 +82,23 @@ export interface QuoteResult {
 /** AI Quotation Generator v1 — extraction only, never pricing. Every
  * field is optional except the boolean/int flags: incompleteness must be
  * visible, not silently defaulted. Deliberately has no price-shaped field
- * anywhere — the AI never computes money (see docs/DECISIONS.md ADR-024). */
+ * anywhere — the AI never computes money (see docs/DECISIONS.md ADR-024).
+ * Sprint 032 (Workstream C): structured mm dimensions + an explicit
+ * material_match_status ("found"/"multiple"/"not_found") so the UI can
+ * show the same FOUND/MULTIPLE/NOT_FOUND distinction the backend's
+ * canonical MaterialSearchService produces — never a silent guess. */
 export interface AIQuoteDraft {
   customer: string | null;
   material: string | null;
   material_raw: string | null;
+  material_match_status: "found" | "multiple" | "not_found" | null;
+  material_candidates: string[];
   thickness: string | null;
-  kitchen_length: number | null;
+  quantity: number | null;
+  length_mm: number | null;
+  width_mm: number | null;
+  thickness_mm: number | null;
+  unit_input: string | null;
   island: boolean;
   waterfall: number;
   splashback: boolean;
@@ -89,10 +122,17 @@ export interface Quote {
   material: string;
   thickness: string;
   kitchen_length: number;
+  quantity?: number;
+  length_mm?: number;
+  width_mm?: number;
+  thickness_mm?: number | null;
+  unit_input?: string;
   island: boolean;
   waterfall: number;
   splashback: boolean;
+  splashback_length_mm?: number | null;
   upstands: boolean;
+  upstands_length_mm?: number | null;
   postcode: string | null;
   price_per_slab: number;
   price_before_vat: number;

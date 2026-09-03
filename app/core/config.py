@@ -90,6 +90,21 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
 
+    # Sprint 032 (Workstream A) — Stripe billing. All optional; the app
+    # runs fully normally with none configured (app/billing/router.py
+    # returns 503 for anything that needs Stripe, same "ships dark until
+    # configured" pattern as openai_api_key above). Price IDs are read
+    # from config, never hardcoded (see app/billing/plans.py).
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    stripe_price_pro_monthly: str | None = None
+    stripe_price_pro_annual: str | None = None
+    stripe_price_business_monthly: str | None = None
+    stripe_price_business_annual: str | None = None
+    # Where Stripe Checkout/Customer Portal redirect back to after
+    # completion/cancellation — the deployed frontend's own origin.
+    frontend_base_url: str = "http://localhost:3000"
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def normalize_cors_allowed_origins(cls, value: object) -> list[str]:
