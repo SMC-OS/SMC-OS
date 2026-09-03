@@ -78,6 +78,9 @@ jobs:
       - name: Test frontend Docker contract
         run: pnpm --filter web test:docker-contract
 
+      - name: Test frontend security headers
+        run: pnpm --filter web test:security-headers
+
       - name: Build
         run: pnpm build
 

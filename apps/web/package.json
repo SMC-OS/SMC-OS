@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test:runtime-config": "node --test lib/runtime-config.test.mjs",
     "test:docker-contract": "node --test Dockerfile.test.mjs",
+    "test:security-headers": "node --test next-config-security-headers.test.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test"
   },
