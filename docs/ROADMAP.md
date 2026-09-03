@@ -64,17 +64,18 @@ The vertical the product was always meant to complete: **Enquiry → Customer �
 
 | Sprint | Feature | Status |
 |---|---|---|
-| **022** | Appointment / Site Visit Scheduling | ⬜ Not started — next up |
-| **023** | Project Operations | ⬜ Not started |
-| **024** | Notifications / Follow-up Automation | ⬜ Not started |
-| **025** | Business Command Centre | ⬜ Not started |
-| **026** | Security & Production Hardening II | ⬜ Not started |
-| **027** | Full-System E2E / UAT Preparation | ⬜ Not started |
-| **028** | UAT + Bug-Fix Cycle | ⬜ Not started |
-| **029** | Release Candidate + Rollback/Recovery Drill | ⬜ Not started |
-| **030** | **Production Launch** 🚀 | ⬜ Not started — **the planned core production-launch milestone** |
+| **022** | Appointment / Site Visit Scheduling | ✅ Shipped |
+| **023** | Project Operations | ✅ Shipped |
+| **024** | Notifications / Follow-up Automation | ✅ Shipped |
+| **025** | Business Command Centre | ✅ Shipped |
+| **026** | Security & Production Hardening II | ✅ Shipped |
+| **027** | Full-System E2E / UAT Preparation | ✅ Shipped |
+| **028** | UAT + Bug-Fix Cycle | ✅ Shipped |
+| **029** | Release Candidate + Rollback/Recovery Drill | ✅ Shipped |
+| **030** | **Production Launch** 🚀 | ✅ Shipped — `v1.0.0` live on Railway |
+| **031** | Final Stabilisation & Clean Production Launch | ✅ Shipped — `v1.0.1` live on Railway |
 
-**Sprint 030 is the planned production-launch milestone.** No Sprint 031+ scope is defined — re-baseline this document once Sprint 030 is reached, not before.
+**v1.0 is complete and in production.** `v1.0.0` (Sprint 030) shipped the full vertical above; Sprint 031 closed out the follow-up items Sprint 030's own launch surfaced (Web security headers, staging/production DB-networking parity, a safe QA-fixture cleanup mechanism, a persistent follow-up scheduler, and a verified backup/restore drill) and shipped `v1.0.1`. No Sprint 032+ scope is defined yet — this section is the re-baseline point for whatever comes next (the deferred v0.3/v1.0 AI-Workforce/commerce items above, or a new phase), to be added when that work is actually planned, not before.
 
 ---
 

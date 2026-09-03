@@ -1,6 +1,6 @@
 # Sprint 031 — Final Stabilisation & Clean Production Launch
 
-**Status:** Contract locked. Implementation in progress.
+**Status:** CLOSED. All workstreams (A–H) complete. Production live on `v1.0.1`.
 
 ## 1. Baseline verified (2026-09-03)
 
@@ -97,3 +97,50 @@ Sprint 031 is final stabilisation/operations only. No new product features, no u
 **H — Documentation.** `docs/SPRINTS/sprint-031.md` (this file) closed out with full execution evidence; `docs/PRODUCTION_RUNBOOK.md` updated with the Web header set, the DB-networking model, the scheduler, and the backup evidence; `docs/ROADMAP.md` re-baselined per its own maintenance rule (Sprint 030 already closed the v1.0 table but never added a v1.0-plus-stabilisation entry, and this file's own text says "re-baseline this document once Sprint 030 is reached" — that condition is now met); `docs/STAGING_RUNBOOK.md` updated only if the DB-networking change (B) touches anything it documents. No secrets, no resolved `DATABASE_URL`, no PII, no dumps in any of the above.
 
 **Out of scope, unconditionally:** any new product feature, any AI-Workforce/commerce roadmap item, any change to the quote/project/RBAC domain logic beyond what A–H require, squash or rebase of shared history, moving `v1.0.0`, any raw destructive SQL, any silent creation of new billed infrastructure.
+
+## CLOSEOUT — Execution Evidence (2026-09-03)
+
+### Checkpoint 1 — Production QA-fixture cleanup
+
+`scripts/production/cleanup_launch_qa.py` built under strict TDD (15/15 tests green against a real local Postgres, `tests/test_cleanup_launch_qa.py`). A live production dry-run surfaced an unexpected relationship the original design missed — an orphaned anonymous quote (`tenant_id IS NULL`) referencing a QA customer, left behind by Sprint 030's token-expiry bug — caught per this sprint's own STOP-on-unexpected-relationship discipline, fixed under RED→GREEN (`orphan_quote_ids` handling added to `resolve_plan`/`execute_plan`), re-verified, then run with `--confirm` against production. Backup taken first (see Checkpoint 3). Post-cleanup and post-Sprint-031-deploy, production shows zero `SIMO-LAUNCH-QA-*` tenants/materials and zero orphaned anonymous quotes (verified again below, post-deploy).
+
+### Checkpoint 2 — Persistent follow-up scheduler
+
+New Railway service `simo-follow-up-production`: `cronSchedule: "0 3 * * *"` (03:00 UTC daily), `startCommand: python -m app.jobs.follow_up` exactly, no public domain, `DATABASE_URL` via the same `RAILWAY_PRIVATE_DOMAIN`-based reference as `simo-api-production`, non-root (image default). **Live-observed** (not just config-verified): `environment-status` recorded a real successful cron firing at `2026-09-03T03:01:43Z` (`cronJob.lastExecutionStatus: "succeeded"`). A manual `railway ssh ... python -m app.jobs.follow_up` run against the same service post-deploy also completed cleanly: `{"examined": 36, "created": 0, "skipped_existing": 3, "skipped_not_due": 33, "skipped_no_recipient": 0}` — correct dedupe/skip behaviour.
+
+### Checkpoint 3 — Backup/restore verification drill
+
+Production `pg_dump --format=custom --no-owner` (38,850 bytes, SHA-256 `ba3ac07d3ca8557c13d7c28a622935444242c23108d9ca3755f0e2e386718519`), never committed. Restored into a disposable scratch service `simo-postgres-recovery-sprint031` (hit and fixed a `PGDATA`-must-be-under-the-volume-mount-path startup loop on that image along the way). Verification: restore completed with zero `pg_restore` errors; `alembic_version` in the restored DB (`2243d66f83da`) matched the repo's `alembic heads` exactly; row counts and referential-integrity/orphan checks (customer/tenant/quote FK sanity) all clean. Evidence recorded to a local, uncommitted file (SHA-256, counts, checks). Scratch service + volume destroyed immediately after verification; `simo-postgres-production`'s own data/uploads volumes confirmed untouched (`deletedAt: null`) throughout.
+
+### Workstream B — staging DB networking normalised
+
+`simo-api-staging`'s `DATABASE_URL` moved from the `postgres` custom alias to the `RAILWAY_PRIVATE_DOMAIN`-based reference pattern (matching production), referencing `simo-postgres-staging`'s `POSTGRES_USER`/`POSTGRES_PASSWORD`/`RAILWAY_PRIVATE_DOMAIN`/`POSTGRES_DB`. Redeployed; `/ready` confirmed 200 post-change. Production untouched (already correct per Sprint 030).
+
+### Workstream F — full final UAT
+
+- Local backend (real Postgres): 571 passed, 1 skipped, 0 failed.
+- Local frontend static contracts (runtime-config, docker-contract, security-headers): 21/21 passed.
+- Local Vitest: 69/69 passed (one run showed transient worker-pool timeouts in 3 unrelated files under local contention; a clean isolated re-run confirmed all 29 tests in those files pass — non-regression).
+- Local Playwright E2E: 13/13 passed (an earlier concurrent-run artifact produced spurious cross-contamination failures, discarded; the clean single run is authoritative).
+- `git diff --check`: clean. Local DB Alembic revision matches repo head (`2243d66f83da`).
+- Staging acceptance: all 3 services online/healthy; Web + API security headers live; CORS correctly scoped; staging DB at Alembic head; 27-gate `scripts/staging/smoke.py` run twice — 16/0/11 without quote args, **20 PASS / 0 FAIL / 7 BLOCKED** with `--quote-material "Sprint 019 Smoke Material" --quote-thickness "20mm"`, matching this document's own §F target exactly. All 7 remaining blocked gates are pre-existing/by-design (harness limitations, not failures); `migration`, `follow_up_notification`, `repository_secret_scan`, and `backup_restore` were independently satisfied by direct evidence outside the harness (Alembic query, live `railway ssh` job run, local secret-pattern scan, and Checkpoint 3 respectively).
+
+### Workstream G — exact-SHA release
+
+1. Branch `sprint-031-final-stabilisation-clean-launch` HEAD `9d5214b` — feature-branch CI green (backend/frontend/e2e).
+2. PR #13 opened to `main`; diff scope verified (7 files, exactly Workstreams A + C code plus discovery/contract docs — no drift).
+3. PR CI green (backend/frontend/e2e, both the push-triggered and PR-triggered runs).
+4. Merged with an **explicit merge commit** `74e67a7303de0f16ae10777b61455010e8d6067d` — confirmed two parents (`ec3e168465cf618757ff068782b58eaf9fa07713` = prior `main`/`v1.0.0`, `9d5214beacc0da2a18fe96d76aaac1034d3312e4` = Sprint 031 feature HEAD). No squash, no rebase, no force push.
+5. `9d5214b` confirmed an ancestor of `origin/main` post-merge.
+6. Post-merge `main` CI green (backend/frontend/e2e).
+7. Production API + Web deployed from a clean `git archive` of the exact merge SHA (not `redeploy`, which reuses stale build snapshots for config-sensitive changes — a lesson from Sprint 030). Deployed source verified two ways: (a) zero `diff -rq` between a fresh `git archive` of `74e67a7` and the exact directories uploaded via `railway up`; (b) the new security headers — absent from every prior production Web response — are live on the redeployed service, a content watermark unique to this commit.
+8. Production verification, all green: `/health` 200, `/ready` 200 (`database: reachable`), Alembic `2243d66f83da` == heads, Web + API security headers live, CORS correctly scoped (allowed for the real origin, denied for an untrusted one), API PID 1 process confirmed `uid=10001` (non-root — verified via `/proc/1/status`, not just `railway ssh`'s own debug-shell context, which is separately root and not representative of the app process), `SEED_DATA_ENABLED=false`, zero `SIMO-LAUNCH-QA-*` residue, zero orphaned anonymous quotes, follow-up scheduler live-fired successfully (see Checkpoint 2). Production-safe smoke subset (health/ready/homepage/security-headers/auth-rejection/CORS-allowed/CORS-denied/DB-connectivity) all passed; the full data-creating `smoke.py` suite was deliberately **not** run against production, since its synthetic `s019-*`-prefixed fixtures fall outside what the tested exact-match cleanup mechanism can remove — matching Sprint 030's own "non-destructive gates only" precedent for production. `environment-status` showed 0 issues / 0 recent failures across all 4 production services after a ~10-minute stability window; API error rate 0% (the only 4xx's were this verification's own intentional auth-rejection/CORS-denied probes).
+9. Only after all of the above: `v1.0.1` created as an annotated tag on `74e67a7303de0f16ae10777b61455010e8d6067d` and pushed once. Verified `v1.0.1` SHA == `origin/main` SHA == the exact deployed/verified commit. `v1.0.0` reconfirmed unmoved (`ec3e168465cf618757ff068782b58eaf9fa07713`).
+
+### BLOCKER / HIGH count at close: **0 / 0**.
+
+### Final status
+
+**SIMO OS FINAL CLEAN PRODUCTION LAUNCH: SUCCESS**
+
+SPRINT 031 CLOSED. SIMO OS CORE DEVELOPMENT SPRINT PROGRAM COMPLETE. PRODUCTION CLEAN. `v1.0.1` LIVE.
