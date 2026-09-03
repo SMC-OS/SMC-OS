@@ -51,6 +51,54 @@ No Stripe account/credentials exist. All Workstream A code, migrations, and mock
 
 A true multi-line-item quote architecture (many `QuoteItem` rows per `Quote`, each with independent type/dimensions/material) is **not** built this sprint. Today's single-job-per-quote shape is extended with structured dimensions, not replaced. Recommended as the next quote-domain evolution (see closeout §"Recommended Sprint 033").
 
-## 5. Execution log
+## 5. Stripe setup — exact owner activation steps
+
+No Stripe account/keys exist anywhere in this repo or in Railway's `simo-api-production` variables today (confirmed by direct inspection — only `APP_ENV, CORS_ALLOWED_ORIGINS, DATABASE_URL, JWT_*, SEED_*, UPLOAD_DIR` are set). Every step below is what the account owner needs to do; nothing in this list has been faked or assumed complete.
+
+### 5.1 Stripe Dashboard — one-time setup
+
+1. Create/sign in to a Stripe account (test mode first — the toggle is in the Dashboard's top-left).
+2. **Products & Prices** → create two Products: "SIMO OS Pro" and "SIMO OS Business".
+3. On **SIMO OS Pro**, add two recurring Prices: £79.00/month (GBP, recurring monthly) and £790.00/year (GBP, recurring yearly).
+4. On **SIMO OS Business**, add two recurring Prices: £149.00/month and £1,490.00/year.
+5. Do **not** create a Price for Enterprise — it stays contact-sales only, no self-service checkout by design.
+6. Enable the **Customer Portal** (Settings → Billing → Customer portal) — turn on "Customers can cancel subscriptions" and "Customers can switch plans" if you want self-service plan switching through the portal as well as through SIMO OS's own UI.
+7. **Developers → Webhooks** → add an endpoint:
+   - URL: `https://simo-api-production-production.up.railway.app/api/v1/billing/webhook`
+   - Events to send: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`, `invoice.paid`
+   - Copy the endpoint's **Signing secret** (`whsec_...`) — this is `STRIPE_WEBHOOK_SECRET` below.
+8. **Developers → API keys** → copy the **Secret key** (`sk_test_...` in test mode) — this is `STRIPE_SECRET_KEY` below. Never the publishable key for this — SIMO OS never sends a Stripe key to the browser at all (Checkout/Portal are server-created, redirect-only).
+
+### 5.2 Environment variables — set on `simo-api-production` (Railway → that service → Variables)
+
+| Variable | Value |
+|---|---|
+| `STRIPE_SECRET_KEY` | the Secret key from 5.1.8 |
+| `STRIPE_WEBHOOK_SECRET` | the signing secret from 5.1.7 |
+| `STRIPE_PRICE_PRO_MONTHLY` | Price ID for Pro £79/mo |
+| `STRIPE_PRICE_PRO_ANNUAL` | Price ID for Pro £790/yr |
+| `STRIPE_PRICE_BUSINESS_MONTHLY` | Price ID for Business £149/mo |
+| `STRIPE_PRICE_BUSINESS_ANNUAL` | Price ID for Business £1,490/yr |
+| `FRONTEND_BASE_URL` | `https://simo-web-production-production.up.railway.app` |
+
+None of these are required for SIMO OS to run — every route that needs Stripe returns a clean 503 ("Billing is not configured") until they're set, same pattern as `OPENAI_API_KEY`.
+
+### 5.3 Verifying test mode
+
+1. Set the four `STRIPE_PRICE_*` + `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` variables using **test-mode** keys/prices.
+2. As an Owner in SIMO OS, open `/pricing`, choose a plan → should redirect to a real `checkout.stripe.com` URL.
+3. Complete checkout with Stripe's test card `4242 4242 4242 4242`, any future expiry/CVC.
+4. Confirm the webhook fired in Stripe Dashboard → Developers → Webhooks → your endpoint → recent deliveries (should show `checkout.session.completed` with a 200 response).
+5. Confirm `/settings` now shows the subscription as "active" with the correct plan/period.
+6. Test cancellation via `/settings` → Cancel → confirm `cancel_at_period_end` shows in the UI and in the Stripe Dashboard.
+7. Test the Customer Portal via `/settings` → Manage billing → confirm it opens Stripe's hosted portal for the right customer.
+
+### 5.4 Going live
+
+1. Repeat 5.1–5.2 in Stripe's **live mode** (separate Products/Prices/webhook/keys — test and live are fully separate in Stripe).
+2. Replace the four `STRIPE_PRICE_*` variables and `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` with the live-mode values.
+3. Re-run 5.3's checklist once against live mode with a real card before announcing pricing publicly.
+
+## 6. Execution log
 
 See closeout section at the end of this document for full evidence (migrations, tests, CI, production verification, SHAs).

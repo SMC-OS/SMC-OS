@@ -9,9 +9,27 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field, Input } from "@/components/ui/Field";
 import { PlusIcon } from "@/components/ui/icons";
+import Link from "next/link";
+
 import { ApiError, api } from "@/lib/api";
+import type { Subscription } from "@/types/billing";
 import type { InvitationCreateOut, InvitationOut } from "@/types/invitation";
 import type { TeamMemberOut } from "@/types/user";
+
+const PLAN_NAMES: Record<string, string> = {
+  pro: "SIMO OS Pro",
+  business: "SIMO OS Business",
+  enterprise: "Enterprise",
+};
+
+const SUBSCRIPTION_STATUS_TONE: Record<string, "info" | "success" | "neutral" | "warning" | "danger"> = {
+  active: "success",
+  trialing: "info",
+  past_due: "warning",
+  unpaid: "danger",
+  cancelled: "neutral",
+  incomplete: "neutral",
+};
 
 const STATUS_TONE: Record<string, "info" | "success" | "neutral" | "warning"> = {
   pending: "info",
@@ -45,7 +63,18 @@ export default function SettingsPage() {
   const [createdInvite, setCreatedInvite] = useState<InvitationCreateOut | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
 
+  const [subscription, setSubscription] = useState<Subscription | null | undefined>(undefined);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const [billingActionLoading, setBillingActionLoading] = useState(false);
+
   const isOwner = role === "Owner";
+
+  function loadSubscription() {
+    api
+      .getSubscription()
+      .then(setSubscription)
+      .catch(() => setBillingError("Could not load your subscription."));
+  }
 
   function loadInvitations() {
     api
@@ -74,10 +103,56 @@ export default function SettingsPage() {
     if (isOwner) {
       loadInvitations();
       loadTeam();
+      loadSubscription();
     }
   }, [isReady, isAuthenticated, isOwner, router]);
 
   if (!isReady || !isAuthenticated) return null;
+
+  async function handleManageBilling() {
+    setBillingError(null);
+    setBillingActionLoading(true);
+    try {
+      const { portal_url } = await api.createPortalSession();
+      window.location.assign(portal_url);
+    } catch (err) {
+      setBillingError(
+        err instanceof ApiError ? err.message : "Something went wrong."
+      );
+    } finally {
+      setBillingActionLoading(false);
+    }
+  }
+
+  async function handleCancelSubscription() {
+    setBillingError(null);
+    setBillingActionLoading(true);
+    try {
+      const updated = await api.cancelSubscriptionAtPeriodEnd();
+      setSubscription(updated);
+    } catch (err) {
+      setBillingError(
+        err instanceof ApiError ? err.message : "Something went wrong."
+      );
+    } finally {
+      setBillingActionLoading(false);
+    }
+  }
+
+  async function handleResumeSubscription() {
+    setBillingError(null);
+    setBillingActionLoading(true);
+    try {
+      const updated = await api.resumeSubscription();
+      setSubscription(updated);
+    } catch (err) {
+      setBillingError(
+        err instanceof ApiError ? err.message : "Something went wrong."
+      );
+    } finally {
+      setBillingActionLoading(false);
+    }
+  }
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -194,6 +269,98 @@ export default function SettingsPage() {
                     </li>
                   ))}
                 </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Billing</CardTitle>
+              <Link href="/pricing" className="text-xs text-accent hover:underline">
+                View plans
+              </Link>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {billingError && (
+                <p className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+                  {billingError}
+                </p>
+              )}
+
+              {subscription === undefined && (
+                <p className="text-sm text-muted">Loading…</p>
+              )}
+
+              {subscription === null && (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted">
+                    No active subscription yet.
+                  </p>
+                  <Link href="/pricing">
+                    <Button type="button" size="sm">
+                      Choose a plan
+                    </Button>
+                  </Link>
+                </div>
+              )}
+
+              {subscription && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {PLAN_NAMES[subscription.plan] ?? subscription.plan}
+                      </p>
+                      <p className="text-xs text-muted">
+                        Billed {subscription.billing_period}
+                        {subscription.current_period_end &&
+                          ` · Renews ${new Date(subscription.current_period_end).toLocaleDateString()}`}
+                      </p>
+                    </div>
+                    <Badge tone={SUBSCRIPTION_STATUS_TONE[subscription.status] ?? "neutral"}>
+                      {subscription.status.replace("_", " ")}
+                    </Badge>
+                  </div>
+
+                  {subscription.cancel_at_period_end && (
+                    <p className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+                      Cancels at the end of the current billing period.
+                    </p>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={billingActionLoading}
+                      onClick={handleManageBilling}
+                    >
+                      Manage billing
+                    </Button>
+                    {subscription.cancel_at_period_end ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={billingActionLoading}
+                        onClick={handleResumeSubscription}
+                      >
+                        Resume
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={billingActionLoading}
+                        onClick={handleCancelSubscription}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>

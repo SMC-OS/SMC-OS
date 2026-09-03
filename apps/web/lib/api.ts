@@ -5,6 +5,7 @@ import type {
   AppointmentTransitionTarget,
 } from "@/types/appointment";
 import type { AuthUser, LoginResponse, SignupRequest } from "@/types/auth";
+import type { BillingPeriod, Plan, PlanId, Subscription } from "@/types/billing";
 import type { CommandCentreStats } from "@/types/command-centre";
 import type { Customer, CustomerCreate } from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
@@ -148,6 +149,26 @@ export const api = {
   // Sprint 015 — Owner-only (require_role(OWNER) server-side; a Staff
   // caller gets a 403 handled by the caller, same as invitations).
   getUsers: () => request<TeamMemberOut[]>("/users"),
+
+  // Sprint 032 (Workstream A) — subscriptions/billing.
+  getPlans: () => request<Plan[]>("/billing/plans"),
+
+  getSubscription: () => request<Subscription | null>("/billing/subscription"),
+
+  createCheckoutSession: (plan: PlanId, billingPeriod: BillingPeriod) =>
+    request<{ checkout_url: string }>("/billing/checkout", {
+      method: "POST",
+      body: JSON.stringify({ plan, billing_period: billingPeriod }),
+    }),
+
+  createPortalSession: () =>
+    request<{ portal_url: string }>("/billing/portal", { method: "POST" }),
+
+  cancelSubscriptionAtPeriodEnd: () =>
+    request<Subscription>("/billing/cancel", { method: "POST" }),
+
+  resumeSubscription: () =>
+    request<Subscription>("/billing/resume", { method: "POST" }),
 
   deactivateUser: (id: string) =>
     request<TeamMemberOut>(`/users/${id}/deactivate`, { method: "POST" }),

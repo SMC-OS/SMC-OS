@@ -25,6 +25,7 @@ from app.auth.dependencies import require_role
 from app.auth.models import TokenResponse, UserRole
 from app.auth.security import create_access_token
 from app.auth.service import auth_service
+from app.billing.entitlements import require_seat_available
 from app.database import crud
 from app.database.database import get_db
 from app.database.models import User
@@ -52,7 +53,12 @@ _UNUSABLE_MESSAGES = {
 }
 
 
-@router.post("", response_model=InvitationCreateOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=InvitationCreateOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_seat_available)],
+)
 def create_invitation(
     data: InvitationCreate,
     current_user: User = Depends(require_role(UserRole.OWNER)),

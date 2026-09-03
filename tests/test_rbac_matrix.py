@@ -79,6 +79,14 @@ EXPECTED_ROUTE_AUTH: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/notifications/unread-count", AUTHENTICATED),
     ("POST", "/api/v1/notifications", AUTHENTICATED),
     ("PATCH", f"/api/v1/notifications/{_ID}/read", AUTHENTICATED),
+    # app/billing/router.py
+    ("GET", "/api/v1/billing/plans", PUBLIC),
+    ("GET", "/api/v1/billing/subscription", OWNER_STAFF),
+    ("POST", "/api/v1/billing/checkout", OWNER_ONLY),
+    ("POST", "/api/v1/billing/portal", OWNER_ONLY),
+    ("POST", "/api/v1/billing/cancel", OWNER_ONLY),
+    ("POST", "/api/v1/billing/resume", OWNER_ONLY),
+    ("POST", "/api/v1/billing/webhook", PUBLIC),
     # app/customers/router.py
     ("GET", "/api/v1/customers", AUTHENTICATED),
     ("GET", f"/api/v1/customers/{_ID}", AUTHENTICATED),
