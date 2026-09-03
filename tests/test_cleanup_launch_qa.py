@@ -67,6 +67,16 @@ def _wipe_named_tenants(names: tuple[str, ...]) -> None:
             PortalLink,
         )
 
+        # Mirrors resolve_plan/execute_plan's own orphan-quote handling —
+        # a leftover anonymous quote (tenant_id IS NULL) from an earlier
+        # interrupted run can still reference one of these customers and
+        # must be cleared before the customers FK delete below.
+        customer_ids = db.scalars(select(Customer.id).where(Customer.tenant_id.in_(tenant_ids))).all()
+        if customer_ids:
+            db.execute(
+                delete(Quote).where(Quote.tenant_id.is_(None), Quote.customer_id.in_(customer_ids))
+            )
+
         for model in (
             Appointment,
             Document,
@@ -171,7 +181,7 @@ def qa_fixture(client):
     )
     assert quote_resp.status_code == 200, quote_resp.text
 
-    yield {"tenant_ids": tenant_ids, "material_id": material_id}
+    yield {"tenant_ids": tenant_ids, "material_id": material_id, "customer_id": uuid.UUID(customer_id)}
 
     _wipe_named_tenants(QA_TENANT_NAMES)
     _wipe_qa_material()
@@ -208,6 +218,15 @@ def unrelated_tenant(client):
         if user is not None:
             from app.database.models import ActivityLog
 
+            customer_ids = db.scalars(
+                select(Customer.id).where(Customer.tenant_id == user.tenant_id)
+            ).all()
+            if customer_ids:
+                db.execute(
+                    delete(Quote).where(
+                        Quote.tenant_id.is_(None), Quote.customer_id.in_(customer_ids)
+                    )
+                )
             db.execute(delete(Customer).where(Customer.tenant_id == user.tenant_id))
             db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == user.tenant_id))
             db.execute(delete(User).where(User.email == UNRELATED_TENANT_EMAIL))
@@ -328,6 +347,83 @@ class TestDeletionOrderAndCompleteness:
             assert db2.get(Material, qa_fixture["material_id"]) is None
             remaining = resolve_plan(db2)
             assert remaining.is_empty
+        finally:
+            db2.close()
+
+
+class TestOrphanedAnonymousQuotes:
+    """Sprint 030's real production fixture (found via a live dry-run, not
+    invented) includes an anonymous quote (tenant_id IS NULL — the public
+    POST /api/v1/quote path, ADR-023) whose customer_id still references a
+    QA customer. Being untenanted, it's invisible to any tenant_id-scoped
+    query, but it's a real FK reference: deleting the QA customer while it
+    exists violates the customers FK. It must be resolved and cleaned
+    alongside the QA customer it targets, and only that customer's
+    orphans — never an orphan quote belonging to an unrelated customer."""
+
+    def _create_anonymous_quote_for(self, client, *, customer_id: str) -> uuid.UUID:
+        r = client.post(
+            "/api/v1/quote",
+            json={
+                "customer": "Anonymous walk-in",
+                "material": QA_MATERIAL_NAME,
+                "thickness": QA_MATERIAL_THICKNESS,
+                "kitchen_length": 2.0,
+                "customer_id": customer_id,
+            },
+            # deliberately no Authorization header — get_current_user_optional
+            # resolves to None, so the created quote has tenant_id=NULL.
+        )
+        assert r.status_code == 200, r.text
+        return uuid.UUID(r.json()["id"])
+
+    def test_orphaned_quote_referencing_qa_customer_is_included_in_plan(self, client, qa_fixture):
+        orphan_id = self._create_anonymous_quote_for(client, customer_id=str(qa_fixture["customer_id"]))
+        db = SessionLocal()
+        try:
+            assert db.get(Quote, orphan_id).tenant_id is None  # sanity: genuinely untenanted
+            plan = resolve_plan(db)
+            assert orphan_id in plan.orphan_quote_ids
+        finally:
+            db.close()
+
+    def test_confirmed_cleanup_removes_the_orphan_without_fk_violation(self, client, qa_fixture):
+        orphan_id = self._create_anonymous_quote_for(client, customer_id=str(qa_fixture["customer_id"]))
+        db = SessionLocal()
+        try:
+            plan = resolve_plan(db)
+            execute_plan(db, plan)  # must not raise IntegrityError deleting the customer
+            db.commit()
+        finally:
+            db.close()
+
+        db2 = SessionLocal()
+        try:
+            assert db2.get(Quote, orphan_id) is None
+            assert db2.get(Customer, qa_fixture["customer_id"]) is None
+        finally:
+            db2.close()
+
+    def test_orphan_quote_belonging_to_an_unrelated_customer_is_never_touched(
+        self, client, qa_fixture, unrelated_tenant
+    ):
+        unrelated_orphan_id = self._create_anonymous_quote_for(
+            client, customer_id=str(unrelated_tenant["customer_id"])
+        )
+        db = SessionLocal()
+        try:
+            plan = resolve_plan(db)
+            assert unrelated_orphan_id not in plan.orphan_quote_ids
+            execute_plan(db, plan)
+            db.commit()
+        finally:
+            db.close()
+
+        db2 = SessionLocal()
+        try:
+            assert db2.get(Quote, unrelated_orphan_id) is not None, (
+                "an orphan quote belonging to a non-QA customer must never be deleted"
+            )
         finally:
             db2.close()
 

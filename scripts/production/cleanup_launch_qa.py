@@ -102,11 +102,18 @@ class CleanupPlan:
     tenant_ids: list[uuid.UUID]
     tenant_names: list[str]
     material_ids: list[uuid.UUID]
+    # Anonymous quotes (tenant_id IS NULL — the public POST /api/v1/quote
+    # path, ADR-023) whose customer_id belongs to one of the resolved QA
+    # tenants. Untenanted, so invisible to every tenant_id-scoped query
+    # above, but a real FK reference into a QA customer that must be
+    # cleared before that customer can be deleted. Discovered against the
+    # real Sprint 030 production fixture, not a hypothetical.
+    orphan_quote_ids: list[uuid.UUID] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def is_empty(self) -> bool:
-        return not self.tenant_ids and not self.material_ids
+        return not self.tenant_ids and not self.material_ids and not self.orphan_quote_ids
 
 
 def verify_environment(expected: str, database_url: str | None = None) -> None:
@@ -139,6 +146,7 @@ def resolve_plan(db: Session) -> CleanupPlan:
     material_ids = [material.id for material in materials]
 
     counts: dict[str, int] = {"tenants": len(tenant_ids), "materials": len(material_ids)}
+    orphan_quote_ids: list[uuid.UUID] = []
     if tenant_ids:
         for model in _TENANT_SCOPED_TABLES_IN_ORDER:
             table_name = model.__tablename__
@@ -149,10 +157,24 @@ def resolve_plan(db: Session) -> CleanupPlan:
                 or 0
             )
 
+        customer_ids = db.scalars(
+            select(Customer.id).where(Customer.tenant_id.in_(tenant_ids))
+        ).all()
+        if customer_ids:
+            orphan_quote_ids = list(
+                db.scalars(
+                    select(Quote.id).where(
+                        Quote.tenant_id.is_(None), Quote.customer_id.in_(customer_ids)
+                    )
+                ).all()
+            )
+    counts["orphan_quotes"] = len(orphan_quote_ids)
+
     return CleanupPlan(
         tenant_ids=tenant_ids,
         tenant_names=tenant_names,
         material_ids=material_ids,
+        orphan_quote_ids=orphan_quote_ids,
         counts=counts,
     )
 
@@ -164,6 +186,11 @@ def execute_plan(db: Session, plan: CleanupPlan) -> None:
     silently partially-committing."""
     if plan.is_empty:
         return
+    if plan.orphan_quote_ids:
+        # Must precede the Customer delete below — an orphan quote's
+        # customer_id FK would otherwise block it. No other ordering
+        # constraint applies (an untenanted quote has no other dependents).
+        db.execute(delete(Quote).where(Quote.id.in_(plan.orphan_quote_ids)))
     if plan.tenant_ids:
         for model in _TENANT_SCOPED_TABLES_IN_ORDER:
             db.execute(delete(model).where(model.tenant_id.in_(plan.tenant_ids)))
