@@ -7,9 +7,16 @@ import type { FetchStatus } from "@/hooks/usePolling";
 export function DashboardStatusBar({
   status,
   error,
+  isAuthError,
 }: {
   status: FetchStatus;
   error: string | null;
+  // Production incident (post-v1.0.1): a 401/403 (expired/invalid session)
+  // must never be reported as "Couldn't reach the SIMO OS API" — that
+  // message is for a real network/API-availability failure only. An auth
+  // error means the user is about to be redirected to /login, not that the
+  // API is down.
+  isAuthError: boolean;
 }) {
   const isOnline = useOnlineStatus();
 
@@ -19,6 +26,15 @@ export function DashboardStatusBar({
         <WifiOffIcon className="h-4 w-4 shrink-0" />
         You&rsquo;re offline. Showing the last data we had — this will refresh
         automatically once you&rsquo;re back online.
+      </div>
+    );
+  }
+
+  if (status === "error" && isAuthError) {
+    return (
+      <div className="mb-4 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2.5 text-sm text-warning">
+        <AlertCircleIcon className="h-4 w-4 shrink-0" />
+        Your session has expired. Redirecting you to sign in&hellip;
       </div>
     );
   }

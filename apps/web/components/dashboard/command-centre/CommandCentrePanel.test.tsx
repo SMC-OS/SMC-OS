@@ -119,4 +119,20 @@ describe("CommandCentrePanel — business command centre (Sprint 025)", () => {
     // No stale/fabricated metric text ever renders on a failed load.
     expect(screen.queryByText("Business Command Centre")).not.toBeInTheDocument();
   });
+
+  it("reports_an_expired_session_distinctly_from_a_real_api_outage", async () => {
+    // Production incident (post-v1.0.1): a 401 (expired/invalid token) was
+    // shown identically to a real 5xx outage — "Couldn't load the Business
+    // Command Centre" for both. A 401 is a session problem, not an API
+    // availability problem.
+    fetchMock = vi.fn(async () => jsonResponse({ detail: "Could not validate credentials" }, 401));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CommandCentrePanel />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/couldn.t load the business command centre/i)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText(/session/i)).toBeInTheDocument();
+  });
 });
