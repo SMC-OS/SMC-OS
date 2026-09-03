@@ -102,3 +102,56 @@ None of these are required for SIMO OS to run — every route that needs Stripe 
 ## 6. Execution log
 
 See closeout section at the end of this document for full evidence (migrations, tests, CI, production verification, SHAs).
+
+## CLOSEOUT — Execution Evidence (2026-09-03)
+
+### Tests
+
+- Backend (`pytest`, real local Postgres): **668 passed, 1 skipped, 0 failed** (baseline before this sprint: 571 passed, 1 skipped — 97 new tests added, zero regressions). Repeat-run isolation bug found and fixed in `tests/test_billing.py` during this sprint (a fixed Stripe event id left a `processed_stripe_events` row behind, making the idempotency-under-test look like a real bug on the second run) — not a product defect.
+- Frontend (`vitest run`): **91 passed**, 0 failed. `eslint`: clean. `tsc --noEmit`: clean. `next build`: succeeds (17 routes, `/pricing` new).
+- Playwright E2E: **13/13 passed** against freshly-started servers. An initial run showed 11 failures against *stale* dev servers left running from earlier ad-hoc testing (ports 3000/8000 bound to pre-sprint processes) — killed and re-ran clean; not a product defect.
+- Migration upgrade/downgrade verified both directions, both new revisions, against local Postgres before merge.
+
+### CI
+
+- PR #15: `backend`/`frontend`/`e2e` all green on both the push-triggered and PR-triggered runs.
+- Post-merge `main`: `backend`/`frontend`/`e2e` all green (run `33790484639`).
+
+### Release
+
+1. Branch `sprint-032-subscriptions-ai-retrieval-quote-dimensions`, two commits: `ffd9060` (Workstreams B+C) and `18fc5c5` (Workstream A).
+2. PR #15 opened to `main`, all 6 CI checks green.
+3. Merged with an **explicit merge commit** `edc13a740485d32f8658ccd7d3abedb578967bf8` (two parents: `26dee41f656be25e5470ec155acb2534cbb4e9d4` = prior `main`, `18fc5c56f2a27b6022093d4a73322764b4676c11` = Sprint 032 branch HEAD). No squash, no rebase, no force push.
+4. Tagged `v1.1.0` on the merge commit (minor bump — this sprint adds real new capability, not a patch).
+
+### Production deployment
+
+Deployed staging first (this repo's established convention), verified, then production — both via `railway up` from a clean `git archive` export of the exact merge commit (not `redeploy`, which would reuse a stale build).
+
+**Finding — `preDeployCommand` does not run automatically.** `deploy/railway/api.railway.toml`'s `[deploy] preDeployCommand = "... alembic upgrade head ..."` did **not** execute during `railway up` on either staging or production — `alembic current` read the pre-Sprint-032 head (`2243d66f83da`) immediately after a successful deploy on both environments. Migrations were applied manually via `railway ssh ... python -m alembic upgrade head` on both (staging first, verified, then production), confirmed at `c4e8b2a017f5 (head)` on both afterward. This is a pre-existing Railway config-as-code wiring gap, not something introduced by this sprint — flagged here as a **known limitation** (see below) requiring the account owner to verify the service's actual config-as-code path in the Railway dashboard. No production migration was skipped; this only changed *how* it was applied (manual, verified) versus assumed-automatic.
+
+No fresh `pg_dump` was taken immediately before the production migration specifically: both new migrations are purely additive (new nullable-then-backfilled columns, two new tables), already verified upgrade/downgrade-safe locally and on staging first, and Railway's existing PITR backup remains the safety net — a different risk profile than Sprint 031's destructive QA-cleanup work, which did warrant a dedicated pre-action dump.
+
+### Production verification (read-only — no test data created against real business data)
+
+- `GET /health` → `{"status":"healthy"}`; `GET /ready` → `{"status":"ready","database":"reachable"}` on both staging and production.
+- `alembic current` → `c4e8b2a017f5 (head)` on both staging and production.
+- `POST /api/v1/process {"text":"Find SuperGalaxy Diamond Quartz"}` → `{"status":"not_found",...}` on production — never fabricates.
+- `GET /api/v1/billing/plans` → correct Pro/Business/Enterprise pricing, live on production.
+- `POST /api/v1/quote` with `length_mm: -5` → `400 {"detail":"Length must be greater than zero."}` on production — new dimension validation is live.
+- `POST /api/v1/quote` with legacy `kitchen_length` → passes dimension validation and reaches material lookup (backward-compat alias confirmed live).
+- Existing auth/RBAC surfaces unaffected: `/auth/login` with bad credentials → 401 (not 500); `/dashboard`, `/billing/subscription`, `/quotes`, `/customers` all correctly 401 unauthenticated.
+- Frontend: `/`, `/pricing`, `/login` all return 200 on production; `/pricing` renders "SIMO OS Pricing".
+- `environment-status` (production): **0 issues / 0 failures across all 4 services** after deployment.
+- Production has no seeded demo catalogue (`SEED_DATA_ENABLED=false`, correctly) — FOUND-case retrieval and successful quote creation are verified by the automated suite against the real seeded catalogue (test/staging shape), not fabricated against production's live (empty or business-owned, unknown to this sprint) material data.
+
+### Known limitations / owner follow-ups
+
+1. **Railway `preDeployCommand` not executing** (see Finding above) — verify/re-wire the config-as-code path for `simo-api-staging`/`simo-api-production` in the Railway dashboard so future deploys don't require a manual `railway ssh ... alembic upgrade head` step.
+2. **Stripe not yet configured** — see §5 for exact activation steps; no live/test-mode Stripe API round trip has been executed (no credentials exist).
+3. **Seat-limit enforcement** counts real users + pending invitations at invitation-creation time; there is no per-request AI-usage or automation-usage metering yet (explicit v1 scope decision, not a gap).
+4. **Multi-line-item quotes are deferred** — see §4.
+
+### Final status
+
+**SPRINT 032 CLOSED.**
