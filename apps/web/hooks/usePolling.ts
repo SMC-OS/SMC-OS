@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ApiError } from "@/lib/api";
+
 export type FetchStatus = "loading" | "success" | "error";
 
 interface UsePollingOptions {
@@ -13,6 +15,11 @@ interface UsePollingResult<T> {
   data: T | null;
   status: FetchStatus;
   error: string | null;
+  // Production incident (post-v1.0.1): a 401/403 (expired/invalid session)
+  // was rendered identically to a real network/API-availability failure.
+  // Consumers use this to tell the two apart instead of guessing from the
+  // error string.
+  isAuthError: boolean;
   refetch: () => Promise<void>;
 }
 
@@ -30,6 +37,7 @@ export function usePolling<T>(
   const [data, setData] = useState<T | null>(null);
   const [status, setStatus] = useState<FetchStatus>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [isAuthError, setIsAuthError] = useState(false);
 
   // Keep the latest fetcher without re-triggering the effect below.
   // Updated inside its own effect (not during render) so it doesn't mutate
@@ -45,9 +53,11 @@ export function usePolling<T>(
       setData(result);
       setStatus("success");
       setError(null);
+      setIsAuthError(false);
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Something went wrong");
+      setIsAuthError(err instanceof ApiError && (err.status === 401 || err.status === 403));
     }
   }, []);
 
@@ -59,5 +69,5 @@ export function usePolling<T>(
     return () => clearInterval(id);
   }, [enabled, intervalMs, load]);
 
-  return { data, status, error, refetch: load };
+  return { data, status, error, isAuthError, refetch: load };
 }

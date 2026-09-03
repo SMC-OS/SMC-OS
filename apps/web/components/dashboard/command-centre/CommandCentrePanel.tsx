@@ -47,7 +47,7 @@ function CountRow({ label, value }: { label: string; value: number }) {
 }
 
 export function CommandCentrePanel() {
-  const { data, status, error } = useCommandCentre();
+  const { data, status, error, isAuthError } = useCommandCentre();
   const loading = status === "loading" && !data;
 
   if (loading) {
@@ -58,6 +58,22 @@ export function CommandCentrePanel() {
         <SectionSkeleton />
         <SectionSkeleton />
       </div>
+    );
+  }
+
+  if (status === "error" && !data && isAuthError) {
+    // Production incident (post-v1.0.1): a 401/403 must never be reported
+    // as a failure to load the Command Centre — that's an availability
+    // message for a session problem. app/page.tsx's own auth guard
+    // redirects to /login as soon as the session is known invalid; this is
+    // only what briefly shows first.
+    return (
+      <Card>
+        <CardContent className="flex items-center gap-2 py-6 text-sm text-warning">
+          <AlertCircleIcon className="h-4 w-4 shrink-0" />
+          Your session has expired.
+        </CardContent>
+      </Card>
     );
   }
 

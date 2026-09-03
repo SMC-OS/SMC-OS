@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
-import { clearToken, getToken, setToken } from "@/lib/auth-storage";
+import { clearToken, getToken, setToken, TOKEN_CLEARED_EVENT } from "@/lib/auth-storage";
 import type { SignupRequest } from "@/types/auth";
 import type { AcceptInvitationRequest } from "@/types/invitation";
 
@@ -71,6 +71,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => setIsAuthenticated(false))
       .finally(() => setIsReady(true));
+  }, []);
+
+  useEffect(() => {
+    // Production incident (post-v1.0.1): a token can go invalid at any
+    // point during an already-authenticated session (expiry, a 401 from
+    // any api.* call) — not just at mount. clearToken() announces this via
+    // TOKEN_CLEARED_EVENT so this state stays truthful for the rest of the
+    // session, the same way an explicit logout() already resets it.
+    function handleTokenCleared() {
+      setIsAuthenticated(false);
+      setTenantName(null);
+      setRole(null);
+      setUserId(null);
+      setName(null);
+    }
+    window.addEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
+    return () => window.removeEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
   }, []);
 
   async function login(email: string, password: string) {
