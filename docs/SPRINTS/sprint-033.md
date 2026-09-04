@@ -41,3 +41,64 @@ AI quote generation is extended to produce a list of independently-resolved item
 ## 3. Execution log
 
 See closeout section at the end of this document.
+
+## CLOSEOUT — Execution Evidence (2026-09-04)
+
+### Workstream A — Stripe
+
+No credentials appeared during this sprint. Architecture re-verified sound: `tests/test_billing.py` (21 tests) and `tests/test_rbac_matrix.py` (140 tests) re-run clean, no changes needed. Owner activation boundary is unchanged from Sprint 032 §5 — no live/test-mode Stripe API round trip was possible or attempted.
+
+### Workstream B — Railway migration hardening: verified in production
+
+The fix was verified empirically, not just by design review: both the staging and production deploys in this sprint ran `python -m alembic current` **immediately after `railway up`, with no manual migration step in between**, and both reported `d1a4f9c8b632 (head)` — the new Sprint 033 migration had already applied automatically. This is the first deploy in this project's history where that has been true. `tests/test_migrate_gate.py` (7 tests, including a real two-thread advisory-lock race proof against local Postgres) and the updated `tests/test_runtime_startup.py`/`tests/test_railway_contract.py` all pass.
+
+### Workstream C — multi-line-item quotes
+
+Migration backfill verified against a synthetic quote exercising every legacy flag simultaneously (island/waterfall/splashback/upstands) before merge — produced exactly the 5 expected item rows with correct dimensions in every case (see conversation record; not re-derived here to avoid duplicating evidence already gathered pre-merge).
+
+### Tests
+
+- Backend (`pytest`, real local Postgres): **685 passed, 1 skipped, 0 failed** (baseline before this sprint: 668 passed — 17 net new tests; several existing quote-related tests were rewritten, not just added, to match the new architecture, per the sprint's own instruction not to weaken coverage while evolving it).
+- Frontend (`vitest run`, serial to avoid this session's own worker-pool contention — see "Known limitations"): **94 passed**, 0 failed. `eslint`: clean. `tsc --noEmit`: clean. `next build`: succeeds (17 routes).
+- Playwright E2E: **16/16 passed** (13 pre-existing + 3 new: a manually-created 3-item quote whose independent dimensions round-trip correctly, an AI-generated 3-item quote via a mocked `/quotes/ai-draft` response, and item removal). A real bug was found and fixed during this work: the new spec's 3 tests originally shared one hardcoded signup email, causing a 409 conflict on the second/third signup — fixed with a per-test unique identity, matching this repo's own established RUN_ID convention.
+- `git diff --check`: clean. Single alembic head (`d1a4f9c8b632`) confirmed both locally and (per Workstream B above) in staging and production.
+
+### CI
+
+All 6 checks green on PR #16 (backend/frontend/e2e × push+PR) and on post-merge `main` (run `33836003728`).
+
+### Release
+
+1. Branch `sprint-033-stripe-railway-multiline-quotes`, two commits: `894022a` (Workstream B) and `aac8b19` (Workstream C).
+2. PR #16 opened to `main`, all 6 CI checks green.
+3. Merged with an **explicit merge commit** `cbc17c2bc3c8be7a5e23b134b1197f9db5810ba0` (parents: `91d6da5e7906e5a01403eb14d6e278b99ee63cd6` = prior `main`/v1.1.0, `aac8b19ed1da27c43cd06f71d0fa6419da2285b1` = Sprint 033 branch HEAD). No squash, no rebase, no force push.
+4. Tagged `v1.2.0` on the merge commit.
+
+### Production deployment
+
+Staging first (this repo's established convention), then production — both via `railway up` from a clean `git archive` export of the exact merge commit. **Migrations applied automatically on both environments** (see Workstream B above) — no `railway ssh` step was needed for the first time.
+
+### Production verification (read-only — no test data created against real business data)
+
+- `/health` → healthy, `/ready` → database reachable, on both staging and production.
+- `alembic current` → `d1a4f9c8b632 (head)` on both staging and production, verified immediately post-deploy with no intervening manual step.
+- AI retrieval, billing plans, multi-item dimension validation (`length_mm: 0` → 400), malformed `item_type` (→ 422), and the legacy `kitchen_length` alias all verified live on production.
+- Existing auth/RBAC surfaces unaffected: bad-credential login, unauthenticated `/dashboard`/`/quotes` all correctly 401.
+- Frontend: `/`, `/pricing`, `/quotes/new` all return 200 on production.
+- `environment-status` (production): **0 issues / 0 failures across all 4 services** after deployment.
+- Existing quote/customer/project workflows were not re-verified against real production data (no owner credentials used, by design — see Sprint 032's own precedent); confidence instead comes from the full local test suite (685 backend + 94 frontend) and 16/16 E2E specs, including the pre-existing `quote-handoff` spec exercising the exact same approve/handoff code paths against the new multi-item architecture.
+
+### Known limitations
+
+1. **Stripe still not configured** — unchanged from Sprint 032 §5.
+2. **This session's own tooling contention.** Unrelated processes on this development machine (other coding-assistant tool installations — OpenAI Codex runtimes, MCP servers, Railway CLI proxies; ~286 stray Node processes observed at one point) caused transient `vitest`/`eslint` worker-spawn timeouts and occasional cross-test flakiness during this sprint's own verification — not caused by, or related to, the SIMO OS codebase. Every affected file was re-verified in isolation/serially and passed cleanly; this is a note about the development environment, not a product defect.
+3. **Cross-item slab-sharing/nesting optimization** remains explicitly out of scope (each item computes its own slab requirement independently), matching the boundary Sprint 005 already drew.
+4. **AI multi-item segmentation quality** depends on the LLM correctly isolating each item's own text span; this is not verifiable without real OPENAI_API_KEY access (none exists), so it's covered by mocked tests only, same limitation the Sprint 032 single-item AI flow already had.
+
+### Recommended Sprint 034
+
+Wire real Stripe test/live credentials once available and complete the full billing verification checklist from Sprint 032/033 §5; consider cross-item slab-sharing optimization if real job-cost feedback shows it matters; extend the quote editor with inline post-creation editing (currently create-only, matching every prior sprint's scope).
+
+### Final status
+
+**SPRINT 033 CLOSED.**
