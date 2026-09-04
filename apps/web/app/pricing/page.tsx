@@ -17,6 +17,16 @@ function annualSavingsLabel(plan: Plan): string | null {
   return `Save ${Math.round(monthsFree)} months vs. monthly`;
 }
 
+// Sprint 034 (Phase 3) — the Enterprise CTA's destination.
+//
+// Deliberately not a hardcoded address. A `mailto:` on a public pricing page
+// is only useful if the mailbox actually exists; one that bounces loses the
+// enquiry silently, and an enterprise enquiry is the most valuable thing on
+// this page. So the address is supplied at build time by whoever can confirm
+// the mailbox exists, and until then the CTA routes somewhere that always
+// works rather than shipping a link nobody has verified.
+const SALES_EMAIL = process.env.NEXT_PUBLIC_SALES_EMAIL?.trim() || null;
+
 export default function PricingPage() {
   const router = useRouter();
   const { isAuthenticated, role } = useAuth();
@@ -184,13 +194,21 @@ export default function PricingPage() {
                           Sign in to subscribe
                         </Button>
                       )
-                    ) : (
+                    ) : SALES_EMAIL ? (
                       <a
-                        href="mailto:sales@geocore.one?subject=GeoCore%20Enterprise"
+                        href={`mailto:${SALES_EMAIL}?subject=GeoCore%20Enterprise`}
                         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover"
                       >
                         Contact sales
                       </a>
+                    ) : (
+                      <Button
+                        className="w-full"
+                        variant="outline"
+                        onClick={() => router.push("/signup")}
+                      >
+                        Get started
+                      </Button>
                     )}
                   </div>
                 </CardContent>
