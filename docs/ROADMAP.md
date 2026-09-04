@@ -77,6 +77,26 @@ The vertical the product was always meant to complete: **Enquiry → Customer �
 
 **v1.0 is complete and in production.** `v1.0.0` (Sprint 030) shipped the full vertical above; Sprint 031 closed out the follow-up items Sprint 030's own launch surfaced (Web security headers, staging/production DB-networking parity, a safe QA-fixture cleanup mechanism, a persistent follow-up scheduler, and a verified backup/restore drill) and shipped `v1.0.1`. No Sprint 032+ scope is defined yet — this section is the re-baseline point for whatever comes next (the deferred v0.3/v1.0 AI-Workforce/commerce items above, or a new phase), to be added when that work is actually planned, not before.
 
+## Post-v1.0 — Commercial Activation & Multi-Tenant Correctness (Sprints 032–)
+
+The re-baseline the section above was left open for. Sprints 032–033 are recorded here retrospectively: this document went three sprint-numbers stale before Sprint 034 caught it, which is the same drift the maintenance rule below already exists to prevent.
+
+| Sprint | Feature | Status |
+|---|---|---|
+| **032** | Stripe billing architecture + structured quote dimensions | ✅ Shipped — `v1.1.0`. Billing routes return 503 until real credentials exist (owner-gated). |
+| **033** | Railway migration hardening (migrate-gate entrypoint) + true multi-line-item quotes | ✅ Shipped — `v1.2.0` live on Railway. See `docs/SPRINTS/sprint-033.md`. |
+| **034** | **Tenant company identity** — remove the hardcoded company letterhead from all customer-facing document rendering; make business identity tenant-configurable | ✅ **Workstream A complete** — see `docs/SPRINTS/sprint-034.md` |
+| **034** | GeoCore brand-mark integration | ⏸️ **Owner-gated** — blocked pending the approved asset files |
+| **034** | geocore.one production DNS cutover | ⏸️ **Owner-gated** — change sheet prepared for review in `docs/DNS_GEOCORE_ONE.md`; nothing applied |
+
+### Named next, not yet scheduled
+
+- Public marketing site at the `geocore.one` apex (the blocker for the preferred domain structure, and the highest-leverage organic-growth item — see `docs/DNS_GEOCORE_ONE.md` §5).
+- `robots`/`noindex` on the application and API hosts; canonical + sitemap on the apex host.
+- Tenant logo rendering on quote/invoice PDFs (column and Settings field already exist; needs validation of a tenant-supplied remote image before it enters a server-side render path).
+- Platform rename SIMO OS → GeoCore across application copy, plan names, and the theme storage key — a distinct decision from brand-mark integration, deliberately not assumed.
+- Stripe credential activation (carried from Sprints 032/033, still owner-gated).
+
 ---
 
 ## Roadmap maintenance rule
