@@ -210,13 +210,24 @@ The three `marketing` variables are **build arguments, not runtime
 variables.** Changing them requires a rebuild, not a restart. On Railway,
 set them as service variables and trigger a redeploy.
 
+| **web** | `NEXT_PUBLIC_SALES_EMAIL` (build arg) | **Optional.** The Enterprise "Contact sales" address. Set it *only* once you have confirmed the mailbox exists. Left unset, the CTA routes to signup instead — no broken `mailto:` ships either way. |
+
 ### One item that needs you, not a deploy
 
-`apps/web/app/pricing/page.tsx` now links Enterprise enquiries to
-`sales@geocore.one`. Confirm that mailbox (or an alias) exists in Microsoft
-365 before the cutover — the address is on a live pricing page, and mail to
-a non-existent mailbox bounces rather than reaching anyone. No DNS change is
-involved either way; this is a mailbox, not a record.
+The Enterprise CTA on `apps/web/app/pricing/page.tsx` no longer hardcodes an
+address. It renders a `mailto:` only when `NEXT_PUBLIC_SALES_EMAIL` is set,
+and otherwise routes to signup.
+
+This was changed because the mailbox could not be verified from the build
+environment, and an unverified `mailto:` on a public pricing page is a silent
+failure: an enterprise enquiry bounces, nobody sees an error, and the lead is
+simply lost. (The pre-rebrand page linked `sales@simo-os.com` — a domain the
+business does not own — so that failure had already shipped once.)
+
+**Action:** confirm or create `sales@geocore.one` in Microsoft 365, then set
+`NEXT_PUBLIC_SALES_EMAIL=sales@geocore.one` on the web service and redeploy.
+It is a build argument, so a restart will not pick it up. No DNS change is
+involved; this is a mailbox, not a record.
 
 ---
 

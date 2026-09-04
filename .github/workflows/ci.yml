@@ -92,6 +92,11 @@ jobs:
       - name: Test marketing indexability contract
         run: pnpm --filter marketing test:indexability
 
+      # Sprint 034 (Phase 3) — no hardcoded sales mailbox may ship on the
+      # public pricing page; a bouncing address loses the enquiry silently.
+      - name: Test pricing sales CTA contract
+        run: pnpm --filter web test:sales-cta
+
       - name: Build
         run: pnpm build
 

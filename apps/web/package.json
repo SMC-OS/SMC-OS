@@ -13,7 +13,8 @@
     "test:security-headers": "node --test next-config-security-headers.test.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:robots": "node --test app/robots.test.mjs"
+    "test:robots": "node --test app/robots.test.mjs",
+    "test:sales-cta": "node --test app/pricing/sales-cta.test.mjs"
   },
   "dependencies": {
     "next": "16.2.12",
