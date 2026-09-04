@@ -45,7 +45,7 @@ export default function LoginPage() {
           Sign in
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Sign in with your SIMO OS account.
+          Sign in with your GeoCore account.
         </p>
       </div>
 
@@ -60,7 +60,7 @@ export default function LoginPage() {
                 autoFocus
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="owner@simo-os.local"
+                placeholder="owner@geocore.one"
               />
             </Field>
             <Field label="Password" htmlFor="password">

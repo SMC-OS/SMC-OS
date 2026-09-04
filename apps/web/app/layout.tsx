@@ -21,7 +21,7 @@ const geistMono = Geist_Mono({
 // tenant's own company profile (Settings → Company identity), never in
 // global chrome every tenant sees.
 export const metadata: Metadata = {
-  title: "SIMO OS",
+  title: "GeoCore",
   description: "AI operating system for stone and construction businesses",
 };
 
@@ -30,7 +30,10 @@ export const metadata: Metadata = {
 const themeInitScript = `
 (function () {
   try {
-    var stored = localStorage.getItem("simo-os-theme");
+    // Reads the post-rebrand key first, then the pre-rebrand one. Without
+    // the fallback a returning dark-mode user would flash light on their
+    // first load after the deploy, before ThemeProvider migrates the value.
+    var stored = localStorage.getItem("geocore-theme") || localStorage.getItem("simo-os-theme");
     var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     var theme = stored || (prefersDark ? "dark" : "light");
     if (theme === "dark") document.documentElement.classList.add("dark");

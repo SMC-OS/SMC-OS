@@ -19,7 +19,12 @@ from sqlalchemy.engine import make_url
 _ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
 _DEVELOPMENT_DATABASE_URL = "postgresql+psycopg://simo:simo@localhost:5432/simo_os"
 _DEVELOPMENT_JWT_SECRET = "dev-only-insecure-secret-change-me"
-_DEVELOPMENT_SEED_EMAIL = "owner@simo-os.local"
+_DEVELOPMENT_SEED_EMAIL = "owner@geocore.local"
+# Sprint 034 (Phase 2) — the pre-rebrand default. Still rejected in
+# production: a deployment that kept the old value in its environment
+# through the rename must not silently start passing this guard just
+# because the constant above changed.
+_LEGACY_DEVELOPMENT_SEED_EMAILS = frozenset({"owner@simo-os.local"})
 _DEVELOPMENT_SEED_PASSWORD = "change-me-on-first-login"
 _DEVELOPMENT_CORS_ORIGINS = [
     "http://localhost:3000",
@@ -147,7 +152,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JWT_SECRET_KEY must be non-blank, at least 32 characters, and not the development default"
             )
-        if not normalized_seed_email or normalized_seed_email == _DEVELOPMENT_SEED_EMAIL:
+        if (
+            not normalized_seed_email
+            or normalized_seed_email == _DEVELOPMENT_SEED_EMAIL
+            or normalized_seed_email in _LEGACY_DEVELOPMENT_SEED_EMAILS
+        ):
             raise ValueError("SEED_ADMIN_EMAIL must be non-blank and not the development default")
         if (
             not normalized_seed_password

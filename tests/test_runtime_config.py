@@ -102,6 +102,10 @@ def test_production_accepts_a_complete_safe_configuration():
     [
         ("jwt_secret_key", "dev-only-insecure-secret-change-me"),
         ("jwt_secret_key", "short"),
+        ("seed_admin_email", "owner@geocore.local"),
+        # Sprint 034 (Phase 2) — the pre-rebrand default must stay rejected;
+        # a production environment that still carries it is exactly as unsafe
+        # as it was before the rename.
         ("seed_admin_email", "owner@simo-os.local"),
         ("seed_admin_password", "change-me-on-first-login"),
         ("seed_data_enabled", True),
@@ -124,6 +128,7 @@ def test_production_rejects_unsafe_configuration(field, value):
     ("field", "value"),
     [
         ("jwt_secret_key", "  dev-only-insecure-secret-change-me  "),
+        ("seed_admin_email", "  owner@geocore.local  "),
         ("seed_admin_email", "  owner@simo-os.local  "),
         ("seed_admin_password", "  change-me-on-first-login  "),
     ],

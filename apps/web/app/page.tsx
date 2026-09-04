@@ -36,7 +36,7 @@ export default function DashboardPage() {
           Welcome back{name ? `, ${name}` : ""}
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Here&rsquo;s what&rsquo;s happening across SIMO OS right now.
+          Here&rsquo;s what&rsquo;s happening across GeoCore right now.
         </p>
       </div>
 

@@ -18,8 +18,8 @@ import type { InvitationCreateOut, InvitationOut } from "@/types/invitation";
 import type { TeamMemberOut } from "@/types/user";
 
 const PLAN_NAMES: Record<string, string> = {
-  pro: "SIMO OS Pro",
-  business: "SIMO OS Business",
+  pro: "GeoCore Pro",
+  business: "GeoCore Business",
   enterprise: "Enterprise",
 };
 

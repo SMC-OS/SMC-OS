@@ -12,7 +12,7 @@ export function DashboardStatusBar({
   status: FetchStatus;
   error: string | null;
   // Production incident (post-v1.0.1): a 401/403 (expired/invalid session)
-  // must never be reported as "Couldn't reach the SIMO OS API" — that
+  // must never be reported as "Couldn't reach the GeoCore API" — that
   // message is for a real network/API-availability failure only. An auth
   // error means the user is about to be redirected to /login, not that the
   // API is down.
@@ -43,7 +43,7 @@ export function DashboardStatusBar({
     return (
       <div className="mb-4 flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-4 py-2.5 text-sm text-danger">
         <AlertCircleIcon className="h-4 w-4 shrink-0" />
-        Couldn&rsquo;t reach the SIMO OS API{error ? ` (${error})` : ""}. Retrying
+        Couldn&rsquo;t reach the GeoCore API{error ? ` (${error})` : ""}. Retrying
         every 5 seconds.
         <RefreshIcon className="ml-auto h-4 w-4 shrink-0 animate-spin" />
       </div>

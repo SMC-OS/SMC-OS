@@ -47,7 +47,7 @@ export default function SignupPage() {
           Create your company workspace
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Set up SIMO OS for your company in a minute.
+          Set up GeoCore for your company in a minute.
         </p>
       </div>
 

@@ -1,4 +1,4 @@
-# SIMO OS — Architecture Decisions
+# GeoCore — Architecture Decisions
 
 Lightweight ADR log. Each entry: what was decided, why, and its current status. Add a new entry rather than editing history when a decision changes — note the supersession instead.
 
@@ -134,7 +134,7 @@ All four `/api/v1/projects/*` routes require `Depends(get_current_user)`, extend
 ## ADR-024: AI Quotation Generator v1 extracts structured fields only, never computes pricing
 **Status:** IMPLEMENTED (AI Quotation Generator v1, `d306c99`)
 
-`app/quotes/ai_draft.py`'s `AIDraftService` and `app/quotes/ai_models.py`'s `AIQuoteDraft` schema have no price/VAT/total field anywhere — not just an instruction the model is told to follow, but a structural guarantee: the pydantic response shape it's forced into via OpenAI's structured outputs has nowhere to put a monetary figure, so a bad or manipulated model response can extract a wrong material or a wrong length, but it cannot inject a price into the system. Every extracted value is also re-validated server-side against the real material catalogue and known thickness values (`AIDraftService._validate`) before being returned — three layers total: (1) structured-output JSON-shape enforcement, (2) refusal/error handling, (3) server-side truth-checking against the database, which is the layer that actually matters. **Why:** pricing is SIMO OS's core business logic (`app/quotes/calculator.py`) — letting an LLM anywhere near it, even indirectly, would mean a hallucinated or adversarially-prompted number could reach a customer's invoice. The AI's job is narrowly "turn free text into a pre-filled form for a human to review," never "decide what something costs." (This ADR was referenced by `ai_draft.py`'s docstring before it was written — added in Sprint 008 to close that gap, not a Sprint 008 design decision itself.)
+`app/quotes/ai_draft.py`'s `AIDraftService` and `app/quotes/ai_models.py`'s `AIQuoteDraft` schema have no price/VAT/total field anywhere — not just an instruction the model is told to follow, but a structural guarantee: the pydantic response shape it's forced into via OpenAI's structured outputs has nowhere to put a monetary figure, so a bad or manipulated model response can extract a wrong material or a wrong length, but it cannot inject a price into the system. Every extracted value is also re-validated server-side against the real material catalogue and known thickness values (`AIDraftService._validate`) before being returned — three layers total: (1) structured-output JSON-shape enforcement, (2) refusal/error handling, (3) server-side truth-checking against the database, which is the layer that actually matters. **Why:** pricing is GeoCore's core business logic (`app/quotes/calculator.py`) — letting an LLM anywhere near it, even indirectly, would mean a hallucinated or adversarially-prompted number could reach a customer's invoice. The AI's job is narrowly "turn free text into a pre-filled form for a human to review," never "decide what something costs." (This ADR was referenced by `ai_draft.py`'s docstring before it was written — added in Sprint 008 to close that gap, not a Sprint 008 design decision itself.)
 
 ## ADR-026: Tenant-aware authentication — `users.tenant_id` becomes real, JWT gains a `tenant_id` claim
 **Status:** IMPLEMENTED (Sprint 009)
@@ -268,7 +268,7 @@ No rate limiting is introduced. This is an accepted gap for the first anonymous 
 ## ADR-034: Production runtime hardening — explicit environment policy and migration-first releases
 **Status:** IMPLEMENTED (Sprint 018)
 
-SIMO OS now distinguishes `development`, `test`, and `production` through the explicit `APP_ENV` setting. Development remains the default and preserves convenient local database, CORS, upload-directory, and seed behavior. Production is fail-closed: the shared Pydantic `Settings` model rejects the repository JWT and seed defaults, short or blank secrets, enabled seeding, missing or unsafe CORS origins, the local development database URL, and a relative/missing upload path. `python -m app.core.runtime_check` provides the same validation as a read-only, sanitized release preflight; application import and Alembic configuration independently load the same validated settings.
+GeoCore now distinguishes `development`, `test`, and `production` through the explicit `APP_ENV` setting. Development remains the default and preserves convenient local database, CORS, upload-directory, and seed behavior. Production is fail-closed: the shared Pydantic `Settings` model rejects the repository JWT and seed defaults, short or blank secrets, enabled seeding, missing or unsafe CORS origins, the local development database URL, and a relative/missing upload path. `python -m app.core.runtime_check` provides the same validation as a read-only, sanitized release preflight; application import and Alembic configuration independently load the same validated settings.
 
 **Migrations are a release job, never application startup.** The normative production order is configuration preflight, one-off `alembic upgrade head`, sole-head verification, Uvicorn container startup, `/health`, `/ready`, authenticated/storage smoke checks, then traffic promotion. This avoids concurrent application replicas racing to migrate and makes migration failure observable before the new application receives traffic. The default container command starts only `uvicorn app.main:app`; the application lifespan never runs Alembic.
 
@@ -296,3 +296,50 @@ Sprint 032 deployed via `railway up --ci`, relying on Railway's `preDeployComman
 **What changed in the Dockerfile contract:** the default `CMD` is no longer bare `uvicorn app.main:app` — it's `sh -c "python -m app.core.migrate_gate && exec uvicorn app.main:app ..."`. The "same immutable image can be invoked as the release job" property ADR-034 described is preserved (`docker run <image> python -m app.core.migrate_gate` still runs only the migration), it's just no longer the *only* way the migration runs — it now always runs as part of normal container startup too.
 
 **What this is not:** a change to rollback/recovery semantics (still image-rollback-only, database downgrade still a separate explicit operator action per ADR-034); a move of migration logic into the FastAPI application itself; or a fix for whatever Railway does internally with `--ci` — that remains unconfirmed, and the gate is designed specifically so the answer doesn't matter.
+
+## ADR-036: Tenant company identity is data, not code; the platform brand is never a tenant's trading identity
+**Status:** IMPLEMENTED (Sprint 034, Workstream A)
+
+Until Sprint 034, `app/quotes/pdf.py` hardcoded a single company's letterhead — "SIMO MARBLE & CONSTRUCTION LTD / Unit 4, Riverside Trade Park, London" — into every invoice the platform produced, for every tenant. Both invoice routes went through it, including the public portal route a customer downloads from. Tenant B's own invoice carried Tenant A's trading identity.
+
+**Why Sprint 012's isolation sweep did not catch it.** That sprint audited *queries*, and every business-data read is correctly filtered by `tenant_id` — still is. This leak was never in a query. It was a literal string in a render path, a class of cross-tenant disclosure that query auditing cannot surface. ADR-029's posture is sound; its coverage was incomplete.
+
+**The rule now enforced in one place** (`app/tenants/identity.py`): the identity on a customer-facing document is always the tenant that owns the document. Three invariants follow, and each is a real failure mode rather than a preference:
+
+1. **Never the platform's brand.** GeoCore is the product a business subscribes to, not the business its customer is buying from. Substituting the platform name for the old hardcoded company would be the same defect wearing different clothes.
+2. **Never another tenant's details, and no global default.** An unconfigured tenant falls back to its own workspace name and terminates there. A caller supplying no identity gets a document with *no* letterhead — an unattributed invoice is recoverable, one carrying the wrong company's name is not.
+3. **Never a fabricated statutory number.** `company_number`/`vat_number` render only when the tenant actually supplied them. An invented company registration or VAT number on a UK invoice is a legal defect, not a formatting one, so absence omits the line rather than filling it.
+
+**Backfill preserved historical output rather than silently changing it.** Every existing invoice already rendered the Simo letterhead, so a blank operating tenant would have changed what its customers see. Two conservative rules: a database holding exactly one tenant has that tenant backfilled (no second tenant could wrongly inherit it, and the production tenant may legitimately be named "Default Workspace"); otherwise only tenants identifiable as Simo Marble & Construction by name or slug. Only the legal name and address already being printed were backfilled. Statutory numbers were left NULL by rule 3.
+
+## ADR-037: The platform is renamed to GeoCore; persisted keys migrate, infrastructure identifiers do not
+**Status:** IMPLEMENTED (Sprint 034, Phase 2)
+
+The platform is renamed from SIMO OS to GeoCore across user-visible surfaces: application chrome, page metadata, marketing copy, subscription plan names (`GeoCore Pro`, `GeoCore Business`), and living documentation. This separates the product brand from Simo Marble & Construction Ltd, which is one tenant of the platform (ADR-036), not the platform itself.
+
+**Renaming a persisted key is a data migration, not a find-and-replace.** Three `localStorage` keys already exist in real browsers. `simo-os-token` holds the JWT: renaming it naively would have logged out every signed-in user the moment the rebrand deployed — an outage indistinguishable, from the outside, from a broken auth system. All three are therefore read through `readMigratedValue()` (`apps/web/lib/storage-keys.ts`), which prefers the new key, falls back to the legacy one exactly once, and carries the value forward. `clearToken()` clears both, so a sign-out cannot leave a valid JWT under the old name for the next read to resurrect. The pre-hydration theme script in `app/layout.tsx` reads both keys too, or a returning dark-mode user would flash light on their first post-deploy load. Every accessor is wrapped in try/catch: `localStorage` itself throws in Safari private mode, and a throwing storage read during module init would take the app down rather than degrade to signed-out.
+
+**Three classes of identifier were deliberately NOT renamed**, because the rename would carry real risk and no user-visible benefit:
+
+| Identifier | Why it stays |
+|---|---|
+| `UPLOAD_DIR` = `/var/lib/simo-os/uploads` | The production persistent-volume mount. Renaming it orphans every uploaded client-portal document. A path is not branding. |
+| Logger name `simo_os` | Renaming silently breaks any log-based alerting or saved query keyed to it. Invisible to customers; a live operational hazard to change casually. |
+| Database name `simo_os`, table and column names | Renaming a database is a migration with downtime and rollback complexity, for zero customer-visible effect. |
+
+Recorded here so a future contributor finding `simo-os` in these three places knows it is a decision, not an oversight.
+
+**One safety guard was widened rather than moved.** The production configuration check rejects development defaults. The seed-admin default became `owner@geocore.local`, but `owner@simo-os.local` is still rejected in production: a deployment that carried the old value through the rename must not start passing a safety check merely because a constant changed.
+
+## ADR-038: The apex serves a separate marketing application, never the authenticated app
+**Status:** IMPLEMENTED (Sprint 034, Phase 2)
+
+`geocore.one` serves `apps/marketing`, a separate Next.js application. `app.geocore.one` serves `apps/web`. They are not the same deployment and are not routed by host within one app.
+
+**Why not point the apex at `apps/web`.** That app's root route is the authenticated dashboard; an anonymous visitor is redirected to `/login`. Pointing the apex there would resolve the strongest URL the brand owns to a login redirect: nothing for a crawler to index, and a first impression that is a gate. A 301 from the apex to the application was considered and rejected for the same reason, with the added cost of being hard to reverse once inbound links accumulate.
+
+**Why a separate app rather than host-based routing inside `apps/web`.** Independent deploys and independent blast radius: a marketing copy change cannot break the authenticated application, and the public site carries none of the app's client-side auth bundle. The marketing app is statically prerendered with no API dependency, so it stays up even if the API is down — which is exactly when someone is most likely to be looking at the public site.
+
+**Indexability is asymmetric and deliberate.** `apps/marketing` is indexable only when `APP_ENV=production` *and* its canonical origin is `https://geocore.one`, so staging deploys of the same image exclude themselves rather than competing with production. `apps/web` returns `Disallow: /` unconditionally — there is no environment in which indexing the application is correct, and two concrete harms if it happens: the login page outranking the marketing site for brand queries, and token-scoped portal/invite URLs (capability tokens, not login-protected pages) being crawled and archived.
+
+**A build-time trap, guarded by a test.** Next prerenders `robots.txt`, the robots meta tag and the canonical URL at build time, so indexability is baked into the image, not read at runtime. If `APP_ENV=production` were dropped from `apps/marketing/Dockerfile`, the production image would ship `noindex, nofollow` and `Disallow: /`: the site comes up, every page returns 200, nothing errors, and geocore.one never appears in search results. `apps/marketing/indexability.test.mjs` asserts that contract in CI precisely because the failure is otherwise invisible.

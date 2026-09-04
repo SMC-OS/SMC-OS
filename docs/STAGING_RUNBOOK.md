@@ -1,4 +1,4 @@
-# SIMO OS — Railway Staging Runbook
+# GeoCore — Railway Staging Runbook
 
 This runbook implements the approved Sprint 019 Railway staging design. It applies only to `simo-os/staging`; it does not authorize production deployment or custom domains.
 

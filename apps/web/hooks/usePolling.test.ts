@@ -1,7 +1,7 @@
 /**
  * Production incident (post-v1.0.1): the dashboard reported an expired
  * session ("Request to /dashboard failed with 401") as "Couldn't reach the
- * SIMO OS API" — the same generic message used for a real network/API
+ * GeoCore API" — the same generic message used for a real network/API
  * outage. A 401/403 is an auth problem, not an availability problem, and
  * the UI must be able to tell the two apart. usePolling is the single
  * shared data-fetching layer behind both the dashboard stats and the

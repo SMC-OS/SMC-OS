@@ -3,7 +3,8 @@
 Continuation of Sprint 033 (`v1.2.0`, merged `cbc17c2`, deployed and verified). Three workstreams; A is delivered, B and C are owner-gated by design and carry no code in this sprint.
 
 - **A — Tenant company identity** (delivered): remove the hardcoded company letterhead from all customer-facing document rendering and make business identity tenant-configurable.
-- **B — GeoCore brand assets** (owner-gated): platform brand mark integration, blocked pending the approved asset.
+- **Phase 2 — Production rebrand** (delivered): rename the platform SIMO OS → GeoCore across every user-visible surface, and build the public marketing site the apex needs.
+- **B — GeoCore brand assets** (owner-gated): brand-mark integration, blocked pending the approved asset files.
 - **C — geocore.one production DNS** (owner-gated): change sheet prepared for review; no registrar change made.
 
 ## 1. Discovery
@@ -124,6 +125,54 @@ Verified against scratch databases, both branches:
 
 Dry-run, `--confirm`, and idempotent re-run all exercised against a live database.
 
+## 3A. Phase 2 — production rebrand SIMO OS → GeoCore
+
+Full rationale in ADR-037 and ADR-038.
+
+### 3A.1 What was renamed
+
+Application chrome (sidebar, page title/metadata), dashboard/login/signup/pricing copy, the API-unreachable status message, and subscription plan names (`GeoCore Pro`, `GeoCore Business`, in both `app/billing/router.py` and the Settings display map). Living documentation and the README — which was still unmodified Turborepo starter boilerplate — were rewritten.
+
+Historical sprint records in `docs/SPRINTS/` were **not** rewritten. They are an execution record of what happened, and Sprint 018 genuinely did ship a product called SIMO OS. Two other pre-rebrand strings are also preserved deliberately: the v1.0.2 incident entry in `docs/PRODUCTION_RUNBOOK.md` quotes the literal error message users saw at the time, and `docs/STAGING_RUNBOOK.md` names a real Google Drive folder that still has that name.
+
+### 3A.2 The part that could have caused an outage
+
+Three `localStorage` keys already exist in real browsers, and one of them holds the JWT.
+
+A naive rename of `simo-os-token` would have signed out every logged-in user the instant the rebrand deployed. From the outside that is indistinguishable from a broken authentication system, and it would have arrived at exactly the moment the brand was being introduced.
+
+All three keys are therefore read through `readMigratedValue()` (`apps/web/lib/storage-keys.ts`): prefer the new key, fall back to the legacy one exactly once, carry the value forward, drop the old key. Three details that are easy to miss and each have their own test:
+
+- `clearToken()` clears **both** keys. Otherwise signing out would leave a valid JWT under the old name for the very next `getToken()` to migrate straight back in — a sign-out that doesn't.
+- The pre-hydration theme script in `app/layout.tsx` reads both keys. It runs before React, so without the fallback a returning dark-mode user would flash light on their first post-deploy load.
+- Every accessor is wrapped in `try/catch`. `localStorage` itself throws in Safari private mode and under "block all cookies"; a throwing read during module init would take the whole app down rather than degrade to a signed-out state.
+
+### 3A.3 What was deliberately not renamed
+
+| Identifier | Why |
+|---|---|
+| `/var/lib/simo-os/uploads` | The production persistent-volume mount. Renaming orphans every uploaded client-portal document. |
+| Logger name `simo_os` | Silently breaks any log-based alerting keyed to it. Invisible to customers, live hazard to change. |
+| Database name `simo_os`, tables, columns | A downtime migration for zero customer-visible effect. |
+
+Recorded in ADR-037 and in the README so a future contributor finding `simo-os` in these places knows it is a decision.
+
+One safety guard was **widened** rather than moved: the production config check now rejects both the new development seed default (`owner@geocore.local`) and its predecessor (`owner@simo-os.local`). A deployment carrying the old value through the rename must not start passing a safety check merely because a constant changed.
+
+## 3B. Phase 2 — the public site (`apps/marketing`)
+
+`geocore.one` now has something real to serve. `apps/marketing` is a separate Next.js application, statically prerendered, with canonical tag, Open Graph metadata, JSON-LD (`Organization` / `WebSite` / `SoftwareApplication`), `robots.txt`, `sitemap.xml`, the security headers `apps/web` already sends, and the approved GeoCore palette.
+
+It is an interim holding page in content only — it states what GeoCore is, who it is for, and where to sign in — but it is a fully indexable page from day one, not a "coming soon" splash. The apex is the strongest SEO asset the brand will ever own; there is no reason for it to sit idle while the full site is written.
+
+**No logo mark is used.** The approved GeoCore assets have not been supplied, and neither inventing a mark nor reusing the application's placeholder `S` would be right on the brand's own front door. A text wordmark carries it until the real assets arrive.
+
+Indexability is asymmetric and deliberate: `apps/marketing` invites crawling only when `APP_ENV=production` **and** its canonical origin is `https://geocore.one`, so a staging deploy of the same image excludes itself. `apps/web` returns `Disallow: /` unconditionally — the login page must not outrank the marketing site for brand queries, and token-scoped portal/invite URLs are capability tokens rather than login-protected pages, so they must not be crawled and archived.
+
+**One trap, caught by a test.** Next prerenders `robots.txt`, the robots meta tag and the canonical URL at *build* time. If `APP_ENV=production` were ever dropped from `apps/marketing/Dockerfile`, the production image would ship `noindex, nofollow` and `Disallow: /`: the site comes up, every page returns 200, nothing errors, and geocore.one never appears in search results. This was found while smoke-testing the built container — the first local build emitted exactly that — and is now asserted in CI by `apps/marketing/indexability.test.mjs`.
+
+A pre-existing CI gap was also closed: `apps/web` had no `check-types` script, so the workspace-wide `pnpm check-types` in CI silently skipped the main application. It now has one.
+
 ## 4. Workstream B — GeoCore brand assets (owner-gated)
 
 The approved brand board defines the mark, wordmark, light/dark variants, and palette (`#0F2E23`, `#355E4B`, `#A7C0A0`, `#DCC6A0`, `#F8F6EE`). **No logo change was made.** The current hardcoded `S` mark (`apps/web/components/layout/Sidebar.tsx`) stays until the approved asset files are supplied, per the owner boundary. Integration points, when the asset arrives:
@@ -136,7 +185,7 @@ The approved brand board defines the mark, wordmark, light/dark variants, and pa
 
 The GeoCore name is preserved exactly and the logo is not to be redesigned.
 
-Note, tracked but not actioned: the platform is still named **SIMO OS** throughout the application (`Sidebar.tsx`, `app/layout.tsx`, `app/login/page.tsx`, plan names in `app/settings/page.tsx`). Renaming the platform to GeoCore is a distinct decision from integrating the mark and was not assumed — it touches user-visible copy, plan names, and the `simo-os-theme` storage key, and belongs in its own workstream with the owner's explicit go-ahead.
+The platform rename itself is done (§3A) — it was a distinct decision from integrating the mark, and the owner confirmed it separately. What remains gated here is only the artwork.
 
 ## 5. Workstream C — geocore.one DNS (owner-gated)
 

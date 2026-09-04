@@ -18,8 +18,9 @@ as good as the zone it was checked against.
 | Claim | Verified how | Confidence |
 |---|---|---|
 | The application sends **no email of any kind** | Read the whole backend: no SMTP client, no SendGrid/Resend/Postmark/SES integration, no `send_email` anywhere. `app/notifications/` is in-app only. | **Certain** — this is why nothing below touches a mail record |
-| The repository contains **no public marketing site** | `apps/web/app/page.tsx` is the authenticated dashboard; it redirects to `/login`. There is no `robots.ts`, no `sitemap.ts`. | **Certain** — see §5, this changes the apex recommendation |
-| Two hosted services are needed (web + API) | `deploy/railway/web.railway.toml`, `deploy/railway/api.railway.toml` | **Certain** |
+| A public marketing site now exists for the apex | `apps/marketing` — a statically prerendered, indexable GeoCore site. Built and served locally; `robots.txt`, `sitemap.xml`, canonical tag and JSON-LD all verified in the rendered output. | **Certain** — resolves the apex question raised in the previous revision |
+| The application host must not be indexed | `apps/web/app/robots.ts` returns `Disallow: /` unconditionally; asserted by `apps/web/app/robots.test.mjs` | **Certain** |
+| **Three** hosted services are needed (marketing + web + API) | `deploy/railway/marketing.railway.toml`, `web.railway.toml`, `api.railway.toml` | **Certain** |
 | The **current live contents** of the geocore.one zone | **Not verified.** Outbound DNS resolvers are blocked from this environment, so the live zone could not be read. | **Unverified — you must check** |
 
 Every "conflict" flagged below is therefore a *class* of conflict that is
@@ -39,14 +40,24 @@ from any other domain's setup.** I have deliberately not invented a value.
 |---|---|---|---|---|---|---|---|
 | 1 | CNAME | `app` | *Railway target for the **web** service* (`<id>.up.railway.app`) | 600 | **ADD** | `app.geocore.one` → GeoCore application | None expected. Conflicts only if an `app` record already exists. |
 | 2 | CNAME | `api` | *Railway target for the **api** service* (`<id>.up.railway.app`) | 600 | **ADD** | `api.geocore.one` → GeoCore API | None expected. Conflicts only if an `api` record already exists. |
-| 3 | CNAME | `www` | `app.geocore.one` *(or the marketing host, see §5)* | 600 | **ADD / MODIFY** | Canonical `www` handling | **Likely conflict** — GoDaddy provisions a default `www` CNAME (usually to a parked/forwarding target) on most domains. See §2. |
+| 3 | A | `@` | *Railway apex target for the **marketing** service* | 600 | **ADD / MODIFY** | `geocore.one` → GeoCore public website | **Likely conflict** — a GoDaddy parking A record. See §2. |
+| 4 | — | `www` | Redirect `www.geocore.one` → `https://geocore.one` (301) | — | **ADD / MODIFY** | Canonical host consolidation | **Likely conflict** — GoDaddy provisions a default `www` CNAME. See §2 and the note below. |
+
+### On record 4 (`www` → apex redirect)
+
+The owner-approved structure is `www.geocore.one` **redirecting to the apex**, not resolving alongside it. Two ways to implement, in order of preference:
+
+1. **Add `www.geocore.one` as a second custom domain on the marketing service** and let it 301 to the apex. Preferred: one TLS certificate flow, one place to reason about, and the redirect is a real HTTP 301 that consolidates link equity onto the canonical host.
+2. **GoDaddy Forwarding** (`www` → `https://geocore.one`, permanent/301, forward with masking **off**). Acceptable fallback. Masking must be off — a masked forward serves the apex inside a frame, which is invisible to search engines and would waste the redirect entirely.
+
+Either way the marketing app already emits `<link rel="canonical" href="https://geocore.one">`, so the apex is unambiguously the canonical host even before the redirect lands.
 
 Ordering note: add the domain in Railway **first**, then create the DNS
 record. Railway issues the TLS certificate by validating the DNS record, so a
 record created before the service knows about the hostname simply resolves to
 a 404 until you complete the Railway side.
 
-### The apex (`geocore.one`) is deliberately not in the table above
+### The apex (`geocore.one`) — decided
 
 Two independent reasons, both of which need your decision before an apex
 record makes sense:
@@ -57,7 +68,7 @@ record makes sense:
    *Forwarding*, which is a redirect, not hosting). If Railway gives you an
    apex A-record IP in its custom-domain dialog, use that — an IP you find
    anywhere else will break silently when it changes.
-2. **Product (more important).** See §5 — there is nothing to put there yet.
+2. **Product — now resolved.** §5 previously flagged that this repository had no public site to serve at the apex. It does now: `apps/marketing` is a real, indexable GeoCore site with its own Dockerfile and Railway configuration. The apex serves that, never the application.
 
 ---
 
@@ -65,12 +76,12 @@ record makes sense:
 
 | # | Type | Host / Name | Current value (typical) | TTL | Action | Purpose | Notes |
 |---|---|---|---|---|---|---|---|
-| 4 | A | `@` | GoDaddy parking IP (commonly `Parked` / an `AfternicDNS` address) | 600 | **DELETE or MODIFY** | Frees the apex | Only once §5 is decided. A parked apex must not be left pointing at a parking page once the brand is live. |
-| 5 | CNAME | `www` | GoDaddy default (parked / `_domainconnect` style target) | 600 | **MODIFY** | Replaced by record #3 | Standard GoDaddy default; check yours. |
-| 6 | CAA | `@` | *(only if present)* | — | **REVIEW ONLY** | TLS issuance | If a CAA record exists and does not permit `letsencrypt.org`, Railway's certificate issuance will fail with no obvious error. If no CAA record exists, nothing to do — that is the common case. |
+| 3 | A | `@` | GoDaddy parking IP (commonly `Parked` / an `AfternicDNS` address) | 600 | **MODIFY** | Apex now serves the GeoCore marketing site | A parked apex must not be left in place once the brand is live. |
+| 4 | CNAME | `www` | GoDaddy default (parked / `_domainconnect` style target) | 600 | **MODIFY or DELETE** | Replaced by the 301 redirect to the apex | Standard GoDaddy default; check yours. If you implement the redirect as a Railway custom domain, this record becomes a CNAME to the marketing service; if you use GoDaddy Forwarding, GoDaddy manages the record itself. |
+| 5 | CAA | `@` | *(only if present)* | — | **REVIEW ONLY** | TLS issuance | If a CAA record exists and does not permit `letsencrypt.org`, Railway's certificate issuance for all three hosts fails with no obvious error. If no CAA record exists, nothing to do — that is the common case. |
 
-Records #4 and #5 are the only deletions proposed anywhere in this document,
-and neither is mail-related.
+Records #3 and #4 are the only existing records this document proposes
+touching at all, and neither is mail-related.
 
 ---
 
@@ -106,57 +117,39 @@ change is out of scope here and would come back to you as its own proposal.
 
 | # | Type | Host | Target / Value | TTL | Action | Purpose | Conflict |
 |---|---|---|---|---|---|---|---|
-| 1 | CNAME | `app` | Railway web-service target | 600 | ADD | GeoCore application | Check `app` is free |
-| 2 | CNAME | `api` | Railway api-service target | 600 | ADD | GeoCore API | Check `api` is free |
-| 3 | CNAME | `www` | `app.geocore.one` or marketing host | 600 | ADD/MODIFY | Canonical www | Likely GoDaddy default present |
-| 4 | A | `@` | *(pending §5 decision)* | 600 | MODIFY/DELETE | Frees apex from parking | Parking A record likely |
-| 5 | CNAME | `www` | GoDaddy default | — | DELETE | Superseded by #3 | Same record as #3 |
-| 6 | CAA | `@` | *(review only)* | — | NONE | TLS issuance check | Only if a CAA record exists |
-| — | MX / SPF / DKIM / DMARC / autodiscover / MS= | various | unchanged | — | **NONE** | Microsoft 365 mail | Explicitly untouched |
+| 1 | CNAME | `app` | Railway **web** target | 600 | ADD | GeoCore application | Check `app` is free |
+| 2 | CNAME | `api` | Railway **api** target | 600 | ADD | GeoCore API | Check `api` is free |
+| 3 | A | `@` | Railway apex target for **marketing** | 600 | ADD/MODIFY | GeoCore public website | Parking A record likely |
+| 4 | — | `www` | 301 → `https://geocore.one` | — | ADD/MODIFY | Canonical consolidation | GoDaddy default `www` CNAME likely |
+| 5 | CAA | `@` | *(review only)* | — | NONE | TLS issuance check | Only if a CAA record exists |
+| — | MX / SPF / DKIM / DMARC / autodiscover / `MS=` | various | unchanged | — | **NONE** | Microsoft 365 mail | Explicitly untouched |
 
-**Net: 2 unambiguous additions, 1 www decision, 1 apex decision, 0 mail changes.**
+**Net: 3 additions, 1 redirect, 0 mail changes.**
 
----
+Apply in this order, so nothing is ever pointed at a service that is not ready:
 
-## 5. The apex decision — a technical reason to deviate from the preferred structure
+1. Deploy the three Railway services and set every variable in §7.
+2. Add each custom domain in Railway **first** — it issues the TLS certificate by validating DNS, so the record has to exist for a hostname the service already knows about.
+3. Records 1 and 2 (`app`, `api`). Verify both serve valid TLS.
+4. Record 3 (apex). Verify `https://geocore.one` serves the marketing site.
+5. Record 4 (`www` redirect). Verify it 301s to the apex.
+6. Re-run the §6 mail block and diff against the saved copy.
 
-Your preferred structure is:
+## 5. Domain structure (owner-approved)
 
-- `geocore.one` → public GeoCore website / landing page
-- `app.geocore.one` → GeoCore application
-- `api.geocore.one` → GeoCore API
-
-**Records 1 and 2 match that exactly and should be applied as written.** The
-apex is the part that needs a decision, because **this repository contains no
-public website to serve from it.** `apps/web/app/page.tsx` is the authenticated
-dashboard: an anonymous visitor is redirected to `/login`.
-
-So pointing `geocore.one` at the web service today would make the root domain
-resolve to a login redirect. That is the single worst outcome available for the
-domain: the root is the strongest SEO asset the brand will ever have, and a
-login wall gives a crawler nothing to index and nothing to rank — while
-permanently associating the domain's first impression with a gate.
-
-Three options, in order of preference:
-
-| Option | What the apex serves | Effort | Recommendation |
+| Host | Serves | Railway service | Indexable |
 |---|---|---|---|
-| **A. Build a real marketing site** at the apex — positioning, product pages, pricing, case studies, blog | A genuine SEO surface | Highest | **Recommended.** This is the version of the structure you actually want, and the domain's ranking authority compounds from the day it exists rather than from whenever it is retrofitted. |
-| **B. Static holding page** at the apex now, replaced by A later | A single indexable branded page | Low | Sound interim step. Keeps the apex out of a parking page and off a login redirect, and does not need to be undone. |
-| **C. Apex → 301 redirect to `app.geocore.one`** | Nothing | Lowest | **Not recommended.** Concedes the root domain's authority to a page that will never rank, and is the hardest option to reverse cleanly once links accumulate. |
+| `geocore.one` | Public GeoCore website | `marketing` (`apps/marketing`) | **Yes** — canonical host |
+| `www.geocore.one` | 301 → apex | — | n/a |
+| `app.geocore.one` | Authenticated GeoCore platform | `web` (`apps/web`) | **No** — `Disallow: /` |
+| `api.geocore.one` | Production API | `api` (FastAPI) | **No** — JSON API, no HTML surface |
 
-Until A or B exists, **hold records 4 and 5** and apply only 1 and 2. The
-application and API go live on their own subdomains with no dependency on the
-apex — nothing about the cutover is blocked by this decision.
+The apex concern raised in the previous revision of this document is resolved. `apps/marketing` now exists: a real, statically prerendered, fully indexable GeoCore site with canonical tag, Open Graph metadata, JSON-LD (`Organization` / `WebSite` / `SoftwareApplication`), `robots.txt` and `sitemap.xml`. The apex serves that. **The apex is never redirected to the login page.**
 
-Two related items, both application work rather than DNS, that should land
-alongside the cutover: `app.geocore.one` and `api.geocore.one` need
-`X-Robots-Tag: noindex` (there is no `robots.ts` in `apps/web` today), so the
-application's own URLs never compete with the marketing site in search
-results; and whichever host serves the apex needs a canonical tag and a
-sitemap.
+`app.geocore.one` returns `Disallow: /` unconditionally (`apps/web/app/robots.ts`). That is not tidiness — it stops the login page outranking the marketing site for brand queries, and stops token-scoped portal and invite URLs, which are capability tokens rather than login-protected pages, being crawled and archived.
 
----
+**One build-time trap, guarded by a test.** The marketing site's indexability is baked into the image at build time, not read at runtime. If `APP_ENV=production` were ever dropped from `apps/marketing/Dockerfile`, the production image would ship `noindex, nofollow` and `Disallow: /` — the site would come up, every page would return 200, nothing would error, and geocore.one would simply never appear in search results. `apps/marketing/indexability.test.mjs` asserts that contract in CI.
+
 
 ## 6. Pre-flight — run these before applying anything
 
@@ -194,15 +187,36 @@ DNS alone does not complete this. These are enforced at startup by
 `app/core/config.py` and `apps/web/lib/runtime-config.ts`, and a mismatch is a
 hard failure, not a degraded mode:
 
-| Service | Variable | Value |
-|---|---|---|
-| API | `CORS_ALLOWED_ORIGINS` | `https://app.geocore.one` (plus the apex host once §5 is decided). Must be HTTPS, scheme+host only, no `*`. |
-| API | `FRONTEND_BASE_URL` | `https://app.geocore.one` — where Stripe Checkout returns to. |
-| Web | `NEXT_PUBLIC_API_URL` | `https://api.geocore.one` — must be an absolute HTTPS origin when `APP_ENV=production`. |
+| Service | Variable | Value | Enforced by |
+|---|---|---|---|
+| **api** | `APP_ENV` | `production` | `app/core/config.py` |
+| **api** | `CORS_ALLOWED_ORIGINS` | `https://app.geocore.one` — HTTPS, scheme+host only, no `*`, no trailing path. The marketing site makes no API calls, so the apex is deliberately **not** listed. | `app/core/config.py` |
+| **api** | `FRONTEND_BASE_URL` | `https://app.geocore.one` — where Stripe Checkout returns to | `app/billing/` |
+| **api** | `SEED_DATA_ENABLED` | `false` (production seeding is forbidden) | `app/core/config.py` |
+| **api** | `SEED_ADMIN_EMAIL` | A real address. The development default `owner@geocore.local` **and** its pre-rebrand predecessor `owner@simo-os.local` are both rejected in production. | `app/core/config.py` |
+| **web** | `APP_ENV` | `production` | `apps/web/lib/runtime-config.ts` |
+| **web** | `NEXT_PUBLIC_API_URL` | `https://api.geocore.one` — must be an absolute HTTPS origin | `apps/web/lib/runtime-config.ts` |
+| **marketing** | `APP_ENV` (build arg) | `production` — **already set in `apps/marketing/Dockerfile`.** Without it the image ships `noindex`. | `apps/marketing/indexability.test.mjs` |
+| **marketing** | `NEXT_PUBLIC_SITE_URL` (build arg) | `https://geocore.one` — must match exactly or the site self-excludes from the index | `apps/marketing/lib/site.ts` |
+| **marketing** | `NEXT_PUBLIC_APP_URL` (build arg) | `https://app.geocore.one` — where the site's sign-in links point | `apps/marketing/lib/site.ts` |
 
 Set these **before** repointing DNS. The web app throws on boot if
 `NEXT_PUBLIC_API_URL` is missing under `APP_ENV=production`, and the API
-rejects a non-HTTPS or wildcard CORS origin outright.
+rejects a non-HTTPS or wildcard CORS origin outright — so a misconfigured
+service fails its health check and Railway keeps the previous revision
+serving, rather than going live broken.
+
+The three `marketing` variables are **build arguments, not runtime
+variables.** Changing them requires a rebuild, not a restart. On Railway,
+set them as service variables and trigger a redeploy.
+
+### One item that needs you, not a deploy
+
+`apps/web/app/pricing/page.tsx` now links Enterprise enquiries to
+`sales@geocore.one`. Confirm that mailbox (or an alias) exists in Microsoft
+365 before the cutover — the address is on a live pricing page, and mail to
+a non-existent mailbox bounces rather than reaching anyone. No DNS change is
+involved either way; this is a mailbox, not a record.
 
 ---
 
@@ -210,9 +224,9 @@ rejects a non-HTTPS or wildcard CORS origin outright.
 
 | Change | Rollback | Recovery time |
 |---|---|---|
-| Records 1, 2 (ADD) | Delete the record | One TTL (600s) |
-| Record 3 (`www`) | Restore the value captured in §6 | One TTL |
-| Records 4, 5 (apex) | Restore the values captured in §6 | One TTL |
+| Records 1, 2 (`app`, `api`) | Delete the record | One TTL (600s) |
+| Record 3 (apex A) | Restore the value captured in §6 | One TTL |
+| Record 4 (`www` redirect) | Restore the value captured in §6 | One TTL |
 | Mail records | **N/A — not changed** | — |
 
 Keep TTL at 600 through the cutover; raise it to 3600 once the records have
@@ -226,10 +240,15 @@ Applied by the domain owner only. Nothing in this document is executed
 automatically, and no credential for the registrar is held by, or should be
 given to, this repository or any assistant working in it.
 
-- [ ] §6 pre-flight run; live zone captured; mail block saved
-- [ ] §5 apex decision made (A / B / C)
-- [ ] §7 environment variables set on both Railway services
-- [ ] Custom domains added in Railway; exact targets copied into records 1–2
-- [ ] Records applied
-- [ ] §6 mail block re-run and diffed against the saved copy — no change
-- [ ] `https://app.geocore.one` and `https://api.geocore.one` serve valid TLS
+- [ ] §6 pre-flight run; live zone captured; **mail block output saved to a file**
+- [ ] `sales@geocore.one` mailbox or alias confirmed to exist (§7)
+- [ ] §7 variables set on all three Railway services; marketing redeployed so its build args take effect
+- [ ] Custom domains added in Railway first; exact targets copied verbatim into records 1–3
+- [ ] Records applied in the §4 order
+- [ ] `https://geocore.one` serves the marketing site (not a login redirect)
+- [ ] `https://geocore.one/robots.txt` says `Allow: /` and names the sitemap
+- [ ] `https://app.geocore.one/robots.txt` says `Disallow: /`
+- [ ] `https://www.geocore.one` 301s to the apex (not a masked frame)
+- [ ] `app.` and `api.` serve valid TLS
+- [ ] §6 mail block re-run and **diffed against the saved copy — no change**
+- [ ] Microsoft 365 mail send/receive spot-checked

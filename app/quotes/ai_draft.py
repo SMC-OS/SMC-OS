@@ -18,7 +18,7 @@ itself. Every `text_span` is re-parsed by app/quotes/dimension_parser.py
 — deterministic regex/unit-conversion code — and every material mention
 is resolved by app/materials/search.py's MaterialSearchService (Sprint
 032, Workstream B), the same canonical retrieval path used everywhere
-else in SIMO OS. The AI never fabricates a material or a dimension for
+else in GeoCore. The AI never fabricates a material or a dimension for
 any item: a missing, ambiguous, or unrecognised value always comes back
 as an explicit per-item warning (or a "multiple"/"not_found" match
 status), never a guess.

@@ -1,4 +1,4 @@
-"""Core SQLAlchemy models for SIMO OS.
+"""Core SQLAlchemy models for GeoCore.
 
 Sprint 002 — see docs/DATABASE_SCHEMA.md §2 for the source pydantic models
 and informal shapes these are drawn from, and docs/DECISIONS.md ADR-013 for
@@ -27,7 +27,7 @@ from app.database.database import Base
 
 
 class Tenant(Base):
-    """A company/workspace using SIMO OS. Sprint 008 — schema only, no
+    """A company/workspace using GeoCore. Sprint 008 — schema only, no
     enforcement: the 7 tables below gain a real FK to this table but every
     existing row (and every query in every existing module) is untouched.
     See docs/DECISIONS.md ADR-025 for the full reasoning and what's
@@ -512,7 +512,7 @@ class Appointment(Base):
 
 
 class Subscription(Base):
-    """A Tenant's SIMO OS commercial subscription (Sprint 032, Workstream
+    """A Tenant's GeoCore commercial subscription (Sprint 032, Workstream
     A). One row per tenant (unique tenant_id) — v1 billing is a single
     plan per business account, not per-user. `plan`/`billing_period`/
     `status` are plain strings (same no-native-enum convention as
