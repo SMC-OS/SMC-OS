@@ -41,6 +41,10 @@ const getSubscriptionMock = vi.fn();
 const createPortalSessionMock = vi.fn();
 const cancelSubscriptionMock = vi.fn();
 const resumeSubscriptionMock = vi.fn();
+// Sprint 034 — the Company identity card mounts inside the Owner branch of
+// this page, so its load-on-mount call has to be mocked here too.
+const getCompanyProfileMock = vi.fn();
+const updateCompanyProfileMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -56,6 +60,8 @@ vi.mock("@/lib/api", async () => {
       createPortalSession: (...args: unknown[]) => createPortalSessionMock(...args),
       cancelSubscriptionAtPeriodEnd: (...args: unknown[]) => cancelSubscriptionMock(...args),
       resumeSubscription: (...args: unknown[]) => resumeSubscriptionMock(...args),
+      getCompanyProfile: (...args: unknown[]) => getCompanyProfileMock(...args),
+      updateCompanyProfile: (...args: unknown[]) => updateCompanyProfileMock(...args),
     },
   };
 });
@@ -73,6 +79,31 @@ function teamMember(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function companyProfile(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "tenant-1",
+    name: "Riverside Stoneworks",
+    slug: "riverside-stoneworks",
+    status: "active",
+    created_at: new Date().toISOString(),
+    legal_name: null,
+    trading_name: null,
+    address_line1: null,
+    address_line2: null,
+    city: null,
+    postcode: null,
+    country: null,
+    contact_email: null,
+    contact_phone: null,
+    website: null,
+    company_number: null,
+    vat_number: null,
+    logo_url: null,
+    document_footer: null,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   currentRole = "Owner";
   getInvitationsMock.mockReset();
@@ -84,9 +115,12 @@ beforeEach(() => {
   createPortalSessionMock.mockReset();
   cancelSubscriptionMock.mockReset();
   resumeSubscriptionMock.mockReset();
+  getCompanyProfileMock.mockReset();
+  updateCompanyProfileMock.mockReset();
   getInvitationsMock.mockResolvedValue([]);
   getUsersMock.mockResolvedValue([]);
   getSubscriptionMock.mockResolvedValue(null);
+  getCompanyProfileMock.mockResolvedValue(companyProfile());
 });
 
 afterEach(() => {

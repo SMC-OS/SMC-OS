@@ -1,4 +1,4 @@
-# SIMO OS — Changelog
+# GeoCore — Changelog
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived from `git log` on the `SMC-OS` repository. Dates are commit dates, not necessarily when work started.
 

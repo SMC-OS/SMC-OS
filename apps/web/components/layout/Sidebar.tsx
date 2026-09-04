@@ -23,7 +23,7 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
           {!collapsed && (
             <div className="overflow-hidden">
               <p className="truncate text-sm font-semibold text-foreground">
-                SIMO OS
+                GeoCore
               </p>
               <p className="truncate text-xs text-muted">AI Operating System</p>
             </div>

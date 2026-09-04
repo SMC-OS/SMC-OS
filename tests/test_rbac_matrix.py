@@ -95,6 +95,11 @@ EXPECTED_ROUTE_AUTH: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/tenants", AUTHENTICATED),
     ("GET", f"/api/v1/tenants/{_ID}", AUTHENTICATED),
     ("POST", "/api/v1/tenants", AUTHENTICATED),
+    # Sprint 034 — company identity. Read is any authenticated member (the
+    # letterhead is not a secret from staff); write is Owner-only because
+    # these are the business's statutory details on customer-facing invoices.
+    ("GET", "/api/v1/tenants/me/profile", AUTHENTICATED),
+    ("PATCH", "/api/v1/tenants/me/profile", OWNER_ONLY),
     # app/projects/router.py
     ("GET", "/api/v1/projects", AUTHENTICATED),
     ("GET", f"/api/v1/projects/{_ID}", AUTHENTICATED),

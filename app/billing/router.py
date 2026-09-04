@@ -39,8 +39,8 @@ from app.database.models import User
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 _PLAN_DISPLAY_NAMES = {
-    PLAN_PRO: "SIMO OS Pro",
-    PLAN_BUSINESS: "SIMO OS Business",
+    PLAN_PRO: "GeoCore Pro",
+    PLAN_BUSINESS: "GeoCore Business",
     PLAN_ENTERPRISE: "Enterprise",
 }
 

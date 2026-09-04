@@ -39,6 +39,8 @@ from app.portal.service import (
     portal_service,
 )
 from app.quotes.pdf import PDFGenerator, build_line_items
+from app.tenants import identity as tenant_identity
+from app.tenants.service import tenant_service
 
 router = APIRouter(prefix="/portal-links", tags=["portal"])
 
@@ -118,6 +120,11 @@ def download_portal_invoice(token: str, quote_id: uuid.UUID, db: Session = Depen
         {
             "id": quote.id,
             "customer": customer_name,
+            # Sprint 034 — the customer downloading this over a portal link
+            # sees the identity of the tenant that issued the quote, keyed
+            # off the quote's own tenant_id rather than any caller context
+            # (there is no authenticated user on a portal route).
+            "company": tenant_identity.resolve(tenant_service.get(db, quote.tenant_id)),
             "line_items": build_line_items(quote),
             "price_before_vat": quote.price_before_vat,
             "vat": quote.vat,

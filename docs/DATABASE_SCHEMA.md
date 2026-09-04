@@ -1,4 +1,4 @@
-# SIMO OS — Database Schema
+# GeoCore — Database Schema
 
 **Status: 8 tables as of Sprint 008/009 (the original 7 plus `tenants`); tenant-isolation-enforced as of Sprint 012.** PostgreSQL 16, SQLAlchemy 2.0 declarative models (`app/database/models.py`), Alembic migrations (`alembic/`), and a real engine/session layer (`app/database/database.py`) all exist. `users` (Sprint 003, tenant-aware since Sprint 009), `customers` (Sprint 004), `projects` (Sprint 006), `quotes` (Sprint 007), and `tenants` (Sprint 008) have real HTTP API surfaces; `materials` (Sprint 005) is real and seeded but **internal-only** — read by `/api/v1/quote`, `/api/v1/estimate`, `/api/v1/process`, not exposed as its own route (a confirmed scope decision, not an oversight).
 

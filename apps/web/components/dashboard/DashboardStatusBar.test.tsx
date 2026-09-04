@@ -1,6 +1,6 @@
 /**
  * Production incident (post-v1.0.1): a 401 (expired/invalid session) was
- * shown to the user as "Couldn't reach the SIMO OS API" — indistinguishable
+ * shown to the user as "Couldn't reach the GeoCore API" — indistinguishable
  * from a real network/API-availability failure. A 401/403 is an
  * authentication problem; only a true network failure or a 5xx is an
  * availability problem, and the two must read differently.
@@ -29,7 +29,7 @@ describe("DashboardStatusBar — distinguishes auth errors from API-availability
       />
     );
 
-    expect(screen.queryByText(/Couldn.t reach the SIMO OS API/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couldn.t reach the GeoCore API/i)).not.toBeInTheDocument();
     expect(screen.getByText(/session/i)).toBeInTheDocument();
   });
 
@@ -42,7 +42,7 @@ describe("DashboardStatusBar — distinguishes auth errors from API-availability
       />
     );
 
-    expect(screen.getByText(/Couldn.t reach the SIMO OS API/i)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn.t reach the GeoCore API/i)).toBeInTheDocument();
   });
 
   it("still reports a 5xx as an availability failure, not a session problem", () => {
@@ -54,6 +54,6 @@ describe("DashboardStatusBar — distinguishes auth errors from API-availability
       />
     );
 
-    expect(screen.getByText(/Couldn.t reach the SIMO OS API/i)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn.t reach the GeoCore API/i)).toBeInTheDocument();
   });
 });

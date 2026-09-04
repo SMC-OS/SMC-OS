@@ -1,159 +1,67 @@
-# Turborepo starter
+# GeoCore
 
-This Turborepo starter is maintained by the Turborepo core team.
+The AI operating system for stone and construction businesses — quoting, projects, scheduling and client communication in one multi-tenant workspace.
 
-## Using this example
+GeoCore is the **platform**. Each business that uses it is a **tenant**, with its own data, team and company identity on every customer-facing document. Simo Marble & Construction Ltd is one such tenant, not the platform itself (see `docs/DECISIONS.md` ADR-036).
 
-Run the following command:
+## Repository layout
 
-```sh
-npx create-turbo@latest
-```
+| Path | What it is | Deployed as |
+|---|---|---|
+| `app/` | FastAPI backend — quotes, projects, CRM, portal, billing, auth | `api.geocore.one` |
+| `apps/web/` | Next.js application — the authenticated product | `app.geocore.one` |
+| `apps/marketing/` | Next.js public site | `geocore.one` |
+| `packages/` | Shared ESLint / TypeScript config and UI stubs | — |
+| `alembic/` | Database migrations | — |
+| `docs/` | Architecture, decisions, runbooks, sprint records | — |
 
-## What's inside?
+The public site is a separate application on purpose: the apex must be a fast, fully indexable marketing surface, and `apps/web`'s root route is the authenticated dashboard (ADR-038).
 
-This Turborepo includes the following packages/apps:
+## Getting started
 
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+Requires Python 3.12, Node 22, pnpm 9, and PostgreSQL 16.
 
 ```sh
-cd my-turborepo
-turbo build
+# Backend
+cp .env.example .env
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload
+
+# Frontend (from the repository root)
+pnpm install
+pnpm dev
 ```
 
-Without global `turbo`, use your package manager:
+`docker-compose.yml` provides a local PostgreSQL matching `.env.example`.
+
+## Tests
 
 ```sh
-cd my-turborepo
-npx turbo build
-pnpm dlx turbo build
-pnpm exec turbo build
+pytest                              # backend
+pnpm --filter web test              # application component tests
+pnpm --filter web test:robots       # application stays out of the search index
+pnpm --filter marketing test:indexability   # public site ships indexable
+pnpm lint && pnpm check-types && pnpm build
+pnpm --filter web test:e2e          # Playwright, needs a running API
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+CI runs all of the above on every push and pull request (`.github/workflows/ci.yml`).
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Documentation
 
-```sh
-turbo build --filter=docs
-```
+| Document | Purpose |
+|---|---|
+| `docs/SYSTEM_ARCHITECTURE.md` | How the halves fit together |
+| `docs/DECISIONS.md` | Architecture decision records — **read before changing anything structural** |
+| `docs/API_SPEC.md` | Route contracts |
+| `docs/DATABASE_SCHEMA.md` | Schema and tenancy model |
+| `docs/ROADMAP.md` | Canonical future sprint sequence |
+| `docs/SPRINTS/` | Authoritative historical execution record |
+| `docs/PRODUCTION_RUNBOOK.md` | Release, rollback and operations |
+| `docs/STAGING_RUNBOOK.md` | Railway staging |
+| `docs/DNS_GEOCORE_ONE.md` | Production domain change sheet |
 
-Without global `turbo`:
+## A note on `simo-os` identifiers
 
-```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+Three internal identifiers deliberately keep their pre-rebrand names: the production upload mount `/var/lib/simo-os/uploads`, the logger name `simo_os`, and the database name. Renaming them would orphan uploaded documents, break log-based alerting, and require a downtime migration respectively — all for zero customer-visible benefit. This is a recorded decision (ADR-037), not an oversight.

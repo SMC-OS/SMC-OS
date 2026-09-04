@@ -1,4 +1,4 @@
-# SIMO OS — Production Release and Operations Runbook
+# GeoCore — Production Release and Operations Runbook
 
 **Scope:** Provider-neutral backend release, rollback, health, and persistent-upload operations for Sprint 018.
 
@@ -19,7 +19,7 @@ Required runtime inventory:
 - `UPLOAD_DIR` set to an absolute path backed by persistent storage
 - `READINESS_TIMEOUT_SECONDS` left at its two-second default or set to a positive value no greater than two seconds
 
-For the frontend production build, set `APP_ENV=production` and `NEXT_PUBLIC_API_URL` to the deployed backend's absolute HTTPS origin. The URL must contain no credentials, wildcard, loopback host, path, query, or fragment. `APP_ENV` is SIMO OS deployment intent and is separate from Next.js `NODE_ENV`; a normal local/CI optimized build may leave it unset and retain the loopback fallback.
+For the frontend production build, set `APP_ENV=production` and `NEXT_PUBLIC_API_URL` to the deployed backend's absolute HTTPS origin. The URL must contain no credentials, wildcard, loopback host, path, query, or fragment. `APP_ENV` is GeoCore deployment intent and is separate from Next.js `NODE_ENV`; a normal local/CI optimized build may leave it unset and retain the loopback fallback.
 
 The production upload path must already exist before application startup. The container's non-root application user must be able to create and remove files in it. Production startup tests writability with a temporary private probe; it does not create a missing production directory and does not delete or rewrite an existing customer document.
 

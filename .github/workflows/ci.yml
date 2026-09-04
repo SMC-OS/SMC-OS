@@ -26,7 +26,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://simo:simo@localhost:5432/simo_os
       JWT_SECRET_KEY: ci-test-secret
-      SEED_ADMIN_EMAIL: owner@simo-os.local
+      SEED_ADMIN_EMAIL: owner@geocore.local
       SEED_ADMIN_PASSWORD: ci-seed-password
 
     steps:
@@ -81,6 +81,17 @@ jobs:
       - name: Test frontend security headers
         run: pnpm --filter web test:security-headers
 
+      # Sprint 034 (Phase 2) — the application host must stay out of the
+      # search index in every environment.
+      - name: Test application robots policy
+        run: pnpm --filter web test:robots
+
+      # Sprint 034 (Phase 2) — the public site's indexability is baked in at
+      # build time. Without this check, dropping APP_ENV from the marketing
+      # Dockerfile would ship a noindex production site that looks healthy.
+      - name: Test marketing indexability contract
+        run: pnpm --filter marketing test:indexability
+
       - name: Build
         run: pnpm build
 
@@ -105,7 +116,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://simo:simo@localhost:5432/simo_os
       JWT_SECRET_KEY: ci-test-secret
-      SEED_ADMIN_EMAIL: owner@simo-os.local
+      SEED_ADMIN_EMAIL: owner@geocore.local
       SEED_ADMIN_PASSWORD: ci-seed-password
 
     steps:

@@ -1,4 +1,4 @@
-# SIMO OS — Roadmap
+# GeoCore — Roadmap
 
 **P0** = blocking/sequenced · **P1** = important, order flexible · **P2** = valuable, can slip a sprint. Full architecture context behind these decisions lives in `docs/DECISIONS.md`.
 
@@ -76,6 +76,28 @@ The vertical the product was always meant to complete: **Enquiry → Customer �
 | **031** | Final Stabilisation & Clean Production Launch | ✅ Shipped — `v1.0.1` live on Railway |
 
 **v1.0 is complete and in production.** `v1.0.0` (Sprint 030) shipped the full vertical above; Sprint 031 closed out the follow-up items Sprint 030's own launch surfaced (Web security headers, staging/production DB-networking parity, a safe QA-fixture cleanup mechanism, a persistent follow-up scheduler, and a verified backup/restore drill) and shipped `v1.0.1`. No Sprint 032+ scope is defined yet — this section is the re-baseline point for whatever comes next (the deferred v0.3/v1.0 AI-Workforce/commerce items above, or a new phase), to be added when that work is actually planned, not before.
+
+## Post-v1.0 — Commercial Activation & Multi-Tenant Correctness (Sprints 032–)
+
+The re-baseline the section above was left open for. Sprints 032–033 are recorded here retrospectively: this document went three sprint-numbers stale before Sprint 034 caught it, which is the same drift the maintenance rule below already exists to prevent.
+
+| Sprint | Feature | Status |
+|---|---|---|
+| **032** | Stripe billing architecture + structured quote dimensions | ✅ Shipped — `v1.1.0`. Billing routes return 503 until real credentials exist (owner-gated). |
+| **033** | Railway migration hardening (migrate-gate entrypoint) + true multi-line-item quotes | ✅ Shipped — `v1.2.0` live on Railway. See `docs/SPRINTS/sprint-033.md`. |
+| **034 A** | **Tenant company identity** — remove the hardcoded company letterhead from all customer-facing document rendering; make business identity tenant-configurable | ✅ **Complete** — see `docs/SPRINTS/sprint-034.md`, ADR-036 |
+| **034 Phase 2** | **Production rebrand SIMO OS → GeoCore** — platform name, UI copy, metadata, plan names, persisted-key migration | ✅ **Complete** — ADR-037 |
+| **034 Phase 2** | **Public marketing site at the apex** (`apps/marketing`) — indexable, canonical, sitemap, JSON-LD; application host set to `Disallow: /` | ✅ **Complete** — ADR-038 |
+| **034 B** | GeoCore brand-mark integration | ⏸️ **Owner-gated** — blocked pending the approved asset files. The placeholder `S` mark stays in the application; the public site uses a text wordmark rather than an invented or borrowed mark. |
+| **034 C** | geocore.one production DNS cutover | ⏸️ **Owner-gated** — change sheet ready for review in `docs/DNS_GEOCORE_ONE.md`; nothing applied |
+
+### Named next, not yet scheduled
+
+- **Full marketing site** replacing the interim holding page at the apex — the highest-leverage organic-growth item now that the surface exists: service/solution pages, pricing, case studies, and a blog to build topical authority.
+- **Tenant logo rendering on quote/invoice PDFs** — the `logo_url` column and Settings field already exist; needs validation of a tenant-supplied remote image before it enters a server-side render path.
+- **Tenant statutory details for the production tenant** — company registration and VAT number must be entered by the owner; deliberately never fabricated (ADR-036).
+- Stripe credential activation (carried from Sprints 032/033, still owner-gated).
+- Optional, recorded as deliberately deferred in ADR-037: renaming the `simo_os` logger, the database name, and the `/var/lib/simo-os/uploads` mount. Each carries real operational risk and no customer-visible benefit.
 
 ---
 

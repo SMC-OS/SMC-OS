@@ -1,4 +1,4 @@
-"""Core SQLAlchemy models for SIMO OS.
+"""Core SQLAlchemy models for GeoCore.
 
 Sprint 002 — see docs/DATABASE_SCHEMA.md §2 for the source pydantic models
 and informal shapes these are drawn from, and docs/DECISIONS.md ADR-013 for
@@ -27,7 +27,7 @@ from app.database.database import Base
 
 
 class Tenant(Base):
-    """A company/workspace using SIMO OS. Sprint 008 — schema only, no
+    """A company/workspace using GeoCore. Sprint 008 — schema only, no
     enforcement: the 7 tables below gain a real FK to this table but every
     existing row (and every query in every existing module) is untouched.
     See docs/DECISIONS.md ADR-025 for the full reasoning and what's
@@ -41,6 +41,27 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     slug: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     status: Mapped[str] = mapped_column(String, nullable=False, server_default="active")
+
+    # Sprint 034 — customer-facing company identity. `name` above is the
+    # workspace label staff see inside the product; the columns below are
+    # what this tenant's own customers see on a quote/invoice PDF. All
+    # nullable: an unconfigured tenant falls back to `name` (see
+    # app/tenants/identity.py), never to another tenant's details and never
+    # to the platform's own brand.
+    legal_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    trading_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    address_line1: Mapped[str | None] = mapped_column(String, nullable=True)
+    address_line2: Mapped[str | None] = mapped_column(String, nullable=True)
+    city: Mapped[str | None] = mapped_column(String, nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String, nullable=True)
+    country: Mapped[str | None] = mapped_column(String, nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    website: Mapped[str | None] = mapped_column(String, nullable=True)
+    company_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    vat_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    document_footer: Mapped[str | None] = mapped_column(String, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -491,7 +512,7 @@ class Appointment(Base):
 
 
 class Subscription(Base):
-    """A Tenant's SIMO OS commercial subscription (Sprint 032, Workstream
+    """A Tenant's GeoCore commercial subscription (Sprint 032, Workstream
     A). One row per tenant (unique tenant_id) — v1 billing is a single
     plan per business account, not per-user. `plan`/`billing_period`/
     `status` are plain strings (same no-native-enum convention as

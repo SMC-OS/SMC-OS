@@ -37,5 +37,5 @@ class SearchAssistant:
 
         return {
             "status": "not_found",
-            "message": "No matching product was found in the SIMO OS catalogue.",
+            "message": "No matching product was found in the GeoCore catalogue.",
         }

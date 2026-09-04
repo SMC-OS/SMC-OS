@@ -1,4 +1,4 @@
-# SIMO OS — System Architecture
+# GeoCore — System Architecture
 
 **Status:** Canonical reference, current as of Sprint 018 implementation (18 August 2026)
 **Stack:** FastAPI (Python) · Next.js 16 / React 19 (TypeScript) · Tailwind CSS v4 · PostgreSQL 16 via SQLAlchemy 2.0 + Alembic · `/api/v1` + JWT auth · tenant-isolated SaaS data · client portal tracking/documents/messaging · explicit development/test/production runtime policy · structured request logging · provider-neutral non-root backend container · Turborepo/pnpm workspace
@@ -9,7 +9,7 @@ This document describes the system as it actually exists today — not the aspir
 
 ## 1. Overview
 
-SIMO OS is a monorepo with two independently-runnable halves:
+GeoCore is a monorepo with three independently-deployable applications:
 
 - **Backend** (`SMC-OS/app/`) — a FastAPI application. Every product route lives under `/api/v1`; `GET /`, dependency-free `GET /health`, and database-aware `GET /ready` are unversioned. Sprint 018 uses an import-safe application factory and FastAPI lifespan: logging is configured first, the upload mount is validated, and development/test seeders run only when enabled. Production settings are fail-closed, seed nothing, require an existing writable persistent upload path, and never run Alembic during application startup. `python -m app.core.runtime_check` is the read-only release preflight.
 - **Frontend** (`SMC-OS/apps/web/`) — a Next.js App Router application, the sole consumer of the backend API, styled with Tailwind v4 and a hand-built component system (no UI library).

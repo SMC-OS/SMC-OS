@@ -33,8 +33,44 @@ class TenantService:
     def list_all(self, db: Session, limit: int = 20) -> list[Tenant]:
         return crud.list_tenants(db, limit=limit)
 
-    def get(self, db: Session, tenant_id: uuid.UUID) -> Tenant | None:
+    def get(self, db: Session, tenant_id: uuid.UUID | None) -> Tenant | None:
+        # Sprint 034 — accepts None so callers working from a row whose
+        # tenant_id is still nullable (an anonymous quote, ADR-023) can ask
+        # without a guard of their own. No tenant is a real answer here, not
+        # an error: the document simply renders without a letterhead.
+        if tenant_id is None:
+            return None
         return crud.get_tenant_by_id(db, tenant_id)
+
+    def update_identity(self, db: Session, tenant_id: uuid.UUID, data) -> Tenant | None:
+        """Sprint 034 — update the tenant's customer-facing company profile.
+
+        Only fields the caller actually sent are written (PATCH semantics),
+        so a client that knows about fewer fields than the server can't
+        blank out the rest. An empty string clears a field; an omitted one
+        leaves it untouched.
+        """
+        tenant = self.get(db, tenant_id)
+        if tenant is None:
+            return None
+
+        changes = data.model_dump(exclude_unset=True)
+        for field, value in changes.items():
+            setattr(tenant, field, value.strip() or None if isinstance(value, str) else value)
+
+        db.commit()
+        db.refresh(tenant)
+
+        if changes:
+            activity_service.log(
+                ActivityEventCreate(
+                    type=ActivityType.TENANT_IDENTITY_UPDATED,
+                    title="Company identity updated",
+                    description=", ".join(sorted(changes)),
+                ),
+                tenant_id=tenant.id,
+            )
+        return tenant
 
     def create(self, db: Session, data: TenantCreate) -> Tenant:
         slug = data.slug.strip().lower() if data.slug else _slugify(data.name)

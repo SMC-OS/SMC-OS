@@ -1,7 +1,7 @@
 """MaterialSearchService — Sprint 032, Workstream B.
 
 The single canonical, deterministic material/product retrieval path for
-SIMO OS. Every assistant/quote surface that needs to resolve a material
+GeoCore. Every assistant/quote surface that needs to resolve a material
 from natural language goes through this service (`material_search_service`
 below) — no other module may reimplement name/category/thickness matching
 logic (see docs/SPRINTS/sprint-032.md §2.1). `MaterialService.

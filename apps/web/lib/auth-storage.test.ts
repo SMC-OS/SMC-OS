@@ -33,6 +33,6 @@ describe("auth-storage — token-cleared notification", () => {
 
     clearToken();
 
-    expect(window.localStorage.getItem("simo-os-token")).toBeNull();
+    expect(window.localStorage.getItem("geocore-token")).toBeNull();
   });
 });

@@ -2,6 +2,13 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
+import {
+  LEGACY_THEME_KEY,
+  THEME_KEY,
+  readMigratedValue,
+  writeValue,
+} from "@/lib/storage-keys";
+
 type Theme = "light" | "dark";
 
 interface ThemeContextValue {
@@ -12,7 +19,9 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
-const STORAGE_KEY = "simo-os-theme";
+// Sprint 034 (Phase 2) — renamed with the platform, read through the
+// migration helper so an existing user's chosen theme survives the deploy.
+const STORAGE_KEY = THEME_KEY;
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("light");
@@ -26,7 +35,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // One-time sync from browser-only APIs (localStorage/matchMedia aren't
     // available during SSR). The inline script in layout.tsx already set the
     // class on <html> before paint, so this just syncs React state to match.
-    const stored = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
+    const stored = readMigratedValue(STORAGE_KEY, LEGACY_THEME_KEY) as Theme | null;
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setThemeState(stored ?? (prefersDark ? "dark" : "light"));
@@ -36,7 +45,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!mounted) return;
     document.documentElement.classList.toggle("dark", theme === "dark");
-    window.localStorage.setItem(STORAGE_KEY, theme);
+    writeValue(STORAGE_KEY, theme);
   }, [theme, mounted]);
 
   const setTheme = (next: Theme) => setThemeState(next);

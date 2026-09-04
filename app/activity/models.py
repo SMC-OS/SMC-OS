@@ -19,6 +19,7 @@ class ActivityType(str, Enum):
     AI_REQUEST = "ai_request"
     USER_LOGIN = "user_login"
     TENANT_CREATED = "tenant_created"
+    TENANT_IDENTITY_UPDATED = "tenant_identity_updated"
     PORTAL_LINK_CREATED = "portal_link_created"
     TEAM_MEMBER_DEACTIVATED = "team_member_deactivated"
     CUSTOMER_MESSAGE_RECEIVED = "customer_message_received"

@@ -57,7 +57,7 @@ export default function PricingPage() {
     <div className="mx-auto max-w-4xl">
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-          SIMO OS Pricing
+          GeoCore Pricing
         </h1>
         <p className="mt-2 text-sm text-muted">
           Simple plans that scale with your team. Cancel any time.
@@ -186,7 +186,7 @@ export default function PricingPage() {
                       )
                     ) : (
                       <a
-                        href="mailto:sales@simo-os.com?subject=SIMO%20OS%20Enterprise"
+                        href="mailto:sales@geocore.one?subject=GeoCore%20Enterprise"
                         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover"
                       >
                         Contact sales

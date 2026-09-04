@@ -1,4 +1,4 @@
-# SIMO OS — API Specification
+# GeoCore — API Specification
 
 **Status:** Reflects the actual FastAPI application through Sprint 018. Sprint 018 adds the production runtime contract without changing product-route auth or tenant semantics: configurable CORS, request IDs, dependency-free liveness, database-aware readiness, and safe structured error/request logging (ADR-034).
 **Base URL (local dev):** `http://127.0.0.1:8000`

@@ -273,6 +273,44 @@ def test_download_portal_invoice_success(client, auth_headers, created_portal_li
     assert r.content.startswith(b"%PDF")
 
 
+def test_portal_invoice_carries_the_issuing_tenants_identity(
+    client, auth_headers, created_portal_link
+):
+    """Sprint 034 — the portal is the one route with no authenticated user,
+    so the letterhead has to come from the quote's own tenant_id rather than
+    any caller context. This is also the copy a customer actually reads, so
+    it must never carry the letterhead that used to be hardcoded for
+    everyone (see tests/test_tenant_identity.py for the full rationale)."""
+    from tests.test_tenant_identity import _pdf_text
+
+    original = client.get("/api/v1/tenants/me/profile", headers=auth_headers).json()
+    try:
+        client.patch(
+            "/api/v1/tenants/me/profile",
+            headers=auth_headers,
+            json={"legal_name": "Portal Letterhead Ltd", "vat_number": "GB424242424"},
+        )
+        quote = client.get("/api/v1/quotes", headers=auth_headers).json()[0]
+        r = client.get(
+            f"/api/v1/portal-links/token/{created_portal_link['token']}/invoice/{quote['id']}"
+        )
+        assert r.status_code == 200
+        text = _pdf_text(r.content)
+        assert "PORTAL LETTERHEAD LTD" in text
+        assert "GB424242424" in text
+        assert "SIMO MARBLE" not in text
+        assert "Riverside Trade Park" not in text
+    finally:
+        client.patch(
+            "/api/v1/tenants/me/profile",
+            headers=auth_headers,
+            json={
+                "legal_name": original.get("legal_name") or "",
+                "vat_number": original.get("vat_number") or "",
+            },
+        )
+
+
 def test_download_portal_invoice_unknown_quote_returns_404(client, created_portal_link):
     r = client.get(
         f"/api/v1/portal-links/token/{created_portal_link['token']}/invoice/{uuid.uuid4()}"

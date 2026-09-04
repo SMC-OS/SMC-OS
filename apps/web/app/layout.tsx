@@ -15,9 +15,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Sprint 034 — this is the *platform's* metadata, so it describes the
+// product, not any one tenant's business. The previous description named a
+// single customer company, which is a tenant identity and belongs in that
+// tenant's own company profile (Settings → Company identity), never in
+// global chrome every tenant sees.
 export const metadata: Metadata = {
-  title: "SIMO OS",
-  description: "AI Operating System for Simo Marble & Construction Ltd",
+  title: "GeoCore",
+  description: "AI operating system for stone and construction businesses",
 };
 
 // Runs before React hydrates so the correct theme class is on <html> before
@@ -25,7 +30,10 @@ export const metadata: Metadata = {
 const themeInitScript = `
 (function () {
   try {
-    var stored = localStorage.getItem("simo-os-theme");
+    // Reads the post-rebrand key first, then the pre-rebrand one. Without
+    // the fallback a returning dark-mode user would flash light on their
+    // first load after the deploy, before ThemeProvider migrates the value.
+    var stored = localStorage.getItem("geocore-theme") || localStorage.getItem("simo-os-theme");
     var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     var theme = stored || (prefersDark ? "dark" : "light");
     if (theme === "dark") document.documentElement.classList.add("dark");

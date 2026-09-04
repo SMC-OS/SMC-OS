@@ -1,4 +1,4 @@
-"""SQLAlchemy engine/session setup for SIMO OS.
+"""SQLAlchemy engine/session setup for GeoCore.
 
 Sprint 002 introduced the database layer, reading DATABASE_URL straight from
 the environment via python-dotenv. Sprint 003 routes that same value through

@@ -26,7 +26,7 @@ function jsonResponse(body: unknown, status = 200) {
 const PLANS = [
   {
     plan: "pro",
-    name: "SIMO OS Pro",
+    name: "GeoCore Pro",
     self_service: true,
     monthly_price_gbp: 79,
     annual_price_gbp: 790,
@@ -35,7 +35,7 @@ const PLANS = [
   },
   {
     plan: "business",
-    name: "SIMO OS Business",
+    name: "GeoCore Business",
     self_service: true,
     monthly_price_gbp: 149,
     annual_price_gbp: 1490,
@@ -77,8 +77,8 @@ describe("PricingPage", () => {
   it("shows all three plans with annual savings messaging", async () => {
     render(<PricingPage />);
 
-    expect(await screen.findByText("SIMO OS Pro")).toBeInTheDocument();
-    expect(screen.getByText("SIMO OS Business")).toBeInTheDocument();
+    expect(await screen.findByText("GeoCore Pro")).toBeInTheDocument();
+    expect(screen.getByText("GeoCore Business")).toBeInTheDocument();
     expect(screen.getByText("Enterprise")).toBeInTheDocument();
     expect(screen.getAllByText(/save 2 months/i).length).toBeGreaterThan(0);
     expect(screen.getByText("Custom")).toBeInTheDocument();
@@ -94,7 +94,7 @@ describe("PricingPage", () => {
 
     render(<PricingPage />);
 
-    const proButton = await screen.findByRole("button", { name: /choose simo os pro/i });
+    const proButton = await screen.findByRole("button", { name: /choose geocore pro/i });
     await userEvent.click(proButton);
 
     await waitFor(() => {
@@ -122,7 +122,7 @@ describe("PricingPage", () => {
     render(<PricingPage />);
 
     expect(await screen.findAllByRole("button", { name: /sign in to subscribe/i })).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: /choose simo os pro/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /choose geocore pro/i })).not.toBeInTheDocument();
   });
 
   it("tells a Staff user to ask their owner instead of offering checkout", async () => {

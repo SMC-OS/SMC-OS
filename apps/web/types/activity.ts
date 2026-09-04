@@ -14,6 +14,7 @@ export type ActivityType =
   | "ai_request"
   | "user_login"
   | "tenant_created"
+  | "tenant_identity_updated"
   | "portal_link_created"
   | "team_member_deactivated"
   | "customer_message_received"
