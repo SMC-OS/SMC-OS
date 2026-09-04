@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.auth.service import auth_service
 from app.database import crud
@@ -25,6 +25,7 @@ from app.database.models import (
     NotificationRecord,
     Project,
     Quote,
+    QuoteItem,
     Tenant,
     User,
 )
@@ -62,6 +63,11 @@ def _cleanup_tenant(tenant_id: uuid.UUID) -> None:
         # Project must go before Quote, opposite of most other cleanup
         # helpers in this suite which never link the two.
         db.execute(delete(Project).where(Project.tenant_id == tenant_id))
+        db.execute(
+            delete(QuoteItem).where(
+                QuoteItem.quote_id.in_(select(Quote.id).where(Quote.tenant_id == tenant_id))
+            )
+        )
         db.execute(delete(Quote).where(Quote.tenant_id == tenant_id))
         db.execute(delete(Customer).where(Customer.tenant_id == tenant_id))
         db.execute(delete(User).where(User.tenant_id == tenant_id))

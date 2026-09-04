@@ -1,10 +1,11 @@
 /**
- * Sprint 032 (Workstream C) — structured mm dimensions on the manual quote
- * form, and the AI draft flow showing interpreted dimensions / material
- * match status back to the user before anything is created.
+ * Sprint 033 (Workstream C) — multi-item quote editor: add/remove/
+ * duplicate items, submit structured items, and the AI draft flow
+ * showing multiple interpreted items with per-item match status before
+ * anything is added to the form.
  */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -34,6 +35,26 @@ function jsonResponse(body: unknown, status = 200) {
   } as Response;
 }
 
+function makeQuoteItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "item-1",
+    position: 0,
+    item_type: "worktop",
+    material: "Calacatta Oro",
+    thickness: "20mm",
+    quantity: 1,
+    length_mm: 2400,
+    width_mm: 600,
+    thickness_mm: null,
+    unit_input: "mm",
+    notes: null,
+    price_per_slab: 2350,
+    slabs: 1,
+    line_total: 2350,
+    ...overrides,
+  };
+}
+
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -48,62 +69,63 @@ beforeEach(() => {
       if (parsedBody.text === "missing product") {
         return jsonResponse({
           customer: null,
-          material: null,
-          material_raw: "SuperGalaxy Diamond Quartz",
-          material_match_status: "not_found",
-          material_candidates: [],
-          thickness: null,
-          quantity: 1,
-          length_mm: 2400,
-          width_mm: 600,
-          thickness_mm: null,
-          unit_input: "mm",
-          island: false,
-          waterfall: 0,
-          splashback: false,
-          upstands: false,
           postcode: null,
-          warnings: ["Material 'SuperGalaxy Diamond Quartz' wasn't recognised — pick one manually."],
+          items: [
+            {
+              item_type: "worktop",
+              material: null,
+              material_raw: "SuperGalaxy Diamond Quartz",
+              material_match_status: "not_found",
+              material_candidates: [],
+              thickness: null,
+              quantity: 1,
+              length_mm: 2400,
+              width_mm: 600,
+              thickness_mm: null,
+              unit_input: "mm",
+              warnings: ["Material 'SuperGalaxy Diamond Quartz' wasn't recognised — pick one manually."],
+            },
+          ],
+          warnings: [],
         });
       }
       return jsonResponse({
         customer: "Sarah Whitfield",
-        material: "Calacatta Oro",
-        material_raw: null,
-        material_match_status: "found",
-        material_candidates: [],
-        thickness: "20mm",
-        quantity: 1,
-        length_mm: 2400,
-        width_mm: 600,
-        thickness_mm: 20,
-        unit_input: "mm",
-        island: false,
-        waterfall: 0,
-        splashback: false,
-        upstands: false,
         postcode: null,
+        items: [
+          {
+            item_type: "worktop",
+            material: "Calacatta Oro",
+            material_raw: null,
+            material_match_status: "found",
+            material_candidates: [],
+            thickness: "20mm",
+            quantity: 1,
+            length_mm: 2400,
+            width_mm: 600,
+            thickness_mm: 20,
+            unit_input: "mm",
+            warnings: [],
+          },
+        ],
         warnings: [],
       });
     }
     if (url.endsWith("/quote") && init?.method === "POST") {
+      const parsedBody = JSON.parse(String(init.body));
+      const items = (parsedBody.items ?? []).map((item: Record<string, unknown>, i: number) =>
+        makeQuoteItem({ id: `item-${i}`, ...item })
+      );
       return jsonResponse({
-        customer: "Sarah Whitfield",
-        material: "Calacatta Oro",
-        slabs: 1,
+        customer: parsedBody.customer,
+        material: items[0]?.material ?? "Calacatta Oro",
+        thickness: items[0]?.thickness ?? "20mm",
+        slabs: items.length,
         price_per_slab: 2350,
-        price_before_vat: 2350,
-        vat: 470,
-        total: 2820,
-        dimensions: {
-          quantity: 1,
-          length_mm: 2400,
-          width_mm: 600,
-          thickness_mm: 20,
-          unit_input: "mm",
-          splashback_length_mm: null,
-          upstands_length_mm: null,
-        },
+        items,
+        price_before_vat: 2350 * items.length,
+        vat: 470 * items.length,
+        total: 2820 * items.length,
         id: "quote-1",
         customer_id: null,
         created_at: new Date().toISOString(),
@@ -121,13 +143,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("NewQuotePage — structured dimensions (Sprint 032)", () => {
-  it("submits quantity/length_mm/width_mm to POST /quote", async () => {
+describe("NewQuotePage — multi-item editor (Sprint 033)", () => {
+  it("starts with a single item row and submits it as `items`", async () => {
     render(<NewQuotePage />);
 
     await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
-    await userEvent.clear(screen.getByLabelText(/length \(mm\)/i));
-    await userEvent.type(screen.getByLabelText(/length \(mm\)/i), "2400");
+    await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
     await userEvent.clear(screen.getByLabelText(/width\/depth \(mm\)/i));
     await userEvent.type(screen.getByLabelText(/width\/depth \(mm\)/i), "600");
 
@@ -142,49 +163,107 @@ describe("NewQuotePage — structured dimensions (Sprint 032)", () => {
 
     const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
     const body = JSON.parse(String(call?.[1]?.body));
-    expect(body.length_mm).toBe(2400);
-    expect(body.width_mm).toBe(600);
-    expect(body.quantity).toBe(1);
-
-    expect(await screen.findByText(/2400mm x 600mm/)).toBeInTheDocument();
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].length_mm).toBe(2400);
+    expect(body.items[0].width_mm).toBe(600);
   });
 
-  it("requires an explicit splashback length once splashback is checked", async () => {
+  it("adds a second item and submits both", async () => {
     render(<NewQuotePage />);
 
-    expect(screen.queryByLabelText(/splashback length/i)).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
+    await userEvent.type(screen.getAllByLabelText(/^length \(mm\)$/i)[0], "2400");
 
-    await userEvent.click(screen.getByLabelText(/^splashback$/i));
+    await userEvent.click(screen.getByRole("button", { name: /\+ add item/i }));
+    expect(screen.getByText("Item 2")).toBeInTheDocument();
 
-    expect(await screen.findByLabelText(/splashback length \(mm\)/i)).toBeRequired();
+    const lengthInputs = screen.getAllByLabelText(/^length \(mm\)$/i);
+    expect(lengthInputs).toHaveLength(2);
+    await userEvent.type(lengthInputs[1], "1200");
+
+    await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+      expect(call).toBeTruthy();
+    });
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.items).toHaveLength(2);
   });
 
-  it("shows interpreted dimensions and never fabricates a not-found product", async () => {
+  it("duplicates an item, producing a third identical row", async () => {
+    render(<NewQuotePage />);
+
+    expect(screen.getByText("Item 1")).toBeInTheDocument();
+    expect(screen.queryByText("Item 2")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /duplicate/i }));
+
+    expect(screen.getByText("Item 1")).toBeInTheDocument();
+    expect(screen.getByText("Item 2")).toBeInTheDocument();
+  });
+
+  it("removes an item but never below one row", async () => {
+    render(<NewQuotePage />);
+
+    const removeButton = screen.getByRole("button", { name: /remove/i });
+    expect(removeButton).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: /\+ add item/i }));
+    const removeButtons = screen.getAllByRole("button", { name: /remove/i });
+    expect(removeButtons[0]).toBeEnabled();
+
+    await userEvent.click(removeButtons[0]);
+    expect(screen.queryByText("Item 2")).not.toBeInTheDocument();
+  });
+
+  it("shows the resolved material for a confident AI match and lets the user apply it", async () => {
     render(<NewQuotePage />);
 
     await userEvent.type(
-      screen.getByPlaceholderText(/calacatta oro 20mm worktop/i),
-      "missing product"
-    );
-    await userEvent.click(screen.getByRole("button", { name: /generate draft/i }));
-
-    expect(await screen.findByText(/no matching product was found/i)).toBeInTheDocument();
-    expect(screen.getByText(/2400mm x 600mm/)).toBeInTheDocument();
-  });
-
-  it("pre-fills the form and shows the resolved material on a confident AI match", async () => {
-    render(<NewQuotePage />);
-
-    await userEvent.type(
-      screen.getByPlaceholderText(/calacatta oro 20mm worktop/i),
+      screen.getByPlaceholderText(/calacatta oro 20mm/i),
       "Calacatta Oro 20mm, 2400 x 600mm, customer Sarah Whitfield"
     );
     await userEvent.click(screen.getByRole("button", { name: /generate draft/i }));
 
+    expect(await screen.findByText(/interpreted 1 item/i)).toBeInTheDocument();
+    // "Calacatta Oro" also appears as a plain <option> in the material
+    // dropdown — scope to the actual match-status badge, not just any
+    // element with that text.
+    const badgeMatch = screen.getAllByText("Calacatta Oro").find((el) => el.tagName !== "OPTION");
+    expect(badgeMatch).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /use these items/i }));
+
     await waitFor(() => {
-      expect(screen.getByLabelText(/length \(mm\)/i)).toHaveValue(2400);
+      expect(screen.getByLabelText(/^length \(mm\)$/i)).toHaveValue(2400);
     });
     expect(screen.getByLabelText(/width\/depth \(mm\)/i)).toHaveValue(600);
     expect(screen.getByDisplayValue("Sarah Whitfield")).toBeInTheDocument();
+  });
+
+  it("shows not-found for a missing product without fabricating a match", async () => {
+    render(<NewQuotePage />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText(/calacatta oro 20mm/i),
+      "missing product"
+    );
+    await userEvent.click(screen.getByRole("button", { name: /generate draft/i }));
+
+    expect(await screen.findByText(/not found: SuperGalaxy Diamond Quartz/i)).toBeInTheDocument();
+  });
+
+  it("renders per-item results after a successful multi-item calculation", async () => {
+    render(<NewQuotePage />);
+
+    await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
+    await userEvent.type(screen.getAllByLabelText(/^length \(mm\)$/i)[0], "2400");
+
+    await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+
+    const resultHeading = await screen.findByText(/quote for sarah whitfield/i);
+    const card = resultHeading.closest("div")?.parentElement as HTMLElement;
+    expect(within(card).getByText(/worktop/i)).toBeInTheDocument();
   });
 });

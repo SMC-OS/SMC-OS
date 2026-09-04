@@ -38,7 +38,7 @@ from app.portal.service import (
     PortalLinkNotFoundError,
     portal_service,
 )
-from app.quotes.pdf import PDFGenerator
+from app.quotes.pdf import PDFGenerator, build_line_items
 
 router = APIRouter(prefix="/portal-links", tags=["portal"])
 
@@ -118,8 +118,7 @@ def download_portal_invoice(token: str, quote_id: uuid.UUID, db: Session = Depen
         {
             "id": quote.id,
             "customer": customer_name,
-            "material": quote.material,
-            "thickness": quote.thickness,
+            "line_items": build_line_items(quote),
             "price_before_vat": quote.price_before_vat,
             "vat": quote.vat,
             "total": quote.total,

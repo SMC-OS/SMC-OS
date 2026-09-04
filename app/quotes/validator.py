@@ -1,11 +1,13 @@
-"""Structured-dimension validation — Sprint 032, Workstream C.
+"""Structured-dimension validation — Sprint 032 (single-item), extended in
+Sprint 033 to validate each independent line item on a multi-item quote.
 
 Enforced once, server-side, for every quote-creation path (manual form,
 AI draft, legacy /estimate) — never relies on frontend-only checks. Raises
-DimensionError with a message safe to show the caller directly.
+DimensionError with a message safe to show the caller directly, including
+which item is at fault so the UI can point at the right row.
 """
 
-from app.quotes.models import QuoteRequest
+from app.quotes.models import QuoteItemRequest, QuoteRequest
 
 STANDARD_WIDTH_MM = 650  # previous SlabCalculator.DEPTH_M (0.65m), now explicit
 SUPPORTED_UNITS = {"mm", "cm", "m"}
@@ -17,43 +19,46 @@ class DimensionError(ValueError):
     """Raised for missing/zero/negative/unrealistic/malformed dimensions."""
 
 
+def validate_item_dimensions(item: QuoteItemRequest, *, label: str | None = None) -> None:
+    prefix = f"{label}: " if label else ""
+
+    if item.quantity < 1:
+        raise DimensionError(f"{prefix}Quantity must be at least 1.")
+
+    if item.length_mm <= 0:
+        raise DimensionError(f"{prefix}Length must be greater than zero.")
+    if item.length_mm > _MAX_REALISTIC_LENGTH_MM:
+        raise DimensionError(
+            f"{prefix}Length of {item.length_mm:.0f}mm looks unrealistic — check the unit used."
+        )
+
+    if item.width_mm <= 0:
+        raise DimensionError(f"{prefix}Width/depth must be greater than zero.")
+    if item.width_mm > _MAX_REALISTIC_LENGTH_MM:
+        raise DimensionError(
+            f"{prefix}Width/depth of {item.width_mm:.0f}mm looks unrealistic — check the unit used."
+        )
+
+    if item.thickness_mm is not None and item.thickness_mm <= 0:
+        raise DimensionError(f"{prefix}Thickness must be greater than zero.")
+
+    if item.unit_input is not None and item.unit_input not in SUPPORTED_UNITS:
+        raise DimensionError(
+            f"{prefix}Unsupported unit '{item.unit_input}' — use one of {sorted(SUPPORTED_UNITS)}."
+        )
+
+
 def validate_dimensions(quote: QuoteRequest) -> None:
-    if quote.quantity < 1:
-        raise DimensionError("Quantity must be at least 1.")
+    """Validates every line item on the quote. `quote.items` is always
+    populated by this point — QuoteRequest's own model_validator builds
+    it from the legacy single-item fields when `items` isn't given
+    directly, so there is always at least one item to validate."""
+    if not quote.items:
+        raise DimensionError("A quote must have at least one item.")
 
-    if quote.length_mm <= 0:
-        raise DimensionError("Length must be greater than zero.")
-    if quote.length_mm > _MAX_REALISTIC_LENGTH_MM:
-        raise DimensionError(
-            f"Length of {quote.length_mm:.0f}mm looks unrealistic — check the unit used."
-        )
-
-    if quote.width_mm <= 0:
-        raise DimensionError("Width/depth must be greater than zero.")
-    if quote.width_mm > _MAX_REALISTIC_LENGTH_MM:
-        raise DimensionError(
-            f"Width/depth of {quote.width_mm:.0f}mm looks unrealistic — check the unit used."
-        )
-
-    if quote.thickness_mm is not None and quote.thickness_mm <= 0:
-        raise DimensionError("Thickness must be greater than zero.")
-
-    if quote.unit_input is not None and quote.unit_input not in SUPPORTED_UNITS:
-        raise DimensionError(
-            f"Unsupported unit '{quote.unit_input}' — use one of {sorted(SUPPORTED_UNITS)}."
-        )
-
-    if quote.splashback:
-        if quote.splashback_length_mm is None:
-            raise DimensionError("Splashback length is required when splashback is selected.")
-        if quote.splashback_length_mm <= 0:
-            raise DimensionError("Splashback length must be greater than zero.")
-
-    if quote.upstands:
-        if quote.upstands_length_mm is None:
-            raise DimensionError("Upstand length is required when upstands are selected.")
-        if quote.upstands_length_mm <= 0:
-            raise DimensionError("Upstand length must be greater than zero.")
+    for index, item in enumerate(quote.items, start=1):
+        label = f"Item {index} ({item.item_type})" if len(quote.items) > 1 else None
+        validate_item_dimensions(item, label=label)
 
 
 def to_mm(value: float, unit: str) -> float:

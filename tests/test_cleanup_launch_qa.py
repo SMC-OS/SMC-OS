@@ -22,7 +22,7 @@ from app.customers.models import CustomerCreate
 from app.customers.service import customer_service
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import Customer, Material, Project, Quote, Tenant, User
+from app.database.models import Customer, Material, Project, Quote, QuoteItem, Tenant, User
 from app.projects.models import ProjectCreate
 from app.projects.service import project_service
 
@@ -73,10 +73,19 @@ def _wipe_named_tenants(names: tuple[str, ...]) -> None:
         # must be cleared before the customers FK delete below.
         customer_ids = db.scalars(select(Customer.id).where(Customer.tenant_id.in_(tenant_ids))).all()
         if customer_ids:
+            orphan_ids = select(Quote.id).where(
+                Quote.tenant_id.is_(None), Quote.customer_id.in_(customer_ids)
+            )
+            db.execute(delete(QuoteItem).where(QuoteItem.quote_id.in_(orphan_ids)))
             db.execute(
                 delete(Quote).where(Quote.tenant_id.is_(None), Quote.customer_id.in_(customer_ids))
             )
 
+        db.execute(
+            delete(QuoteItem).where(
+                QuoteItem.quote_id.in_(select(Quote.id).where(Quote.tenant_id.in_(tenant_ids)))
+            )
+        )
         for model in (
             Appointment,
             Document,
@@ -222,6 +231,10 @@ def unrelated_tenant(client):
                 select(Customer.id).where(Customer.tenant_id == user.tenant_id)
             ).all()
             if customer_ids:
+                orphan_ids = select(Quote.id).where(
+                    Quote.tenant_id.is_(None), Quote.customer_id.in_(customer_ids)
+                )
+                db.execute(delete(QuoteItem).where(QuoteItem.quote_id.in_(orphan_ids)))
                 db.execute(
                     delete(Quote).where(
                         Quote.tenant_id.is_(None), Quote.customer_id.in_(customer_ids)

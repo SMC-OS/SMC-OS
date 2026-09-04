@@ -1,11 +1,11 @@
 import uuid
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.auth.service import auth_service
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, Project, Quote, Tenant, User
+from app.database.models import ActivityLog, Customer, Project, Quote, QuoteItem, Tenant, User
 
 TEST_CUSTOMER_NAME = "Pytest Dashboard Customer"
 TEST_PROJECT_NAME = "Pytest Dashboard Project"
@@ -18,6 +18,11 @@ RBAC_COMPANY = f"Pytest Dashboard RBAC Co {RUN_ID}"
 def _cleanup():
     db = SessionLocal()
     try:
+        db.execute(
+            delete(QuoteItem).where(
+                QuoteItem.quote_id.in_(select(Quote.id).where(Quote.postcode == TEST_QUOTE_POSTCODE))
+            )
+        )
         db.execute(delete(Quote).where(Quote.postcode == TEST_QUOTE_POSTCODE))
         db.execute(delete(Project).where(Project.name == TEST_PROJECT_NAME))
         db.execute(delete(Customer).where(Customer.name == TEST_CUSTOMER_NAME))

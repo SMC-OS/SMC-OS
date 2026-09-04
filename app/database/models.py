@@ -21,7 +21,7 @@ from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.database import Base
 
@@ -76,6 +76,15 @@ class Quote(Base):
         UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True
     )
 
+    # Sprint 033 (Workstream C) — these scalar columns are no longer the
+    # source of truth for a quote's contents; `QuoteItem` rows (below)
+    # are. They're kept, and still populated on every new quote, as a
+    # best-effort single-item *summary* (the first item's material/
+    # dimensions, or "Multiple materials"/"Mixed" when items disagree)
+    # purely so existing readers that only ever knew a single-job quote
+    # (the customer portal summary, dashboards, anything not yet updated
+    # to read `items`) keep working without modification. See
+    # QuoteService._summarize_items() for exactly how these are derived.
     material: Mapped[str] = mapped_column(String, nullable=False)
     thickness: Mapped[str] = mapped_column(String, nullable=False)
     # Sprint 032 (Workstream C) — kitchen_length (metres) is kept as a
@@ -116,6 +125,58 @@ class Quote(Base):
     approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    items: Mapped[list["QuoteItem"]] = relationship(
+        "QuoteItem", order_by="QuoteItem.position", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class QuoteItem(Base):
+    """One structured line item on a Quote (Sprint 033, Workstream C —
+    the true multi-line-item quote architecture deferred in Sprint 032
+    §4). Every Quote has one or more of these; a quote created before
+    this sprint gets exactly one backfilled row (migration
+    `<see alembic revision>`) reconstructed from its own former scalar
+    columns — never destroyed, never guessed.
+
+    `item_type` is a plain string (same no-native-enum convention as
+    Quote.status etc.), validated at the Pydantic boundary
+    (app/quotes/models.py's ITEM_TYPES) — worktop/island/splashback/
+    upstand/sill/waterfall_panel/other. Every type uses identical area
+    math (quantity x length x width x wastage / slab area); island and
+    waterfall_panel carry a small additional flat installation surcharge
+    (see app/quotes/calculator.py) for continuity with Sprint 032's
+    pricing, not because they need different dimension handling.
+    """
+
+    __tablename__ = "quote_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    quote_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=False, index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    item_type: Mapped[str] = mapped_column(String, nullable=False, server_default="worktop")
+    material: Mapped[str] = mapped_column(String, nullable=False)
+    thickness: Mapped[str] = mapped_column(String, nullable=False)
+
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    length_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    width_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    thickness_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit_input: Mapped[str] = mapped_column(String, nullable=False, server_default="mm")
+
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    price_per_slab: Mapped[float | None] = mapped_column(Float, nullable=True)
+    slabs: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # This item's own contribution to the quote's price_before_vat
+    # (material cost + any type-specific flat surcharge) — the Quote's
+    # own price_before_vat is the sum of every item's line_total.
+    line_total: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

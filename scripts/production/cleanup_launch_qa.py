@@ -26,9 +26,12 @@ so an out-of-order delete fails loudly with an IntegrityError rather than
 silently cascading into unrelated data:
 
   Appointment, Document, Message, PortalLink, NotificationRecord,
-  ActivityLog, Invitation, Project, Quote, Customer, User, Tenant
+  ActivityLog, Invitation, Project, QuoteItem, Quote, Customer, User, Tenant
   (Material is independent of all of the above — quotes.material/
-  quotes.thickness are plain String columns, not a FK, per Sprint 030.)
+  quotes.thickness are plain String columns, not a FK, per Sprint 030.
+  QuoteItem (Sprint 033) has no tenant_id column of its own — it's
+  deleted via a quote_id subquery, not the same tenant_id.in_(...) bulk
+  pattern the other tenant-scoped tables use.)
 """
 
 from __future__ import annotations
@@ -56,6 +59,7 @@ from app.database.models import (
     PortalLink,
     Project,
     Quote,
+    QuoteItem,
     Tenant,
     User,
 )
@@ -147,6 +151,7 @@ def resolve_plan(db: Session) -> CleanupPlan:
 
     counts: dict[str, int] = {"tenants": len(tenant_ids), "materials": len(material_ids)}
     orphan_quote_ids: list[uuid.UUID] = []
+    quote_item_count = 0
     if tenant_ids:
         for model in _TENANT_SCOPED_TABLES_IN_ORDER:
             table_name = model.__tablename__
@@ -156,6 +161,18 @@ def resolve_plan(db: Session) -> CleanupPlan:
                 )
                 or 0
             )
+
+        # QuoteItem (Sprint 033) has no tenant_id column — counted via a
+        # quote_id subquery instead of the bulk tenant_id.in_(...) pattern
+        # every other table above uses.
+        quote_item_count += (
+            db.scalar(
+                select(func.count())
+                .select_from(QuoteItem)
+                .where(QuoteItem.quote_id.in_(select(Quote.id).where(Quote.tenant_id.in_(tenant_ids))))
+            )
+            or 0
+        )
 
         customer_ids = db.scalars(
             select(Customer.id).where(Customer.tenant_id.in_(tenant_ids))
@@ -168,7 +185,15 @@ def resolve_plan(db: Session) -> CleanupPlan:
                     )
                 ).all()
             )
+    if orphan_quote_ids:
+        quote_item_count += (
+            db.scalar(
+                select(func.count()).select_from(QuoteItem).where(QuoteItem.quote_id.in_(orphan_quote_ids))
+            )
+            or 0
+        )
     counts["orphan_quotes"] = len(orphan_quote_ids)
+    counts["quote_items"] = quote_item_count
 
     return CleanupPlan(
         tenant_ids=tenant_ids,
@@ -187,11 +212,21 @@ def execute_plan(db: Session, plan: CleanupPlan) -> None:
     if plan.is_empty:
         return
     if plan.orphan_quote_ids:
-        # Must precede the Customer delete below — an orphan quote's
+        # QuoteItem (Sprint 033) must precede its parent Quote; Quote
+        # must precede the Customer delete below — an orphan quote's
         # customer_id FK would otherwise block it. No other ordering
         # constraint applies (an untenanted quote has no other dependents).
+        db.execute(delete(QuoteItem).where(QuoteItem.quote_id.in_(plan.orphan_quote_ids)))
         db.execute(delete(Quote).where(Quote.id.in_(plan.orphan_quote_ids)))
     if plan.tenant_ids:
+        # QuoteItem again precedes Quote, which is later in this same
+        # loop — deleted first via its own quote_id subquery since it has
+        # no tenant_id column to join the bulk pattern below.
+        db.execute(
+            delete(QuoteItem).where(
+                QuoteItem.quote_id.in_(select(Quote.id).where(Quote.tenant_id.in_(plan.tenant_ids)))
+            )
+        )
         for model in _TENANT_SCOPED_TABLES_IN_ORDER:
             db.execute(delete(model).where(model.tenant_id.in_(plan.tenant_ids)))
         db.execute(delete(Tenant).where(Tenant.id.in_(plan.tenant_ids)))

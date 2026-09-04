@@ -34,9 +34,24 @@ _QUANTITY_WORDS = {
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
 }
 _QUANTITY_RE = re.compile(
-    r"\b(\d+)\s*(?:pieces?|off|x)\b|"
+    r"\b(\d+)\s*(?:pieces?|off)\b|"
+    # "2x" shorthand — deliberately NOT followed by more digits, so this
+    # never matches the "x" in a "2400 x 600" dimension pair (that "x" is
+    # a separator, not a quantity marker).
+    r"\b(\d+)\s*x\b(?!\s*\d)|"
     r"\b(?:qty|quantity)\s*[:=]?\s*(\d+)\b|"
     r"\b(" + "|".join(_QUANTITY_WORDS) + r")\s*pieces?\b",
+    re.IGNORECASE,
+)
+# Sprint 033 — a quantity word/number sitting directly in front of a
+# dimension pair with no "pieces"/"off" word at all, e.g. "two 1200 x
+# 600 splashbacks" (the AI multi-item flow's own segmented text_span
+# often looks exactly like this). The lookahead requires what follows to
+# actually be the start of a recognized "N x N" pair, so a bare
+# dimension number ("2400 x 600") is never mistaken for a quantity.
+_LEADING_QUANTITY_RE = re.compile(
+    r"\b(?:(\d+)|(" + "|".join(_QUANTITY_WORDS) + r"))\b"
+    r"\s+(?=\d+(?:\.\d+)?\s*(?:mm|cm|m)?\s*(?:x|by|×))",
     re.IGNORECASE,
 )
 _THICKNESS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*mm\b", re.IGNORECASE)
@@ -92,12 +107,16 @@ def parse_dimension_text(text: str) -> ParsedDimensions:
 
     quantity_match = _QUANTITY_RE.search(text)
     if quantity_match:
-        digit_a, digit_b, word = quantity_match.groups()
-        if digit_a is not None:
-            parsed.quantity = int(digit_a)
-        elif digit_b is not None:
-            parsed.quantity = int(digit_b)
+        digit_pieces, digit_x, digit_qty, word = quantity_match.groups()
+        digit = digit_pieces or digit_x or digit_qty
+        if digit is not None:
+            parsed.quantity = int(digit)
         elif word is not None:
             parsed.quantity = _QUANTITY_WORDS[word.lower()]
+    else:
+        leading_match = _LEADING_QUANTITY_RE.search(text)
+        if leading_match:
+            digit, word = leading_match.groups()
+            parsed.quantity = int(digit) if digit is not None else _QUANTITY_WORDS[word.lower()]
 
     return parsed

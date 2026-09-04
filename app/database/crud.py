@@ -41,6 +41,7 @@ from app.database.models import (
     ProcessedStripeEvent,
     Project,
     Quote,
+    QuoteItem,
     Subscription,
     Tenant,
     User,
@@ -492,6 +493,24 @@ def create_quote(
     db.commit()
     db.refresh(row)
     return row
+
+
+def create_quote_items(db: Session, items: list[dict]) -> list[QuoteItem]:
+    """Bulk-creates the QuoteItem rows for a just-created Quote (Sprint
+    033, Workstream C). Each dict must include `quote_id`; `id`/
+    `created_at` are filled in if not already present. One commit for
+    the whole batch — callers create the Quote header first, in the same
+    request, so there's nothing to roll back independently here."""
+    rows = []
+    for item in items:
+        item = {**item}
+        item.setdefault("id", uuid.uuid4())
+        rows.append(QuoteItem(**item))
+    db.add_all(rows)
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+    return rows
 
 
 def get_quote_by_id(db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID) -> Quote | None:

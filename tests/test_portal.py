@@ -13,11 +13,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, PortalLink, Project, Quote
+from app.database.models import ActivityLog, Customer, PortalLink, Project, Quote, QuoteItem
 
 TEST_CUSTOMER_NAME = "Pytest Portal Customer"
 OTHER_CUSTOMER_NAME = "Pytest Portal Other Customer"
@@ -37,6 +37,11 @@ def _cleanup():
         if customer_ids:
             db.execute(delete(PortalLink).where(PortalLink.customer_id.in_(customer_ids)))
         db.execute(delete(Project).where(Project.name == TEST_PROJECT_NAME))
+        db.execute(
+            delete(QuoteItem).where(
+                QuoteItem.quote_id.in_(select(Quote.id).where(Quote.postcode == TEST_QUOTE_POSTCODE))
+            )
+        )
         db.execute(delete(Quote).where(Quote.postcode == TEST_QUOTE_POSTCODE))
         db.execute(
             delete(ActivityLog).where(
@@ -305,6 +310,11 @@ def test_download_portal_invoice_wrong_customer_returns_404(
     finally:
         db = SessionLocal()
         try:
+            db.execute(
+                delete(QuoteItem).where(
+                    QuoteItem.quote_id.in_(select(Quote.id).where(Quote.postcode == "PYTESTPORTAL2"))
+                )
+            )
             db.execute(delete(Quote).where(Quote.postcode == "PYTESTPORTAL2"))
             db.execute(delete(Customer).where(Customer.name == "Pytest Portal Wrong Customer"))
             db.commit()

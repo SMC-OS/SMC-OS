@@ -1,18 +1,13 @@
-"""AI Quotation Generator v1 — request/draft schemas.
+"""AI Quotation Generator — request/draft schemas.
 
-AIQuoteDraft is deliberately NOT QuoteRequest: every field is optional
-(except the two flags with safe False/0 defaults) because incompleteness
-must be surfaced to the human reviewer, not silently defaulted. There is no
-price/VAT/total field anywhere in this file — the AI extracts structured
-fields only, it never computes money (see app/quotes/ai_draft.py's
-docstring and docs/DECISIONS.md's new ADR for the full reasoning).
-
-Sprint 032 (Workstream C) adds structured dimensions (quantity/length_mm/
-width_mm/thickness_mm/unit_input) in place of the old ambiguous
-`kitchen_length`, and a `material_match_status` field ("found"/
-"multiple"/"not_found") so the caller can render the same FOUND/MULTIPLE/
-NOT_FOUND distinction Workstream B's MaterialSearchService produces — the
-AI must never present a guess as if it were a resolved product.
+Sprint 033 (Workstream C) rewrite: a quote is one or more independent
+line items now, so a draft is too. AIQuoteItemDraft mirrors
+QuoteItemRequest's shape but every field is optional — incompleteness
+must be surfaced to the human reviewer per item, never silently
+defaulted or invented. There is no price/VAT/total field anywhere in
+this file — the AI extracts structured fields only, it never computes
+money (see app/quotes/ai_draft.py's docstring and docs/DECISIONS.md's
+ADR-024 for the full reasoning, which still applies unchanged).
 """
 
 from pydantic import BaseModel, Field
@@ -22,8 +17,8 @@ class AIDraftRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
 
-class AIQuoteDraft(BaseModel):
-    customer: str | None = None
+class AIQuoteItemDraft(BaseModel):
+    item_type: str = "worktop"
 
     material: str | None = None
     # What the model actually said, if it didn't match a real catalogue
@@ -37,7 +32,6 @@ class AIQuoteDraft(BaseModel):
 
     thickness: str | None = None
 
-    # Sprint 032 (Workstream C) — structured, unit-normalized dimensions.
     # None (not 0) if not stated in the text — "missing" must stay
     # distinguishable from "mentioned as zero" all the way to the frontend.
     quantity: int | None = None
@@ -49,10 +43,16 @@ class AIQuoteDraft(BaseModel):
     # is never silent.
     unit_input: str | None = None
 
-    island: bool = False
-    waterfall: int = 0
-    splashback: bool = False
-    upstands: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
+class AIQuoteDraft(BaseModel):
+    customer: str | None = None
     postcode: str | None = None
 
+    items: list[AIQuoteItemDraft] = Field(default_factory=list)
+
+    # Quote-level warnings only (e.g. no customer name found at all, or
+    # nothing resembling a line item was found in the text) — per-item
+    # issues live on that item's own `warnings`.
     warnings: list[str] = Field(default_factory=list)

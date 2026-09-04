@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { ApiError, api } from "@/lib/api";
 import { formatCurrencyGBP, formatRelativeTime } from "@/lib/utils";
 import type { Customer } from "@/types/customer";
-import type { Quote } from "@/types/quote";
+import { ITEM_TYPE_LABELS, type Quote } from "@/types/quote";
 
 export default function QuoteDetailPage() {
   const params = useParams<{ id: string }>();
@@ -112,7 +112,7 @@ export default function QuoteDetailPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                  {quote.material} ({quote.thickness})
+                  {quote.items.length > 1 ? `${quote.items.length} items` : `${quote.material} (${quote.thickness})`}
                 </h1>
                 <p className="text-xs text-muted">
                   Calculated {formatRelativeTime(quote.created_at)}
@@ -146,31 +146,37 @@ export default function QuoteDetailPage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-xs font-medium text-muted">Dimensions</dt>
+                <dt className="mb-2 text-xs font-medium text-muted">
+                  Item{quote.items.length > 1 ? "s" : ""}
+                </dt>
                 <dd className="text-sm text-foreground">
-                  {quote.length_mm != null ? (
-                    <>
-                      {quote.quantity && quote.quantity > 1 ? `${quote.quantity} x ` : ""}
-                      {quote.length_mm}mm x {quote.width_mm ?? 650}mm
-                      {quote.thickness_mm ? ` x ${quote.thickness_mm}mm` : ""}
-                    </>
+                  {quote.items && quote.items.length > 0 ? (
+                    <ul className="flex flex-col gap-2">
+                      {quote.items.map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex items-center justify-between rounded-lg bg-surface-hover px-3 py-2"
+                        >
+                          <div>
+                            <p className="font-medium text-foreground">
+                              {ITEM_TYPE_LABELS[item.item_type] ?? item.item_type} — {item.material}{" "}
+                              ({item.thickness})
+                            </p>
+                            <p className="text-xs text-muted">
+                              {item.quantity} x {item.length_mm}mm x {item.width_mm}mm
+                            </p>
+                          </div>
+                          <span className="text-sm text-foreground">
+                            {item.line_total !== null ? formatCurrencyGBP(item.line_total) : "—"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   ) : (
                     `${quote.kitchen_length}m`
                   )}
                 </dd>
               </div>
-              {quote.splashback && quote.splashback_length_mm != null && (
-                <div>
-                  <dt className="text-xs font-medium text-muted">Splashback length</dt>
-                  <dd className="text-sm text-foreground">{quote.splashback_length_mm}mm</dd>
-                </div>
-              )}
-              {quote.upstands && quote.upstands_length_mm != null && (
-                <div>
-                  <dt className="text-xs font-medium text-muted">Upstand length</dt>
-                  <dd className="text-sm text-foreground">{quote.upstands_length_mm}mm</dd>
-                </div>
-              )}
               <div className="grid grid-cols-2 gap-y-1">
                 <dt className="text-xs text-muted">Price per slab</dt>
                 <dd className="text-right text-sm text-foreground">

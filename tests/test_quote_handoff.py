@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 
 from app.auth.service import auth_service
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, Project, Quote, User
+from app.database.models import ActivityLog, Customer, Project, Quote, QuoteItem, User
 
 
 TEST_PREFIX = "Pytest Sprint 020"
@@ -25,6 +25,11 @@ def _cleanup() -> None:
         )
         if customer_ids:
             db.execute(delete(Project).where(Project.customer_id.in_(customer_ids)))
+        db.execute(
+            delete(QuoteItem).where(
+                QuoteItem.quote_id.in_(select(Quote.id).where(Quote.postcode == TEST_POSTCODE))
+            )
+        )
         db.execute(delete(Quote).where(Quote.postcode == TEST_POSTCODE))
         db.execute(delete(ActivityLog).where(ActivityLog.title.like(f"{TEST_PREFIX}%")))
         db.execute(delete(Customer).where(Customer.name.like(f"{TEST_PREFIX}%")))

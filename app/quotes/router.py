@@ -19,17 +19,39 @@ from app.database.models import User
 from app.projects.models import ProjectOut
 from app.quotes.ai_draft import AIDraftError, AIDraftUnavailable, ai_draft_service
 from app.quotes.ai_models import AIDraftRequest, AIQuoteDraft
-from app.quotes.pdf import PDFGenerator
+from app.quotes.pdf import PDFGenerator, build_line_items
 
 router = APIRouter(
     prefix="/quotes", tags=["quotes"], dependencies=[Depends(get_current_user)]
 )
 
 
+def _serialize_item(item) -> dict:
+    return {
+        "id": item.id,
+        "position": item.position,
+        "item_type": item.item_type,
+        "material": item.material,
+        "thickness": item.thickness,
+        "quantity": item.quantity,
+        "length_mm": item.length_mm,
+        "width_mm": item.width_mm,
+        "thickness_mm": item.thickness_mm,
+        "unit_input": item.unit_input,
+        "notes": item.notes,
+        "price_per_slab": item.price_per_slab,
+        "slabs": item.slabs,
+        "line_total": item.line_total,
+    }
+
+
 def _serialize(quote) -> dict:
     return {
         "id": quote.id,
         "customer_id": quote.customer_id,
+        # Sprint 033 — these remain a best-effort single-item summary;
+        # `items` is the source of truth (see app/database/models.py's
+        # Quote docstring).
         "material": quote.material,
         "thickness": quote.thickness,
         "kitchen_length": quote.kitchen_length,
@@ -53,6 +75,7 @@ def _serialize(quote) -> dict:
         "approved_at": quote.approved_at,
         "approved_by_user_id": quote.approved_by_user_id,
         "created_at": quote.created_at,
+        "items": [_serialize_item(item) for item in quote.items],
     }
 
 
@@ -141,8 +164,7 @@ def download_invoice(
         {
             "id": quote.id,
             "customer": customer_name,
-            "material": quote.material,
-            "thickness": quote.thickness,
+            "line_items": build_line_items(quote),
             "price_before_vat": quote.price_before_vat,
             "vat": quote.vat,
             "total": quote.total,
