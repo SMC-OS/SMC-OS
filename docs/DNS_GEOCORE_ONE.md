@@ -21,7 +21,10 @@ as good as the zone it was checked against.
 | A public marketing site now exists for the apex | `apps/marketing` — a statically prerendered, indexable GeoCore site. Built and served locally; `robots.txt`, `sitemap.xml`, canonical tag and JSON-LD all verified in the rendered output. | **Certain** — resolves the apex question raised in the previous revision |
 | The application host must not be indexed | `apps/web/app/robots.ts` returns `Disallow: /` unconditionally; asserted by `apps/web/app/robots.test.mjs` | **Certain** |
 | **Three** hosted services are needed (marketing + web + API) | `deploy/railway/marketing.railway.toml`, `web.railway.toml`, `api.railway.toml` | **Certain** |
-| The **current live contents** of the geocore.one zone | **Not verified.** Outbound DNS resolvers are blocked from this environment, so the live zone could not be read. | **Unverified — you must check** |
+| The **current live contents** of the geocore.one zone | **Not verified.** The egress proxy denies every public DNS resolver (`dns.google`, `cloudflare-dns.com`) *and* `geocore.one` itself. Re-tested at Phase 3; still blocked. | **Unverified — you must check (§6)** |
+| The **Railway targets** for each custom domain | **Not obtainable.** The egress proxy denies `railway.com` and `backboard.railway.app`; no Railway CLI or credential exists in this environment. | **Owner-supplied (§5A)** |
+| Whether `sales@geocore.one` exists | **Not verifiable.** No route to Microsoft 365 from this environment. The pricing page no longer hardcodes it — see §7. | **Owner action** |
+| Every application-side behaviour listed in §7 | **Verified** against real running services (API + web + marketing, production builds, real Chromium): 66 checks including tenant isolation, PDF letterheads, portal downloads, robots, canonical, sitemap and the pre-rebrand session migration. | **Certain** |
 
 Every "conflict" flagged below is therefore a *class* of conflict that is
 near-universal on a GoDaddy domain, not a record I have observed on yours.
@@ -150,6 +153,62 @@ The apex concern raised in the previous revision of this document is resolved. `
 
 **One build-time trap, guarded by a test.** The marketing site's indexability is baked into the image at build time, not read at runtime. If `APP_ENV=production` were ever dropped from `apps/marketing/Dockerfile`, the production image would ship `noindex, nofollow` and `Disallow: /` — the site would come up, every page would return 200, nothing would error, and geocore.one would simply never appear in search results. `apps/marketing/indexability.test.mjs` asserts that contract in CI.
 
+
+## 5A. Before / after — the approval table
+
+**Nothing in this table has been applied.** Two columns are marked
+`OWNER-SUPPLIED` because they cannot be obtained from the build environment:
+the egress proxy denies every public DNS resolver *and* railway.com, so the
+current zone could not be read and the Railway targets could not be fetched.
+Fill those two in, then approve.
+
+### Before (current live zone) — TO BE CONFIRMED BY OWNER
+
+Run §6 and paste the output here. The "typical" column is what a GoDaddy
+domain with live Microsoft 365 mail normally holds — it is a prediction to
+check against, **not** an observation of your zone.
+
+| Type | Host | Typical current value | Confirmed? |
+|---|---|---|---|
+| A | `@` | GoDaddy parking IP (`Parked` / `AfternicDNS`) | ☐ |
+| CNAME | `www` | GoDaddy default (`_domainconnect` / parked) | ☐ |
+| MX | `@` | `geocore-one.mail.protection.outlook.com` | ☐ |
+| TXT | `@` | `v=spf1 include:spf.protection.outlook.com -all` | ☐ |
+| TXT | `@` | `MS=msXXXXXXXX` (domain verification) | ☐ |
+| TXT | `_dmarc` | `v=DMARC1; p=...` | ☐ |
+| CNAME | `selector1._domainkey` | `selector1-geocore-one._domainkey.<tenant>.onmicrosoft.com` | ☐ |
+| CNAME | `selector2._domainkey` | `selector2-geocore-one._domainkey.<tenant>.onmicrosoft.com` | ☐ |
+| CNAME | `autodiscover` | `autodiscover.outlook.com` | ☐ |
+| CAA | `@` | *(usually absent)* | ☐ |
+| — | `app`, `api` | *(expected absent)* | ☐ |
+
+### After (proposed)
+
+| # | Type | Host | Value | TTL | Action | Purpose |
+|---|---|---|---|---|---|---|
+| 1 | CNAME | `app` | `OWNER-SUPPLIED` — Railway **web** target | 600 | **ADD** | GeoCore application |
+| 2 | CNAME | `api` | `OWNER-SUPPLIED` — Railway **api** target | 600 | **ADD** | GeoCore API |
+| 3 | A | `@` | `OWNER-SUPPLIED` — Railway apex target for **marketing** | 600 | **MODIFY** (replaces parking) | GeoCore public website |
+| 4 | — | `www` | 301 → `https://geocore.one` | — | **MODIFY** (replaces GoDaddy default) | Canonical consolidation |
+| 5 | MX | `@` | *unchanged* | — | **NONE** | Microsoft 365 mail |
+| 6 | TXT | `@` (SPF) | *unchanged* | — | **NONE** | Microsoft 365 mail |
+| 7 | TXT | `@` (`MS=`) | *unchanged* | — | **NONE** | Microsoft 365 verification |
+| 8 | TXT | `_dmarc` | *unchanged* | — | **NONE** | Microsoft 365 mail |
+| 9 | CNAME | `selector1._domainkey` | *unchanged* | — | **NONE** | Microsoft 365 DKIM |
+| 10 | CNAME | `selector2._domainkey` | *unchanged* | — | **NONE** | Microsoft 365 DKIM |
+| 11 | CNAME | `autodiscover` | *unchanged* | — | **NONE** | Microsoft 365 |
+| 12 | CAA | `@` | *review only* | — | **NONE** | Blocks TLS issuance if present and restrictive |
+
+**Net: 2 records added, 2 modified, 0 deleted, 0 mail records touched.**
+
+### Where the Railway targets come from
+
+Add each custom domain in the Railway dashboard **first** — Railway issues the
+TLS certificate by validating DNS, so the hostname must already be known to
+the service. Railway then displays the exact target for that domain. Copy it
+verbatim into the table above. Do not transcribe a target from another
+domain's setup or infer one; a wrong target fails certificate issuance with
+no obvious error.
 
 ## 6. Pre-flight — run these before applying anything
 
