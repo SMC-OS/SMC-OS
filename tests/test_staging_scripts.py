@@ -15,6 +15,23 @@ import sys
 
 POWERSHELL = shutil.which("pwsh") or shutil.which("powershell")
 
+# Sprint 034 (Phase 3) — this budget covers PowerShell's *interpreter start*,
+# not the script's work.
+#
+# It was 10 seconds, and CI intermittently failed with TimeoutExpired on the
+# FIRST of the three parametrised cases below while the other two passed —
+# the first invocation is the one that pays pwsh's cold start, which on a
+# loaded shared runner can exceed ten seconds on its own. Observed on
+# https://github.com/SMC-OS/SMC-OS/actions/runs/33885175530: identical code
+# failed there and passed in the run one minute later.
+#
+# The assertions this guards are about the script's exit code and its stderr,
+# never about how fast it returns, so a generous budget weakens nothing. The
+# script does no network I/O on this path and completes in well under a
+# second of real work, so a genuine hang still fails the test — just not a
+# slow interpreter start.
+_POWERSHELL_STARTUP_TIMEOUT_SECONDS = 60
+
 import pytest
 
 
@@ -300,7 +317,7 @@ def test_health_monitor_rejects_unsafe_public_origin_components_before_network(u
         check=False,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=_POWERSHELL_STARTUP_TIMEOUT_SECONDS,
     )
 
     assert result.returncode != 0
