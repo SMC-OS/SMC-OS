@@ -15,6 +15,23 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
+def build_line_items(quote) -> list[dict]:
+    """One invoice row per QuoteItem (Sprint 033) — shared by
+    app/quotes/router.py and app/portal/router.py so a quote's real
+    line-by-line content, not a collapsed single material/thickness
+    summary, is what a customer actually sees on the PDF."""
+    return [
+        {
+            "description": (
+                f"{item.item_type.replace('_', ' ').title()} — {item.material} "
+                f"({item.thickness}), {item.quantity} x {item.length_mm:g}mm x {item.width_mm:g}mm"
+            ),
+            "amount": item.line_total if item.line_total is not None else 0.0,
+        }
+        for item in quote.items
+    ]
+
+
 class PDFGenerator:
     def create(self, invoice: dict) -> bytes:
         buffer = io.BytesIO()
@@ -36,10 +53,18 @@ class PDFGenerator:
         story.append(Paragraph(f"Customer: {invoice['customer']}", styles["Normal"]))
         story.append(Spacer(1, 16))
 
-        # VAT breakdown table
-        rows = [
-            ["Description", "Amount"],
-            [f"{invoice['material']} ({invoice['thickness']})", f"£{invoice['price_before_vat']:,.2f}"],
+        # VAT breakdown table — one row per line item (Sprint 033), then
+        # VAT/Total. Falls back to the old single material/thickness row
+        # if a caller hasn't been updated to pass `line_items` yet.
+        line_items = invoice.get("line_items") or [
+            {
+                "description": f"{invoice['material']} ({invoice['thickness']})",
+                "amount": invoice["price_before_vat"],
+            }
+        ]
+        rows = [["Description", "Amount"]]
+        rows += [[item["description"], f"£{item['amount']:,.2f}"] for item in line_items]
+        rows += [
             ["VAT (20%)", f"£{invoice['vat']:,.2f}"],
             ["Total", f"£{invoice['total']:,.2f}"],
         ]

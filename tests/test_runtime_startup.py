@@ -222,14 +222,26 @@ def test_startup_modules_do_not_import_or_call_alembic_or_subprocess(relative_pa
 
 
 def test_production_dockerfile_enforces_the_backend_runtime_contract():
+    """Sprint 033 (ADR-035) supersedes part of this contract: the image's
+    default CMD now runs the migration gate (app/core/migrate_gate.py)
+    before exec'ing uvicorn, rather than starting uvicorn directly — see
+    docs/SPRINTS/sprint-033.md §1.2/§2.1 for why (Railway's separate
+    preDeployCommand release-job step proved unreliable via `railway
+    up`). The Dockerfile itself still never spells out an `alembic`
+    invocation directly (that stays inside migrate_gate.py, the single
+    place the command is invoked, independently tested) and ENTRYPOINT
+    is still not used — `exec` inside a plain CMD keeps PID 1 handling
+    identical to the previous shape.
+    """
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     normalized = dockerfile.lower()
 
     assert "from python:3.12-slim" in normalized
     assert "user simo" in normalized
     assert "expose 8000" in normalized
-    assert '"uvicorn", "app.main:app"' in normalized
-    assert '"--no-access-log"' in normalized
+    assert "app.core.migrate_gate" in normalized
+    assert "exec uvicorn app.main:app" in normalized
+    assert "--no-access-log" in normalized
     assert "/health" in normalized
 
     assert "entrypoint" not in normalized
@@ -238,6 +250,15 @@ def test_production_dockerfile_enforces_the_backend_runtime_contract():
     assert "copy .env" not in normalized
     assert "seed_" not in normalized
     assert "seed-data" not in normalized
+
+
+def test_migrate_gate_is_the_only_module_invoking_alembic_upgrade():
+    """The Dockerfile delegates to exactly one script for the actual
+    `alembic upgrade` invocation — keeps the migration command in one
+    place, independently testable, matching the module's own contract
+    (see test_migrate_gate.py)."""
+    gate_source = (PROJECT_ROOT / "app" / "core" / "migrate_gate.py").read_text(encoding="utf-8")
+    assert '"alembic", "upgrade", "head"' in gate_source
 
 
 def test_docker_build_context_excludes_local_and_sensitive_files():

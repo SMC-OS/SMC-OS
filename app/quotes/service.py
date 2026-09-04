@@ -128,28 +128,36 @@ class QuoteService:
             raise CustomerNotFoundError(quote.customer_id)
 
         result = self.calculator.calculate(db, quote)
+        first_item = result["items"][0]
 
         row = crud.create_quote(
             db,
             id=uuid.uuid4(),
             tenant_id=tenant_id,
             customer_id=quote.customer_id,
-            material=quote.material,
-            thickness=quote.thickness,
-            # kitchen_length stays a derived mirror (metres) of length_mm —
-            # see app/database/models.py's Quote.kitchen_length docstring.
-            kitchen_length=quote.length_mm / 1000,
-            quantity=quote.quantity,
-            length_mm=quote.length_mm,
-            width_mm=quote.width_mm,
-            thickness_mm=quote.thickness_mm,
-            unit_input=quote.unit_input,
-            island=quote.island,
-            waterfall=quote.waterfall,
-            splashback=quote.splashback,
-            splashback_length_mm=quote.splashback_length_mm,
-            upstands=quote.upstands,
-            upstands_length_mm=quote.upstands_length_mm,
+            # Sprint 033 (Workstream C) — these columns are now a
+            # best-effort single-item *summary* of `items` below, kept
+            # for every reader that predates multi-item quotes (see
+            # app/database/models.py's Quote docstring and
+            # QuoteCalculator.summarize_items()). `items` is the source
+            # of truth.
+            material=result["material"],
+            thickness=result["thickness"],
+            kitchen_length=first_item["length_mm"] / 1000,
+            quantity=first_item["quantity"],
+            length_mm=first_item["length_mm"],
+            width_mm=first_item["width_mm"],
+            thickness_mm=first_item["thickness_mm"],
+            unit_input=first_item["unit_input"],
+            # The old per-quote flags are frozen at their Sprint-032
+            # meaning — a new quote's real extras are independent items
+            # (see QuoteItem), never these columns.
+            island=False,
+            waterfall=0,
+            splashback=False,
+            splashback_length_mm=None,
+            upstands=False,
+            upstands_length_mm=None,
             postcode=quote.postcode,
             price_per_slab=result["price_per_slab"],
             price_before_vat=result["price_before_vat"],
@@ -157,13 +165,37 @@ class QuoteService:
             total=result["total"],
         )
 
+        crud.create_quote_items(
+            db,
+            [
+                {
+                    "quote_id": row.id,
+                    "position": index,
+                    "item_type": item["item_type"],
+                    "material": item["material"],
+                    "thickness": item["thickness"],
+                    "quantity": item["quantity"],
+                    "length_mm": item["length_mm"],
+                    "width_mm": item["width_mm"],
+                    "thickness_mm": item["thickness_mm"],
+                    "unit_input": item["unit_input"],
+                    "notes": item["notes"],
+                    "price_per_slab": item["price_per_slab"],
+                    "slabs": item["slabs"],
+                    "line_total": item["line_total"],
+                }
+                for index, item in enumerate(result["items"])
+            ],
+        )
+        db.refresh(row)
+
         # Sprint 004/006 established this pattern: the backend logs its own
         # ActivityEvent, replacing a standalone frontend call.
         activity_service.log(
             ActivityEventCreate(
                 type=ActivityType.QUOTE_CREATED,
                 title="New quote created",
-                description=f"{quote.customer} — {quote.material}, £{result['total']:,.2f}",
+                description=f"{quote.customer} — {result['material']}, £{result['total']:,.2f}",
             ),
             tenant_id=tenant_id,
         )

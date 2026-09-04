@@ -1,49 +1,84 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+# Sprint 033 (Workstream C). Plain strings (no native enum), same
+# convention as Quote.status etc. — validated here at the Pydantic
+# boundary. Every type shares identical area math (quantity x length x
+# width); island/waterfall_panel carry a small additional flat
+# installation surcharge for pricing continuity with Sprint 032 (see
+# app/quotes/calculator.py), not because they need different dimensions.
+ITEM_TYPES = {"worktop", "island", "splashback", "upstand", "sill", "waterfall_panel", "other"}
+
+
+class QuoteItemRequest(BaseModel):
+    item_type: str = "worktop"
+    material: str
+    thickness: str
+
+    quantity: int = 1
+    length_mm: float
+    # Defaults to the standard UK worktop depth (650mm) — for a linear
+    # item (splashback/upstand/sill) this is that item's own height/
+    # depth, not a worktop depth; always independent per item, never
+    # inherited from another item on the same quote.
+    width_mm: float = 650
+    thickness_mm: float | None = None
+    unit_input: str = "mm"
+
+    notes: str | None = None
+
+    @field_validator("item_type")
+    @classmethod
+    def _item_type_must_be_known(cls, value: str) -> str:
+        if value not in ITEM_TYPES:
+            raise ValueError(f"item_type must be one of {sorted(ITEM_TYPES)}")
+        return value
+
+
+class QuoteItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    position: int
+    item_type: str
+    material: str
+    thickness: str
+    quantity: int
+    length_mm: float
+    width_mm: float
+    thickness_mm: float | None
+    unit_input: str
+    notes: str | None
+    price_per_slab: float | None
+    slabs: int | None
+    line_total: float | None
 
 
 class QuoteRequest(BaseModel):
     customer: str
 
-    material: str
+    postcode: str | None = None
 
-    thickness: str
+    # Sprint 033 (Workstream C) — the source of truth. A quote is one or
+    # more independent line items; nothing here forces a splashback to
+    # share a worktop's dimensions or vice versa.
+    items: list[QuoteItemRequest] | None = None
 
-    # Sprint 032 (Workstream C) — structured dimensions replace the old
-    # ambiguous single `kitchen_length` float as the request's source of
-    # truth. Canonical unit is millimetres; `unit_input` records what the
-    # caller actually entered in, for transparency/traceability only.
+    # --- Backward-compatible single-item alias (the Sprint 032 and
+    # earlier flat shape) — still accepted over the API, wrapped into a
+    # single "worktop" `items` entry when `items` isn't given directly.
+    # Never read past construction; app/quotes/calculator.py and
+    # app/quotes/service.py only ever look at `items`. ---
+    material: str | None = None
+    thickness: str | None = None
     quantity: int = 1
     length_mm: float | None = None
-    # Defaults to the standard UK worktop depth (650mm) when the caller
-    # doesn't have/need an independent width — never silently invented
-    # when the caller *does* supply one.
     width_mm: float = 650
     thickness_mm: float | None = None
     unit_input: str = "mm"
-
-    # Backward-compatible alias for pre-Sprint-032 callers — metres,
-    # matching the field this replaced. If length_mm isn't given, it's
-    # derived from this instead of rejecting the request. New callers
-    # should send length_mm directly.
-    kitchen_length: float | None = None
-
-    island: bool = False
-
-    waterfall: int = 0
-
-    splashback: bool = False
-    # Independent linear length for the splashback — required (validated
-    # in app/quotes/validator.py) whenever `splashback` is True, so it
-    # never silently reuses the worktop run's own length.
-    splashback_length_mm: float | None = None
-
-    upstands: bool = False
-    upstands_length_mm: float | None = None
-
-    postcode: str | None = None
+    kitchen_length: float | None = None  # Sprint 032's own legacy alias
 
     # Sprint 007: optional link to a real customer record. `customer` (the
     # free-text name) stays required and unchanged — /estimate's regex path
@@ -54,12 +89,34 @@ class QuoteRequest(BaseModel):
     customer_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
-    def _resolve_length_mm(self) -> "QuoteRequest":
-        if self.length_mm is None:
-            if self.kitchen_length is None:
-                raise ValueError("length_mm (or legacy kitchen_length) is required.")
-            self.length_mm = self.kitchen_length * 1000
-            self.unit_input = "m"
+    def _build_items(self) -> "QuoteRequest":
+        if self.items:
+            return self
+
+        length_mm = self.length_mm
+        unit_input = self.unit_input
+        if length_mm is None and self.kitchen_length is not None:
+            length_mm = self.kitchen_length * 1000
+            unit_input = "m"
+
+        if length_mm is None or self.material is None or self.thickness is None:
+            raise ValueError(
+                "Provide `items`, or the legacy `material`/`thickness`/`length_mm` "
+                "(or `kitchen_length`) fields for a single-item quote."
+            )
+
+        self.items = [
+            QuoteItemRequest(
+                item_type="worktop",
+                material=self.material,
+                thickness=self.thickness,
+                quantity=self.quantity,
+                length_mm=length_mm,
+                width_mm=self.width_mm,
+                thickness_mm=self.thickness_mm,
+                unit_input=unit_input,
+            )
+        ]
         return self
 
 

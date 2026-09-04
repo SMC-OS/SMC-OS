@@ -1,10 +1,10 @@
 import uuid
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, Quote
+from app.database.models import ActivityLog, Customer, Quote, QuoteItem
 
 TEST_POSTCODE = "PYTEST999"
 TEST_CUSTOMER_NAME = "Pytest Quote Customer"
@@ -21,6 +21,11 @@ _QUOTE_PAYLOAD = {
 def _cleanup():
     db = SessionLocal()
     try:
+        db.execute(
+            delete(QuoteItem).where(
+                QuoteItem.quote_id.in_(select(Quote.id).where(Quote.postcode == TEST_POSTCODE))
+            )
+        )
         db.execute(delete(Quote).where(Quote.postcode == TEST_POSTCODE))
         db.execute(
             delete(ActivityLog).where(

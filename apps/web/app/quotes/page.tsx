@@ -75,7 +75,9 @@ export default function QuotesPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-foreground">
-                        {quote.material} ({quote.thickness})
+                        {quote.items && quote.items.length > 1
+                          ? `${quote.items.length} items — ${quote.material}`
+                          : `${quote.material} (${quote.thickness})`}
                       </p>
                     </div>
                     <span className="shrink-0 text-sm font-medium text-foreground">

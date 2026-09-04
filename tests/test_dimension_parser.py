@@ -40,6 +40,25 @@ def test_parses_word_quantity_with_pieces():
     assert d.quantity == 2
 
 
+def test_parses_leading_word_quantity_without_pieces_word():
+    # Sprint 033 — the AI multi-item flow's segmented text_span often
+    # looks like this, with no "pieces"/"off" word at all.
+    d = parse_dimension_text("two 1200 x 600 splashbacks")
+    assert d.quantity == 2
+    assert d.length_mm == 1200
+    assert d.width_mm == 600
+
+
+def test_leading_digit_quantity_without_pieces_word():
+    d = parse_dimension_text("3 1200 x 600 upstands")
+    assert d.quantity == 3
+
+
+def test_bare_dimension_pair_has_no_quantity_misfire():
+    d = parse_dimension_text("2400 x 600")
+    assert d.quantity is None
+
+
 def test_parses_standalone_metre_length_no_pair():
     d = parse_dimension_text("3.5m kitchen run")
     assert d.length_mm == 3500
