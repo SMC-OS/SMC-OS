@@ -5,6 +5,7 @@ import {
   FileTextIcon,
   FolderIcon,
   InfoIcon,
+  SettingsIcon,
   UserIcon,
   UsersIcon,
 } from "@/components/ui/icons";
@@ -21,6 +22,7 @@ export const ACTIVITY_ICON: Record<ActivityType, typeof BotIcon> = {
   ai_request: BotIcon,
   user_login: UserIcon,
   tenant_created: UsersIcon,
+  tenant_identity_updated: SettingsIcon,
   portal_link_created: FileTextIcon,
   team_member_deactivated: UserIcon,
   customer_message_received: InfoIcon,
@@ -42,6 +44,7 @@ export const ACTIVITY_TONE: Record<ActivityType, string> = {
   ai_request: "bg-accent/10 text-accent",
   user_login: "bg-surface-hover text-muted",
   tenant_created: "bg-accent/10 text-accent",
+  tenant_identity_updated: "bg-accent/10 text-accent",
   portal_link_created: "bg-info/10 text-info",
   team_member_deactivated: "bg-surface-hover text-muted",
   customer_message_received: "bg-info/10 text-info",

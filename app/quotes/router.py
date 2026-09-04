@@ -20,6 +20,8 @@ from app.projects.models import ProjectOut
 from app.quotes.ai_draft import AIDraftError, AIDraftUnavailable, ai_draft_service
 from app.quotes.ai_models import AIDraftRequest, AIQuoteDraft
 from app.quotes.pdf import PDFGenerator, build_line_items
+from app.tenants import identity as tenant_identity
+from app.tenants.service import tenant_service
 
 router = APIRouter(
     prefix="/quotes", tags=["quotes"], dependencies=[Depends(get_current_user)]
@@ -164,6 +166,11 @@ def download_invoice(
         {
             "id": quote.id,
             "customer": customer_name,
+            # Sprint 034 — the letterhead is this tenant's own business
+            # identity, resolved from its profile, never a global default.
+            "company": tenant_identity.resolve(
+                tenant_service.get(db, current_user.tenant_id)
+            ),
             "line_items": build_line_items(quote),
             "price_before_vat": quote.price_before_vat,
             "vat": quote.vat,

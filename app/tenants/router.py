@@ -3,10 +3,16 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_role
+from app.auth.models import UserRole
 from app.database.database import get_db
 from app.database.models import User
-from app.tenants.models import TenantCreate, TenantOut
+from app.tenants.models import (
+    TenantCreate,
+    TenantOut,
+    TenantProfileOut,
+    TenantProfileUpdate,
+)
 from app.tenants.service import tenant_service
 
 # Sprint 008: requires the existing seeded-owner token (get_current_user),
@@ -41,6 +47,41 @@ def get_my_tenant(
     # most one row, never another tenant's.
     tenant = tenant_service.get(db, current_user.tenant_id)
     return [tenant] if tenant is not None else []
+
+
+# Sprint 034 — company identity. Declared BEFORE /{tenant_id} on purpose:
+# FastAPI matches in declaration order, and "me" would otherwise be parsed
+# as a uuid path param and 422 before ever reaching this handler.
+#
+# Both routes are hard-scoped to the caller's own tenant — there is no
+# tenant_id parameter to tamper with, so no cross-tenant write is
+# expressible through this API at all (ADR-029's posture, enforced by
+# construction rather than by a check).
+@router.get("/me/profile", response_model=TenantProfileOut)
+def get_my_company_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant = tenant_service.get(db, current_user.tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    return tenant
+
+
+@router.patch("/me/profile", response_model=TenantProfileOut)
+def update_my_company_profile(
+    data: TenantProfileUpdate,
+    current_user: User = Depends(require_role(UserRole.OWNER)),
+    db: Session = Depends(get_db),
+):
+    """Owner-only: this is the business's legal and statutory identity as it
+    appears on every quote and invoice its customers receive, so it sits
+    alongside billing and team management rather than with general staff
+    settings."""
+    tenant = tenant_service.update_identity(db, current_user.tenant_id, data)
+    if tenant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    return tenant
 
 
 @router.get("/{tenant_id}", response_model=TenantOut)

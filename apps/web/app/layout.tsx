@@ -15,9 +15,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Sprint 034 — this is the *platform's* metadata, so it describes the
+// product, not any one tenant's business. The previous description named a
+// single customer company, which is a tenant identity and belongs in that
+// tenant's own company profile (Settings → Company identity), never in
+// global chrome every tenant sees.
 export const metadata: Metadata = {
   title: "SIMO OS",
-  description: "AI Operating System for Simo Marble & Construction Ltd",
+  description: "AI operating system for stone and construction businesses",
 };
 
 // Runs before React hydrates so the correct theme class is on <html> before

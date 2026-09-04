@@ -21,6 +21,7 @@ import type { AppNotification } from "@/types/notification";
 import type { PortalLinkCreateOut, PortalLinkOut, PortalPublicOut } from "@/types/portal";
 import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
 import type { AIQuoteDraft, Quote, QuoteRequest, QuoteResult } from "@/types/quote";
+import type { TenantProfile, TenantProfileUpdate } from "@/types/tenant";
 import type { TeamMemberOut } from "@/types/user";
 import { clearToken, getToken } from "@/lib/auth-storage";
 import { resolveApiBaseUrl } from "@/lib/runtime-config";
@@ -149,6 +150,16 @@ export const api = {
   // Sprint 015 — Owner-only (require_role(OWNER) server-side; a Staff
   // caller gets a 403 handled by the caller, same as invitations).
   getUsers: () => request<TeamMemberOut[]>("/users"),
+
+  // Sprint 034 — company identity. Read by any authenticated member;
+  // the PATCH is Owner-only server-side (app/tenants/router.py).
+  getCompanyProfile: () => request<TenantProfile>("/tenants/me/profile"),
+
+  updateCompanyProfile: (data: TenantProfileUpdate) =>
+    request<TenantProfile>("/tenants/me/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
 
   // Sprint 032 (Workstream A) — subscriptions/billing.
   getPlans: () => request<Plan[]>("/billing/plans"),

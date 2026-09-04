@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import CompanyIdentityCard from "@/components/settings/CompanyIdentityCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -232,6 +233,11 @@ export default function SettingsPage() {
 
       {isOwner && (
         <div className="flex flex-col gap-6">
+          {/* Sprint 034 — the tenant's own customer-facing business identity.
+              Owner-only, alongside billing and team, because these are the
+              statutory details printed on every customer invoice. */}
+          <CompanyIdentityCard />
+
           <Card>
             <CardHeader>
               <CardTitle>Team</CardTitle>
