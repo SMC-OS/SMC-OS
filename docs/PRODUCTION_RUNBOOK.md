@@ -168,7 +168,64 @@ These are operational lessons from this project's actual first production deploy
 
 **Verifying non-root at runtime, correctly.** `railway ssh <service> -- whoami`/`id` connects to a separate debug-shell context that may itself run as root — this does **not** reflect the actual application process's user and must not be used alone to certify non-root. Check the real PID 1 process instead: `railway ssh <service> -- sh -c "cat /proc/1/status | head -12"` and confirm `Uid:`/`Gid:` show the non-root UID (this image's convention: `10001`), not `0`.
 
-## 11. Appendix — Post-launch incident log
+## 11. Appendix — Sprint 034 additions: the third service and the domain cutover
+
+### 11.1 There are now three services, not two
+
+| Service | Source | Railway config | Host |
+|---|---|---|---|
+| `api` | `Dockerfile` (repo root) | `deploy/railway/api.railway.toml` | `api.geocore.one` |
+| `web` | `apps/web/Dockerfile` | `deploy/railway/web.railway.toml` | `app.geocore.one` |
+| **`marketing`** | `apps/marketing/Dockerfile` | `deploy/railway/marketing.railway.toml` | `geocore.one` (apex) + `www` redirect |
+
+`marketing` is stateless, has no database and makes no API calls. It cannot be broken by an API or database incident, and it does not need to be deployed in step with the other two. Deploy it whenever; deploy order only matters for `api` before `web`.
+
+### 11.2 The marketing service's variables are BUILD arguments
+
+`APP_ENV`, `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_APP_URL` are consumed by `next build`, not by the running container. **Changing them requires a redeploy, not a restart.** A restart with new values changes nothing, which is a confusing failure to debug at 2am.
+
+`APP_ENV=production` is already set in `apps/marketing/Dockerfile`, so a normal build is correct by default. It is called out because of what happens if it is ever removed: the image ships `noindex, nofollow` and `Disallow: /`, the service passes its health check, every page returns 200, nothing is logged — and geocore.one silently disappears from search results. `apps/marketing/indexability.test.mjs` fails CI on that edit.
+
+### 11.3 Post-deploy verification for the domain cutover
+
+Beyond the standard `/health` and `/ready` checks in §3:
+
+```sh
+# The apex serves the marketing site, not a login redirect
+curl -sI https://geocore.one | head -1                    # expect 200, not 30x
+curl -s  https://geocore.one/robots.txt                   # expect "Allow: /" + Sitemap line
+curl -s  https://geocore.one/sitemap.xml | head -3
+
+# The application is excluded from search
+curl -s  https://app.geocore.one/robots.txt               # expect "Disallow: /"
+
+# www consolidates onto the apex, and is a real redirect not a masked frame
+curl -sI https://www.geocore.one | head -1                # expect 301
+```
+
+If `https://geocore.one/robots.txt` says `Disallow: /` on a production deploy, the image was built without `APP_ENV=production` or with a `NEXT_PUBLIC_SITE_URL` that is not exactly `https://geocore.one`. Rebuild — do not edit the file in the container.
+
+### 11.4 The rebrand deploy and existing sessions
+
+The SIMO OS → GeoCore rename changed three `localStorage` keys, one of which holds the JWT. They are read through a one-time migration (`apps/web/lib/storage-keys.ts`), so **existing signed-in users are not logged out** by this deploy.
+
+If a support report after the rebrand deploy says "everyone got logged out", the migration path is the first thing to check — but note that a rollback to a pre-rebrand image is *also* safe: `clearToken()` clears both key names, and the old image reads the legacy key, which a user who has not yet visited the new build still has.
+
+### 11.5 Tenant company identity — a required post-deploy step
+
+Invoice letterheads are now per-tenant (ADR-036). The migration backfilled the legal name and address that were already being printed, but **left `company_number` and `vat_number` NULL deliberately** — no accurate value existed to backfill, and a fabricated company registration or VAT number on a UK invoice is a legal defect.
+
+The owner must enter the real values in **Settings → Company identity** after deploy. Until then those two lines are omitted from invoices; everything else renders normally.
+
+For configuration before anyone has logged in, `scripts/production/set_tenant_identity.py` does the same job from the CLI — dry-run by default, exact-identifier match only, idempotent:
+
+```sh
+python -m scripts.production.set_tenant_identity --list
+python -m scripts.production.set_tenant_identity --slug <slug> --company-number ... --vat-number ...
+# then re-run the same command with --confirm
+```
+
+## 12. Appendix — Post-launch incident log
 
 **v1.0.2 (2026-09-03) — auth-session desync on the dashboard.** An expired/invalid JWT (60-minute expiry, no refresh mechanism exists — see §1's `JWT_EXPIRE_MINUTES`) got a correct 401 from the API, but `AuthProvider` only ever computed `isAuthenticated` once, on mount, so nothing told it the token had gone invalid mid-session; the dashboard page also had no auth guard at all, unlike every other protected page. Net effect: a signed-out user kept seeing themselves as authenticated, stuck on a broken dashboard retrying every 5 seconds and reporting the 401 as "Couldn't reach the SIMO OS API." Fixed by making token clearing an event `AuthProvider` reacts to, adding the missing dashboard guard, and having the polling layer distinguish a 401/403 from a real network/API failure. Frontend-only; no backend change. Full record: PR #14, merge commit `94562198b786e30723730f33ac50d1ca1fca06b2`, tag `v1.0.2`.
 
