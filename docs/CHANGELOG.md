@@ -20,7 +20,7 @@ Full detail in `docs/SPRINTS/sprint-036.md`; decisions in `docs/DECISIONS.md` AD
 
 **Reported bugs fixed at their cause.** The theme control appearing inside the search field was a flex-sizing bug, not z-index; mobile layout breakage is gone. Both are locked in by a structural component test and a bounding-box E2E assertion at 390px.
 
-**Verification:** 891 backend tests (from 712), 149 frontend (from 110), 26 E2E specs (from 16); lint, types and build clean. Five migrations, all additive or NOT-NULL-dropping, full round trip clean; the universal-quoting downgrade refuses once general quotes exist rather than deleting them. Responsive sweep across 8 widths × 12 routes × 2 themes: zero overflow, zero overlapping controls, zero clipped controls, zero contrast failures, 15/15 keyboard stops with a focus ring. No test was weakened; the nine updated for moved routes or renamed actions each record why and still assert the same behaviour.
+**Verification:** 892 backend tests (from 712), 149 frontend (from 110), 26 E2E specs (from 16); lint, types and build clean. Five migrations, all additive or NOT-NULL-dropping, full round trip clean; the universal-quoting downgrade refuses once general quotes exist rather than deleting them. Responsive sweep across 8 widths × 12 routes × 2 themes: zero overflow, zero overlapping controls, zero clipped controls, zero contrast failures, 15/15 keyboard stops with a focus ring. No test was weakened; the nine updated for moved routes or renamed actions each record why and still assert the same behaviour.
 
 **Not deployed.** Staging and production promotion are owner-gated — the build session had no Railway CLI or credentials. Recorded rather than claimed; see `docs/SPRINTS/sprint-036.md` §9.2 for the ordered steps.
 

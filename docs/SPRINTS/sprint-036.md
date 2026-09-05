@@ -330,7 +330,7 @@ Seven bounded commits, each green before the next began.
 | 1 | `docs(sprint-036)` | Discovery findings and the locked contract above. |
 | 2 | `feat(schema)` | Five migrations: universal quote model, construction customer/project records, `automations`/`automation_runs`/`tasks`, tenant workspace configuration. |
 | 3 | `feat(api)` | Universal quoting, the automation engine, tasks, calendar, GeoCore AI, logo upload, onboarding state. |
-| 4 | `test(backend)` | 179 new backend tests (712 → 891). |
+| 4 | `test(backend)` | 179 new backend tests (712 → 891); one more added at review (§7.1). |
 | 5 | `feat(web)` | Design system, responsive shell, client layer. |
 | 6 | `feat(web)` | Dashboard V2, Customers V2, universal quoting UI, Projects V2. |
 | 7 | `feat(web)` | Automations, GeoCore AI, Calendar, Settings V2, onboarding. |
@@ -338,8 +338,8 @@ Seven bounded commits, each green before the next began.
 
 ### 7.1 Defects found and fixed during the sprint
 
-Four real defects surfaced while building and testing, each fixed rather
-than worked around:
+Five real defects surfaced while building, testing and reviewing, each
+fixed rather than worked around:
 
 1. **The customer context endpoint returned no quotes.** Sprint 013
    already had `list_quotes_by_customer`/`list_projects_by_customer` with
@@ -362,6 +362,21 @@ than worked around:
 4. **The stone form's AI textarea had no accessible name**, and sixteen
    small text links had 16–18px hit areas. Both found by the Workstream M
    audit; both fixed (see §8.3).
+5. **A stone quote did not fire `quote.created`.** Found reading the diff
+   back at the end of the sprint. Dispatch had been wired into the
+   routers, and only `POST /api/v1/quotes` (the general builder) called
+   it — so `POST /api/v1/quote`, the stone calculator that also backs
+   `/estimate` and the AI draft flow, created a quote and announced
+   nothing. A builder with a "new quote → chase task" rule would have
+   seen it work for extensions and silently not for worktops: no error,
+   no failed run, no trace in the run history. Dispatch for `created`,
+   `sent` and `approved` now lives in `app/quotes/service.py`, so every
+   entry point is covered by construction rather than by whoever
+   remembers to add the call at the next route. The regression test fails
+   against the commit before the fix. `dispatch_quote_approved`'s
+   `actor_user_id` parameter went with it: it was accepted and discarded,
+   and a name suggesting per-actor attribution that does not exist is a
+   trap for the next reader.
 
 ---
 
@@ -371,7 +386,7 @@ than worked around:
 
 | Gate | Before | After |
 | --- | --- | --- |
-| Backend (`pytest`) | 712 passed, 3 skipped | **891 passed, 3 skipped** |
+| Backend (`pytest`) | 712 passed, 3 skipped | **892 passed, 3 skipped** |
 | Frontend (`vitest`) | 110 passed (21 files) | **149 passed (27 files)** |
 | E2E (`playwright`) | 16 specs | **26 specs, all passing** |
 | Lint (`pnpm lint`) | clean | clean |
@@ -663,7 +678,7 @@ Against the Definition of Done:
 | Calendar foundation | ✅ |
 | Works on mobile, tablet and desktop | ✅ — 192 combinations verified |
 | Tenant/security boundaries maintained | ✅ |
-| Passes existing + new automated tests | ✅ — 891 backend, 149 frontend, 26 E2E |
+| Passes existing + new automated tests | ✅ — 892 backend, 149 frontend, 26 E2E |
 | Passes CI | ✅ |
 | Passes staging | ⛔ **Owner-gated** — no Railway access from this session (§9.2) |
 | Deployed and smoke-tested in production | ⛔ **Owner-gated** — same |
