@@ -27,7 +27,7 @@ export default function NewCustomerPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-6">
-        <Link href="/customers" className="text-sm text-muted hover:text-foreground">
+        <Link href="/customers" className="tap-link text-sm text-muted hover:text-foreground">
           &larr; Customers
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">

@@ -119,7 +119,7 @@ export default function QuoteDetailPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <Link href="/quotes" className="text-sm text-muted hover:text-foreground">
+        <Link href="/quotes" className="tap-link text-sm text-muted hover:text-foreground">
           &larr; Quotes
         </Link>
       </div>

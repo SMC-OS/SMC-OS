@@ -232,7 +232,7 @@ export default function CustomerDetailPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <Link href="/customers" className="text-sm text-muted hover:text-foreground">
+        <Link href="/customers" className="tap-link text-sm text-muted hover:text-foreground">
           &larr; Customers
         </Link>
       </div>

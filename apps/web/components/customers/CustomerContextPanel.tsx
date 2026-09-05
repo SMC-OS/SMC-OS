@@ -98,7 +98,7 @@ export function CustomerContextPanel({ customerId }: { customerId: string }) {
           <CardTitle>Quotes</CardTitle>
           <Link
             href={`/quotes/new?customer=${customerId}`}
-            className="text-xs font-medium text-accent hover:underline"
+            className="tap-link text-xs font-medium text-accent hover:underline"
           >
             New quote
           </Link>
@@ -154,7 +154,7 @@ export function CustomerContextPanel({ customerId }: { customerId: string }) {
           <CardTitle>Projects</CardTitle>
           <Link
             href={`/projects/new?customer=${customerId}`}
-            className="text-xs font-medium text-accent hover:underline"
+            className="tap-link text-xs font-medium text-accent hover:underline"
           >
             New project
           </Link>

@@ -184,6 +184,21 @@ body,
   }
 }
 
+/* Sprint 036 (Workstream M) — small text links.
+   A 16px-tall "View quotes" link is a fine thing to read and an
+   impossible thing to tap. This keeps the text exactly the size it is
+   and expands the hit area around it with padding pulled back out by a
+   negative margin, so the layout is unchanged and the target clears
+   40px. Applied to every in-card and back link, not to buttons, which
+   already carry their own height. */
+.tap-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  padding-block: 0.5rem;
+  margin-block: -0.5rem;
+}
+
 /* A single, visible focus ring for keyboard users on every interactive
    element, defined once here rather than per component — the previous
    design left focus styling to whichever component remembered it. */

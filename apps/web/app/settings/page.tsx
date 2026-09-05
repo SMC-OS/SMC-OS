@@ -43,12 +43,24 @@ function SettingsContent() {
     (section) => !section.ownerOnly || isOwner
   );
 
+  // Derived, not initialised once.
+  //
+  // A useState initialiser reading `sections` runs on the very first
+  // render, when AuthProvider has not resolved the role yet — so
+  // `sections` holds only the non-Owner ones and a deep link to
+  // ?section=billing falls back to the first available section and stays
+  // there even after the role arrives. That made an Owner-only section
+  // unlinkable for the one person allowed to see it.
+  //
+  // `chosen` records an explicit click; until there is one, the URL
+  // decides, and it is re-evaluated on every render as the role resolves.
+  const [chosen, setChosen] = useState<string | null>(null);
   const requested = params.get("section");
-  const [active, setActive] = useState(
-    sections.some((section) => section.key === requested)
-      ? (requested as string)
-      : (sections[0]?.key ?? "notifications")
-  );
+  const active =
+    (chosen && sections.some((section) => section.key === chosen) ? chosen : null) ??
+    (sections.some((section) => section.key === requested) ? (requested as string) : null) ??
+    sections[0]?.key ??
+    "notifications";
 
   useEffect(() => {
     if (isReady && !isAuthenticated) router.replace("/login");
@@ -57,7 +69,7 @@ function SettingsContent() {
   if (!isReady || !isAuthenticated) return null;
 
   function select(key: string) {
-    setActive(key);
+    setChosen(key);
     // replaceState rather than router.push: switching a settings tab is
     // not a navigation someone expects the back button to undo one step
     // at a time, but the URL still has to be shareable.

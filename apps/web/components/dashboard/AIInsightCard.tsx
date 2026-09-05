@@ -61,7 +61,7 @@ export function AIInsightCard() {
                 <Link
                   key={prompt}
                   href={`/ai?q=${encodeURIComponent(prompt)}`}
-                  className="rounded-full border border-accent/30 bg-surface px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-accent-foreground"
+                  className="inline-flex min-h-10 items-center rounded-full border border-accent/30 bg-surface px-3.5 py-2 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
                   {prompt}
                 </Link>

@@ -90,7 +90,14 @@ function GeoCoreAIContent() {
   }, [params, isAuthenticated]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    // Feature-detected rather than called blindly: scrollIntoView is not
+    // implemented in jsdom, and an older or embedded browser without it
+    // would otherwise throw on every message and take the conversation
+    // down with it. Scrolling is a nicety; the transcript is the feature.
+    const end = endRef.current;
+    if (typeof end?.scrollIntoView === "function") {
+      end.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
   }, [messages, thinking]);
 
   async function send(text: string) {
@@ -178,7 +185,7 @@ function GeoCoreAIContent() {
                     key={suggestion}
                     type="button"
                     onClick={() => send(suggestion)}
-                    className="rounded-full border border-border px-3.5 py-1.5 text-sm text-foreground transition-colors hover:border-accent hover:bg-accent-subtle hover:text-accent"
+                    className="inline-flex min-h-10 items-center rounded-full border border-border px-3.5 py-2 text-sm text-foreground transition-colors hover:border-accent hover:bg-accent-subtle hover:text-accent"
                   >
                     {suggestion}
                   </button>

@@ -232,7 +232,7 @@ export default function ProjectDetailPage() {
   return (
     <div className="mx-auto max-w-xl">
       <div className="mb-6">
-        <Link href="/projects" className="text-sm text-muted hover:text-foreground">
+        <Link href="/projects" className="tap-link text-sm text-muted hover:text-foreground">
           &larr; Projects
         </Link>
       </div>

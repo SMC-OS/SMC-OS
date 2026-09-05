@@ -207,7 +207,7 @@ export default function NewQuotePage() {
           catalogue, the same AI extraction. What changed is that it no
           longer stands for every kind of work GeoCore quotes. */}
       <div className="mb-6">
-        <Link href="/quotes/new" className="text-sm text-muted hover:text-foreground">
+        <Link href="/quotes/new" className="tap-link text-sm text-muted hover:text-foreground">
           &larr; New quote
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
@@ -220,7 +220,7 @@ export default function NewQuotePage() {
         </p>
         <p className="mt-2 text-sm text-muted">
           Quoting other work?{" "}
-          <Link href="/quotes/new" className="font-medium text-accent hover:underline">
+          <Link href="/quotes/new" className="tap-link font-medium text-accent hover:underline">
             Use the general construction quote
           </Link>
           .
@@ -238,7 +238,15 @@ export default function NewQuotePage() {
               you to review. It never submits or prices anything.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row">
+              {/* Sprint 036 (Workstream M) — this textarea shipped with
+                  no label of any kind: a screen reader announced an
+                  unnamed edit field. The visible heading above is the
+                  card title, which is not an accessible name. */}
+              <label htmlFor="aiDraftText" className="sr-only">
+                Describe the job for the AI to draft
+              </label>
               <textarea
+                id="aiDraftText"
                 className="h-20 flex-1 rounded-lg border border-border bg-background p-3 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent"
                 value={aiText}
                 onChange={(e) => setAiText(e.target.value)}

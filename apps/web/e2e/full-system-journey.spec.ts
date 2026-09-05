@@ -68,12 +68,25 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.getByLabel("Email").fill(OWNER_EMAIL);
   await page.getByLabel("Password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: /create workspace/i }).click();
-  await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
+
+  // Sprint 036 (Workstream J) — a brand-new workspace now lands on
+  // onboarding rather than an empty customer list. The setup flow is
+  // entirely skippable, which is what this journey does: it is here to
+  // prove the lead-to-project pipeline, not the wizard, and a setup step
+  // that could not be skipped would be a defect in its own right.
+  await expect(page).toHaveURL(/\/onboarding$/, { timeout: 15_000 });
+  await page.getByRole("button", { name: /^skip$/i }).first().click();
+  await page.getByRole("button", { name: /^skip$/i }).first().click();
+  await page.getByRole("button", { name: /^skip$/i }).first().click();
+  await page.getByRole("button", { name: /go to geocore/i }).click();
+  await expect(page).toHaveURL(/localhost:3000\/$/, { timeout: 15_000 });
 
   // ==== 2. Session persists across a reload ====
   await page.reload();
   await page.waitForLoadState("networkidle");
-  await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
+  // Onboarding is complete now, so the dashboard stays put rather than
+  // bouncing back to setup — the regression that would matter most here.
+  await expect(page).toHaveURL(/localhost:3000\/$/, { timeout: 15_000 });
 
   const ownerLogin = await api.post("/api/v1/auth/login", {
     data: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
@@ -106,7 +119,7 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.goto("/projects/new");
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Project name").fill(PROJECT_NAME);
-  await page.getByLabel("Customer (optional)").selectOption({ label: CUSTOMER_NAME });
+  await page.getByLabel("Customer").selectOption({ label: CUSTOMER_NAME });
   await page.getByRole("button", { name: /save project|create project/i }).click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/, { timeout: 15_000 });
   await expect(page.getByText("Enquiry", { exact: true })).toBeVisible();
@@ -131,7 +144,7 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await expect(page.getByText("completed", { exact: true })).toBeVisible();
 
   // ==== 6. Create a Quote linked to the Customer; approve it ====
-  await page.goto("/quotes/new");
+  await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Link to existing customer (optional)").selectOption({
     label: CUSTOMER_NAME,
@@ -155,11 +168,11 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await approveResponse;
   await expect(page.getByText("Approved", { exact: true })).toBeVisible();
 
-  // ==== 7. Hand off the Quote to the Project ====
+  // ==== 7. Turn the approved Quote into the Project ====
   const handoffResponse = page.waitForResponse(
     (res) => res.url().endsWith(`/api/v1/quotes/${quoteId}/handoff`) && res.request().method() === "POST"
   );
-  await page.getByRole("button", { name: "Hand off to Project" }).click();
+  await page.getByRole("button", { name: "Create the project" }).click();
   const handoff = await handoffResponse;
   expect(handoff.status()).toBe(200);
   const handedOffProject = await handoff.json();

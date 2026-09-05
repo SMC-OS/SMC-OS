@@ -54,7 +54,7 @@ test("a_three_item_quote_can_be_created_manually_and_remains_accessible", async 
   const runId = uniqueRunId("three-item");
   await signUpAndLogIn(page, runId);
 
-  await page.goto("/quotes/new");
+  await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
 
   await page.getByLabel("Customer name").fill(`Pytest Multi-Item Customer ${runId}`);
@@ -101,13 +101,21 @@ test("a_three_item_quote_can_be_created_manually_and_remains_accessible", async 
   await page.waitForLoadState("networkidle");
   await page.goto(`/quotes/${quoteId}`);
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText(/3 items/i)).toBeVisible();
+  // Sprint 036 relabelled the detail page's item section from "3 items"
+  // to "3 lines" (a quote now has lines, which may be slabs or general
+  // construction work). The property under test is unchanged: all three
+  // independently-dimensioned items survive the round trip and are
+  // rendered, each with its own length.
+  await expect(page.getByText(/3 lines/i)).toBeVisible();
+  await expect(page.getByText(/2400mm/)).toBeVisible();
+  await expect(page.getByText(/2200mm/)).toBeVisible();
+  await expect(page.getByText(/1200mm/)).toBeVisible();
 });
 
 test("removing an item leaves the others intact and never removes the last row", async ({ page }) => {
   await signUpAndLogIn(page, uniqueRunId("remove-item"));
 
-  await page.goto("/quotes/new");
+  await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
 
   await expect(page.getByRole("button", { name: "Remove" })).toBeDisabled();
@@ -183,7 +191,7 @@ test("a_multi_item_quote_can_be_generated_through_simo_ai", async ({ page }) => 
     });
   });
 
-  await page.goto("/quotes/new");
+  await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
 
   await page

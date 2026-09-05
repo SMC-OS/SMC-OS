@@ -38,14 +38,23 @@ export function Field({
 }) {
   return (
     <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
-      <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
-        {label}
+      {/* The required marker sits OUTSIDE the <label> element on
+          purpose. Inside it, it becomes part of the field's accessible
+          name — a screen reader announces "Quote title star" — and it
+          also breaks any test or tool that looks a field up by its
+          label. The real required signal is the `required` attribute on
+          the control itself, which every call site sets; this is the
+          visual cue that goes with it. */}
+      <div className="flex items-center gap-1">
+        <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
+          {label}
+        </label>
         {required && (
-          <span className="ml-1 text-danger" aria-hidden="true">
+          <span className="text-sm text-danger" aria-hidden="true">
             *
           </span>
         )}
-      </label>
+      </div>
       {children}
       {hint && !error && (
         <p id={`${htmlFor}-hint`} className="text-xs text-muted">

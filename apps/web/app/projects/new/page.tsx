@@ -28,7 +28,7 @@ function NewProjectContent() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-6">
-        <Link href="/projects" className="text-sm text-muted hover:text-foreground">
+        <Link href="/projects" className="tap-link text-sm text-muted hover:text-foreground">
           &larr; Projects
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">

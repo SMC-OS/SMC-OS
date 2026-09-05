@@ -46,7 +46,7 @@ export function AutomationActivityPanel() {
             {failures} failed
           </Badge>
         ) : (
-          <Link href="/automations" className="text-xs font-medium text-accent hover:underline">
+          <Link href="/automations" className="tap-link text-xs font-medium text-accent hover:underline">
             Manage
           </Link>
         )}

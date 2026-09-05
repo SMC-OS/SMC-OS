@@ -34,7 +34,7 @@ function NewQuoteContent() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <Link href="/quotes" className="text-sm text-muted hover:text-foreground">
+        <Link href="/quotes" className="tap-link text-sm text-muted hover:text-foreground">
           &larr; Quotes
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">

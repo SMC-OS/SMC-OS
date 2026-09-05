@@ -41,7 +41,7 @@ export function UpcomingPanel() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-3">
         <CardTitle>Next two weeks</CardTitle>
-        <Link href="/calendar" className="text-xs font-medium text-accent hover:underline">
+        <Link href="/calendar" className="tap-link text-xs font-medium text-accent hover:underline">
           Calendar
         </Link>
       </CardHeader>

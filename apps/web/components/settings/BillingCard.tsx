@@ -74,7 +74,7 @@ export function BillingCard() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>Your plan</CardTitle>
-          <Link href="/pricing" className="text-xs font-medium text-accent hover:underline">
+          <Link href="/pricing" className="tap-link text-xs font-medium text-accent hover:underline">
             Compare plans
           </Link>
         </CardHeader>
