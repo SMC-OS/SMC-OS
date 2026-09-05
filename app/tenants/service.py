@@ -12,6 +12,7 @@ creates/reads rows in the new `tenants` table itself.
 import re
 import secrets
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -19,7 +20,13 @@ from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
 from app.database import crud
 from app.database.models import Tenant
-from app.tenants.models import TenantCreate
+from app.tenants.models import (
+    OnboardingStateOut,
+    TenantCreate,
+    TenantOnboardingUpdate,
+    TenantProfileOut,
+)
+from app.trades import catalogue as trade_catalogue
 
 _SLUG_INVALID_CHARS = re.compile(r"[^a-z0-9]+")
 
@@ -70,6 +77,113 @@ class TenantService:
                 ),
                 tenant_id=tenant.id,
             )
+        return tenant
+
+    # ------------------------------------------------------------------
+    # Sprint 036 — workspace configuration and onboarding.
+    # ------------------------------------------------------------------
+
+    def to_profile(self, tenant: Tenant) -> TenantProfileOut:
+        """Serialise a Tenant row into the profile clients read.
+
+        Written by hand rather than left to `from_attributes` because two
+        fields do not map straight across: `trades` is stored as a
+        comma-separated string and exposed as a list, and
+        `has_uploaded_logo` is a flag derived from a storage filename that
+        must never itself reach a client.
+        """
+        return TenantProfileOut(
+            id=tenant.id,
+            name=tenant.name,
+            slug=tenant.slug,
+            status=tenant.status,
+            created_at=tenant.created_at,
+            legal_name=tenant.legal_name,
+            trading_name=tenant.trading_name,
+            address_line1=tenant.address_line1,
+            address_line2=tenant.address_line2,
+            city=tenant.city,
+            postcode=tenant.postcode,
+            country=tenant.country,
+            contact_email=tenant.contact_email,
+            contact_phone=tenant.contact_phone,
+            website=tenant.website,
+            company_number=tenant.company_number,
+            vat_number=tenant.vat_number,
+            logo_url=tenant.logo_url,
+            document_footer=tenant.document_footer,
+            currency=tenant.currency or "GBP",
+            trades=trade_catalogue.parse_selection(tenant.trades),
+            onboarding_completed_at=tenant.onboarding_completed_at,
+            has_uploaded_logo=bool(tenant.logo_storage_filename),
+        )
+
+    def update_onboarding(
+        self, db: Session, tenant_id: uuid.UUID, data: TenantOnboardingUpdate
+    ) -> Tenant | None:
+        tenant = self.get(db, tenant_id)
+        if tenant is None:
+            return None
+
+        changes = data.model_dump(exclude_unset=True)
+        if "trades" in changes and changes["trades"] is not None:
+            # Serialised in catalogue order and de-duplicated, so the
+            # stored value is stable regardless of the order the user
+            # happened to click the options in.
+            tenant.trades = trade_catalogue.serialize_selection(changes["trades"])
+        if changes.get("currency"):
+            tenant.currency = changes["currency"]
+        if data.complete and tenant.onboarding_completed_at is None:
+            # Only ever set once. Re-running the flow to change a trade
+            # selection must not rewrite the date the workspace was
+            # actually set up.
+            tenant.onboarding_completed_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(tenant)
+        return tenant
+
+    def onboarding_state(self, db: Session, tenant_id: uuid.UUID) -> OnboardingStateOut | None:
+        tenant = self.get(db, tenant_id)
+        if tenant is None:
+            return None
+
+        # A workspace that is already being used is finished, whatever the
+        # column says. Every tenant that existed before Sprint 036 has a
+        # NULL onboarding_completed_at, and sending an established business
+        # back through a setup wizard would be a regression dressed as a
+        # feature. Any real record is proof enough.
+        workspace_has_data = (
+            crud.count_customers(db, tenant_id) > 0
+            or crud.count_projects(db, tenant_id) > 0
+            or len(crud.list_quotes(db, tenant_id, limit=1)) > 0
+        )
+
+        has_identity = any(
+            bool(getattr(tenant, field, None))
+            for field in ("legal_name", "trading_name", "address_line1", "contact_phone")
+        )
+        invitations = crud.list_invitations(db, tenant_id)
+
+        return OnboardingStateOut(
+            required=tenant.onboarding_completed_at is None and not workspace_has_data,
+            completed_at=tenant.onboarding_completed_at,
+            trades=trade_catalogue.parse_selection(tenant.trades),
+            currency=tenant.currency or "GBP",
+            has_company_identity=has_identity,
+            has_team_invitations=bool(invitations),
+            workspace_has_data=workspace_has_data,
+        )
+
+    def set_logo_file(
+        self, db: Session, tenant_id: uuid.UUID, storage_filename: str | None
+    ) -> Tenant | None:
+        tenant = self.get(db, tenant_id)
+        if tenant is None:
+            return None
+        tenant.logo_storage_filename = storage_filename
+        db.commit()
+        db.refresh(tenant)
         return tenant
 
     def create(self, db: Session, data: TenantCreate) -> Tenant:

@@ -11,6 +11,7 @@ from app.projects.models import (
     ProjectCreate,
     ProjectOut,
     ProjectStatusUpdate,
+    ProjectUpdate,
 )
 from app.projects.service import (
     AssignedUserNotFoundError,
@@ -56,6 +57,29 @@ def create_project(
         return project_service.create(db, data, tenant_id=current_user.tenant_id)
     except CustomerNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+
+@router.patch("/{project_id}", response_model=ProjectOut)
+def update_project(
+    project_id: uuid.UUID,
+    data: ProjectUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Sprint 036 (Workstream F) — edit a project's own details. No
+    require_role, matching create_project's posture: recording a site
+    address or a start date is routine work, not a tenant-control
+    decision. Status still has its own separately-gated endpoint with its
+    own transition rules, which this cannot reach."""
+    try:
+        project = project_service.update(
+            db, project_id, tenant_id=current_user.tenant_id, data=data
+        )
+    except CustomerNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return project
 
 
 @router.patch("/{project_id}/status", response_model=ProjectOut)

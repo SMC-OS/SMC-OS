@@ -130,6 +130,14 @@ def download_portal_invoice(token: str, quote_id: uuid.UUID, db: Session = Depen
             "vat": quote.vat,
             "total": quote.total,
             "created_at": quote.created_at,
+            # Sprint 036 — a general quote's own job title, currency,
+            # applied VAT rate and any discount. All absent on a quote
+            # created before this sprint, in which case the PDF renders
+            # exactly as it always has.
+            "title": quote.title,
+            "currency": quote.currency,
+            "vat_rate": quote.vat_rate,
+            "discount_amount": quote.discount_amount,
         }
     )
 

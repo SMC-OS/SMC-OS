@@ -31,6 +31,9 @@ class ActivityType(str, Enum):
     SITE_VISIT_CANCELLED = "site_visit_cancelled"
     PROJECT_ASSIGNED = "project_assigned"
     PROJECT_STATUS_CHANGED = "project_status_changed"
+    # Sprint 036
+    AUTOMATION_CREATED = "automation_created"
+    TASK_COMPLETED = "task_completed"
 
 
 class ActivityEventCreate(BaseModel):

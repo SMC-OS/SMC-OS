@@ -21,18 +21,75 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.tenants.identity import CompanyIdentity
+from app.trades import units
+
+# Rendered next to every amount on the document. Deliberately a small
+# explicit map rather than a locale library: a PDF has no browser Intl to
+# call, and adding a dependency to print three symbols would be
+# disproportionate. An unmapped currency renders bare amounts, with the
+# code stated once under the heading, rather than a wrong symbol.
+_CURRENCY_SYMBOLS = {"GBP": "\u00a3", "EUR": "\u20ac", "USD": "$"}
+
+
+def _describe_stone_item(item) -> str:
+    """A slab line, described the way it has been described since Sprint
+    033. Kept byte-for-byte so an existing quote's PDF renders exactly as
+    it did before Sprint 036 — a customer comparing an old printout with a
+    re-download must not see a different document.
+
+    Each part is guarded because Sprint 036 made these columns nullable
+    for general quotes; a stone line still always has them, but the
+    function must not raise if it ever meets a half-populated row.
+    """
+    parts = [item.item_type.replace("_", " ").title()]
+    if item.material:
+        material = item.material
+        if item.thickness:
+            material = f"{material} ({item.thickness})"
+        parts.append(material)
+    label = " — ".join(parts)
+
+    if item.length_mm is not None and item.width_mm is not None:
+        label += f", {item.quantity:g} x {item.length_mm:g}mm x {item.width_mm:g}mm"
+    return label
+
+
+def _describe_general_item(item, symbol: str) -> str:
+    """A general construction line: what it is, how much of it, and at
+    what rate — "Strip out existing bathroom, 2.5 day @ £320.00".
+
+    The rate is shown because a construction customer expects to see it,
+    and because a quote whose lines cannot be checked against its total is
+    a quote that generates phone calls. The symbol is passed in from the
+    quote's own stored currency rather than hardcoded, for the same
+    reason the totals table takes one.
+    """
+    label = item.description or "Line item"
+    unit_label = units.label_for(item.unit) or item.unit or "item"
+    if item.unit_price is not None:
+        return f"{label}, {item.quantity:g} {unit_label} @ {symbol}{item.unit_price:,.2f}"
+    return f"{label}, {item.quantity:g} {unit_label}"
 
 
 def build_line_items(quote) -> list[dict]:
     """One invoice row per QuoteItem (Sprint 033) — shared by
     app/quotes/router.py and app/portal/router.py so a quote's real
     line-by-line content, not a collapsed single material/thickness
-    summary, is what a customer actually sees on the PDF."""
+    summary, is what a customer actually sees on the PDF.
+
+    Sprint 036: a quote's lines can now be slabs or general construction
+    lines, and the two are described differently because they genuinely
+    are different things. The branch is on the line's own `line_kind`, not
+    on the quote's kind, so a future quote mixing a worktop with two days
+    of fitting labour renders both correctly with no further change here.
+    """
+    symbol = _CURRENCY_SYMBOLS.get(getattr(quote, "currency", None) or "GBP", "")
     return [
         {
             "description": (
-                f"{item.item_type.replace('_', ' ').title()} — {item.material} "
-                f"({item.thickness}), {item.quantity} x {item.length_mm:g}mm x {item.width_mm:g}mm"
+                _describe_stone_item(item)
+                if item.line_kind == "stone"
+                else _describe_general_item(item, symbol)
             ),
             "amount": item.line_total if item.line_total is not None else 0.0,
         }
@@ -75,7 +132,15 @@ class PDFGenerator:
         for line in company.registration_lines:
             story.append(Paragraph(_escape(line), styles["Normal"]))
         story.append(Spacer(1, 12))
-        story.append(Paragraph(f"Invoice for Quote #{str(invoice['id'])[:8]}", styles["Heading2"]))
+        # A general quote carries a real job title ("Bathroom refit,
+        # 14 Elm Road"); a stone quote never had one, and keeps the exact
+        # heading it has had since Sprint 007 so a re-downloaded historical
+        # document is identical to the one the customer already holds.
+        heading = invoice.get("title") or f"Invoice for Quote #{str(invoice['id'])[:8]}"
+        story.append(Paragraph(_escape(str(heading)), styles["Heading2"]))
+        currency = invoice.get("currency") or "GBP"
+        if currency not in _CURRENCY_SYMBOLS:
+            story.append(Paragraph(f"All amounts in {_escape(currency)}", styles["Normal"]))
         story.append(Paragraph(f"Date: {invoice['created_at']:%d %B %Y}", styles["Normal"]))
         story.append(Paragraph(f"Customer: {_escape(invoice['customer'])}", styles["Normal"]))
         story.append(Spacer(1, 16))
@@ -89,11 +154,34 @@ class PDFGenerator:
                 "amount": invoice["price_before_vat"],
             }
         ]
+        # Sprint 036 — the document is denominated in the quote's own
+        # stored currency, not in a hardcoded pound sign, and the VAT row
+        # is labelled with the rate that was actually applied to this
+        # quote rather than an assumed 20%. Both fall back to the previous
+        # behaviour when a caller hasn't been updated, so an existing
+        # caller's output is unchanged.
+        symbol = _CURRENCY_SYMBOLS.get(invoice.get("currency") or "GBP", "")
+        vat_rate = invoice.get("vat_rate")
+        vat_label = (
+            f"VAT ({vat_rate * 100:g}%)" if vat_rate is not None else "VAT (20%)"
+        )
+
+        def money(amount: float) -> str:
+            return f"{symbol}{amount:,.2f}"
+
         rows = [["Description", "Amount"]]
-        rows += [[item["description"], f"£{item['amount']:,.2f}"] for item in line_items]
+        rows += [[item["description"], money(item["amount"])] for item in line_items]
+
+        # A discount is shown as its own row rather than folded silently
+        # into the line items: a customer who was given £250 off should be
+        # able to see that they were.
+        discount = invoice.get("discount_amount") or 0
+        if discount:
+            rows.append(["Discount", f"-{money(discount)}"])
+
         rows += [
-            ["VAT (20%)", f"£{invoice['vat']:,.2f}"],
-            ["Total", f"£{invoice['total']:,.2f}"],
+            [vat_label, money(invoice["vat"])],
+            ["Total", money(invoice["total"])],
         ]
         table = Table(rows, colWidths=[110 * mm, 50 * mm])
         table.setStyle(
