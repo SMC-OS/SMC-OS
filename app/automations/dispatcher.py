@@ -16,7 +16,6 @@ AutomationRun rows, which is where the user sees them.
 """
 
 import logging
-import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -102,9 +101,7 @@ class AutomationDispatcher:
             subject=self._quote_subject(db, quote),
         )
 
-    def dispatch_quote_approved(
-        self, db: Session, quote, actor_user_id: uuid.UUID | None = None
-    ) -> None:
+    def dispatch_quote_approved(self, db: Session, quote) -> None:
         self._dispatch(
             db,
             tenant_id=quote.tenant_id,
