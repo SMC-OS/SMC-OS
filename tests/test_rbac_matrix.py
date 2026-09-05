@@ -152,6 +152,53 @@ EXPECTED_ROUTE_AUTH: list[tuple[str, str, str]] = [
     ("POST", f"/api/v1/users/{_ID}/deactivate", OWNER_ONLY),
     # app/dashboard/router.py
     ("GET", "/api/v1/dashboard/command-centre", OWNER_STAFF),
+    # --- Sprint 036 ---
+    # app/customers/router.py — editing a customer's address is routine
+    # work, the same posture as creating one.
+    ("PATCH", f"/api/v1/customers/{_ID}", AUTHENTICATED),
+    ("GET", f"/api/v1/customers/{_ID}/context", AUTHENTICATED),
+    # app/projects/router.py — details PATCH matches create's posture;
+    # status keeps its own separately-gated endpoint.
+    ("PATCH", f"/api/v1/projects/{_ID}", AUTHENTICATED),
+    # app/quotes/router.py — creating, editing and sending a priced,
+    # customer-facing document is Owner/Staff, matching approve/handoff.
+    ("POST", "/api/v1/quotes", OWNER_STAFF),
+    ("PATCH", f"/api/v1/quotes/{_ID}", OWNER_STAFF),
+    ("POST", f"/api/v1/quotes/{_ID}/send", OWNER_STAFF),
+    ("GET", "/api/v1/quotes/meta/trades", AUTHENTICATED),
+    ("GET", "/api/v1/quotes/meta/units", AUTHENTICATED),
+    # app/automations/router.py — reading what the system will do to your
+    # work is not a privilege; authoring a workspace-wide rule that
+    # creates work for other people is Owner-only, the same class as team
+    # management and billing.
+    ("GET", "/api/v1/automations", AUTHENTICATED),
+    ("GET", f"/api/v1/automations/{_ID}", AUTHENTICATED),
+    ("GET", "/api/v1/automations/meta", AUTHENTICATED),
+    ("GET", "/api/v1/automations/templates", AUTHENTICATED),
+    ("GET", "/api/v1/automations/runs", AUTHENTICATED),
+    ("POST", "/api/v1/automations", OWNER_ONLY),
+    ("POST", "/api/v1/automations/templates", OWNER_ONLY),
+    ("PATCH", f"/api/v1/automations/{_ID}", OWNER_ONLY),
+    ("DELETE", f"/api/v1/automations/{_ID}", OWNER_ONLY),
+    # app/tasks/router.py — day-to-day work, same posture as customers.
+    ("GET", "/api/v1/tasks", AUTHENTICATED),
+    ("POST", "/api/v1/tasks", AUTHENTICATED),
+    ("PATCH", f"/api/v1/tasks/{_ID}/status", AUTHENTICATED),
+    # app/calendar/router.py — read-only, any member.
+    ("GET", "/api/v1/calendar", AUTHENTICATED),
+    # app/ai/router.py — no write capability to gate; the service has no
+    # tools and cannot modify a record.
+    ("GET", "/api/v1/ai/capabilities", AUTHENTICATED),
+    ("POST", "/api/v1/ai/chat", AUTHENTICATED),
+    # app/tenants/router.py — the workspace's own setup and branding.
+    # Reading is any member; writing is Owner-only, same reasoning as
+    # company identity above (a logo appears on every customer-facing
+    # document this business issues).
+    ("GET", "/api/v1/tenants/me/onboarding", AUTHENTICATED),
+    ("PATCH", "/api/v1/tenants/me/onboarding", OWNER_ONLY),
+    ("GET", "/api/v1/tenants/me/logo", AUTHENTICATED),
+    ("POST", "/api/v1/tenants/me/logo", OWNER_ONLY),
+    ("DELETE", "/api/v1/tenants/me/logo", OWNER_ONLY),
 ]
 
 

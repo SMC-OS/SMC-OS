@@ -57,6 +57,25 @@ Every table below exists in PostgreSQL as of Sprint 002's migration (`alembic/ve
 
 **Multi-tenancy:** every one of the original 7 tables carries a `tenant_id` (UUID) column, per ADR-013 — added in Sprint 002, at zero enforcement cost, because retrofitting it onto tables with real data later would be far more expensive. **As of Sprint 008, a real `tenants` table exists and `tenant_id` on all 7 tables is a genuine `ForeignKey("tenants.id")`** (previously a bare UUID with nothing to point at) — see ADR-025. **As of Sprint 009, `users.tenant_id` is the first of the 7 to become `NOT NULL`** — every user genuinely belongs to exactly one tenant (see ADR-026) — while `customers`, `quotes`, `projects`, `materials`, `activity_log`, and `notifications` stay nullable. **As of Sprint 012 (ADR-029), every business-data query on `customers`, `projects`, `quotes`, `activity_log`, and `notifications` is filtered by the caller's `tenant_id`** — `customers.tenant_id`, `quotes.tenant_id`, `projects.tenant_id`, `activity_log.tenant_id`, and `notifications.tenant_id` each gained a plain index for it (migration `a8d91098a01e`). Columns stay nullable throughout — an anonymous `/quote`/`/estimate` call or a startup seed row still has `tenant_id = NULL`, invisible to every tenant's authenticated browsing routes. `materials` remains the sole deliberate exception: a shared reference catalogue, not tenant-owned data, so it stays unfiltered by design.
 
+### Sprint 036 — universal quoting, construction records, automations and tasks
+
+| Table | Change | Migration |
+| --- | --- | --- |
+| `quotes` | `+ quote_kind` ('stone'\|'general', NOT NULL default 'stone'), `title`, `trade`, `site_address_line1/2`, `site_city`, `site_postcode`, `scope_of_works`, `notes`, `exclusions`, `terms`, `valid_until`, `currency` (NOT NULL default 'GBP'), `vat_rate` (NOT NULL default 0.2), `subtotal`, `discount_amount`, `sent_at`. **NOT NULL dropped** on `material`, `thickness`, `kitchen_length`, `length_mm`. | `b3c4d5e6f7a8` |
+| `quote_items` | `+ line_kind` ('stone'\|'labour'\|'material'\|'other', NOT NULL default 'stone'), `description`, `unit`, `unit_price`. **NOT NULL dropped** on `material`, `thickness`, `length_mm`, `width_mm`. `quantity` widened INTEGER → DOUBLE PRECISION. | `b3c4d5e6f7a8` |
+| `customers` | `+ customer_type` (NOT NULL default 'individual'), `company_name`, `address_line1/2`, `city`, `postcode`, `notes` | `f1a2b3c4d5e6` |
+| `projects` | `+ project_type`, `description`, `site_address_line1/2`, `site_city`, `site_postcode`, `start_date` (DATE), `target_completion_date` (DATE), `estimated_value` | `a2b3c4d5e6f7` |
+| `tasks` | **New.** `id`, `tenant_id` (NOT NULL, indexed), `assigned_user_id`, `created_by_user_id`, `title`, `body`, `status`, `due_at` (indexed), `source_type`/`source_id` (polymorphic, same convention as `notifications`), `dedupe_key` (UNIQUE), `completed_at`, `created_at` | `c4d5e6f7a8b9` |
+| `automations` | **New.** `id`, `tenant_id` (NOT NULL, indexed), `created_by_user_id`, `name`, `description`, `template_key`, `trigger_type` (indexed), `conditions` (JSONB), `actions` (JSONB), `enabled`, `created_at`, `updated_at` | `c4d5e6f7a8b9` |
+| `automation_runs` | **New.** `id`, `tenant_id` (NOT NULL, indexed), `automation_id` (FK, indexed), `trigger_type`, `subject_type`/`subject_id`, `status`, `detail`, `dedupe_key` (UNIQUE), `created_at` | `c4d5e6f7a8b9` |
+| `tenants` | `+ currency` (NOT NULL default 'GBP'), `trades` (comma-separated keys), `onboarding_completed_at`, `logo_storage_filename` | `d5e6f7a8b9c0` |
+
+**Every change is additive or NOT-NULL-dropping.** No row is deleted or rewritten by any Sprint 036 migration, and the full pre-sprint test suite passed unchanged against the new schema. Dropping NOT NULL is a pure widening — existing rows keep every value, no existing query can start failing, and Postgres performs it as a catalogue-only change. See ADR-039 for why sentinels were rejected in favour of nullable columns, and why the universal-quoting downgrade deliberately refuses once a general quote exists.
+
+`automations.conditions`/`actions` are the first JSON columns in this schema. The normalised alternative was rejected because both are always read and written whole, as a complete rule, and are never queried into or joined against; their shape is validated at the Pydantic boundary on every write. JSONB rather than JSON so a future "which automations use action X" query is possible without a migration.
+
+`tasks.dedupe_key` and `automation_runs.dedupe_key` are both UNIQUE, so automation idempotency is enforced by the database rather than only attempted in code — the same defence-in-depth Sprint 024 established for `notifications.dedupe_key`.
+
 ---
 
 ## 3. What Sprint 002 deliberately did not build (now fully closed out, Sprint 007)

@@ -75,13 +75,28 @@ test("a_staff_session_sees_owner_only_controls_absent_not_merely_rejected", asyn
   await expect(page).toHaveURL(/\/customers$/);
 
   // ---- /settings: no invite/team-management controls for Staff ----
-  await page.goto("/settings");
+  //
+  // Sprint 036 turned Settings into sections. The Owner-only ones are now
+  // hidden from a Staff session rather than replaced by an explanatory
+  // sentence, so this asserts their absence — including when the section
+  // is asked for explicitly in the URL, which must not be a way round the
+  // gate. The contract is unchanged and if anything stronger.
+  await page.goto("/settings?section=team");
   await page.waitForLoadState("networkidle");
-  await expect(
-    page.getByText("Only workspace owners can invite and manage teammates.")
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+
+  // Scoped to the settings navigation: "Notifications" also names the
+  // top bar's bell button, and an unscoped match would be ambiguous.
+  const sectionNav = page.getByRole("navigation", { name: "Settings sections" });
+  await expect(sectionNav.getByRole("button", { name: /team & permissions/i })).toHaveCount(0);
+  await expect(sectionNav.getByRole("button", { name: /billing & subscription/i })).toHaveCount(0);
+  await expect(sectionNav.getByRole("button", { name: /^company$/i })).toHaveCount(0);
   await expect(page.getByLabel("Email", { exact: true })).not.toBeVisible();
-  await expect(page.getByRole("button", { name: /send invite/i })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: /create invite/i })).not.toBeVisible();
+
+  // ...and the sections that ARE theirs still work.
+  await expect(sectionNav.getByRole("button", { name: /notifications/i })).toBeVisible();
+  await expect(sectionNav.getByRole("button", { name: /security/i })).toBeVisible();
 
   // ---- Project detail: no Assign control for Staff (Owner-only, per
   // apps/web/app/projects/[id]/page.tsx's canAssign = role === "Owner") ----

@@ -58,8 +58,12 @@ describe("SignupPage — Sprint 027 full-system journey entry point", () => {
         password: "a-real-password",
       });
     });
+    // Sprint 036 (Workstream J) — a brand-new workspace lands on setup
+    // rather than on an empty customer list. /onboarding sends an
+    // already-established workspace straight through, so nobody who is
+    // already working is sent back to a wizard.
     await waitFor(() => {
-      expect(pushMock).toHaveBeenCalledWith("/customers");
+      expect(pushMock).toHaveBeenCalledWith("/onboarding");
     });
   });
 

@@ -1,483 +1,161 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import CompanyIdentityCard from "@/components/settings/CompanyIdentityCard";
-import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Field, Input } from "@/components/ui/Field";
-import { PlusIcon } from "@/components/ui/icons";
-import Link from "next/link";
+import { BillingCard } from "@/components/settings/BillingCard";
+import { BrandingCard } from "@/components/settings/BrandingCard";
+import { NotificationsCard } from "@/components/settings/NotificationsCard";
+import { SecurityCard } from "@/components/settings/SecurityCard";
+import { TeamCard } from "@/components/settings/TeamCard";
+import { Card, CardContent } from "@/components/ui/Card";
+import { SETTINGS_SECTIONS } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
 
-import { ApiError, api } from "@/lib/api";
-import type { Subscription } from "@/types/billing";
-import type { InvitationCreateOut, InvitationOut } from "@/types/invitation";
-import type { TeamMemberOut } from "@/types/user";
-
-const PLAN_NAMES: Record<string, string> = {
-  pro: "GeoCore Pro",
-  business: "GeoCore Business",
-  enterprise: "Enterprise",
-};
-
-const SUBSCRIPTION_STATUS_TONE: Record<string, "info" | "success" | "neutral" | "warning" | "danger"> = {
-  active: "success",
-  trialing: "info",
-  past_due: "warning",
-  unpaid: "danger",
-  cancelled: "neutral",
-  incomplete: "neutral",
-};
-
-const STATUS_TONE: Record<string, "info" | "success" | "neutral" | "warning"> = {
-  pending: "info",
-  accepted: "success",
-  revoked: "neutral",
-  expired: "warning",
-};
-
-function formatDate(isoTimestamp: string): string {
-  return new Date(isoTimestamp).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-export default function SettingsPage() {
+/**
+ * Settings V2 — Sprint 036, Workstream I.
+ *
+ * The previous Settings page was a single 483-line scroll: company
+ * identity, team, billing, invite form and invitation list stacked on top
+ * of each other, with billing — the thing an owner most needs to find —
+ * fourth from the top.
+ *
+ * This is the same functionality organised by what a person came to do.
+ * The section lives in the URL (?section=billing) so a section is
+ * linkable and survives a refresh, which a piece of local component state
+ * would not.
+ *
+ * Owner-only sections are hidden from Staff rather than shown disabled: a
+ * greyed-out "Billing" row tells a member of staff there is something
+ * they are not allowed to see, which is noise on a page they visit to
+ * change their own notification settings. The server enforces the real
+ * rule regardless (require_role(OWNER)).
+ */
+function SettingsContent() {
   const router = useRouter();
-  const { isAuthenticated, isReady, role, userId } = useAuth();
-
-  const [invitations, setInvitations] = useState<InvitationOut[] | null>(null);
-  const [listError, setListError] = useState<string | null>(null);
-
-  const [teamMembers, setTeamMembers] = useState<TeamMemberOut[] | null>(null);
-  const [teamError, setTeamError] = useState<string | null>(null);
-  const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
-
-  const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createdInvite, setCreatedInvite] = useState<InvitationCreateOut | null>(null);
-  const [linkCopied, setLinkCopied] = useState(false);
-
-  const [subscription, setSubscription] = useState<Subscription | null | undefined>(undefined);
-  const [billingError, setBillingError] = useState<string | null>(null);
-  const [billingActionLoading, setBillingActionLoading] = useState(false);
+  const params = useSearchParams();
+  const { isAuthenticated, isReady, role } = useAuth();
 
   const isOwner = role === "Owner";
+  const sections = SETTINGS_SECTIONS.filter(
+    (section) => !section.ownerOnly || isOwner
+  );
 
-  function loadSubscription() {
-    api
-      .getSubscription()
-      .then(setSubscription)
-      .catch(() => setBillingError("Could not load your subscription."));
-  }
-
-  function loadInvitations() {
-    api
-      .getInvitations()
-      .then(setInvitations)
-      .catch((err) =>
-        setListError(err instanceof ApiError ? err.message : "Something went wrong.")
-      );
-  }
-
-  function loadTeam() {
-    api
-      .getUsers()
-      .then(setTeamMembers)
-      .catch((err) =>
-        setTeamError(err instanceof ApiError ? err.message : "Something went wrong.")
-      );
-  }
+  // Derived, not initialised once.
+  //
+  // A useState initialiser reading `sections` runs on the very first
+  // render, when AuthProvider has not resolved the role yet — so
+  // `sections` holds only the non-Owner ones and a deep link to
+  // ?section=billing falls back to the first available section and stays
+  // there even after the role arrives. That made an Owner-only section
+  // unlinkable for the one person allowed to see it.
+  //
+  // `chosen` records an explicit click; until there is one, the URL
+  // decides, and it is re-evaluated on every render as the role resolves.
+  const [chosen, setChosen] = useState<string | null>(null);
+  const requested = params.get("section");
+  const active =
+    (chosen && sections.some((section) => section.key === chosen) ? chosen : null) ??
+    (sections.some((section) => section.key === requested) ? (requested as string) : null) ??
+    sections[0]?.key ??
+    "notifications";
 
   useEffect(() => {
-    if (!isReady) return;
-    if (!isAuthenticated) {
-      router.replace("/login");
-      return;
-    }
-    if (isOwner) {
-      loadInvitations();
-      loadTeam();
-      loadSubscription();
-    }
-  }, [isReady, isAuthenticated, isOwner, router]);
+    if (isReady && !isAuthenticated) router.replace("/login");
+  }, [isReady, isAuthenticated, router]);
 
   if (!isReady || !isAuthenticated) return null;
 
-  async function handleManageBilling() {
-    setBillingError(null);
-    setBillingActionLoading(true);
-    try {
-      const { portal_url } = await api.createPortalSession();
-      window.location.assign(portal_url);
-    } catch (err) {
-      setBillingError(
-        err instanceof ApiError ? err.message : "Something went wrong."
-      );
-    } finally {
-      setBillingActionLoading(false);
-    }
-  }
-
-  async function handleCancelSubscription() {
-    setBillingError(null);
-    setBillingActionLoading(true);
-    try {
-      const updated = await api.cancelSubscriptionAtPeriodEnd();
-      setSubscription(updated);
-    } catch (err) {
-      setBillingError(
-        err instanceof ApiError ? err.message : "Something went wrong."
-      );
-    } finally {
-      setBillingActionLoading(false);
-    }
-  }
-
-  async function handleResumeSubscription() {
-    setBillingError(null);
-    setBillingActionLoading(true);
-    try {
-      const updated = await api.resumeSubscription();
-      setSubscription(updated);
-    } catch (err) {
-      setBillingError(
-        err instanceof ApiError ? err.message : "Something went wrong."
-      );
-    } finally {
-      setBillingActionLoading(false);
-    }
-  }
-
-  async function handleInvite(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setCreateError(null);
-    setCreatedInvite(null);
-    setLinkCopied(false);
-
-    try {
-      const invite = await api.createInvitation(email);
-      setCreatedInvite(invite);
-      setEmail("");
-      loadInvitations();
-    } catch (err) {
-      setCreateError(
-        err instanceof ApiError && err.status === 409
-          ? "An invitation or account for that email already exists."
-          : "Something went wrong."
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleRevoke(id: string) {
-    try {
-      await api.revokeInvitation(id);
-      loadInvitations();
-    } catch (err) {
-      setListError(err instanceof ApiError ? err.message : "Something went wrong.");
-    }
-  }
-
-  async function handleDeactivate(id: string) {
-    setDeactivatingId(id);
-    setTeamError(null);
-    try {
-      await api.deactivateUser(id);
-      loadTeam();
-    } catch (err) {
-      setTeamError(err instanceof ApiError ? err.message : "Something went wrong.");
-    } finally {
-      setDeactivatingId(null);
-    }
-  }
-
-  function inviteLink(token: string): string {
-    return `${window.location.origin}/invite/${token}`;
-  }
-
-  async function handleCopyLink() {
-    if (!createdInvite) return;
-    await navigator.clipboard.writeText(inviteLink(createdInvite.token));
-    setLinkCopied(true);
+  function select(key: string) {
+    setChosen(key);
+    // replaceState rather than router.push: switching a settings tab is
+    // not a navigation someone expects the back button to undo one step
+    // at a time, but the URL still has to be shareable.
+    window.history.replaceState(null, "", `/settings?section=${key}`);
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-5xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
           Settings
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Account, team, and workspace settings.
+          Your company, your team and how GeoCore works for you.
         </p>
       </div>
 
-      {!isOwner && (
-        <Card>
-          <CardContent>
-            <p className="text-sm text-muted">
-              Only workspace owners can invite and manage teammates.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      <div className="flex flex-col gap-6 lg:flex-row">
+        {/* Horizontally scrolling tabs on a phone, a vertical list from
+            `lg`. A vertical nav at 360px would eat half the screen before
+            the content it navigates to. */}
+        <nav
+          aria-label="Settings sections"
+          className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:w-56 lg:shrink-0 lg:flex-col lg:overflow-visible lg:px-0"
+        >
+          {sections.map((section) => {
+            const SectionIcon = section.icon;
+            const selected = active === section.key;
 
-      {isOwner && (
-        <div className="flex flex-col gap-6">
-          {/* Sprint 034 — the tenant's own customer-facing business identity.
-              Owner-only, alongside billing and team, because these are the
-              statutory details printed on every customer invoice. */}
-          <CompanyIdentityCard />
+            return (
+              <button
+                key={section.key}
+                type="button"
+                aria-current={selected ? "page" : undefined}
+                onClick={() => select(section.key)}
+                className={cn(
+                  "flex shrink-0 items-center gap-2.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors lg:w-full lg:text-left",
+                  selected
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted hover:bg-surface-hover hover:text-foreground"
+                )}
+              >
+                <SectionIcon className="h-[18px] w-[18px] shrink-0" />
+                <span className="whitespace-nowrap lg:whitespace-normal">
+                  {section.label}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Team</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {teamError && <p className="p-5 text-sm text-danger">{teamError}</p>}
-              {teamMembers === null && !teamError && (
-                <p className="p-5 text-center text-sm text-muted">Loading…</p>
-              )}
-              {teamMembers && teamMembers.length > 0 && (
-                <ul className="divide-y divide-border">
-                  {teamMembers.map((member) => (
-                    <li key={member.id} className="flex items-center gap-3 px-5 py-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {member.name}
-                        </p>
-                        <p className="truncate text-xs text-muted">{member.email}</p>
-                      </div>
-                      <Badge tone="neutral">{member.role}</Badge>
-                      <Badge tone={member.is_active ? "success" : "neutral"}>
-                        {member.is_active ? "active" : "inactive"}
-                      </Badge>
-                      {member.is_active && member.id !== userId && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={deactivatingId === member.id}
-                          onClick={() => handleDeactivate(member.id)}
-                        >
-                          {deactivatingId === member.id ? "Deactivating…" : "Deactivate"}
-                        </Button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Billing</CardTitle>
-              <Link href="/pricing" className="text-xs text-accent hover:underline">
-                View plans
-              </Link>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {billingError && (
-                <p className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
-                  {billingError}
-                </p>
-              )}
-
-              {subscription === undefined && (
-                <p className="text-sm text-muted">Loading…</p>
-              )}
-
-              {subscription === null && (
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted">
-                    No active subscription yet.
-                  </p>
-                  <Link href="/pricing">
-                    <Button type="button" size="sm">
-                      Choose a plan
-                    </Button>
-                  </Link>
+        <div className="min-w-0 flex-1">
+          {sections.map(
+            (section) =>
+              active === section.key && (
+                <div key={section.key}>
+                  <p className="mb-4 text-sm text-muted">{section.description}</p>
+                  {section.key === "company" && <CompanyIdentityCard />}
+                  {section.key === "branding" && <BrandingCard />}
+                  {section.key === "team" && <TeamCard />}
+                  {section.key === "billing" && <BillingCard />}
+                  {section.key === "notifications" && <NotificationsCard />}
+                  {section.key === "security" && <SecurityCard />}
                 </div>
-              )}
+              )
+          )}
 
-              {subscription && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {PLAN_NAMES[subscription.plan] ?? subscription.plan}
-                      </p>
-                      <p className="text-xs text-muted">
-                        Billed {subscription.billing_period}
-                        {subscription.current_period_end &&
-                          ` · Renews ${new Date(subscription.current_period_end).toLocaleDateString()}`}
-                      </p>
-                    </div>
-                    <Badge tone={SUBSCRIPTION_STATUS_TONE[subscription.status] ?? "neutral"}>
-                      {subscription.status.replace("_", " ")}
-                    </Badge>
-                  </div>
-
-                  {subscription.cancel_at_period_end && (
-                    <p className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
-                      Cancels at the end of the current billing period.
-                    </p>
-                  )}
-
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={billingActionLoading}
-                      onClick={handleManageBilling}
-                    >
-                      Manage billing
-                    </Button>
-                    {subscription.cancel_at_period_end ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={billingActionLoading}
-                        onClick={handleResumeSubscription}
-                      >
-                        Resume
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={billingActionLoading}
-                        onClick={handleCancelSubscription}
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Invite a teammate</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-4 text-sm text-muted">
-                Invites join as Staff in this workspace. There&apos;s no email
-                delivery yet — copy the generated link and send it yourself.
-              </p>
-              <form onSubmit={handleInvite} className="flex items-end gap-3">
-                <Field label="Email" htmlFor="inviteEmail" className="flex-1">
-                  <Input
-                    id="inviteEmail"
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="newhire@example.com"
-                  />
-                </Field>
-                <Button type="submit" disabled={submitting}>
-                  <PlusIcon className="h-4 w-4" />
-                  {submitting ? "Sending…" : "Send invite"}
-                </Button>
-              </form>
-
-              {createError && (
-                <p className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
-                  {createError}
+          {sections.length === 0 && (
+            <Card>
+              <CardContent>
+                <p className="text-sm text-muted">
+                  There&rsquo;s nothing here for your account to configure.
                 </p>
-              )}
-
-              {createdInvite && (
-                <div className="mt-4 rounded-lg border border-border bg-background p-3">
-                  <p className="text-sm text-foreground">
-                    Invitation created for{" "}
-                    <span className="font-medium">{createdInvite.email}</span>.
-                    Share this link — it expires{" "}
-                    {formatDate(createdInvite.expires_at)}.
-                  </p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Input
-                      readOnly
-                      value={inviteLink(createdInvite.token)}
-                      onFocus={(e) => e.currentTarget.select()}
-                      className="flex-1 text-xs"
-                    />
-                    <Button type="button" variant="secondary" size="sm" onClick={handleCopyLink}>
-                      {linkCopied ? "Copied" : "Copy link"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Pending &amp; past invitations</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {listError && <p className="p-5 text-sm text-danger">{listError}</p>}
-              {!listError && invitations === null && (
-                <p className="p-5 text-center text-sm text-muted">Loading…</p>
-              )}
-              {!listError && invitations?.length === 0 && (
-                <p className="p-5 text-center text-sm text-muted">
-                  No invitations yet — send one above.
-                </p>
-              )}
-              {invitations && invitations.length > 0 && (
-                <ul className="divide-y divide-border">
-                  {invitations.map((invite) => (
-                    <li
-                      key={invite.id}
-                      className="flex items-center gap-3 px-5 py-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {invite.email}
-                        </p>
-                        <p className="truncate text-xs text-muted">
-                          Invited {formatDate(invite.created_at)} · Expires{" "}
-                          {formatDate(invite.expires_at)}
-                        </p>
-                      </div>
-                      <Badge tone={STATUS_TONE[invite.status] ?? "neutral"}>
-                        {invite.status}
-                      </Badge>
-                      {invite.status === "pending" && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRevoke(invite.id)}
-                        >
-                          Revoke
-                        </Button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
-      )}
+      </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsContent />
+    </Suspense>
   );
 }

@@ -7,7 +7,22 @@ import type {
 import type { AuthUser, LoginResponse, SignupRequest } from "@/types/auth";
 import type { BillingPeriod, Plan, PlanId, Subscription } from "@/types/billing";
 import type { CommandCentreStats } from "@/types/command-centre";
-import type { Customer, CustomerCreate } from "@/types/customer";
+import type { AICapabilities, ChatMessage, ChatResponse } from "@/types/ai";
+import type {
+  Automation,
+  AutomationCreate,
+  AutomationMeta,
+  AutomationRun,
+  AutomationTemplate,
+  AutomationUpdate,
+} from "@/types/automation";
+import type { CalendarResponse } from "@/types/calendar";
+import type {
+  Customer,
+  CustomerContext,
+  CustomerCreate,
+  CustomerUpdate,
+} from "@/types/customer";
 import type { DashboardStats } from "@/types/dashboard";
 import type { DocumentOut } from "@/types/document";
 import type {
@@ -19,9 +34,29 @@ import type {
 import type { MessageOut } from "@/types/message";
 import type { AppNotification } from "@/types/notification";
 import type { PortalLinkCreateOut, PortalLinkOut, PortalPublicOut } from "@/types/portal";
-import type { Project, ProjectCreate, ProjectStatus } from "@/types/project";
-import type { AIQuoteDraft, Quote, QuoteRequest, QuoteResult } from "@/types/quote";
-import type { TenantProfile, TenantProfileUpdate } from "@/types/tenant";
+import type {
+  Project,
+  ProjectCreate,
+  ProjectStatus,
+  ProjectUpdate,
+} from "@/types/project";
+import type { Task, TaskCreate, TaskStatus } from "@/types/task";
+import type {
+  AIQuoteDraft,
+  GeneralQuoteRequest,
+  GeneralQuoteUpdate,
+  Quote,
+  QuoteRequest,
+  QuoteResult,
+  QuoteUnit,
+  Trade,
+} from "@/types/quote";
+import type {
+  OnboardingState,
+  OnboardingUpdate,
+  TenantProfile,
+  TenantProfileUpdate,
+} from "@/types/tenant";
 import type { TeamMemberOut } from "@/types/user";
 import { clearToken, getToken } from "@/lib/auth-storage";
 import { resolveApiBaseUrl } from "@/lib/runtime-config";
@@ -78,6 +113,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return (await res.json()) as T;
+}
+
+/**
+ * A request that returns no body (204). `request()` always parses JSON
+ * and would throw on an empty response, so DELETE endpoints use this
+ * instead of pretending to decode nothing.
+ */
+async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+  const token = getToken();
+  let res: Response;
+
+  try {
+    res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new ApiError(`Could not reach the API at ${path}`, 0);
+  }
+
+  if (!res.ok) {
+    if (res.status === 401) clearToken();
+    throw new ApiError(`Request to ${path} failed with ${res.status}`, res.status);
+  }
 }
 
 export const api = {
@@ -205,6 +268,20 @@ export const api = {
       body: JSON.stringify(customer),
     }),
 
+  // Sprint 036 (Workstream D). An omitted key is left alone server-side;
+  // an explicit null clears the field.
+  updateCustomer: (id: string, changes: CustomerUpdate) =>
+    request<Customer>(`/customers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }),
+
+  // One call backing the customer detail page's business context —
+  // their quotes, their projects and what those are worth — so the page
+  // has no partially-loaded intermediate state.
+  getCustomerContext: (id: string) =>
+    request<CustomerContext>(`/customers/${id}/context`),
+
   // Sprint 013 — any authenticated tenant user, not Owner-only (sharing a
   // project link with a customer is routine work, unlike inviting a
   // teammate).
@@ -322,6 +399,14 @@ export const api = {
       body: JSON.stringify(project),
     }),
 
+  // Sprint 036 (Workstream F) — a project's own details. Status keeps its
+  // own endpoint below, with its own linear-transition rules.
+  updateProject: (id: string, changes: ProjectUpdate) =>
+    request<Project>(`/projects/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }),
+
   updateProjectStatus: (id: string, projectStatus: ProjectStatus) =>
     request<Project>(`/projects/${id}/status`, {
       method: "PATCH",
@@ -380,6 +465,145 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
+
+  // --- Sprint 036 (Workstream E) — universal quoting. ---
+  //
+  // Deliberately distinct from createQuote above, which is the public
+  // stone calculator (POST /quote) and is unchanged. This is the
+  // authenticated general construction quote (POST /quotes).
+  createGeneralQuote: (quote: GeneralQuoteRequest) =>
+    request<Quote>("/quotes", {
+      method: "POST",
+      body: JSON.stringify(quote),
+    }),
+
+  updateGeneralQuote: (id: string, changes: GeneralQuoteUpdate) =>
+    request<Quote>(`/quotes/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }),
+
+  // Records that a person gave this quote to the customer. Sends
+  // nothing — GeoCore has no email, SMS or messaging channel, and the UI
+  // says so where this is offered.
+  sendQuote: (id: string) => request<Quote>(`/quotes/${id}/send`, { method: "POST" }),
+
+  // Served from the backend rather than duplicated as frontend constants,
+  // so the quote form, the project form and onboarding cannot drift.
+  getTrades: () => request<Trade[]>("/quotes/meta/trades"),
+
+  getQuoteUnits: () => request<QuoteUnit[]>("/quotes/meta/units"),
+
+  // --- Sprint 036 (Workstream G) — automations. ---
+  getAutomations: () => request<Automation[]>("/automations"),
+
+  getAutomation: (id: string) => request<Automation>(`/automations/${id}`),
+
+  getAutomationMeta: () => request<AutomationMeta>("/automations/meta"),
+
+  getAutomationTemplates: () => request<AutomationTemplate[]>("/automations/templates"),
+
+  getAutomationRuns: (automationId?: string, limit = 50) =>
+    request<AutomationRun[]>(
+      `/automations/runs?limit=${limit}${
+        automationId ? `&automation_id=${automationId}` : ""
+      }`
+    ),
+
+  createAutomation: (automation: AutomationCreate) =>
+    request<Automation>("/automations", {
+      method: "POST",
+      body: JSON.stringify(automation),
+    }),
+
+  activateAutomationTemplate: (templateKey: string) =>
+    request<Automation>("/automations/templates", {
+      method: "POST",
+      body: JSON.stringify({ template_key: templateKey }),
+    }),
+
+  updateAutomation: (id: string, changes: AutomationUpdate) =>
+    request<Automation>(`/automations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }),
+
+  // 204 No Content — bypasses request(), which always parses JSON.
+  deleteAutomation: async (id: string): Promise<void> => {
+    await requestNoContent(`/automations/${id}`, { method: "DELETE" });
+  },
+
+  // --- Sprint 036 — tasks, calendar and GeoCore AI. ---
+  getTasks: (status?: TaskStatus, limit = 50) =>
+    request<Task[]>(`/tasks?limit=${limit}${status ? `&status=${status}` : ""}`),
+
+  createTask: (task: TaskCreate) =>
+    request<Task>("/tasks", { method: "POST", body: JSON.stringify(task) }),
+
+  updateTaskStatus: (id: string, status: TaskStatus) =>
+    request<Task>(`/tasks/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+
+  getCalendar: (start: string, end: string) =>
+    request<CalendarResponse>(`/calendar?start=${start}&end=${end}`),
+
+  getAICapabilities: () => request<AICapabilities>("/ai/capabilities"),
+
+  chatWithAI: (messages: ChatMessage[]) =>
+    request<ChatResponse>("/ai/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages }),
+    }),
+
+  // --- Sprint 036 (Workstreams I/J) — workspace setup and branding. ---
+  getOnboardingState: () => request<OnboardingState>("/tenants/me/onboarding"),
+
+  updateOnboarding: (changes: OnboardingUpdate) =>
+    request<TenantProfile>("/tenants/me/onboarding", {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }),
+
+  // Multipart, so it cannot reuse request()'s JSON-only handling —
+  // mirrors uploadDocument's auth-header and 401-clearing behaviour. The
+  // browser sets the multipart boundary itself, so Content-Type must NOT
+  // be set manually here.
+  uploadCompanyLogo: async (file: File): Promise<TenantProfile> => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("file", file);
+
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE_URL}/api/v1/tenants/me/logo`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+    } catch {
+      throw new ApiError("Could not reach the API at /tenants/me/logo", 0);
+    }
+
+    if (!res.ok) {
+      if (res.status === 401) clearToken();
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(
+        body.detail ?? `Request to /tenants/me/logo failed with ${res.status}`,
+        res.status
+      );
+    }
+    return res.json();
+  },
+
+  deleteCompanyLogo: () =>
+    request<TenantProfile>("/tenants/me/logo", { method: "DELETE" }),
+
+  /** The authenticated URL the logo is served from. A cache-busting
+   * parameter is the caller's job — the browser will otherwise keep
+   * showing the previous logo after an upload. */
+  companyLogoUrl: () => `${API_BASE_URL}/api/v1/tenants/me/logo`,
 
   getQuotes: (limit = 20) => request<Quote[]>(`/quotes?limit=${limit}`),
 

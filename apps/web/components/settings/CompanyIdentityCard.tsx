@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Field, Input } from "@/components/ui/Field";
+import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
+import { SUPPORTED_CURRENCIES } from "@/types/tenant";
 import type { TenantProfile, TenantProfileUpdate } from "@/types/tenant";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 
 // Sprint 034 — the business identity this tenant's own customers see on
 // quotes and invoices. Deliberately not the platform's brand: the product
@@ -38,14 +40,12 @@ const FIELDS: { key: keyof TenantProfileUpdate; label: string; hint?: string; wi
     label: "VAT registration number",
     hint: "Leave blank if you are not VAT registered — it is omitted rather than guessed.",
   },
-  { key: "logo_url", label: "Logo URL", wide: true },
-  {
-    key: "document_footer",
-    label: "Document footer",
-    hint: "Appears at the bottom of every quote and invoice — payment terms, registered office, etc.",
-    wide: true,
-  },
 ];
+
+// Sprint 036 (Workstream I) — `logo_url` and `document_footer` moved to
+// the Branding section. They are how documents *look*, not who the
+// company legally is, and stacking them under the statutory details is
+// part of what made the old single Settings page a 483-line scroll.
 
 type FormState = Record<string, string>;
 
@@ -62,6 +62,8 @@ export default function CompanyIdentityCard() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [currency, setCurrency] = useState("GBP");
+  const { refresh: refreshWorkspace } = useWorkspace();
 
   useEffect(() => {
     api
@@ -69,6 +71,7 @@ export default function CompanyIdentityCard() {
       .then((loaded) => {
         setProfile(loaded);
         setForm(toForm(loaded));
+        setCurrency(loaded.currency ?? "GBP");
       })
       .catch(() => setLoadError("Could not load your company details."));
   }, []);
@@ -97,6 +100,10 @@ export default function CompanyIdentityCard() {
       }
     }
 
+    if (currency !== (profile.currency ?? "GBP")) {
+      changed.currency = currency;
+    }
+
     if (Object.keys(changed).length === 0) {
       setSaving(false);
       setSaved(true);
@@ -107,6 +114,10 @@ export default function CompanyIdentityCard() {
       const updated = await api.updateCompanyProfile(changed);
       setProfile(updated);
       setForm(toForm(updated));
+      setCurrency(updated.currency ?? "GBP");
+      // The currency drives every money format in the app, so the shared
+      // workspace context has to hear about a change here.
+      refreshWorkspace();
       setSaved(true);
     } catch (err) {
       setSaveError(
@@ -156,6 +167,32 @@ export default function CompanyIdentityCard() {
                 </Field>
               ))}
             </div>
+
+            {/* Sprint 036 — the workspace currency. A select rather than
+                a text field: the backend accepts only currencies GeoCore
+                can actually render on screen and on a PDF, and a free
+                text box would invite a code that produces documents with
+                bare numbers on them. */}
+            <Field
+              label="Currency"
+              htmlFor="company-currency"
+              hint="Used across the app and on new quotes. Existing quotes keep the currency they were created in."
+            >
+              <Select
+                id="company-currency"
+                value={currency}
+                onChange={(e) => {
+                  setCurrency(e.target.value);
+                  setSaved(false);
+                }}
+              >
+                {SUPPORTED_CURRENCIES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
             {saveError && <p className="text-sm text-danger">{saveError}</p>}
             {saved && !saveError && (

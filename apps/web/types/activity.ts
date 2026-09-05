@@ -25,7 +25,10 @@ export type ActivityType =
   | "site_visit_completed"
   | "site_visit_cancelled"
   | "project_assigned"
-  | "project_status_changed";
+  | "project_status_changed"
+  // Sprint 036
+  | "automation_created"
+  | "task_completed";
 
 export interface ActivityEvent {
   id: string;

@@ -6,7 +6,7 @@ import { BACKEND_URL } from "../playwright.config";
  * Sprint 020 — first true browser E2E test. Setup (tenant/customer/quote)
  * goes through the real API directly (same payload shapes as
  * tests/test_quote_handoff.py's `_create_linked_quote`), but the critical
- * business transition — Approve, then Hand off to Project — runs through
+ * business transition — Approve, then create the project — runs through
  * the real Chromium browser against the real Next.js app and real FastAPI
  * server (see playwright.config.ts's webServer). Nothing here mocks
  * fetch, the router, or the API client.
@@ -86,10 +86,14 @@ test("customer_quote_approval_handoff_persists_project", async ({ page }) => {
   await approveButton.click();
   await expect(page.getByText("Approved", { exact: true })).toBeVisible();
   await expect(approveButton).not.toBeVisible();
-  const handoffButton = page.getByRole("button", { name: "Hand off to Project" });
+  // Sprint 036 renamed this action to "Create the project" — "hand off"
+  // is internal vocabulary, not something a builder says. The journey
+  // it drives is unchanged.
+  const handoffButton = page.getByRole("button", { name: "Create the project" });
   await expect(handoffButton).toBeVisible();
 
-  // ---- Hand off through the UI — the server-returned Project id is authoritative ----
+  // ---- Create the project through the UI — the server-returned Project
+  // id is authoritative, never derived from the Quote id ----
   await handoffButton.click();
   await page.waitForURL(/\/projects\/.+/);
   const projectId = page.url().split("/projects/")[1];

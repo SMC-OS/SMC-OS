@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
+from app.automations.dispatcher import automation_dispatcher
 from app.customers.models import CustomerCreate
-from app.projects.models import ProjectCreate, ProjectStatus
+from app.projects.models import ProjectCreate, ProjectStatus, ProjectUpdate
 from app.database import crud
 from app.database.models import Customer, Project
 
@@ -75,6 +76,15 @@ class ProjectService:
             customer_id=data.customer_id,
             notes=data.notes,
             status=ProjectStatus.ENQUIRY.value,
+            project_type=data.project_type,
+            description=data.description,
+            site_address_line1=data.site_address_line1,
+            site_address_line2=data.site_address_line2,
+            site_city=data.site_city,
+            site_postcode=data.site_postcode,
+            start_date=data.start_date,
+            target_completion_date=data.target_completion_date,
+            estimated_value=data.estimated_value,
         )
         # Sprint 004 established this pattern for customers — the backend
         # logs its own ActivityEvent, replacing a standalone frontend call.
@@ -86,7 +96,35 @@ class ProjectService:
             ),
             tenant_id=tenant_id,
         )
+        automation_dispatcher.dispatch_project_created(db, project)
         return project
+
+    def update(
+        self,
+        db: Session,
+        project_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        data: ProjectUpdate,
+    ) -> Project | None:
+        """Sprint 036 (Workstream F). Partial update of a project's own
+        details — never its status, which keeps its own endpoint and its
+        own linear-transition rules (update_status below).
+
+        A customer_id the caller doesn't own raises CustomerNotFoundError,
+        the same relationship-linkage check create() already performs: an
+        UPDATE is exactly as capable of linking a project to another
+        tenant's customer as an INSERT is.
+        """
+        changes = data.model_dump(exclude_unset=True)
+
+        if changes.get("customer_id") is not None and crud.get_customer_by_id(
+            db, changes["customer_id"], tenant_id
+        ) is None:
+            raise CustomerNotFoundError(changes["customer_id"])
+
+        if not changes:
+            return crud.get_project_by_id(db, project_id, tenant_id)
+        return crud.update_project(db, project_id, tenant_id, changes)
 
     def update_status(
         self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, status: ProjectStatus
@@ -134,6 +172,13 @@ class ProjectService:
             db.rollback()
             raise
 
+        # Sprint 036 (Workstream G) — dispatched only after the status
+        # write and its activity event have committed together, and
+        # outside the try/except above on purpose: an automation must
+        # never be able to roll back the transition that triggered it.
+        automation_dispatcher.dispatch_project_status_changed(
+            db, updated, previous_status
+        )
         return updated
 
     def assign(

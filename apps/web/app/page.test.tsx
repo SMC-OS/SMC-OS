@@ -39,11 +39,34 @@ vi.mock("@/components/dashboard/RecentActivityPanel", () => ({
 vi.mock("@/components/dashboard/StatGrid", () => ({
   StatGrid: () => null,
 }));
+// Sprint 036 — the Dashboard V2 panels. Each fetches on mount, so they
+// are stubbed for the same reason the Sprint 028 panels above are: this
+// file is about the greeting and the auth guard, not about data loading.
+vi.mock("@/components/dashboard/AttentionPanel", () => ({
+  AttentionPanel: () => null,
+}));
+vi.mock("@/components/dashboard/UpcomingPanel", () => ({
+  UpcomingPanel: () => null,
+}));
+vi.mock("@/components/dashboard/AutomationActivityPanel", () => ({
+  AutomationActivityPanel: () => null,
+}));
+vi.mock("@/components/dashboard/AIInsightCard", () => ({
+  AIInsightCard: () => null,
+}));
+vi.mock("@/components/workspace/WorkspaceProvider", () => ({
+  useWorkspace: () => ({ profile: null, currency: "GBP", loading: false, refresh: () => {} }),
+}));
 vi.mock("@/hooks/useDashboardStats", () => ({
   useDashboardStats: () => ({ status: "success", error: null, isAuthError: false, data: null }),
 }));
 
-let mockAuth: { name: string | null; isAuthenticated: boolean; isReady: boolean };
+let mockAuth: {
+  name: string | null;
+  tenantName?: string | null;
+  isAuthenticated: boolean;
+  isReady: boolean;
+};
 
 vi.mock("@/components/auth/AuthProvider", () => ({
   useAuth: () => mockAuth,
@@ -57,13 +80,30 @@ afterEach(() => {
 });
 
 describe("DashboardPage — Sprint 028 UAT-003", () => {
+  // Sprint 036 rewrote the greeting: it is now time-of-day based and uses
+  // the signed-in user's first name ("Good morning, Jordan") instead of a
+  // fixed "Welcome back, <full name>". The defect this test exists to
+  // catch is unchanged and is still asserted — the greeting must come
+  // from the real signed-in user and must never be a hardcoded name — so
+  // the assertion matches the name rather than the surrounding wording.
   it("greets_the_actual_signed_in_user_by_their_real_name_not_a_placeholder", () => {
     mockAuth = { name: "Jordan Staff", isAuthenticated: true, isReady: true };
 
     render(<DashboardPage />);
 
-    expect(screen.getByText("Welcome back, Jordan Staff")).toBeInTheDocument();
-    expect(screen.queryByText("Welcome back, Simo")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /jordan/i, level: 1 })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/simo/i)).not.toBeInTheDocument();
+  });
+
+  it("greets_without_a_name_rather_than_inventing_one_when_the_user_has_none", () => {
+    mockAuth = { name: null, isAuthenticated: true, isReady: true };
+
+    render(<DashboardPage />);
+
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.textContent).toMatch(/^Good (morning|afternoon|evening)$/);
   });
 });
 
@@ -74,7 +114,7 @@ describe("DashboardPage — production incident: redirect on an invalid/expired 
     render(<DashboardPage />);
 
     expect(replaceMock).toHaveBeenCalledWith("/login");
-    expect(screen.queryByText(/welcome back/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
 
   it("renders nothing yet while the initial auth check is still in flight", () => {

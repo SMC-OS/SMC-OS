@@ -25,12 +25,14 @@ docs/DECISIONS.md ADR-029). `tenants`/`invitations` CRUD is unchanged
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_ as sa_or, select
 from sqlalchemy.orm import Session
 
 from app.database.models import (
     ActivityLog,
     Appointment,
+    Automation,
+    AutomationRun,
     Customer,
     Document,
     Invitation,
@@ -43,6 +45,7 @@ from app.database.models import (
     Quote,
     QuoteItem,
     Subscription,
+    Task,
     Tenant,
     User,
 )
@@ -234,9 +237,33 @@ def create_customer(
     name: str,
     email: str | None = None,
     phone: str | None = None,
+    # Sprint 036 (Workstream D) — the construction customer record. Every
+    # one is keyword-only with a default, so every existing caller
+    # (CustomerService.create, ProjectService.convert_to_customer) keeps
+    # working untouched and a three-field customer stays a valid customer.
+    customer_type: str = "individual",
+    company_name: str | None = None,
+    address_line1: str | None = None,
+    address_line2: str | None = None,
+    city: str | None = None,
+    postcode: str | None = None,
+    notes: str | None = None,
     commit: bool = True,
 ) -> Customer:
-    row = Customer(id=id, tenant_id=tenant_id, name=name, email=email, phone=phone)
+    row = Customer(
+        id=id,
+        tenant_id=tenant_id,
+        name=name,
+        email=email,
+        phone=phone,
+        customer_type=customer_type,
+        company_name=company_name,
+        address_line1=address_line1,
+        address_line2=address_line2,
+        city=city,
+        postcode=postcode,
+        notes=notes,
+    )
     db.add(row)
     # Sprint 021 — commit=False lets a caller (currently only
     # ProjectService.convert_to_customer) fold this write into its own
@@ -324,6 +351,18 @@ def create_project(
     notes: str | None,
     status: str,
     quote_id: uuid.UUID | None = None,
+    # Sprint 036 (Workstream F). Keyword-only with defaults, so the
+    # quote-handoff caller and every existing test keep working with the
+    # original signature.
+    project_type: str | None = None,
+    description: str | None = None,
+    site_address_line1: str | None = None,
+    site_address_line2: str | None = None,
+    site_city: str | None = None,
+    site_postcode: str | None = None,
+    start_date=None,
+    target_completion_date=None,
+    estimated_value: float | None = None,
 ) -> Project:
     row = Project(
         id=id,
@@ -333,8 +372,89 @@ def create_project(
         notes=notes,
         status=status,
         quote_id=quote_id,
+        project_type=project_type,
+        description=description,
+        site_address_line1=site_address_line1,
+        site_address_line2=site_address_line2,
+        site_city=site_city,
+        site_postcode=site_postcode,
+        start_date=start_date,
+        target_completion_date=target_completion_date,
+        estimated_value=estimated_value,
     )
     db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# Sprint 036 (Workstream D/F) — the first partial-update helpers in this
+# module. Both take an already-validated dict of column -> value from
+# their service and apply only the keys present, so "field omitted" and
+# "field explicitly set to null" stay distinguishable all the way from the
+# HTTP body to the row (see CustomerUpdate/ProjectUpdate's
+# model_dump(exclude_unset=True)).
+#
+# The allowlists are the point: a caller cannot reach tenant_id, id,
+# created_at or status through these, so no partial update can move a row
+# between tenants or bypass the status-transition rules in
+# ProjectService.update_status.
+_CUSTOMER_UPDATABLE = frozenset(
+    {
+        "name",
+        "email",
+        "phone",
+        "customer_type",
+        "company_name",
+        "address_line1",
+        "address_line2",
+        "city",
+        "postcode",
+        "notes",
+    }
+)
+
+_PROJECT_UPDATABLE = frozenset(
+    {
+        "name",
+        "notes",
+        "customer_id",
+        "project_type",
+        "description",
+        "site_address_line1",
+        "site_address_line2",
+        "site_city",
+        "site_postcode",
+        "start_date",
+        "target_completion_date",
+        "estimated_value",
+    }
+)
+
+
+def update_customer(
+    db: Session, customer_id: uuid.UUID, tenant_id: uuid.UUID, changes: dict
+) -> Customer | None:
+    row = get_customer_by_id(db, customer_id, tenant_id)
+    if row is None:
+        return None
+    for field, value in changes.items():
+        if field in _CUSTOMER_UPDATABLE:
+            setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def update_project(
+    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, changes: dict
+) -> Project | None:
+    row = get_project_by_id(db, project_id, tenant_id)
+    if row is None:
+        return None
+    for field, value in changes.items():
+        if field in _PROJECT_UPDATABLE:
+            setattr(row, field, value)
     db.commit()
     db.refresh(row)
     return row
@@ -439,6 +559,202 @@ def update_project_customer(
     return row
 
 
+def create_general_quote(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    customer_id: uuid.UUID | None,
+    currency: str,
+    fields: dict,
+) -> Quote:
+    """Sprint 036 (Workstream E) — the general construction quote's own
+    INSERT, separate from create_quote() above rather than adding a dozen
+    more keyword arguments to it.
+
+    They are separate because they write genuinely different rows.
+    create_quote() writes a stone quote: every slab column populated,
+    quote_kind 'stone'. This writes a general quote: every slab column
+    left NULL, quote_kind 'general'. Folding both into one function with
+    twenty-odd optional parameters would make it possible to construct a
+    row that is neither — a "general" quote carrying a half-populated
+    material, or a stone quote with no dimensions — which is exactly the
+    state the quote_kind discriminator exists to make unrepresentable.
+
+    `fields` is a dict of already-validated column values from
+    QuoteService, filtered through _GENERAL_QUOTE_COLUMNS so a caller
+    cannot reach tenant_id, status or a slab column through it.
+    """
+    row = Quote(
+        id=id,
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        quote_kind="general",
+        currency=currency,
+        # The pre-Sprint-036 flag columns are frozen at their stone
+        # meaning and are not part of a general quote at all. They are
+        # set explicitly rather than left to the server default so it is
+        # visible here that their absence is a decision, not an oversight.
+        island=False,
+        waterfall=0,
+        splashback=False,
+        upstands=False,
+        **{key: value for key, value in fields.items() if key in _GENERAL_QUOTE_COLUMNS},
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# The only columns a general-quote create/update may write. Everything
+# else on `quotes` — tenant_id, customer_id, quote_kind, status,
+# approved_*, and every slab column — is either set explicitly by the
+# service or off limits to a client-supplied payload entirely.
+_GENERAL_QUOTE_COLUMNS = frozenset(
+    {
+        "title",
+        "trade",
+        "site_address_line1",
+        "site_address_line2",
+        "site_city",
+        "site_postcode",
+        "scope_of_works",
+        "notes",
+        "exclusions",
+        "terms",
+        "valid_until",
+        "postcode",
+        "vat_rate",
+        "subtotal",
+        "discount_amount",
+        "price_before_vat",
+        "vat",
+        "total",
+    }
+)
+
+
+def update_general_quote(
+    db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID, changes: dict
+) -> Quote | None:
+    """Sprint 036 — partial update of a general quote's envelope and
+    recomputed totals. Same allowlist as create: `customer_id` is applied
+    separately by the service (it needs a tenant-ownership check the
+    allowlist cannot express), and no key outside
+    _GENERAL_QUOTE_COLUMNS can be written through here at all."""
+    row = get_quote_by_id(db, quote_id, tenant_id)
+    if row is None:
+        return None
+    for field, value in changes.items():
+        if field in _GENERAL_QUOTE_COLUMNS or field == "customer_id":
+            setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def replace_quote_items(db: Session, quote: Quote, items: list[dict]) -> None:
+    """Sprint 036 — wholesale replacement of a quote's line items.
+
+    Uses the existing `Quote.items` relationship with its
+    delete-orphan cascade (the one relationship() in this schema) rather
+    than a bulk DELETE, so ordering, the cascade and the identity map stay
+    consistent with how items are read everywhere else. One commit, so a
+    failed replacement leaves the previous set intact rather than a quote
+    with no lines.
+    """
+    quote.items.clear()
+    db.flush()
+    for index, item in enumerate(items):
+        quote.items.append(QuoteItem(id=uuid.uuid4(), position=index, **item))
+    db.commit()
+    db.refresh(quote)
+
+
+def mark_quote_sent(
+    db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID, sent_at: datetime
+) -> Quote | None:
+    row = get_quote_by_id(db, quote_id, tenant_id)
+    if row is None:
+        return None
+    row.status = "sent"
+    row.sent_at = sent_at
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_projects_with_start_date(db: Session) -> list[Project]:
+    """Sprint 036 — every project that has a start date at all, for the
+    automation scan. Deliberately not tenant-scoped, same rationale as
+    list_projects_by_status (Sprint 024): the job has no caller. The scan
+    itself groups rules by tenant and only ever evaluates a project
+    against its own workspace's rules."""
+    stmt = select(Project).where(Project.start_date.is_not(None))
+    return list(db.scalars(stmt))
+
+
+def list_projects_in_date_window(
+    db: Session, tenant_id: uuid.UUID, start: date, end: date
+) -> list[Project]:
+    """Sprint 036 (Workstream K) — projects whose start OR target
+    completion date falls in the window. Both are returned by the same
+    query so the calendar makes one round trip and then emits one item per
+    date it finds, rather than two queries the caller has to merge."""
+    stmt = (
+        select(Project)
+        .where(
+            Project.tenant_id == tenant_id,
+            sa_or(
+                Project.start_date.between(start, end),
+                Project.target_completion_date.between(start, end),
+            ),
+        )
+        .order_by(Project.start_date.asc().nullslast())
+    )
+    return list(db.scalars(stmt))
+
+
+def list_quotes_expiring_in_window(
+    db: Session, tenant_id: uuid.UUID, start: date, end: date
+) -> list[Quote]:
+    stmt = (
+        select(Quote)
+        .where(
+            Quote.tenant_id == tenant_id,
+            Quote.valid_until.is_not(None),
+            Quote.valid_until.between(start, end),
+        )
+        .order_by(Quote.valid_until.asc())
+    )
+    return list(db.scalars(stmt))
+
+
+def list_appointments_in_window(
+    db: Session, tenant_id: uuid.UUID, start: datetime, end: datetime
+) -> list[Appointment]:
+    stmt = (
+        select(Appointment)
+        .where(
+            Appointment.tenant_id == tenant_id,
+            Appointment.scheduled_at >= start,
+            Appointment.scheduled_at <= end,
+        )
+        .order_by(Appointment.scheduled_at.asc())
+    )
+    return list(db.scalars(stmt))
+
+
+def list_quotes_by_status(db: Session, status: str) -> list[Quote]:
+    """Sprint 036 — deliberately NOT tenant-scoped, for exactly the same
+    reason as list_projects_by_status (Sprint 024): the automation scan job
+    has no caller and therefore no tenant, and tags every side effect with
+    the subject row's own tenant_id."""
+    stmt = select(Quote).where(Quote.status == status)
+    return list(db.scalars(stmt))
+
+
 def create_quote(
     db: Session,
     *,
@@ -464,11 +780,18 @@ def create_quote(
     price_before_vat: float,
     vat: float,
     total: float,
+    # Sprint 036 — keyword-only with defaults so every existing caller and
+    # test that predates this sprint keeps working with the old signature.
+    currency: str = "GBP",
+    subtotal: float | None = None,
 ) -> Quote:
     row = Quote(
         id=id,
         tenant_id=tenant_id,
         customer_id=customer_id,
+        quote_kind="stone",
+        currency=currency,
+        subtotal=subtotal,
         material=material,
         thickness=thickness,
         kitchen_length=kitchen_length,
@@ -1001,3 +1324,277 @@ def mark_stripe_event_processed(db: Session, event_id: str, event_type: str) -> 
     db.add(ProcessedStripeEvent(id=event_id, event_type=event_type))
     db.commit()
     return True
+
+
+# ---------------------------------------------------------------------
+# Sprint 036 — tasks, automations and automation runs.
+# ---------------------------------------------------------------------
+
+
+def create_task(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    title: str,
+    body: str | None = None,
+    status: str = "open",
+    due_at: datetime | None = None,
+    assigned_user_id: uuid.UUID | None = None,
+    created_by_user_id: uuid.UUID | None = None,
+    source_type: str | None = None,
+    source_id: uuid.UUID | None = None,
+    dedupe_key: str | None = None,
+) -> Task:
+    row = Task(
+        id=id,
+        tenant_id=tenant_id,
+        title=title,
+        body=body,
+        status=status,
+        due_at=due_at,
+        assigned_user_id=assigned_user_id,
+        created_by_user_id=created_by_user_id,
+        source_type=source_type,
+        source_id=source_id,
+        dedupe_key=dedupe_key,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_task_by_id(db: Session, task_id: uuid.UUID, tenant_id: uuid.UUID) -> Task | None:
+    stmt = select(Task).where(Task.id == task_id, Task.tenant_id == tenant_id)
+    return db.scalars(stmt).first()
+
+
+def get_task_by_dedupe_key(db: Session, dedupe_key: str) -> Task | None:
+    """Not tenant-scoped, exactly like get_notification_by_dedupe_key
+    (Sprint 024): dedupe_key is globally unique by construction (it embeds
+    the automation id, which embeds the tenant), and the constraint being
+    global is what makes it a real backstop."""
+    return db.scalars(select(Task).where(Task.dedupe_key == dedupe_key)).first()
+
+
+def list_tasks(
+    db: Session,
+    tenant_id: uuid.UUID,
+    *,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[Task]:
+    stmt = select(Task).where(Task.tenant_id == tenant_id)
+    if status is not None:
+        stmt = stmt.where(Task.status == status)
+    # Due first (soonest at the top), then newest. NULLS LAST so an
+    # undated task never outranks one that is actually due.
+    stmt = stmt.order_by(Task.due_at.asc().nullslast(), Task.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt))
+
+
+def list_tasks_in_window(
+    db: Session, tenant_id: uuid.UUID, start: datetime, end: datetime
+) -> list[Task]:
+    stmt = (
+        select(Task)
+        .where(
+            Task.tenant_id == tenant_id,
+            Task.due_at.is_not(None),
+            Task.due_at >= start,
+            Task.due_at <= end,
+        )
+        .order_by(Task.due_at.asc())
+    )
+    return list(db.scalars(stmt))
+
+
+def count_open_tasks(db: Session, tenant_id: uuid.UUID) -> int:
+    return (
+        db.query(Task)
+        .filter(Task.tenant_id == tenant_id, Task.status == "open")
+        .count()
+    )
+
+
+def update_task_status(
+    db: Session,
+    task_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    status: str,
+    completed_at: datetime | None,
+) -> Task | None:
+    row = get_task_by_id(db, task_id, tenant_id)
+    if row is None:
+        return None
+    row.status = status
+    row.completed_at = completed_at
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_automation(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    name: str,
+    description: str | None,
+    trigger_type: str,
+    conditions: list,
+    actions: list,
+    enabled: bool = True,
+    template_key: str | None = None,
+    created_by_user_id: uuid.UUID | None = None,
+) -> Automation:
+    row = Automation(
+        id=id,
+        tenant_id=tenant_id,
+        name=name,
+        description=description,
+        trigger_type=trigger_type,
+        conditions=conditions,
+        actions=actions,
+        enabled=enabled,
+        template_key=template_key,
+        created_by_user_id=created_by_user_id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_automation_by_id(
+    db: Session, automation_id: uuid.UUID, tenant_id: uuid.UUID
+) -> Automation | None:
+    stmt = select(Automation).where(
+        Automation.id == automation_id, Automation.tenant_id == tenant_id
+    )
+    return db.scalars(stmt).first()
+
+
+def list_automations(db: Session, tenant_id: uuid.UUID, limit: int = 100) -> list[Automation]:
+    stmt = (
+        select(Automation)
+        .where(Automation.tenant_id == tenant_id)
+        .order_by(Automation.created_at.desc())
+        .limit(limit)
+    )
+    return list(db.scalars(stmt))
+
+
+def list_enabled_automations_for_trigger(
+    db: Session, tenant_id: uuid.UUID, trigger_type: str
+) -> list[Automation]:
+    """The dispatch query. Tenant-scoped and enabled-only, both in SQL
+    rather than filtered in Python: an automation belonging to another
+    tenant must never be loaded at all, not merely skipped after loading."""
+    stmt = (
+        select(Automation)
+        .where(
+            Automation.tenant_id == tenant_id,
+            Automation.trigger_type == trigger_type,
+            Automation.enabled.is_(True),
+        )
+        .order_by(Automation.created_at.asc())
+    )
+    return list(db.scalars(stmt))
+
+
+def list_enabled_automations_by_trigger_all_tenants(
+    db: Session, trigger_type: str
+) -> list[Automation]:
+    """Deliberately NOT tenant-scoped — the same rationale as
+    list_projects_by_status (Sprint 024): the scan job has no caller and
+    therefore no tenant. Every side effect it creates is tagged with the
+    subject row's own tenant_id, never a caller's."""
+    stmt = select(Automation).where(
+        Automation.trigger_type == trigger_type, Automation.enabled.is_(True)
+    )
+    return list(db.scalars(stmt))
+
+
+def update_automation(
+    db: Session, automation_id: uuid.UUID, tenant_id: uuid.UUID, changes: dict
+) -> Automation | None:
+    row = get_automation_by_id(db, automation_id, tenant_id)
+    if row is None:
+        return None
+    for field, value in changes.items():
+        if field in _AUTOMATION_UPDATABLE:
+            setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+_AUTOMATION_UPDATABLE = frozenset(
+    {"name", "description", "trigger_type", "conditions", "actions", "enabled"}
+)
+
+
+def delete_automation(db: Session, automation_id: uuid.UUID, tenant_id: uuid.UUID) -> bool:
+    row = get_automation_by_id(db, automation_id, tenant_id)
+    if row is None:
+        return False
+    # Runs are deleted first: automation_runs.automation_id is a NOT NULL
+    # FK, so the parent cannot go while history references it. The history
+    # of a deleted rule has no reader — the rule it explains is gone — so
+    # cascading is correct here rather than orphaning it.
+    db.query(AutomationRun).filter(AutomationRun.automation_id == automation_id).delete()
+    db.delete(row)
+    db.commit()
+    return True
+
+
+def create_automation_run(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    automation_id: uuid.UUID,
+    trigger_type: str,
+    subject_type: str | None,
+    subject_id: uuid.UUID | None,
+    status: str,
+    detail: str | None,
+    dedupe_key: str | None,
+) -> AutomationRun:
+    row = AutomationRun(
+        id=id,
+        tenant_id=tenant_id,
+        automation_id=automation_id,
+        trigger_type=trigger_type,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        status=status,
+        detail=detail,
+        dedupe_key=dedupe_key,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_automation_run_by_dedupe_key(db: Session, dedupe_key: str) -> AutomationRun | None:
+    return db.scalars(
+        select(AutomationRun).where(AutomationRun.dedupe_key == dedupe_key)
+    ).first()
+
+
+def list_automation_runs(
+    db: Session,
+    tenant_id: uuid.UUID,
+    *,
+    automation_id: uuid.UUID | None = None,
+    limit: int = 50,
+) -> list[AutomationRun]:
+    stmt = select(AutomationRun).where(AutomationRun.tenant_id == tenant_id)
+    if automation_id is not None:
+        stmt = stmt.where(AutomationRun.automation_id == automation_id)
+    stmt = stmt.order_by(AutomationRun.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt))

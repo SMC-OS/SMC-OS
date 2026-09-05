@@ -17,10 +17,21 @@ yet except activity_log/notifications (see app/activity, app/notifications).
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.database import Base
@@ -63,6 +74,35 @@ class Tenant(Base):
     logo_url: Mapped[str | None] = mapped_column(String, nullable=True)
     document_footer: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Sprint 036 — workspace configuration.
+    #
+    # `currency` is the single source of truth for how this tenant's money
+    # is displayed and what a new quote is denominated in. It is mirrored
+    # onto each Quote at creation so a historical document never silently
+    # re-prices if the tenant later changes it. NOT NULL with a 'GBP'
+    # server default: every existing tenant is a UK business today, and a
+    # currency-less tenant would have no defensible display format.
+    #
+    # `trades` is a comma-separated list of the trade keys this business
+    # selected during onboarding (see app/tenants/trades.py). Deliberately
+    # a delimited String, not a JSON/ARRAY column: it is read whole, never
+    # queried into, and this schema has no other JSON column to be
+    # consistent with. NULL means "never asked", which is different from
+    # "" ("asked, selected nothing").
+    #
+    # `logo_storage_filename` is the generated UUID-based filename of an
+    # uploaded logo under UPLOAD_DIR (never a user-supplied path — same
+    # path-traversal-safe-by-construction rule as Document, ADR-032). It
+    # is separate from the pre-existing `logo_url`, which stays the
+    # externally-hosted-URL escape hatch; identity resolution prefers the
+    # uploaded file when both are set.
+    currency: Mapped[str] = mapped_column(String, nullable=False, server_default="GBP")
+    trades: Mapped[str | None] = mapped_column(String, nullable=True)
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    logo_storage_filename: Mapped[str | None] = mapped_column(String, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -78,6 +118,28 @@ class Customer(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str | None] = mapped_column(String, nullable=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Sprint 036 (Workstream D) — a construction customer record. Every
+    # column below is nullable or defaulted, so every customer created
+    # before this sprint stays valid with no backfill and the existing
+    # CustomerCreate/{name,email,phone} request body keeps working
+    # byte-for-byte.
+    #
+    # `customer_type` is "individual" | "company", plain String validated
+    # at the Pydantic boundary (same no-native-enum convention as
+    # Project.status). `company_name` is meaningful only for a company
+    # customer; `name` stays the person you actually deal with either way,
+    # which is why it remains the required field rather than being
+    # replaced by a company name.
+    customer_type: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="individual"
+    )
+    company_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    address_line1: Mapped[str | None] = mapped_column(String, nullable=True)
+    address_line2: Mapped[str | None] = mapped_column(String, nullable=True)
+    city: Mapped[str | None] = mapped_column(String, nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -106,16 +168,31 @@ class Quote(Base):
     # (the customer portal summary, dashboards, anything not yet updated
     # to read `items`) keep working without modification. See
     # QuoteService._summarize_items() for exactly how these are derived.
-    material: Mapped[str] = mapped_column(String, nullable=False)
-    thickness: Mapped[str] = mapped_column(String, nullable=False)
+    # Sprint 036 (Workstream E) — GeoCore is construction & renovation
+    # software, not worktop software. `quote_kind` discriminates a
+    # "general" construction quote (priced from line items with unit
+    # prices) from a "stone" quote (priced by the slab calculator). NOT
+    # NULL with a 'stone' server default: every quote that existed before
+    # this sprint *is* a stone quote, so the default states a fact rather
+    # than guessing one.
+    #
+    # The five stone columns immediately below became nullable in the same
+    # migration. A general quote genuinely has no slab material, thickness
+    # or run length — writing a sentinel like "N/A" into a NOT NULL column
+    # would be lying in the schema to avoid changing it. Existing rows
+    # keep every value they had; nothing is rewritten.
+    quote_kind: Mapped[str] = mapped_column(String, nullable=False, server_default="stone")
+
+    material: Mapped[str | None] = mapped_column(String, nullable=True)
+    thickness: Mapped[str | None] = mapped_column(String, nullable=True)
     # Sprint 032 (Workstream C) — kitchen_length (metres) is kept as a
     # derived/mirrored column for backward compatibility with existing
     # rows/reports; length_mm is now the source of truth for every new
     # quote (see app/quotes/service.py). Never write one without the
     # other — QuoteService keeps them in sync.
-    kitchen_length: Mapped[float] = mapped_column(Float, nullable=False)
+    kitchen_length: Mapped[float | None] = mapped_column(Float, nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
-    length_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    length_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     width_mm: Mapped[float] = mapped_column(Float, nullable=False, server_default="650")
     thickness_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     # What unit the caller originally entered dimensions in ("mm"/"cm"/
@@ -137,8 +214,55 @@ class Quote(Base):
     vat: Mapped[float | None] = mapped_column(Float, nullable=True)
     total: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # --- Sprint 036 (Workstream E) — the universal quote envelope. ---
+    #
+    # These describe the *job*, not the stone, and apply equally to a
+    # roofing quote, a bathroom refit and a worktop run. All nullable so
+    # no existing quote needs a backfill.
+    #
+    # `trade` is one of app/quotes/trades.py's TRADES (general_building,
+    # renovation, extension, kitchen, bathroom, roofing, flooring,
+    # decorating, plumbing, electrical, carpentry, stone, other) — plain
+    # String validated at the Pydantic boundary, same convention as
+    # status. Stone is one trade among twelve now, not the platform.
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    trade: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    site_address_line1: Mapped[str | None] = mapped_column(String, nullable=True)
+    site_address_line2: Mapped[str | None] = mapped_column(String, nullable=True)
+    site_city: Mapped[str | None] = mapped_column(String, nullable=True)
+    site_postcode: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    scope_of_works: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exclusions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    terms: Mapped[str | None] = mapped_column(Text, nullable=True)
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Money representation. `currency` is copied from the tenant at
+    # creation rather than read live, so changing a workspace's currency
+    # never silently re-denominates a document a customer already holds.
+    # `vat_rate` replaces the calculator's hardcoded 0.20 for general
+    # quotes; the stone calculator is untouched and still writes 20%.
+    # `subtotal` is the pre-discount sum of line totals — `price_before_vat`
+    # stays the post-discount taxable amount every existing reader
+    # already understands, so no existing total changes meaning.
+    currency: Mapped[str] = mapped_column(String, nullable=False, server_default="GBP")
+    vat_rate: Mapped[float] = mapped_column(Float, nullable=False, server_default="0.2")
+    subtotal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    discount_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Sprint 036 — "sent" joins "draft" and "approved". A quote a customer
+    # has actually received is the thing worth chasing, and it is what the
+    # quote.sent automation trigger and the "unanswered quote" follow-up
+    # template key off. Approval accepts either draft or sent (see
+    # QuoteService.approve) so nothing that could be approved before this
+    # sprint stops being approvable.
     status: Mapped[str] = mapped_column(
         String, nullable=False, server_default="draft"
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     approved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -180,15 +304,43 @@ class QuoteItem(Base):
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
-    item_type: Mapped[str] = mapped_column(String, nullable=False, server_default="worktop")
-    material: Mapped[str] = mapped_column(String, nullable=False)
-    thickness: Mapped[str] = mapped_column(String, nullable=False)
+    # Sprint 036 (Workstream E) — which pricing model this line uses.
+    # "stone" keeps the slab maths below (material/thickness/dimensions ->
+    # slabs -> line_total) exactly as Sprint 033 built it. "labour",
+    # "material" and "other" are general construction lines priced as
+    # quantity x unit_price, described in words rather than millimetres.
+    # NOT NULL, server default "stone": every line that existed before
+    # this sprint is a slab line.
+    line_kind: Mapped[str] = mapped_column(String, nullable=False, server_default="stone")
 
-    quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
-    length_mm: Mapped[float] = mapped_column(Float, nullable=False)
-    width_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    item_type: Mapped[str] = mapped_column(String, nullable=False, server_default="worktop")
+
+    # Stone-only. Nullable since Sprint 036: a "Strip out existing
+    # bathroom — 2 days labour" line has no material or thickness, and a
+    # NOT NULL column would have forced a fake one.
+    material: Mapped[str | None] = mapped_column(String, nullable=True)
+    thickness: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Widened INTEGER -> DOUBLE PRECISION in Sprint 036. A stone line is
+    # 2 slabs; a labour line is 2.5 days. Postgres widens in place with no
+    # precision loss, and 1 and 1.0 are the same number to both Python's
+    # == and JavaScript's ===, so no existing assertion or display
+    # changes meaning.
+    quantity: Mapped[float] = mapped_column(Float, nullable=False, server_default="1")
+    length_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     thickness_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     unit_input: Mapped[str] = mapped_column(String, nullable=False, server_default="mm")
+
+    # General-line columns. `description` is what the customer reads on the
+    # PDF; a stone line still derives its description from material and
+    # dimensions (app/quotes/pdf.py's build_line_items), so this stays
+    # NULL for stone. `unit` is free text from a curated list ("item",
+    # "m", "m2", "hour", "day", "job", ...) — a label, never something
+    # arithmetic is done with.
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String, nullable=True)
+    unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
@@ -230,6 +382,196 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, server_default="enquiry")
+
+    # --- Sprint 036 (Workstream F) — a real construction project record. ---
+    #
+    # All nullable, so every project created before this sprint stays
+    # valid and the existing ProjectCreate/{name,customer_id,notes} body
+    # keeps working unchanged.
+    #
+    # `project_type` is one of app/quotes/trades.py's TRADES — the same
+    # vocabulary a quote uses, so an approved quote hands its trade
+    # straight to the project it becomes rather than mapping between two
+    # near-identical lists.
+    #
+    # `start_date`/`target_completion_date` are calendar Dates, not
+    # timestamps: a job starts on a day, not at 09:00:00+01:00, and
+    # storing a spurious time would make "starts tomorrow" automation
+    # depend on an arbitrary hour.
+    project_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    site_address_line1: Mapped[str | None] = mapped_column(String, nullable=True)
+    site_address_line2: Mapped[str | None] = mapped_column(String, nullable=True)
+    site_city: Mapped[str | None] = mapped_column(String, nullable=True)
+    site_postcode: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    target_completion_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # What this job is worth. Populated automatically from the originating
+    # quote's total on handoff, and editable afterwards — a project's value
+    # legitimately moves as variations are agreed, and the quote it came
+    # from must never be retro-edited to match.
+    estimated_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Task(Base):
+    """A piece of internal work someone on the tenant needs to do (Sprint
+    036). Deliberately one table serving four callers rather than four
+    near-identical ones:
+
+      * Workstream F — the extensible task foundation under a Project.
+      * Workstream G — the `create_task` and `draft_message` automation
+        actions.
+      * Workstream C — "tasks requiring attention" on Dashboard V2.
+      * Workstream K — dated items on the Calendar.
+
+    `source_type`/`source_id` are the same deliberately-unconstrained
+    polymorphic reference NotificationRecord already uses (Sprint 024):
+    a task can hang off a project, a quote, a customer or nothing at all,
+    which no single FK can express. Tenant/existence validation happens in
+    the service, not the schema.
+
+    `dedupe_key` carries the same idempotency invariant as
+    NotificationRecord.dedupe_key — an automation that fires twice for the
+    same subject creates one task, enforced by the UNIQUE constraint
+    rather than only by a pre-check. Postgres treats multiple NULLs in a
+    UNIQUE column as distinct, so manually-created tasks (which set no key)
+    are unaffected.
+
+    `body` exists for the `draft_message` action: a prepared message a
+    human reviews and sends themselves. GeoCore has no outbound email, SMS
+    or messaging infrastructure, so nothing in this system transmits it.
+    """
+
+    __tablename__ = "tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "open" | "done" | "cancelled" — plain String, validated at the
+    # Pydantic boundary (app/tasks/models.py's TaskStatus).
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="open")
+    due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+    source_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Automation(Base):
+    """One tenant-owned `trigger -> conditions -> actions` rule (Sprint
+    036, Workstream G).
+
+    `conditions` and `actions` are JSON columns — the first in this schema.
+    The alternative (a normalised automation_conditions/automation_actions
+    pair) was rejected: both are read whole, always as a complete rule,
+    never queried into or joined against, and normalising them would add
+    two tables and two round trips to express a list. Their shape is
+    validated at the Pydantic boundary (app/automations/models.py) on
+    every write, so nothing unvalidated reaches the column.
+
+    `trigger_type` is a plain String from
+    app/automations/triggers.py's TRIGGERS, same no-native-enum
+    convention as everything else here.
+
+    `template_key` records which seeded template this rule was created
+    from (NULL for one built by hand). It is provenance, not behaviour —
+    editing a rule never re-syncs it to its template.
+
+    This is the one table in this schema that carries `updated_at`: unlike
+    every domain row here, an automation is a piece of configuration a user
+    edits repeatedly and expects to see a "last changed" time for, and its
+    edits are not individually interesting enough to warrant an
+    ActivityLog row each. Subscription (Sprint 032) set the same precedent
+    for configuration-shaped rows.
+    """
+
+    __tablename__ = "automations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    template_key: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    trigger_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    conditions: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    actions: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AutomationRun(Base):
+    """One recorded attempt to execute an Automation (Sprint 036).
+
+    Every attempt writes a row, including the ones that do nothing:
+    "skipped" with a reason is the difference between an automation that is
+    quietly broken and one that is correctly declining to fire. A failing
+    automation must never break the user action that triggered it, so the
+    dispatcher records `failed` with the exception text and swallows it —
+    this table is the only place that failure is visible, which is why it
+    is a first-class part of the feature rather than a log line.
+
+    `dedupe_key` is `{automation_id}:{trigger}:{subject_id}` (plus a
+    discriminator where one occurrence can legitimately recur). UNIQUE, so
+    idempotency is enforced by the database and not merely attempted by a
+    pre-check — the same defence-in-depth Sprint 024 established for
+    notification dedupe.
+    """
+
+    __tablename__ = "automation_runs"
+    __table_args__ = (
+        UniqueConstraint("dedupe_key", name="uq_automation_runs_dedupe_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    automation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("automations.id"), nullable=False, index=True
+    )
+
+    trigger_type: Mapped[str] = mapped_column(String, nullable=False)
+    subject_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    # "succeeded" | "failed" | "skipped"
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

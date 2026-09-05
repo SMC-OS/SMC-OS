@@ -4,6 +4,20 @@
  * coverage; only tests/test_invitations.py and tests/test_users.py
  * covered the backend. Also locks in the Owner-only UI gate (a Staff
  * session sees neither the invite form nor the team-management list).
+ *
+ * Sprint 036 rebuilt Settings as sections (?section=team) instead of one
+ * long scroll, and reworded the invite flow: the copy that used to
+ * apologise for having no email delivery now presents the joining link
+ * as the deliberate output of the action. Every contract this file
+ * protects is unchanged and still asserted here:
+ *
+ *   - an Owner can create an invitation and is shown the real link;
+ *   - an Owner can deactivate a member, and the list refreshes;
+ *   - a Staff session sees no team-management controls AND never even
+ *     issues the Owner-only requests.
+ *
+ * Only the section the assertions run against, and the button labels,
+ * moved.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -17,8 +31,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const replaceMock = vi.fn();
 const pushMock = vi.fn();
 
+// Sprint 036 — the page reads ?section= to decide which settings section
+// to show, so useSearchParams has to be mocked alongside useRouter. Team
+// is selected explicitly: these tests are about team management, and
+// leaving the section implicit would couple them to whichever section
+// happens to be first in the list.
+let currentSection = "team";
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: replaceMock, push: pushMock }),
+  useSearchParams: () => new URLSearchParams(`section=${currentSection}`),
 }));
 
 let currentRole: string | null = "Owner";
@@ -106,6 +128,7 @@ function companyProfile(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   currentRole = "Owner";
+  currentSection = "team";
   getInvitationsMock.mockReset();
   getUsersMock.mockReset();
   createInvitationMock.mockReset();
@@ -147,7 +170,7 @@ describe("SettingsPage — Sprint 027 team/invitation management", () => {
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "newhire@example.invalid" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /send invite/i }));
+    fireEvent.click(screen.getByRole("button", { name: /create invite/i }));
 
     await waitFor(() => {
       expect(createInvitationMock).toHaveBeenCalledWith("newhire@example.invalid");
@@ -168,7 +191,7 @@ describe("SettingsPage — Sprint 027 team/invitation management", () => {
     });
     const callsBeforeDeactivate = getUsersMock.mock.calls.length;
 
-    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove access" }));
 
     await waitFor(() => {
       expect(deactivateUserMock).toHaveBeenCalledWith("staff-1");
@@ -185,17 +208,37 @@ describe("SettingsPage — Sprint 027 team/invitation management", () => {
 
   it("staff_session_sees_no_invite_or_team_management_controls", async () => {
     currentRole = "Staff";
+    // Even asked for explicitly in the URL, an Owner-only section must
+    // not render for a Staff session — the section is hidden from the
+    // nav, and a hand-typed ?section=team must not be a way around that.
+    currentSection = "team";
+
+    render(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /create invite/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove access" })).not.toBeInTheDocument();
+    // The real contract: a Staff session never issues the Owner-only
+    // requests at all, rather than issuing them and hiding the 403.
+    expect(getInvitationsMock).not.toHaveBeenCalled();
+    expect(getUsersMock).not.toHaveBeenCalled();
+  });
+
+  it("staff_session_can_still_reach_the_sections_that_are_theirs", async () => {
+    currentRole = "Staff";
+    currentSection = "notifications";
 
     render(<SettingsPage />);
 
     await waitFor(() => {
       expect(
-        screen.getByText("Only workspace owners can invite and manage teammates.")
+        screen.getByRole("button", { name: /notifications/i })
       ).toBeInTheDocument();
     });
-    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /send invite/i })).not.toBeInTheDocument();
-    expect(getInvitationsMock).not.toHaveBeenCalled();
-    expect(getUsersMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /billing/i })).not.toBeInTheDocument();
   });
 });

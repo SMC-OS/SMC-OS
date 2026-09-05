@@ -99,7 +99,7 @@ export function CommandCentrePanel() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Pipeline</CardTitle>
-            <Link href="/projects" className="text-xs font-medium text-accent hover:underline">
+            <Link href="/projects" className="tap-link text-xs font-medium text-accent hover:underline">
               View projects
             </Link>
           </CardHeader>
@@ -117,7 +117,7 @@ export function CommandCentrePanel() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Quote Funnel</CardTitle>
-            <Link href="/quotes" className="text-xs font-medium text-accent hover:underline">
+            <Link href="/quotes" className="tap-link text-xs font-medium text-accent hover:underline">
               View quotes
             </Link>
           </CardHeader>

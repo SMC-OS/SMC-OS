@@ -22,6 +22,9 @@
 export const TOKEN_KEY = "geocore-token";
 export const THEME_KEY = "geocore-theme";
 export const SIDEBAR_COLLAPSED_KEY = "geocore-sidebar-collapsed";
+// Sprint 036 — in-app notification preferences. New in this release, so
+// it has no legacy counterpart to migrate from.
+export const NOTIFICATION_PREFERENCE_KEY = "geocore-notification-preferences";
 
 export const LEGACY_TOKEN_KEY = "simo-os-token";
 export const LEGACY_THEME_KEY = "simo-os-theme";
@@ -53,6 +56,19 @@ export function readMigratedValue(key: string, legacyKey: string): string | null
     }
 
     return legacy;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a key that has no legacy counterpart (Sprint 036). Same
+ * storage-may-throw handling as readMigratedValue, without the migration.
+ */
+export function readValue(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
   } catch {
     return null;
   }

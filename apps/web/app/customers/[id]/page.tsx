@@ -10,6 +10,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Field";
+import { EditIcon } from "@/components/ui/icons";
+import { CustomerContextPanel } from "@/components/customers/CustomerContextPanel";
+import { CustomerForm } from "@/components/customers/CustomerForm";
 import { usePolling } from "@/hooks/usePolling";
 import { ApiError, api } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
@@ -38,6 +41,10 @@ export default function CustomerDetailPage() {
   const { isAuthenticated, isReady, userId } = useAuth();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Sprint 036 (Workstream D) — inline edit, reusing the same form the
+  // create page uses so the two cannot drift into asking for different
+  // things.
+  const [editing, setEditing] = useState(false);
 
   // Sprint 013 — share a read-only client portal link. Any authenticated
   // tenant user can generate one (not Owner-only, unlike team invites).
@@ -223,9 +230,9 @@ export default function CustomerDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl">
+    <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <Link href="/customers" className="text-sm text-muted hover:text-foreground">
+        <Link href="/customers" className="tap-link text-sm text-muted hover:text-foreground">
           &larr; Customers
         </Link>
       </div>
@@ -242,38 +249,111 @@ export default function CustomerDetailPage() {
         <p className="text-sm text-muted">Loading…</p>
       )}
 
-      {customer && (
+      {customer && !editing && (
         <Card>
           <CardContent>
-            <div className="flex items-center gap-3">
-              <Avatar name={customer.name} className="h-12 w-12 text-base" />
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                  {customer.name}
-                </h1>
-                <p className="text-xs text-muted">
-                  Added {formatRelativeTime(customer.created_at)}
-                </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar
+                  name={customer.company_name || customer.name}
+                  className="h-12 w-12 text-base"
+                />
+                <div className="min-w-0">
+                  <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">
+                    {customer.company_name || customer.name}
+                  </h1>
+                  <p className="text-xs text-muted">
+                    {customer.company_name ? `${customer.name} · ` : ""}
+                    Added {formatRelativeTime(customer.created_at)}
+                  </p>
+                </div>
               </div>
+
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                <EditIcon className="h-4 w-4" />
+                Edit
+              </Button>
             </div>
 
-            <dl className="mt-6 space-y-3 border-t border-border pt-4">
-              <div>
+            {/* Sprint 036 (Workstream D) — a construction customer record.
+                Every field renders as an em dash when absent rather than
+                being hidden, so the page shows what is missing as clearly
+                as what is present: an address you do not have is
+                information. */}
+            <dl className="mt-6 grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2">
+              <div className="min-w-0">
                 <dt className="text-xs font-medium text-muted">Email</dt>
-                <dd className="text-sm text-foreground">
-                  {customer.email ?? "—"}
+                <dd className="truncate text-sm text-foreground">
+                  {customer.email ? (
+                    <a href={`mailto:${customer.email}`} className="hover:underline">
+                      {customer.email}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
                 </dd>
               </div>
-              <div>
+              <div className="min-w-0">
                 <dt className="text-xs font-medium text-muted">Phone</dt>
-                <dd className="text-sm text-foreground">
-                  {customer.phone ?? "—"}
+                <dd className="truncate text-sm text-foreground">
+                  {customer.phone ? (
+                    <a href={`tel:${customer.phone}`} className="hover:underline">
+                      {customer.phone}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
                 </dd>
               </div>
+              <div className="min-w-0 sm:col-span-2">
+                <dt className="text-xs font-medium text-muted">Address</dt>
+                <dd className="text-sm text-foreground">
+                  {[
+                    customer.address_line1,
+                    customer.address_line2,
+                    customer.city,
+                    customer.postcode,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "—"}
+                </dd>
+              </div>
+              {customer.notes && (
+                <div className="min-w-0 sm:col-span-2">
+                  <dt className="text-xs font-medium text-muted">Notes</dt>
+                  <dd className="whitespace-pre-wrap text-sm text-foreground">
+                    {customer.notes}
+                  </dd>
+                </div>
+              )}
             </dl>
           </CardContent>
         </Card>
       )}
+
+      {customer && editing && (
+        <div>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              Edit customer
+            </h1>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+          <CustomerForm
+            initial={customer}
+            submitLabel="Save changes"
+            onSubmit={async (values) => {
+              const updated = await api.updateCustomer(customer.id, values);
+              setCustomer(updated);
+              setEditing(false);
+            }}
+          />
+        </div>
+      )}
+
+      {customer && !editing && <CustomerContextPanel customerId={customer.id} />}
 
       {customer && (
         <Card className="mt-6">

@@ -7,9 +7,12 @@ prefix is applied to them at include_router() time in main.py, not here.
 
 from fastapi import APIRouter
 
+from app.ai.router import router as ai_router
 from app.api.v1.core import router as core_router
 from app.appointments.router import router as appointments_router
+from app.automations.router import router as automations_router
 from app.auth.router import router as auth_router
+from app.calendar.router import router as calendar_router
 from app.billing.router import router as billing_router
 from app.customers.router import router as customers_router
 from app.dashboard.router import router as dashboard_router
@@ -19,14 +22,18 @@ from app.messages.router import router as messages_router
 from app.portal.router import router as portal_router
 from app.projects.router import router as projects_router
 from app.quotes.router import router as quotes_router
+from app.tasks.router import router as tasks_router
 from app.tenants.router import router as tenants_router
 from app.users.router import router as users_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(core_router)
+api_router.include_router(ai_router)
 api_router.include_router(appointments_router)
+api_router.include_router(automations_router)
 api_router.include_router(auth_router)
 api_router.include_router(billing_router)
+api_router.include_router(calendar_router)
 api_router.include_router(customers_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(documents_router)
@@ -35,5 +42,6 @@ api_router.include_router(messages_router)
 api_router.include_router(portal_router)
 api_router.include_router(projects_router)
 api_router.include_router(quotes_router)
+api_router.include_router(tasks_router)
 api_router.include_router(tenants_router)
 api_router.include_router(users_router)
