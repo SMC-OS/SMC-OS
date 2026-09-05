@@ -841,37 +841,6 @@ def get_quote_by_id(db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID) -> Q
     return db.scalars(stmt).first()
 
 
-def list_quotes_by_customer(
-    db: Session, customer_id: uuid.UUID, tenant_id: uuid.UUID, limit: int = 50
-) -> list[Quote]:
-    """Sprint 036 (Workstream D) — a customer's own quotes, for the
-    customer detail page. tenant_id is filtered here as well as
-    customer_id: the customer id alone is not proof of ownership, and
-    relying on the caller having already validated it is exactly the
-    linkage-bypass ADR-029 exists to prevent."""
-    stmt = (
-        select(Quote)
-        .where(Quote.customer_id == customer_id, Quote.tenant_id == tenant_id)
-        .order_by(Quote.created_at.desc())
-        .limit(limit)
-    )
-    return list(db.scalars(stmt))
-
-
-def list_projects_by_customer(
-    db: Session, customer_id: uuid.UUID, tenant_id: uuid.UUID, limit: int = 50
-) -> list[Project]:
-    """Sprint 036 (Workstream D) — same tenant-and-customer filtering
-    rationale as list_quotes_by_customer above."""
-    stmt = (
-        select(Project)
-        .where(Project.customer_id == customer_id, Project.tenant_id == tenant_id)
-        .order_by(Project.created_at.desc())
-        .limit(limit)
-    )
-    return list(db.scalars(stmt))
-
-
 def list_quotes(db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[Quote]:
     stmt = (
         select(Quote)

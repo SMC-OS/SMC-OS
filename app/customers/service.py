@@ -42,8 +42,14 @@ class CustomerService:
         if customer is None:
             return None
 
-        quotes = crud.list_quotes_by_customer(db, customer_id, tenant_id)
-        projects = crud.list_projects_by_customer(db, customer_id, tenant_id)
+        # The tenant-then-customer argument order matters: these are the
+        # same helpers the customer portal uses (Sprint 013), reused rather
+        # than reimplemented so a customer's quote list is defined in
+        # exactly one place. Both filter on tenant_id as well as
+        # customer_id — a customer id being valid is never treated as
+        # proof of ownership (ADR-029).
+        quotes = crud.list_quotes_by_customer(db, tenant_id, customer_id)
+        projects = crud.list_projects_by_customer(db, tenant_id, customer_id)
 
         return CustomerContextOut(
             customer=customer,
