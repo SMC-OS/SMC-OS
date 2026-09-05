@@ -7,7 +7,6 @@ from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
 from app.auth.dependencies import get_current_user, require_role
 from app.auth.models import UserRole
-from app.automations.dispatcher import automation_dispatcher
 from app.quotes.general import GeneralQuoteRequest, GeneralQuoteUpdate
 from app.quotes.service import (
     CustomerNotFoundError,
@@ -185,7 +184,6 @@ def create_general_quote(
     except CustomerNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
 
-    automation_dispatcher.dispatch_quote_created(db, quote)
     return _serialize(quote)
 
 
@@ -256,7 +254,6 @@ def send_quote(
             detail="Only a draft quote can be marked as sent",
         )
 
-    automation_dispatcher.dispatch_quote_sent(db, quote)
     return _serialize(quote)
 
 
@@ -284,12 +281,6 @@ def approve_quote(
             detail="Quote cannot be approved in its current state",
         )
 
-    # Sprint 036 (Workstream G) — automation dispatch happens after the
-    # approval has committed, and can never fail this request: a broken
-    # automation records a failed run and is swallowed (see
-    # AutomationDispatcher). Approving a quote must not depend on the
-    # health of a user-authored rule.
-    automation_dispatcher.dispatch_quote_approved(db, quote, actor_user_id=current_user.id)
     return _serialize(quote)
 
 

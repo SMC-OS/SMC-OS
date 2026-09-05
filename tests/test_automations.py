@@ -207,6 +207,38 @@ def test_an_event_trigger_fires_and_records_a_successful_run(client, auth_header
     assert any(RUN_ID in t["title"] for t in tasks)
 
 
+def test_a_stone_quote_fires_quote_created_exactly_like_a_general_one(client, auth_headers):
+    # Stone is a specialist workflow inside GeoCore, not a separate product,
+    # and it has its own creation route (POST /quote, the calculator) with its
+    # own payload shape. A rule that fired for general quotes and silently did
+    # nothing for stone ones would be the worst failure this feature can have:
+    # the user sees no error, only work that quietly never happened. That is
+    # why dispatch lives in the quote service rather than on one route.
+    automation = _automation(client, auth_headers, trigger_type="quote.created")
+
+    r = client.post(
+        "/api/v1/quote",
+        json={
+            "customer": f"{TEST_PREFIX} stone customer",
+            "material": "Calacatta Gold",
+            "thickness": "20mm",
+            "kitchen_length": 3,
+            "postcode": TEST_POSTCODE,
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    quote = r.json()
+
+    runs = _runs(client, auth_headers, automation["id"])
+    assert len(runs) == 1
+    assert runs[0]["status"] == "succeeded"
+    assert runs[0]["subject_id"] == quote["id"]
+
+    tasks = client.get("/api/v1/tasks", headers=auth_headers).json()
+    assert any(RUN_ID in t["title"] for t in tasks)
+
+
 def test_conditions_that_do_not_match_record_a_skip_with_a_reason(client, auth_headers):
     automation = _automation(
         client,

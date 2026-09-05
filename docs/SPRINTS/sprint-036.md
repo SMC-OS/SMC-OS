@@ -286,6 +286,16 @@ in this sprint transmits anything to a customer.
 by a UNIQUE constraint on `automation_runs.dedupe_key`. Action side effects carry their
 own dedupe keys too, so a partially-failed run cannot double-create on retry.
 
+**Where dispatch lives.** In the *service* layer, not the routers. Quotes have more than
+one creation route — `POST /api/v1/quotes` (general) and `POST /api/v1/quote` (the stone
+calculator, which also backs `/estimate` and the AI draft flow) — and a rule that fired
+for one kind of quote and silently not for the other would be this feature's worst failure
+mode: no error, just work that never happened. `app/quotes/service.py` dispatches
+`quote.created`, `quote.sent` and `quote.approved`, so every entry point is covered by
+construction rather than by whoever remembers to add the call.
+`tests/test_automations.py::test_a_stone_quote_fires_quote_created_exactly_like_a_general_one`
+holds that line.
+
 **Failure visibility.** Every attempt writes an `automation_runs` row with
 `succeeded | failed | skipped` and a human-readable detail. A failing automation can never
 break the user action that triggered it: dispatch is wrapped so an exception is recorded

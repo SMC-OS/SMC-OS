@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
+from app.automations.dispatcher import automation_dispatcher
 from app.database import crud
 from app.database.models import Project
 from app.projects.models import ProjectStatus
@@ -101,6 +102,13 @@ class QuoteService:
             ),
             tenant_id=tenant_id,
         )
+
+        # Sprint 036 (Workstream G) — dispatched here rather than from the
+        # route, so the trigger fires wherever a quote is approved rather
+        # than wherever someone remembered to add the call. Total by
+        # construction: a broken rule records a failed run and is
+        # swallowed, so approving can never fail because of one.
+        automation_dispatcher.dispatch_quote_approved(db, quote)
 
         return quote
 
@@ -257,6 +265,16 @@ class QuoteService:
             tenant_id=tenant_id,
         )
 
+        # Sprint 036 — a stone quote fires quote.created exactly like a
+        # general one. Dispatching from the service rather than the route
+        # is what makes that true: this path has three entry points
+        # (POST /quote, POST /estimate, and the AI draft flow that feeds
+        # them), and a rule that fired for some kinds of quote and
+        # silently not for others is precisely the "quietly does nothing"
+        # failure this feature exists to avoid. An anonymous quote has no
+        # tenant, so the dispatcher no-ops for it.
+        automation_dispatcher.dispatch_quote_created(db, row)
+
         return {
             **result,
             "id": row.id,
@@ -371,6 +389,7 @@ class QuoteService:
             ),
             tenant_id=tenant_id,
         )
+        automation_dispatcher.dispatch_quote_created(db, row)
         return row
 
     def update_general(
@@ -463,7 +482,10 @@ class QuoteService:
             return quote
         if quote.status != "draft":
             raise QuoteApprovalStateError(quote.status)
-        return crud.mark_quote_sent(db, quote_id, tenant_id, datetime.now(timezone.utc))
+
+        sent = crud.mark_quote_sent(db, quote_id, tenant_id, datetime.now(timezone.utc))
+        automation_dispatcher.dispatch_quote_sent(db, sent)
+        return sent
 
 
 quote_service = QuoteService()
