@@ -14,7 +14,16 @@ function origin(value: string | undefined, fallback: string): string {
   return value.replace(/\/+$/, "");
 }
 
-export const SITE_URL = origin(process.env.NEXT_PUBLIC_SITE_URL, "https://geocore.one");
+// Sprint 035 — verified live against Railway: a custom domain's target is
+// always a CNAME, including at a zone apex, and GoDaddy (the registrar of
+// record here, confirmed via its nameservers `ns43.domaincontrol.com` /
+// `dns.jomax.net`) does not support CNAME/ALIAS/ANAME at the apex. A bare
+// `geocore.one` therefore cannot be a Railway CNAME target directly.
+// `www.geocore.one` can (it is a normal subdomain), so the canonical,
+// indexed, Railway-hosted host is `www.geocore.one`; the apex uses GoDaddy
+// Domain Forwarding (a 301, not DNS-level hosting) to reach it. See
+// docs/DNS_GEOCORE_ONE.md §1 for the full record table and rationale.
+export const SITE_URL = origin(process.env.NEXT_PUBLIC_SITE_URL, "https://www.geocore.one");
 export const APP_URL = origin(process.env.NEXT_PUBLIC_APP_URL, "https://app.geocore.one");
 
 export const SITE_NAME = "GeoCore";
@@ -29,4 +38,4 @@ export const SITE_DESCRIPTION =
  * decision available to the page metadata.
  */
 export const IS_INDEXABLE =
-  process.env.APP_ENV === "production" && SITE_URL === "https://geocore.one";
+  process.env.APP_ENV === "production" && SITE_URL === "https://www.geocore.one";

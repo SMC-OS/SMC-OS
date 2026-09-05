@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
 import { APP_URL, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
@@ -6,6 +7,9 @@ import { APP_URL, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/
 export const metadata: Metadata = {
   title: `${SITE_NAME} — ${SITE_TAGLINE}`,
   description: SITE_DESCRIPTION,
+  openGraph: {
+    images: [`${SITE_URL}/brand/og-image.png`],
+  },
 };
 
 // Sprint 034 (Phase 2) — interim holding page for geocore.one.
@@ -16,10 +20,9 @@ export const metadata: Metadata = {
 // authority from day one instead of from whenever the full marketing site
 // ships. Everything here is replaceable without touching the app or the API.
 //
-// No logo mark is used: the approved GeoCore assets have not been supplied,
-// and neither inventing one nor reusing the application's placeholder "S"
-// would be right on the brand's own front door. The wordmark carries it
-// until the real assets arrive.
+// Sprint 035 — the approved brand assets have now been supplied
+// (docs/DNS_GEOCORE_ONE.md's Workstream B is unblocked); the header now
+// renders the real GeoCore horizontal lockup instead of a text wordmark.
 
 const CAPABILITIES = [
   {
@@ -50,6 +53,7 @@ export default function HomePage() {
         name: SITE_NAME,
         url: SITE_URL,
         description: SITE_DESCRIPTION,
+        logo: `${SITE_URL}/brand/horizontal-logo.png`,
       },
       {
         "@type": "WebSite",
@@ -83,8 +87,13 @@ export default function HomePage() {
       <header className="site-header">
         <div className="shell">
           <Link className="wordmark" href="/">
-            <span className="wordmark__name">GeoCore</span>
-            <span className="wordmark__tag">Build smarter together</span>
+            <Image
+              src="/brand/horizontal-logo.png"
+              alt={`${SITE_NAME} — ${SITE_TAGLINE}`}
+              width={200}
+              height={49}
+              priority
+            />
           </Link>
         </div>
       </header>

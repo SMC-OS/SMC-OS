@@ -17,7 +17,7 @@ Welcome message. No parameters.
 
 ```json
 {
-  "message": "Welcome to Simo OS",
+  "message": "Welcome to GeoCore",
   "status": "running"
 }
 ```
@@ -70,7 +70,7 @@ Creates a brand-new company workspace (`Tenant`) and its first user (`role="Owne
 
 **Request body** (`LoginRequest`)
 ```json
-{ "email": "owner@simo-os.local", "password": "..." }
+{ "email": "owner@geocore.local", "password": "..." }
 ```
 
 **Response (200)** (`TokenResponse`)
@@ -79,7 +79,7 @@ Creates a brand-new company workspace (`Tenant`) and its first user (`role="Owne
   "access_token": "eyJ...",
   "token_type": "bearer",
   "user": {
-    "id": "...", "name": "Simo", "email": "owner@simo-os.local", "role": "Owner",
+    "id": "...", "name": "Jordan Owner", "email": "owner@geocore.local", "role": "Owner",
     "tenant_id": "...", "tenant_name": "Default Workspace"
   }
 }
