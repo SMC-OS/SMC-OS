@@ -4,6 +4,26 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Derived 
 
 ---
 
+## 2026-09-05 — Sprint #036 — GeoCore Product Experience, Automation Foundation & Responsive Platform
+
+Full detail in `docs/SPRINTS/sprint-036.md`; decisions in `docs/DECISIONS.md` ADR-039/040/041; portal boundary in `docs/CUSTOMER_PORTAL.md`.
+
+**Scope note:** turns the MVP into software that presents itself as being for construction and renovation businesses. Stone and worktops are preserved intact as a specialist workflow and are no longer the shape of the schema, the UI, the onboarding or the AI.
+
+**Universal quoting (the central change).** `quotes` could not accept a row without slab dimensions — `material`, `thickness`, `kitchen_length` and `length_mm` were all NOT NULL. A quote now declares its kind and each line declares its own; the eight stone-only columns became nullable rather than being filled with sentinels; `quote_items.quantity` widened to double precision so a line can be 2.5 days of labour. General quotes carry a title, trade, site address, scope, exclusions, terms, validity, discount and per-quote VAT rate, priced as quantity × rate with the rounding rule stated once and shared between server and live preview. The public stone calculator is untouched and the stone form is preserved at `/quotes/new/stone`.
+
+**Automation engine.** Nine triggers (seven event-dispatched after commit, two scan-evaluated by `python -m app.jobs.automations`), conditions evaluated against an explicitly allowlisted subject dict rather than an ORM row, and four internal actions. **Nothing an automation does reaches a customer** — GeoCore has no email, SMS or messaging infrastructure, `GET /automations/meta` says so, and a test asserts the action list. Every attempt writes a run row: succeeded, skipped with its reason, or failed with its message. A failing automation can never break the request that triggered it. Five templates ship as definitions, never as silently-created rows.
+
+**GeoCore AI** replaces the developer-facing AI Assistant. Every reply names the engine that answered; with no provider configured it says so and offers what the built-in catalogue assistant can genuinely do. No customer contact details reach the model. It has no tools and cannot write.
+
+**Also:** Dashboard V2 (real data, real empty states, currency no longer baked into an SVG), Customers V2, Projects V2 with tasks, Calendar, Settings V2 with billing in its own place and a real logo upload, onboarding that never sends an established workspace back to a wizard, a new design system (forest/sage/cream/champagne, genuinely light light mode), and a three-tier responsive shell — phone drawer plus bottom bar, tablet rail, desktop sidebar.
+
+**Reported bugs fixed at their cause.** The theme control appearing inside the search field was a flex-sizing bug, not z-index; mobile layout breakage is gone. Both are locked in by a structural component test and a bounding-box E2E assertion at 390px.
+
+**Verification:** 891 backend tests (from 712), 149 frontend (from 110), 26 E2E specs (from 16); lint, types and build clean. Five migrations, all additive or NOT-NULL-dropping, full round trip clean; the universal-quoting downgrade refuses once general quotes exist rather than deleting them. Responsive sweep across 8 widths × 12 routes × 2 themes: zero overflow, zero overlapping controls, zero clipped controls, zero contrast failures, 15/15 keyboard stops with a focus ring. No test was weakened; the nine updated for moved routes or renamed actions each record why and still assert the same behaviour.
+
+**Not deployed.** Staging and production promotion are owner-gated — the build session had no Railway CLI or credentials. Recorded rather than claimed; see `docs/SPRINTS/sprint-036.md` §9.2 for the ordered steps.
+
 ## 2026-08-18 — (uncommitted) — Sprint #018 — Production Runtime Hardening
 
 Full design and release policy are recorded in `docs/superpowers/specs/2026-08-18-sprint-018-production-runtime-hardening-design.md`, `docs/DECISIONS.md` ADR-034, and `docs/PRODUCTION_RUNBOOK.md`.

@@ -90,12 +90,28 @@ The re-baseline the section above was left open for. Sprints 032–033 are recor
 | **034 Phase 2** | **Public marketing site at the apex** (`apps/marketing`) — indexable, canonical, sitemap, JSON-LD; application host set to `Disallow: /` | ✅ **Complete** — ADR-038 |
 | **034 B** | GeoCore brand-mark integration | ⏸️ **Owner-gated** — blocked pending the approved asset files. The placeholder `S` mark stays in the application; the public site uses a text wordmark rather than an invented or borrowed mark. |
 | **034 C** | geocore.one production DNS cutover | ⏸️ **Owner-gated** — change sheet ready for review in `docs/DNS_GEOCORE_ONE.md`; nothing applied |
+| **035** | Official GeoCore brand assets + verified DNS cutover preparation | ✅ Shipped — closes 034 B; 034 C remains owner-gated |
+| **036** | **GeoCore product experience, automation foundation & responsive platform** | ✅ **Implementation complete, CI green** — see `docs/SPRINTS/sprint-036.md`. Universal quoting (ADR-039), automation engine (ADR-040), GeoCore AI (ADR-041), Dashboard/Customers/Projects/Settings V2, Calendar, onboarding, new design system, three-tier responsive shell. ⏸️ **Staging/production deployment owner-gated** — no Railway access from the build session (§9.2). |
+
+### Sprint 037 — proposed, drawn from Sprint 036's closeout
+
+Each item below is written up in full in `docs/SPRINTS/sprint-036.md` §10, with what was found, why it could not ship in 036, and the smallest correct prerequisite.
+
+| Item | Why it is next |
+| --- | --- |
+| **Outbound delivery (email first)** | The single biggest remaining honesty gap. Invitations, quote sending and review requests are all manual link-sharing. Sprint 036 shaped everything around it — `draft_message` prepares content, and `AutomationMeta.delivery` already tells clients whether delivery exists — so the UI changes its own copy the day it becomes true. Needs a verified sending domain, which interacts with the live Microsoft 365 mail block documented in Sprint 035. |
+| **Trade-neutral project pipeline** | "Templated" and "fabricated" are stone stages that mean nothing on a roofing or decorating job — the one place Sprint 036 did not fix the stone assumption, deliberately. Needs a product decision (per-trade stages vs. universal) before the migration is written. Blocks a customer-facing progress view. |
+| **Password change, 2FA, session management** | No endpoints exist. The Security settings section names the gap rather than showing disabled controls. |
+| **Automation conditions in the builder UI** | The API already accepts and evaluates them; the builder deliberately does not expose them yet. Small. |
+| **Server-side notification preferences** | Currently per-browser, and stated as such. Most valuable once channels beyond in-app exist. |
 
 ### Named next, not yet scheduled
 
-- **Full marketing site** replacing the interim holding page at the apex — the highest-leverage organic-growth item now that the surface exists: service/solution pages, pricing, case studies, and a blog to build topical authority.
-- **Tenant logo rendering on quote/invoice PDFs** — the `logo_url` column and Settings field already exist; needs validation of a tenant-supplied remote image before it enters a server-side render path.
+- **Full marketing site** replacing the interim holding page at the apex — the highest-leverage organic-growth item now that the surface exists: service/solution pages, pricing, case studies, and a blog to build topical authority. Sprint 036 makes this materially more valuable: the product now genuinely serves twelve trades, so the site can target twelve sets of search intent rather than stone alone.
+- **Tenant logo on quote/invoice PDFs** — Sprint 036 shipped real logo upload and in-app rendering; putting the uploaded file into the server-side PDF render is the remaining step.
 - **Tenant statutory details for the production tenant** — company registration and VAT number must be entered by the owner; deliberately never fabricated (ADR-036).
+- **Read-only ICS calendar export** — most of the value of external calendar sync for a fraction of the work, and it needs no OAuth (Sprint 036 §10.3).
+- **Customer portal beyond viewing** — fully assessed in `docs/CUSTOMER_PORTAL.md`. Customer-side approval needs an audit-trail and a commercial decision; customer uploads need object storage.
 - Stripe credential activation (carried from Sprints 032/033, still owner-gated).
 - Optional, recorded as deliberately deferred in ADR-037: renaming the `simo_os` logger, the database name, and the `/var/lib/simo-os/uploads` mount. Each carries real operational risk and no customer-visible benefit.
 
