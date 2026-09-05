@@ -485,41 +485,111 @@ and the layout are unchanged and the target clears 40px.
 
 Branch, commits, full local verification, and CI — see §8.
 
-### 9.2 What is owner-gated: staging and production deployment
+### 9.2 Merge, and the deployment boundary
 
-**Sprint 036 is not deployed.** This is stated plainly rather than
-softened.
+#### Merged and verified on `main`
 
-Discovery established (§2.8) that deployment runs on Railway, driven by
-`deploy/railway/*.toml` and `docs/PRODUCTION_RUNBOOK.md`. **This session
-has no Railway CLI and no Railway credentials** — verified, not assumed.
-Steps 22–27 of the requested delivery process (deploy the exact merge SHA
-to staging, smoke it, then deploy the same SHA to production and verify
-the deployed SHA) cannot be performed from here, and no amount of
-rewording changes that.
+| | |
+| --- | --- |
+| PR | #22, merged (squash) |
+| **Merge SHA** | **`83fe964424e0208cf499166951290fb3896aa028`** |
+| Post-merge CI on `main` | ✅ green — run 193, all three jobs |
+| `backend` | ✅ migrations applied, 892 passed |
+| `frontend` | ✅ lint, type-check, 149 passed, build |
+| `e2e` | ✅ 26 specs |
 
-Fabricating a deployment report would be the single worst thing this
-sprint could produce, given that its entire contract is "do not claim a
-capability exists unless it genuinely works".
+That is the last step this session could complete. Everything below it is
+owner-gated.
 
-**What the owner needs to do**, in the order the runbook already
-specifies:
+#### Sprint 036 is NOT deployed
 
-1. Merge the PR once CI is green.
-2. Confirm post-merge CI on `main` is green.
-3. Deploy the exact merge SHA to **staging**.
-4. Run `python -m app.jobs.automations --now <iso>` once on staging to
-   exercise the scan triggers (safe: it only creates notifications and
-   tasks for that environment's own tenants).
-5. Run the staging smoke script and the critical journeys.
-6. Only then deploy the **same SHA** to production and verify the
-   deployed SHA matches.
+Stated plainly rather than softened, and re-established with direct
+evidence when deployment was subsequently requested rather than being
+carried over as an assumption from §2.8:
 
-**Migration note for the deploy.** The five migrations run under the
-existing `migrate_gate` (ADR-035) with no special handling. They are
-additive/widening and take catalogue-only locks; there is no table
-rewrite and no expected downtime. The one thing to know: `downgrade` on
-`b3c4d5e6f7a8` will refuse once a general quote exists — by design (ADR-039).
+| Check | Result |
+| --- | --- |
+| `command -v railway` | not installed |
+| `~/.railway`, `~/.config/railway` | do not exist |
+| `RAILWAY_*` in the environment | none |
+| Deploy workflow in `.github/workflows/` | **none exists** — only `ci.yml` and `staging-monitor.yml`, and the latter only *reads* health, it never deploys |
+| `https://api.geocore.one/health` | **403 CONNECT** — blocked by this environment's network policy |
+| `https://app.geocore.one/`, `https://www.geocore.one/` | **403 CONNECT** — same |
+
+The last two matter as much as the first three. Even the *read-only* half
+of the request — verify health, confirm the deployed SHA, run
+production-safe smoke checks — is unreachable from here. This session
+cannot deploy Sprint 036 and cannot observe whether anything else has.
+
+This is a property of how GeoCore releases are designed, not a gap to be
+worked around. Both runbooks describe deployment as an archive-based
+`railway up` from an authorised operator workstation, with
+`railway ssh … alembic current` for the migration check that
+`STAGING_RUNBOOK.md` insists on precisely because `/health` and `/ready`
+cannot detect schema drift. That is a deliberate human gate.
+
+**Nothing here is inferred from a green CI run.** CI proves the migrations
+apply and the suite passes against a clean database; it says nothing about
+staging or production, and the Sprint 020 finding recorded in
+`STAGING_RUNBOOK.md` is the standing proof that a deploy can leave the
+schema behind while health stays green.
+
+#### The exact operator procedure for this SHA
+
+Run from an authorised Railway workstation. `<sha>` is
+`83fe964424e0208cf499166951290fb3896aa028` throughout — the same SHA to
+both environments, never a rebuild from a branch head.
+
+**Staging**
+
+```bash
+# 1. Clean export of the exact reviewed commit (Sprint 021 finding:
+#    `railway up` uploads the working directory, not the commit).
+mkdir -p /tmp/geocore-83fe964 && git archive 83fe964 | tar -x -C /tmp/geocore-83fe964
+cd /tmp/geocore-83fe964
+
+# 2. API, then web. Repeat per service from this same export.
+railway up --service simo-api-staging --environment staging -c
+railway up --service simo-web-staging --environment staging -c
+
+# 3. MIGRATION VERIFICATION — mandatory, and not optional just because
+#    /health is green. Expect d5e6f7a8b9c0 (the sole head at this SHA).
+railway ssh --service simo-api-staging --environment staging -- alembic current
+
+# 4. Exercise the scan triggers once (safe: creates only notifications
+#    and tasks, for that environment's own tenants).
+railway ssh --service simo-api-staging --environment staging -- python -m app.jobs.automations
+```
+
+Then the health gates (`/health` and `/ready` = 200 with request IDs) and
+the 22-gate smoke suite, followed by the Sprint 036 journeys: general
+quote → approve → project; the stone quote path; an activated automation
+template with a run-history row; Automations, GeoCore AI, Calendar,
+Settings and its Billing section; light and dark; and the responsive
+sweep at mobile, tablet and desktop widths.
+
+Use a **fresh, isolated browser context** for any authenticated staging
+check (Sprint 021 finding — never a profile that may hold a real session).
+
+**Production** — only if staging is fully green, and with the same
+`<sha>`, per `PRODUCTION_RUNBOOK.md` §2. Note §11.1: there are **three**
+services now, not two. Verify the deployed source by diffing a fresh
+`git archive` of the same SHA against the uploaded directory
+(`diff -rq`, expect zero output) — Railway does not stamp a commit SHA on
+archive-based deploys (§10).
+
+Production smoke stays read-only: dashboard, customers, quotes, both
+quote builders, projects, automations, GeoCore AI, calendar, settings and
+billing all *load*; header/search/theme do not overlap; light and dark
+both render; mobile navigation works; existing data is still accessible.
+**Do not create production test data** to satisfy a checklist.
+
+**Migration note.** The five migrations run under the existing
+`migrate_gate` (ADR-035) with no special handling. They are
+additive/widening and take catalogue-only locks: no table rewrite, no
+expected downtime. The one thing to know is that `downgrade` on
+`b3c4d5e6f7a8` will refuse once a general quote exists — by design
+(ADR-039), because the alternative is deleting real quotes.
 
 ### 9.3 DNS
 
@@ -654,8 +724,20 @@ than the current clearly-stated boundary.
 
 ## 11. Sprint 036 status
 
-**Implementation complete and fully verified locally. Deployment is
-owner-gated (§9.2).**
+**SPRINT 036 BLOCKED — production deployment cannot be performed or
+verified from an agent session.**
+
+Implementation is complete, merged and green on `main` at
+`83fe964424e0208cf499166951290fb3896aa028`. The sprint is blocked at the
+deployment boundary only, and the blocker is environmental rather than
+technical: this session has no Railway CLI, no Railway credentials, no
+deploy workflow to trigger, and no network route to `geocore.one` — so
+neither the deploy nor the read-only production verification is
+reachable from here (§9.2 records each check and its result).
+
+The remaining work is the owner's, and §9.2 gives the exact command
+sequence for this SHA. Sprint 036 closes as **PRODUCTION VERIFIED** once
+that runs green; nothing in the code is waiting on it.
 
 Against the Definition of Done:
 
@@ -680,5 +762,6 @@ Against the Definition of Done:
 | Tenant/security boundaries maintained | ✅ |
 | Passes existing + new automated tests | ✅ — 892 backend, 149 frontend, 26 E2E |
 | Passes CI | ✅ |
-| Passes staging | ⛔ **Owner-gated** — no Railway access from this session (§9.2) |
-| Deployed and smoke-tested in production | ⛔ **Owner-gated** — same |
+| Merged to `main` with green CI | ✅ — `83fe964`, run 193 all green |
+| Passes staging | ⛔ **Owner-gated** — no Railway access and no network route to `geocore.one` from this session (§9.2) |
+| Deployed and smoke-tested in production | ⛔ **Owner-gated** — same; the read-only verification is equally unreachable |
