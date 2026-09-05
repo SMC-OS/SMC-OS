@@ -64,7 +64,7 @@ def create_app(
     """Assemble an app whose runtime initialization runs during lifespan."""
     runtime_settings = settings_override or settings
     application = FastAPI(
-        title="Simo OS",
+        title="GeoCore",
         version="0.1.0",
         description="AI Operating System",
         lifespan=create_runtime_lifespan(runtime_settings),
@@ -108,7 +108,7 @@ def create_app(
 
 def root():
     return {
-        "message": "Welcome to Simo OS",
+        "message": "Welcome to GeoCore",
         "status": "running",
     }
 

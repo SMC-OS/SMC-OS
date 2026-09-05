@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -17,15 +18,20 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
     <>
       <div className="flex items-center justify-between border-b border-border p-4">
         <Link href="/" className="flex items-center gap-2 overflow-hidden" onClick={onNavigate}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-foreground">
-            S
-          </div>
+          <Image
+            src="/brand/monogram.png"
+            alt="GeoCore"
+            width={32}
+            height={32}
+            className="h-8 w-8 shrink-0 object-contain"
+            priority
+          />
           {!collapsed && (
             <div className="overflow-hidden">
               <p className="truncate text-sm font-semibold text-foreground">
                 GeoCore
               </p>
-              <p className="truncate text-xs text-muted">AI Operating System</p>
+              <p className="truncate text-xs text-muted">Build smarter together</p>
             </div>
           )}
         </Link>

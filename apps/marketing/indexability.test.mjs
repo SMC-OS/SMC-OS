@@ -38,9 +38,12 @@ test("builder stage accepts the canonical site and app origins as build args", (
 
 test("indexing requires BOTH production mode and the canonical production host", () => {
   // A staging deploy must not advertise itself as indexable, and must not
-  // claim geocore.one as its canonical URL.
+  // claim www.geocore.one as its canonical URL. The canonical host is
+  // www, not the bare apex: verified live against Railway + GoDaddy
+  // (Sprint 035) that a custom domain's target is always a CNAME, which
+  // GoDaddy does not support at a zone apex — see docs/DNS_GEOCORE_ONE.md §1.
   assert.match(site, /process\.env\.APP_ENV === "production"/);
-  assert.match(site, /SITE_URL === "https:\/\/geocore\.one"/);
+  assert.match(site, /SITE_URL === "https:\/\/www\.geocore\.one"/);
 });
 
 test("robots.ts disallows everything when the deployment is not indexable", () => {

@@ -20,6 +20,12 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
   alternates: { canonical: "/" },
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/brand/icon-dark-192.png",
+  },
   openGraph: {
     type: "website",
     url: SITE_URL,
@@ -27,11 +33,13 @@ export const metadata: Metadata = {
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description: SITE_DESCRIPTION,
     locale: "en_GB",
+    images: [`${SITE_URL}/brand/og-image.png`],
   },
   twitter: {
     card: "summary_large_image",
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description: SITE_DESCRIPTION,
+    images: [`${SITE_URL}/brand/og-image.png`],
   },
   // Staging and preview hosts must stay out of the index; only the
   // production canonical host advertises itself as indexable.

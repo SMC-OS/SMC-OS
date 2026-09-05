@@ -23,6 +23,22 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "GeoCore",
   description: "AI operating system for stone and construction businesses",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/brand/icon-dark-192.png",
+  },
+  openGraph: {
+    title: "GeoCore",
+    description: "AI operating system for stone and construction businesses",
+    images: ["/brand/og-image.png"],
+  },
+  // app.geocore.one is the authenticated application, not the public site —
+  // it must never be indexed (docs/DNS_GEOCORE_ONE.md §5). apps/web/app/robots.ts
+  // already enforces this at the crawler level; this keeps social-preview
+  // scrapers from treating a login page as the brand's canonical page too.
+  robots: { index: false, follow: false },
 };
 
 // Runs before React hydrates so the correct theme class is on <html> before
