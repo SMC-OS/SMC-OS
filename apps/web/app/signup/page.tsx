@@ -28,7 +28,11 @@ export default function SignupPage() {
 
     try {
       await signup({ company_name: companyName, name, email, password });
-      router.push("/customers");
+      // Sprint 036 (Workstream J) — a brand-new workspace goes to
+      // setup, not to an empty customer list. /onboarding sends an
+      // established workspace straight on, so this is safe for
+      // anyone who somehow reaches it with data already in place.
+      router.push("/onboarding");
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 409
@@ -44,10 +48,17 @@ export default function SignupPage() {
     <div className="mx-auto max-w-sm">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Create your company workspace
+          Create your workspace
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Set up GeoCore for your company in a minute.
+          {/* Sprint 036 (Workstream J) — neutral copy. The previous
+              placeholders ("Acme Stoneworks", "jane@acmestoneworks.com")
+              told every plumber, roofer and decorator signing up that
+              this product was not for them, before they had entered a
+              single field. */}
+          GeoCore is for construction and renovation businesses — building,
+          extensions, kitchens, bathrooms, roofing, electrics, stone and
+          everything in between.
         </p>
       </div>
 
@@ -61,7 +72,7 @@ export default function SignupPage() {
                 autoFocus
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="Acme Stoneworks"
+                placeholder="e.g. Hartley Building Ltd"
               />
             </Field>
             <Field label="Your name" htmlFor="name">
@@ -70,7 +81,7 @@ export default function SignupPage() {
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Jane Doe"
+                placeholder="e.g. Sam Hartley"
               />
             </Field>
             <Field label="Email" htmlFor="email">
@@ -80,7 +91,7 @@ export default function SignupPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="jane@acmestoneworks.com"
+                placeholder="you@yourcompany.co.uk"
               />
             </Field>
             <Field label="Password" htmlFor="password">

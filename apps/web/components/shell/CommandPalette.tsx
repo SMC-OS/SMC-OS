@@ -4,13 +4,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { PlusIcon, SearchIcon } from "@/components/ui/icons";
-import { NAV_ITEMS } from "@/lib/navigation";
+import { NAV_ITEMS, SETTINGS_SECTIONS } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 interface Command {
   id: string;
   label: string;
-  group: "Navigate" | "Quick actions";
+  group: "Navigate" | "Quick actions" | "Settings";
   icon: (typeof NAV_ITEMS)[number]["icon"];
   run: () => void;
 }
@@ -57,9 +57,30 @@ export function CommandPalette({
         icon: PlusIcon,
         run: () => router.push("/projects/new"),
       },
+      // Sprint 036 — the stone template is reachable by name from search,
+      // so someone who quotes worktops daily can get to it in two
+      // keystrokes rather than through the general builder.
+      {
+        id: "action-new-stone-quote",
+        label: "New Stone & Worktop Quote",
+        group: "Quick actions",
+        icon: PlusIcon,
+        run: () => router.push("/quotes/new/stone"),
+      },
     ];
 
-    return [...navCommands, ...quickActions];
+    // Settings is not in NAV_ITEMS (it is administrative, not daily
+    // work), so its sections are added here — otherwise the one place
+    // someone looks for "Billing" would not find it.
+    const settingsCommands: Command[] = SETTINGS_SECTIONS.map((section) => ({
+      id: `settings-${section.key}`,
+      label: section.label,
+      group: "Settings",
+      icon: section.icon,
+      run: () => router.push(`/settings?section=${section.key}`),
+    }));
+
+    return [...navCommands, ...quickActions, ...settingsCommands];
   }, [router]);
 
   const filtered = useMemo(() => {
