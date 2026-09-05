@@ -343,3 +343,58 @@ Recorded here so a future contributor finding `simo-os` in these three places kn
 **Indexability is asymmetric and deliberate.** `apps/marketing` is indexable only when `APP_ENV=production` *and* its canonical origin is `https://geocore.one`, so staging deploys of the same image exclude themselves rather than competing with production. `apps/web` returns `Disallow: /` unconditionally — there is no environment in which indexing the application is correct, and two concrete harms if it happens: the login page outranking the marketing site for brand queries, and token-scoped portal/invite URLs (capability tokens, not login-protected pages) being crawled and archived.
 
 **A build-time trap, guarded by a test.** Next prerenders `robots.txt`, the robots meta tag and the canonical URL at build time, so indexability is baked into the image, not read at runtime. If `APP_ENV=production` were dropped from `apps/marketing/Dockerfile`, the production image would ship `noindex, nofollow` and `Disallow: /`: the site comes up, every page returns 200, nothing errors, and geocore.one never appears in search results. `apps/marketing/indexability.test.mjs` asserts that contract in CI precisely because the failure is otherwise invisible.
+
+## ADR-039: A quote declares its kind; stone becomes one specialism among twelve, not the shape of the schema
+**Status:** IMPLEMENTED (Sprint 036, Workstream E)
+
+Until Sprint 036, `quotes` was not a quote table — it was a worktop table. `material`, `thickness`, `kitchen_length` and `length_mm` were all NOT NULL, so a quote could not physically be inserted without slab dimensions. `quote_items` (Sprint 033) was genuinely multi-line, but every line was a slab priced by area ÷ slab area × slab price. There was no way to express "Strip out existing bathroom — 2 days labour @ £320/day", let alone a roofing, groundworks or rewire quote.
+
+That is not a missing feature. It is the product's central claim contradicted by its own schema: GeoCore is sold as an operating system for construction and renovation businesses, and its quote table could only describe stone.
+
+**The fix is a discriminator, not a rewrite.** `quotes.quote_kind` is `'stone' | 'general'`; `quote_items.line_kind` is `'stone' | 'labour' | 'material' | 'other'`. Both are NOT NULL with a `'stone'` server default, which states a fact about every existing row rather than guessing one — before this migration, a quote could not have been anything else.
+
+**NOT NULL was dropped on the eight stone-only columns rather than filling them with sentinels.** A general quote genuinely has no material, thickness or run length. Writing `'N/A'` or `0` would put a lie in the data to avoid changing the schema, and every reader downstream would then need to know which sentinel meant "absent". Dropping NOT NULL is a pure widening: every existing row keeps every value, no row is rewritten, no existing query can start failing, and Postgres performs it as a catalogue-only change.
+
+**`quote_items.quantity` was widened INTEGER → DOUBLE PRECISION.** A stone line is 2 slabs; a labour line is 2.5 days. The JSON a client sees changes from `1` to `1.0`, which is the same number to Python's `==`, to JavaScript's `===` and to `String()` — verified against every existing assertion before the change was made.
+
+**The two kinds share a lifecycle and share no pricing.** Draft → sent → approved → project is identical whatever trade a quote is for, so approval, handoff, the PDF and the portal are common code. Pricing is not: the stone path still runs `QuoteCalculator` against the material catalogue, and the general path is `quantity × unit_price` summed, in a module (`app/quotes/general.py`) that takes no `Session` because it needs no catalogue at all. `POST /api/v1/quote` (the public stone calculator, ADR-023) is untouched; `POST /api/v1/quotes` is the new authenticated general path.
+
+**Rounding is stated once and shared.** Each line is rounded to 2dp, then the lines are summed. Summing unrounded floats and rounding at the end produces a total the line items on the customer's own PDF do not add up to — the one arithmetic error a quote must never make. The frontend's live preview implements the same rule deliberately, so what is on screen is what gets saved; the server re-prices from the same lines on submit and its answer is authoritative.
+
+**The downgrade refuses rather than destroying.** Reversing this cannot silently succeed once a general quote exists: NOT NULL cannot be restored while rows legitimately hold NULL there, and deleting a tenant's real quotes to make a schema fit is destruction disguised as a migration. `downgrade()` raises, names the counts, and tells the operator what they have to decide. It reverses cleanly on a database that only ever held stone quotes, which is the only case where reversal is lossless.
+
+**Stone was not demoted to a bug.** It is one of twelve trades in `app/trades/catalogue.py`, it keeps its own specialist quote form at `/quotes/new/stone`, and that form is offered from the general builder rather than hidden — for a worktop job it is the better tool, because it prices from the catalogue instead of by hand.
+
+## ADR-040: Automations act only inside the workspace, and every attempt is recorded
+**Status:** IMPLEMENTED (Sprint 036, Workstream G)
+
+GeoCore has no outbound email, SMS or messaging infrastructure. That was verified across the whole repository during Sprint 036 discovery — no provider dependency, no configuration, no code path. An automation action that claimed to "email the customer a review request" would therefore be a lie in the product, and the first time a builder discovered their review requests had never been sent, they would rightly stop trusting every other automation too.
+
+**So the action set is closed and internal**: `create_notification`, `create_task`, `draft_message` (which prepares a message and hands it to a human as a task — a task with a body, not a transmission) and `create_project_from_quote` (which delegates to the already-audited, already-idempotent `quote_service.handoff`). `GET /api/v1/automations/meta` returns `delivery.external_delivery_available: false` and the note the UI displays, so the honest statement comes from the backend and stays true the day delivery is genuinely built rather than being copy someone has to remember to change. A backend test asserts the action set against a literal list, so adding a sending action fails CI and has to be a deliberate decision.
+
+**Three invariants, each defending a specific failure mode:**
+
+1. **An automation can never break the thing that triggered it.** Dispatch happens after the triggering change has committed, and every run is wrapped: an exception becomes a `failed` AutomationRun row carrying the message, and is swallowed. Approving a quote must not depend on the health of a rule someone wrote last Tuesday.
+2. **Every attempt is visible.** Skipped runs are recorded too, with their reason. A rule that silently does nothing is indistinguishable from a broken one, and "why didn't my automation fire?" is the question this feature will be asked most — which is why run history is a first-class endpoint and an on-page panel rather than a log line.
+3. **Running twice does the work once.** Each run computes a dedupe key of `{automation_id}:{trigger}:{subject_id}[:{discriminator}]`, pre-checked and then enforced by a UNIQUE constraint — the same defence-in-depth Sprint 024 established for notification dedupe. Actions carry their own derived keys (`{run_key}#{index}`), so a run that fails at action 2 of 3 and is retried does not double-create action 1's task.
+
+**Conditions are evaluated against an explicitly-built subject dict, never an ORM row.** That is the security property of `app/automations/subjects.py`: if conditions used `getattr(row, field)`, a user-authored rule could name any column, any relationship, or any Python attribute on the model. Because the subject is assembled from a fixed key list, a condition can only ever see what that module deliberately exposed, and an unknown field is a definite `False` rather than an accidental disclosure. Placeholder substitution is a key-walk rather than `str.format()`, for the same reason: `"{x.__class__}"` is an attribute-traversal vector when the template is user-authored.
+
+**Conditions fail closed.** An unknown field or operator makes the whole rule false. Silently ignoring the condition would run the actions of a rule the author believes is narrowly scoped, which is the worse of the two failures by a wide margin.
+
+**Templates are definitions, not rows.** Nothing is written to a workspace until someone activates a template. Auto-creating automations at signup would mean a workspace starts producing tasks and notifications nobody asked for, from rules they have never read — which is how automation features come to be distrusted and switched off wholesale. Activation round-trips the template through the same `AutomationCreate` validation a hand-written rule passes, so a template edited into something invalid fails loudly at activation rather than writing an unrunnable rule.
+
+## ADR-041: GeoCore AI names the engine that answered
+**Status:** IMPLEMENTED (Sprint 036, Workstream H)
+
+Two genuinely different things in this codebase have both been called "AI": a real LLM (`app/quotes/ai_draft.py`, available only when `OPENAI_API_KEY` is configured) and `app/brain/BrainManager`, a keyword router over the material catalogue. The `/ai-assistant` page blurred them — it rendered `JSON.stringify` output in a `<pre>` and its own product copy named `POST /process`, `BrainManager` and a sprint number.
+
+**Every response carries `engine`.** `"llm"` means a real model answered; `"builtin"` means the deterministic catalogue assistant did, because no provider is connected or the provider was unreachable. The interface renders that distinction rather than hiding it, and `GET /api/v1/ai/capabilities` lets the UI describe the deployment it is actually running in instead of advertising capabilities that would silently do nothing.
+
+**A provider outage degrades rather than errors.** An unreachable provider falls back to the built-in assistant and labels the reply as such. Returning a 502 for a material-price question the deterministic path could have answered would be worse for the user and no more honest.
+
+**What is sent to the model is bounded, tenant-scoped and free of personal data.** `app/ai/context.py` builds counts, totals and at most five headline titles from the caller's own tenant. No customer email addresses, phone numbers, addresses or message bodies leave the database: they have no bearing on "how many quotes are outstanding", and sending them anyway would be a privacy decision made by accident. A backend test asserts a real customer's contact details do not appear in the prompt.
+
+**The assistant has no tools and cannot write.** It cannot create a quote, change a price, send anything or modify any record, and it says so in the interface. A write-capable assistant needs a permission model, a confirmation step and an audit trail; shipping it without those would be the kind of feature that has to be switched off a week later.
+
+**Conversation state is client-side, and that is a stated boundary rather than an oversight.** There is no conversations table, so a conversation lasts as long as the tab. Persisting it is a real feature — search, sharing, audit — and is recorded as follow-up work rather than half-built.

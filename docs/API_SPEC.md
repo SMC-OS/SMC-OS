@@ -678,4 +678,39 @@ Sprint 018 preserves every JSON error body below. Correlation is carried in the 
 | POST | `/api/v1/notifications` | Sprint 001 | Yes — Postgres (Sprint 002) | **Yes** (Sprint 012) |
 | PATCH | `/api/v1/notifications/{notification_id}/read` | Sprint 001 | Yes — Postgres (Sprint 002) | **Yes** (Sprint 012) |
 
+### Sprint 036 — universal quoting, automations, tasks, calendar, GeoCore AI, workspace setup
+
+| Method | Path | Since | Persisted? | Tenant-scoped / role |
+| --- | --- | --- | --- | --- |
+| POST | `/api/v1/quotes` | Sprint 036 | Yes | **Yes** (`require_role(OWNER, STAFF)`) — general construction quote. Distinct from `POST /api/v1/quote`, the public stone calculator, which is unchanged. |
+| PATCH | `/api/v1/quotes/{quote_id}` | Sprint 036 | Yes | **Yes** (`OWNER, STAFF`) — draft general quotes only. 409 for a stone quote or one already sent/approved. |
+| POST | `/api/v1/quotes/{quote_id}/send` | Sprint 036 | Yes | **Yes** (`OWNER, STAFF`) — **records** that a person sent the quote. Transmits nothing; GeoCore has no delivery channel. Idempotent. |
+| GET | `/api/v1/quotes/meta/trades` | Sprint 036 | No | Any member — the trade vocabulary shared by quotes, projects and onboarding. |
+| GET | `/api/v1/quotes/meta/units` | Sprint 036 | No | Any member — curated units a general line can be priced in. |
+| PATCH | `/api/v1/customers/{customer_id}` | Sprint 036 | Yes | **Yes** (any member) — omitted key means "leave alone", explicit null means "clear". |
+| GET | `/api/v1/customers/{customer_id}/context` | Sprint 036 | Yes | **Yes** (any member) — this customer's quotes, projects and quoted/agreed value in one call. |
+| PATCH | `/api/v1/projects/{project_id}` | Sprint 036 | Yes | **Yes** (any member) — details only; status keeps its own endpoint and transition rules. |
+| GET | `/api/v1/automations` | Sprint 036 | Yes | **Yes** (any member) |
+| GET | `/api/v1/automations/{automation_id}` | Sprint 036 | Yes | **Yes** (any member) |
+| GET | `/api/v1/automations/meta` | Sprint 036 | No | Any member — triggers, actions, operators, and `delivery.external_delivery_available` (false). |
+| GET | `/api/v1/automations/templates` | Sprint 036 | No | Any member — definitions only; nothing is written until activated. |
+| GET | `/api/v1/automations/runs` | Sprint 036 | Yes | **Yes** (any member) — succeeded / skipped-with-reason / failed-with-message. |
+| POST | `/api/v1/automations` | Sprint 036 | Yes | **Yes** (`require_role(OWNER)`) |
+| POST | `/api/v1/automations/templates` | Sprint 036 | Yes | **Yes** (`require_role(OWNER)`) — activate a template as a real editable rule. |
+| PATCH | `/api/v1/automations/{automation_id}` | Sprint 036 | Yes | **Yes** (`require_role(OWNER)`) |
+| DELETE | `/api/v1/automations/{automation_id}` | Sprint 036 | Yes | **Yes** (`require_role(OWNER)`) — 204; deletes the rule's run history with it. |
+| GET | `/api/v1/tasks` | Sprint 036 | Yes | **Yes** (any member) — `?status=open\|done\|cancelled` |
+| POST | `/api/v1/tasks` | Sprint 036 | Yes | **Yes** (any member) |
+| PATCH | `/api/v1/tasks/{task_id}/status` | Sprint 036 | Yes | **Yes** (any member) |
+| GET | `/api/v1/calendar` | Sprint 036 | Yes | **Yes** (any member) — `?start=&end=`, clamped to 366 days and the served window echoed back. No external calendar sync exists. |
+| GET | `/api/v1/ai/capabilities` | Sprint 036 | No | Any member — what GeoCore AI can genuinely do in this deployment. |
+| POST | `/api/v1/ai/chat` | Sprint 036 | No (client-held history) | **Yes** (any member) — response carries `engine: "llm" \| "builtin"`. Never returns a provider error; falls back and says so. |
+| GET | `/api/v1/tenants/me/onboarding` | Sprint 036 | Yes | **Yes** (any member) |
+| PATCH | `/api/v1/tenants/me/onboarding` | Sprint 036 | Yes | **Yes** (`require_role(OWNER)`) |
+| GET | `/api/v1/tenants/me/logo` | Sprint 036 | Yes (file) | **Yes** (any member) — hard-scoped to the caller's own tenant; no id parameter exists to tamper with. |
+| POST | `/api/v1/tenants/me/logo` | Sprint 036 | Yes (file) | **Yes** (`require_role(OWNER)`) — multipart; PNG/JPG/WebP, 2MB. |
+| DELETE | `/api/v1/tenants/me/logo` | Sprint 036 | Yes (file) | **Yes** (`require_role(OWNER)`) |
+
+Every row above is registered in `tests/test_rbac_matrix.py`, which is the executable source of truth for this table.
+
 The old unprefixed paths (`/quote`, `/activity`, `/notifications`, etc.) all return `404` as of Sprint 003 — confirmed via `tests/test_health.py`. `POST /api/v1/quote/pdf` (Sprint 001–006) was **removed** in Sprint 007, not kept alongside the new flow — replaced by `GET /api/v1/quotes/{id}/invoice`, which downloads a real PDF for an already-persisted quote instead of calculating-and-writing-to-disk in one call.
