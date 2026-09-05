@@ -8,6 +8,7 @@ import {
   SettingsIcon,
   UserIcon,
   UsersIcon,
+  ZapIcon,
 } from "@/components/ui/icons";
 import type { ActivityType } from "@/types/activity";
 
@@ -34,6 +35,9 @@ export const ACTIVITY_ICON: Record<ActivityType, typeof BotIcon> = {
   site_visit_cancelled: AlertTriangleIcon,
   project_assigned: UserIcon,
   project_status_changed: FolderIcon,
+  // Sprint 036
+  automation_created: ZapIcon,
+  task_completed: CheckCircleIcon,
 };
 
 export const ACTIVITY_TONE: Record<ActivityType, string> = {
@@ -56,4 +60,7 @@ export const ACTIVITY_TONE: Record<ActivityType, string> = {
   site_visit_cancelled: "bg-warning/10 text-warning",
   project_assigned: "bg-accent/10 text-accent",
   project_status_changed: "bg-warning/10 text-warning",
+  // Sprint 036
+  automation_created: "bg-champagne-subtle text-champagne",
+  task_completed: "bg-success/10 text-success",
 };

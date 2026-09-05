@@ -5,12 +5,57 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent } from "@/components/ui/Card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { SendIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
-import { formatCurrencyGBP, formatRelativeTime } from "@/lib/utils";
+import { formatDate, formatMoney, formatRelativeTime } from "@/lib/utils";
 import type { Customer } from "@/types/customer";
-import { ITEM_TYPE_LABELS, type Quote } from "@/types/quote";
+import {
+  ITEM_TYPE_LABELS,
+  QUOTE_STATUS_LABELS,
+  type Quote,
+  type QuoteItem,
+  type QuoteStatus,
+} from "@/types/quote";
+
+const STATUS_TONE: Record<QuoteStatus, "neutral" | "info" | "success"> = {
+  draft: "neutral",
+  sent: "info",
+  approved: "success",
+};
+
+/**
+ * Sprint 036 (Workstream E) — one detail page for both kinds of quote.
+ *
+ * A line describes itself according to its own `line_kind`, not the
+ * quote's, so a future quote mixing a worktop with two days of fitting
+ * labour renders both correctly with no further change here.
+ */
+function describeLine(item: QuoteItem): { title: string; detail: string } {
+  if (item.line_kind === "stone") {
+    const material = item.material
+      ? `${item.material}${item.thickness ? ` (${item.thickness})` : ""}`
+      : "";
+    return {
+      title: [ITEM_TYPE_LABELS[item.item_type] ?? item.item_type, material]
+        .filter(Boolean)
+        .join(" — "),
+      detail:
+        item.length_mm !== null && item.width_mm !== null
+          ? `${item.quantity} × ${item.length_mm}mm × ${item.width_mm}mm`
+          : `${item.quantity}`,
+    };
+  }
+
+  return {
+    title: item.description ?? "Line item",
+    detail: `${item.quantity} ${item.unit ?? "item"}${
+      item.unit_price !== null ? ` @ ${formatMoney(item.unit_price, "GBP")}` : ""
+    }`,
+  };
+}
 
 export default function QuoteDetailPage() {
   const params = useParams<{ id: string }>();
@@ -21,6 +66,7 @@ export default function QuoteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [handingOff, setHandingOff] = useState(false);
 
   useEffect(() => {
@@ -31,10 +77,10 @@ export default function QuoteDetailPage() {
     }
     api
       .getQuote(params.id)
-      .then((q) => {
-        setQuote(q);
-        if (q.customer_id) {
-          api.getCustomer(q.customer_id).then(setCustomer).catch(() => {});
+      .then((loaded) => {
+        setQuote(loaded);
+        if (loaded.customer_id) {
+          api.getCustomer(loaded.customer_id).then(setCustomer).catch(() => {});
         }
       })
       .catch((err) =>
@@ -48,48 +94,30 @@ export default function QuoteDetailPage() {
 
   if (!isReady || !isAuthenticated) return null;
 
-  async function handleDownload() {
-    if (!quote) return;
-    setDownloading(true);
+  async function run(
+    action: () => Promise<void>,
+    setBusy: (busy: boolean) => void,
+    failure: string
+  ) {
+    setBusy(true);
+    setError(null);
     try {
-      await api.downloadInvoice(quote.id);
+      await action();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not download the invoice.");
+      setError(err instanceof ApiError ? err.message : failure);
     } finally {
-      setDownloading(false);
+      setBusy(false);
     }
   }
 
-  async function handleApprove() {
-    if (!quote) return;
-    setApproving(true);
-    try {
-      const approved = await api.approveQuote(quote.id);
-      setQuote(approved);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not approve the quote.");
-    } finally {
-      setApproving(false);
-    }
-  }
+  const canAct = role === "Owner" || role === "Staff";
+  const currency = quote?.currency ?? "GBP";
 
-  async function handleHandoff() {
-    if (!quote) return;
-    setHandingOff(true);
-    try {
-      const project = await api.handoffQuote(quote.id);
-      router.push(`/projects/${project.id}`);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not hand off the quote.");
-      setHandingOff(false);
-    }
-  }
-
-  const canApprove = role === "Owner" || role === "Staff";
-  const canHandoff = role === "Owner" || role === "Staff";
+  const money = (value: number | null | undefined) =>
+    value === null || value === undefined ? "—" : formatMoney(value, currency);
 
   return (
-    <div className="mx-auto max-w-xl">
+    <div className="mx-auto max-w-3xl">
       <div className="mb-6">
         <Link href="/quotes" className="text-sm text-muted hover:text-foreground">
           &larr; Quotes
@@ -97,7 +125,7 @@ export default function QuoteDetailPage() {
       </div>
 
       {error && (
-        <Card>
+        <Card className="mb-6">
           <CardContent>
             <p className="text-sm text-danger">{error}</p>
           </CardContent>
@@ -107,113 +135,233 @@ export default function QuoteDetailPage() {
       {!error && !quote && <p className="text-sm text-muted">Loading…</p>}
 
       {quote && (
-        <Card>
-          <CardContent>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                  {quote.items.length > 1 ? `${quote.items.length} items` : `${quote.material} (${quote.thickness})`}
-                </h1>
-                <p className="text-xs text-muted">
-                  Calculated {formatRelativeTime(quote.created_at)}
+        <>
+          <Card>
+            <CardContent>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={STATUS_TONE[quote.status] ?? "neutral"}>
+                      {QUOTE_STATUS_LABELS[quote.status] ?? quote.status}
+                    </Badge>
+                    {quote.quote_kind === "stone" && (
+                      <Badge tone="champagne">Stone &amp; worktops</Badge>
+                    )}
+                  </div>
+                  <h1 className="mt-2 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                    {quote.title ??
+                      (quote.material
+                        ? `${quote.material}${quote.thickness ? ` (${quote.thickness})` : ""}`
+                        : "Quote")}
+                  </h1>
+                  <p className="text-xs text-muted">
+                    Created {formatRelativeTime(quote.created_at)}
+                    {quote.valid_until && ` · valid until ${formatDate(quote.valid_until)}`}
+                  </p>
+                </div>
+                <span className="text-2xl font-semibold text-foreground">
+                  {money(quote.total)}
+                </span>
+              </div>
+
+              <dl className="mt-6 grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2">
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium text-muted">Customer</dt>
+                  <dd className="truncate text-sm text-foreground">
+                    {customer ? (
+                      <Link
+                        href={`/customers/${customer.id}`}
+                        className="text-accent hover:underline"
+                      >
+                        {customer.company_name || customer.name}
+                      </Link>
+                    ) : (
+                      "No customer linked"
+                    )}
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium text-muted">Site</dt>
+                  <dd className="text-sm text-foreground">
+                    {[
+                      quote.site_address_line1,
+                      quote.site_city,
+                      quote.site_postcode ?? quote.postcode,
+                    ]
+                      .filter(Boolean)
+                      .join(", ") || "—"}
+                  </dd>
+                </div>
+              </dl>
+
+              {quote.scope_of_works && (
+                <div className="mt-4 border-t border-border pt-4">
+                  <p className="text-xs font-medium text-muted">Scope of works</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
+                    {quote.scope_of_works}
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-4">
+                {quote.status === "draft" && canAct && (
+                  <Button
+                    disabled={sending}
+                    onClick={() =>
+                      run(
+                        async () => setQuote(await api.sendQuote(quote.id)),
+                        setSending,
+                        "Could not mark the quote as sent."
+                      )
+                    }
+                  >
+                    <SendIcon className="h-4 w-4" />
+                    {sending ? "Saving…" : "Mark as sent"}
+                  </Button>
+                )}
+
+                {(quote.status === "draft" || quote.status === "sent") && canAct && (
+                  <Button
+                    variant={quote.status === "sent" ? "primary" : "outline"}
+                    disabled={approving}
+                    onClick={() =>
+                      run(
+                        async () => setQuote(await api.approveQuote(quote.id)),
+                        setApproving,
+                        "Could not approve the quote."
+                      )
+                    }
+                  >
+                    {approving ? "Approving…" : "Approve"}
+                  </Button>
+                )}
+
+                {quote.status === "approved" && canAct && (
+                  <Button
+                    disabled={handingOff}
+                    onClick={() =>
+                      run(
+                        async () => {
+                          const project = await api.handoffQuote(quote.id);
+                          router.push(`/projects/${project.id}`);
+                        },
+                        setHandingOff,
+                        "Could not hand off the quote."
+                      )
+                    }
+                  >
+                    {handingOff ? "Creating…" : "Create the project"}
+                  </Button>
+                )}
+
+                <Button
+                  variant="outline"
+                  disabled={downloading}
+                  onClick={() =>
+                    run(
+                      () => api.downloadInvoice(quote.id),
+                      setDownloading,
+                      "Could not download the PDF."
+                    )
+                  }
+                >
+                  {downloading ? "Preparing…" : "Download PDF"}
+                </Button>
+              </div>
+
+              {quote.status === "draft" && canAct && (
+                // Stated plainly rather than implied. GeoCore has no
+                // email, SMS or messaging channel — "Mark as sent" records
+                // that a person sent it, and pretending otherwise here
+                // would be the exact kind of claim this sprint forbids.
+                <p className="mt-3 text-xs text-muted">
+                  GeoCore doesn&rsquo;t email customers yet. Download the PDF or share a
+                  portal link, then mark the quote as sent so it can be chased.
                 </p>
-              </div>
-              <span className="text-lg font-semibold text-foreground">
-                {formatCurrencyGBP(quote.total)}
-              </span>
-            </div>
+              )}
+            </CardContent>
+          </Card>
 
-            <dl className="mt-6 space-y-3 border-t border-border pt-4">
-              <div>
-                <dt className="text-xs font-medium text-muted">Customer</dt>
-                <dd className="text-sm text-foreground">
-                  {customer ? (
-                    <Link
-                      href={`/customers/${customer.id}`}
-                      className="text-accent hover:underline"
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>
+                {quote.items.length} line{quote.items.length === 1 ? "" : "s"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <ul className="flex flex-col gap-2">
+                {quote.items.map((item) => {
+                  const { title, detail } = describeLine(item);
+                  return (
+                    <li
+                      key={item.id}
+                      className="flex items-start justify-between gap-3 rounded-lg bg-surface-hover px-3 py-2.5"
                     >
-                      {customer.name}
-                    </Link>
-                  ) : (
-                    "No customer linked"
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted">Status</dt>
-                <dd className="text-sm text-foreground">
-                  {quote.status === "approved" ? "Approved" : "Draft"}
-                </dd>
-              </div>
-              <div>
-                <dt className="mb-2 text-xs font-medium text-muted">
-                  Item{quote.items.length > 1 ? "s" : ""}
-                </dt>
-                <dd className="text-sm text-foreground">
-                  {quote.items && quote.items.length > 0 ? (
-                    <ul className="flex flex-col gap-2">
-                      {quote.items.map((item) => (
-                        <li
-                          key={item.id}
-                          className="flex items-center justify-between rounded-lg bg-surface-hover px-3 py-2"
-                        >
-                          <div>
-                            <p className="font-medium text-foreground">
-                              {ITEM_TYPE_LABELS[item.item_type] ?? item.item_type} — {item.material}{" "}
-                              ({item.thickness})
-                            </p>
-                            <p className="text-xs text-muted">
-                              {item.quantity} x {item.length_mm}mm x {item.width_mm}mm
-                            </p>
-                          </div>
-                          <span className="text-sm text-foreground">
-                            {item.line_total !== null ? formatCurrencyGBP(item.line_total) : "—"}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    `${quote.kitchen_length}m`
-                  )}
-                </dd>
-              </div>
-              <div className="grid grid-cols-2 gap-y-1">
-                <dt className="text-xs text-muted">Price per slab</dt>
-                <dd className="text-right text-sm text-foreground">
-                  {formatCurrencyGBP(quote.price_per_slab)}
-                </dd>
-                <dt className="text-xs text-muted">Subtotal</dt>
-                <dd className="text-right text-sm text-foreground">
-                  {formatCurrencyGBP(quote.price_before_vat)}
-                </dd>
-                <dt className="text-xs text-muted">VAT (20%)</dt>
-                <dd className="text-right text-sm text-foreground">
-                  {formatCurrencyGBP(quote.vat)}
-                </dd>
-                <dt className="text-xs font-semibold text-foreground">Total</dt>
-                <dd className="text-right text-sm font-semibold text-foreground">
-                  {formatCurrencyGBP(quote.total)}
-                </dd>
-              </div>
-            </dl>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">{title}</p>
+                        <p className="text-xs text-muted">{detail}</p>
+                      </div>
+                      <span className="shrink-0 text-sm text-foreground">
+                        {money(item.line_total)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
 
-            <div className="mt-6 flex gap-3 border-t border-border pt-4">
-              {quote.status === "draft" && canApprove && (
-                <Button onClick={handleApprove} disabled={approving}>
-                  {approving ? "Approving…" : "Approve"}
-                </Button>
-              )}
-              {quote.status === "approved" && canHandoff && (
-                <Button onClick={handleHandoff} disabled={handingOff}>
-                  {handingOff ? "Handing off…" : "Hand off to Project"}
-                </Button>
-              )}
-              <Button onClick={handleDownload} disabled={downloading} variant="outline">
-                {downloading ? "Downloading…" : "Download Invoice"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              <dl className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-muted">Subtotal</dt>
+                  <dd className="text-foreground">
+                    {money(quote.subtotal ?? quote.price_before_vat)}
+                  </dd>
+                </div>
+                {quote.discount_amount ? (
+                  <div className="flex justify-between">
+                    <dt className="text-muted">Discount</dt>
+                    <dd className="text-foreground">−{money(quote.discount_amount)}</dd>
+                  </div>
+                ) : null}
+                <div className="flex justify-between">
+                  <dt className="text-muted">
+                    VAT ({Math.round((quote.vat_rate ?? 0.2) * 100)}%)
+                  </dt>
+                  <dd className="text-foreground">{money(quote.vat)}</dd>
+                </div>
+                <div className="flex justify-between border-t border-border pt-2 text-base">
+                  <dt className="font-semibold text-foreground">Total</dt>
+                  <dd className="font-semibold text-foreground">{money(quote.total)}</dd>
+                </div>
+              </dl>
+            </CardContent>
+          </Card>
+
+          {(quote.exclusions || quote.terms) && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Terms &amp; exclusions</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 pt-4">
+                {quote.exclusions && (
+                  <div>
+                    <p className="text-xs font-medium text-muted">Exclusions</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
+                      {quote.exclusions}
+                    </p>
+                  </div>
+                )}
+                {quote.terms && (
+                  <div>
+                    <p className="text-xs font-medium text-muted">Payment terms</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
+                      {quote.terms}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );

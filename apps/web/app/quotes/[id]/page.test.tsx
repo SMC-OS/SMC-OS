@@ -2,6 +2,13 @@
  * Sprint 020 — frontend quote-approval contract (mirrors the backend's
  * approve() behavior, tests/test_quote_handoff.py). First component-level
  * test in the repo — see vitest.config.ts's docstring for why.
+ *
+ * Sprint 036 renamed the handoff button from "Hand off to Project" to
+ * "Create the project" — "hand off" is internal vocabulary, not something
+ * a builder says. Every behaviour this file asserts is unchanged: the
+ * POST goes to /handoff, the destination comes from the returned
+ * Project's own id and never from the Quote id, and a failed handoff
+ * keeps the user on the quote with the action available to retry.
  */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -164,7 +171,7 @@ describe("QuoteDetailPage — approval (Sprint 020)", () => {
     render(<QuoteDetailPage />);
 
     const handoffButton = await screen.findByRole("button", {
-      name: /hand off to project/i,
+      name: /create the project/i,
     });
     expect(handoffButton).toBeInTheDocument();
 
@@ -201,7 +208,7 @@ describe("QuoteDetailPage — approval (Sprint 020)", () => {
     render(<QuoteDetailPage />);
 
     const handoffButton = await screen.findByRole("button", {
-      name: /hand off to project/i,
+      name: /create the project/i,
     });
     await userEvent.click(handoffButton);
 
@@ -220,7 +227,7 @@ describe("QuoteDetailPage — approval (Sprint 020)", () => {
 
     // The action must be available again so the user can retry.
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /hand off to project/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /create the project/i })).toBeEnabled();
     });
   });
 });

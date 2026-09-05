@@ -11,7 +11,12 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
-import { formatRelativeTime } from "@/lib/utils";
+import { ProjectForm } from "@/components/projects/ProjectForm";
+import { ProjectTasksPanel } from "@/components/projects/ProjectTasksPanel";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
+import { EditIcon } from "@/components/ui/icons";
+import type { Trade } from "@/types/quote";
+import { formatDate, formatMoney, formatRelativeTime } from "@/lib/utils";
 import { PROJECT_STATUSES } from "@/types/project";
 import type { AppointmentOut, AppointmentTransitionTarget } from "@/types/appointment";
 import type { Customer } from "@/types/customer";
@@ -29,6 +34,11 @@ export default function ProjectDetailPage() {
   const router = useRouter();
   const { isAuthenticated, isReady, role } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
+  // Sprint 036 (Workstream F) — inline edit, reusing the same form the
+  // create page uses so the two cannot drift apart.
+  const [editing, setEditing] = useState(false);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const { currency } = useWorkspace();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
@@ -103,10 +113,16 @@ export default function ProjectDetailPage() {
         .then(setTeamMembers)
         .catch(() => {});
     }
+    // Sprint 036 — the trade vocabulary, so this page can render
+    // "Roofing" rather than the stored key "roofing".
+    api.getTrades().then(setTrades).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady, isAuthenticated, params.id, canManageAppointments, canAssign]);
 
   if (!isReady || !isAuthenticated) return null;
+
+  const tradeLabel =
+    trades.find((trade) => trade.key === project?.project_type)?.label ?? null;
 
   const currentIndex = project ? PROJECT_STATUSES.indexOf(project.status) : -1;
   const nextStatus =
@@ -231,42 +247,115 @@ export default function ProjectDetailPage() {
 
       {!error && !project && <p className="text-sm text-muted">Loading…</p>}
 
-      {project && (
+      {project && editing && (
+        <div className="mb-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              Edit project
+            </h1>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+          <ProjectForm
+            initial={project}
+            submitLabel="Save changes"
+            onSubmit={async (values) => {
+              setProject(await api.updateProject(project.id, values));
+              setEditing(false);
+            }}
+          />
+        </div>
+      )}
+
+      {project && !editing && (
         <Card>
           <CardContent>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h1 className="truncate text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
                   {project.name}
                 </h1>
                 <p className="text-xs text-muted">
+                  {tradeLabel ? `${tradeLabel} · ` : ""}
                   Started {formatRelativeTime(project.created_at)}
                 </p>
               </div>
-              <Badge tone={PROJECT_STATUS_TONE[project.status]}>
-                {PROJECT_STATUS_LABEL[project.status]}
-              </Badge>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge tone={PROJECT_STATUS_TONE[project.status]}>
+                  {PROJECT_STATUS_LABEL[project.status]}
+                </Badge>
+                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                  <EditIcon className="h-4 w-4" />
+                  Edit
+                </Button>
+              </div>
             </div>
 
-            <dl className="mt-6 space-y-3 border-t border-border pt-4">
-              <div>
+            {/* Sprint 036 (Workstream F) — the job, not just its name.
+                Every field renders an em dash when absent rather than
+                being hidden: a start date you have not set is information
+                worth seeing on a project page. */}
+            <dl className="mt-6 grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2">
+              <div className="min-w-0">
                 <dt className="text-xs font-medium text-muted">Customer</dt>
-                <dd className="text-sm text-foreground">
+                <dd className="truncate text-sm text-foreground">
                   {customer ? (
                     <Link
                       href={`/customers/${customer.id}`}
                       className="text-accent hover:underline"
                     >
-                      {customer.name}
+                      {customer.company_name || customer.name}
                     </Link>
                   ) : (
                     "—"
                   )}
                 </dd>
               </div>
-              <div>
+              <div className="min-w-0">
+                <dt className="text-xs font-medium text-muted">Value</dt>
+                <dd className="text-sm text-foreground">
+                  {project.estimated_value != null
+                    ? formatMoney(project.estimated_value, currency)
+                    : "—"}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs font-medium text-muted">Starts</dt>
+                <dd className="text-sm text-foreground">{formatDate(project.start_date)}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs font-medium text-muted">Target completion</dt>
+                <dd className="text-sm text-foreground">
+                  {formatDate(project.target_completion_date)}
+                </dd>
+              </div>
+              <div className="min-w-0 sm:col-span-2">
+                <dt className="text-xs font-medium text-muted">Site</dt>
+                <dd className="text-sm text-foreground">
+                  {[
+                    project.site_address_line1,
+                    project.site_address_line2,
+                    project.site_city,
+                    project.site_postcode,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "—"}
+                </dd>
+              </div>
+              {project.description && (
+                <div className="min-w-0 sm:col-span-2">
+                  <dt className="text-xs font-medium text-muted">Description</dt>
+                  <dd className="whitespace-pre-wrap text-sm text-foreground">
+                    {project.description}
+                  </dd>
+                </div>
+              )}
+              <div className="min-w-0 sm:col-span-2">
                 <dt className="text-xs font-medium text-muted">Notes</dt>
-                <dd className="text-sm text-foreground">{project.notes ?? "—"}</dd>
+                <dd className="whitespace-pre-wrap text-sm text-foreground">
+                  {project.notes ?? "—"}
+                </dd>
               </div>
             </dl>
 
@@ -448,6 +537,8 @@ export default function ProjectDetailPage() {
           </CardContent>
         </Card>
       )}
+      {project && !editing && <ProjectTasksPanel projectId={project.id} />}
+
     </div>
   );
 }

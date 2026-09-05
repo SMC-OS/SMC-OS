@@ -1,5 +1,6 @@
 import AppShell from "../components/layout/AppShell";
 import { AuthProvider } from "../components/auth/AuthProvider";
+import { WorkspaceProvider } from "../components/workspace/WorkspaceProvider";
 import { ThemeProvider } from "../components/theme/ThemeProvider";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -22,7 +23,7 @@ const geistMono = Geist_Mono({
 // global chrome every tenant sees.
 export const metadata: Metadata = {
   title: "GeoCore",
-  description: "AI operating system for stone and construction businesses",
+  description: "The AI operating system for construction and renovation businesses",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/favicon.ico",
@@ -31,7 +32,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "GeoCore",
-    description: "AI operating system for stone and construction businesses",
+    description: "The AI operating system for construction and renovation businesses",
     images: ["/brand/og-image.png"],
   },
   // app.geocore.one is the authenticated application, not the public site —
@@ -74,7 +75,13 @@ export default function RootLayout({
       <body className="min-h-screen" suppressHydrationWarning>
         <ThemeProvider>
           <AuthProvider>
-            <AppShell>{children}</AppShell>
+            {/* Sprint 036 — inside AuthProvider because it only fetches
+                for a signed-in user, outside AppShell so every page and
+                every piece of chrome reads the same workspace
+                configuration (currency, trades, branding). */}
+            <WorkspaceProvider>
+              <AppShell>{children}</AppShell>
+            </WorkspaceProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>
