@@ -6,45 +6,135 @@
    components/theme/ThemeProvider.tsx toggles. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ---------------------------------------------------------------------
+   GeoCore design tokens — Sprint 036, Workstream B.
+
+   The previous palette was generic blue-on-grey: correct, accessible and
+   completely anonymous. GeoCore is software for people who work in stone,
+   timber, brick and plaster, and the palette is drawn from those
+   materials rather than from a default framework:
+
+     forest   — the primary. A deep, confident green, not a tech blue.
+     sage     — the secondary. Muted, calm, used for supporting state.
+     cream    — the light-mode ground. Warm, not clinical white.
+     champagne— a restrained warm metallic, for emphasis only. It is
+                deliberately NOT the primary action colour: a metallic
+                used for buttons reads as decoration, used sparingly it
+                reads as quality.
+
+   Every colour in the application resolves through one of these tokens.
+   There are no hardcoded colour utilities anywhere in app/, components/
+   or lib/ — verified by grep during Sprint 036 discovery and kept that
+   way, which is why a full re-palette is this file rather than a
+   search-and-replace across ninety components.
+
+   Contrast (WCAG AA, checked in both modes):
+     light  foreground on background   #16211C on #F7F5F1  ≈ 14.6:1
+            muted      on background   #5C6B63 on #F7F5F1  ≈  4.9:1
+            accent-fg  on accent       #FFFFFF on #1F4438  ≈ 10.4:1
+     dark   foreground on background   #F2EFE9 on #0D1411  ≈ 15.7:1
+            muted      on background   #9CAAA2 on #0D1411  ≈  7.6:1
+            accent-fg  on accent       #0B1310 on #6FA98D  ≈  8.4:1
+--------------------------------------------------------------------- */
+
 :root {
-  --background: #f7f7f8;
+  /* Warm neutral ground. Cream, not #fff — a pure-white app under
+     workshop lighting is glare, and this is software used on site. */
+  --background: #f7f5f1;
   --surface: #ffffff;
-  --surface-hover: #f3f4f6;
-  --foreground: #0a0a0b;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --accent: #2563eb;
+  --surface-hover: #f1efe9;
+  --surface-raised: #fbfaf7;
+
+  --foreground: #16211c;
+  /* Darkened from the old #6b7280 so secondary text clears AA against
+     the warmer ground rather than only against white. */
+  --muted: #5c6b63;
+  --border: #e3ded4;
+  --border-strong: #cfc8ba;
+
+  /* Deep forest — the primary. */
+  --accent: #1f4438;
   --accent-foreground: #ffffff;
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
-  --info: #2563eb;
+  --accent-hover: #163229;
+  --accent-subtle: #e8efea;
+
+  /* Muted sage — supporting state, never competing with the primary. */
+  --sage: #6b8a78;
+  --sage-subtle: #eef3ef;
+
+  /* Warm champagne — emphasis only. */
+  --champagne: #a8834e;
+  --champagne-subtle: #f6efe3;
+
+  --success: #2f7d4f;
+  --warning: #a76a12;
+  --danger: #b3261e;
+  --info: #2f6b5c;
+
+  /* Restrained elevation: two shadows, both soft and warm-tinted, so
+     cards separate from the ground without looking like they float. */
+  --shadow-sm: 0 1px 2px 0 rgb(22 33 28 / 0.04), 0 1px 3px 0 rgb(22 33 28 / 0.04);
+  --shadow-md: 0 2px 4px -1px rgb(22 33 28 / 0.05), 0 8px 16px -4px rgb(22 33 28 / 0.08);
+
+  color-scheme: light;
 }
 
 .dark {
-  --background: #09090b;
-  --surface: #18181b;
-  --surface-hover: #27272a;
-  --foreground: #fafafa;
-  --muted: #a1a1aa;
-  --border: #27272a;
-  --accent: #3b82f6;
-  --accent-foreground: #ffffff;
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --info: #3b82f6;
+  /* Genuinely dark — a near-black with a forest undertone, not the
+     lifted grey that reads as "unfinished dark mode". */
+  --background: #0d1411;
+  --surface: #141d19;
+  --surface-hover: #1c2823;
+  --surface-raised: #1a241f;
+
+  --foreground: #f2efe9;
+  --muted: #9caaa2;
+  --border: #24312b;
+  --border-strong: #35443c;
+
+  /* The primary inverts: deep forest has nowhere near enough contrast on
+     a dark ground, so the accent becomes the light sage and the text on
+     it becomes dark. Both directions are defined explicitly rather than
+     relying on opacity tricks. */
+  --accent: #6fa98d;
+  --accent-foreground: #0b1310;
+  --accent-hover: #86bda2;
+  --accent-subtle: #1a2b23;
+
+  --sage: #8fb3a0;
+  --sage-subtle: #17241e;
+
+  --champagne: #d8b978;
+  --champagne-subtle: #2a2318;
+
+  --success: #4ea86f;
+  --warning: #d79a3a;
+  --danger: #e0645c;
+  --info: #6fa89b;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.4), 0 8px 16px -4px rgb(0 0 0 / 0.5);
+
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-hover: var(--surface-hover);
+  --color-surface-raised: var(--surface-raised);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-sage: var(--sage);
+  --color-sage-subtle: var(--sage-subtle);
+  --color-champagne: var(--champagne);
+  --color-champagne-subtle: var(--champagne-subtle);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
@@ -57,6 +147,17 @@ body {
   background: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  /* Stops iOS Safari inflating body copy in landscape, which on a phone
+     is the difference between a usable form and a broken one. */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Stronger typographic hierarchy. Headings tighten as they grow, which is
+   what stops a large heading reading as merely "big text". */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
 }
 
 /* Theme changes should feel like a fade, not a flash. */
@@ -67,4 +168,36 @@ body,
   transition-property: background-color, border-color, color;
   transition-duration: 150ms;
   transition-timing-function: ease-out;
+}
+
+/* Someone who has asked their system to stop animating things means it —
+   including the theme cross-fade above and every count-up and skeleton
+   pulse in the app. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A single, visible focus ring for keyboard users on every interactive
+   element, defined once here rather than per component — the previous
+   design left focus styling to whichever component remembered it. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Long content (tables, code, wide diagrams) scrolls inside its own
+   container. The page body must never scroll horizontally — that is the
+   single most common mobile layout failure and it is prevented here
+   rather than screen by screen. */
+html,
+body {
+  overflow-x: hidden;
 }

@@ -70,11 +70,18 @@ export interface QuoteItem {
   id: string;
   position: number;
   item_type: ItemType;
-  material: string;
-  thickness: string;
+  // Sprint 036 — "stone" keeps the slab columns below meaningful;
+  // "labour"/"material"/"other" are general construction lines described
+  // in words, where the slab columns are null.
+  line_kind: "stone" | LineKind;
+  description: string | null;
+  unit: string | null;
+  unit_price: number | null;
+  material: string | null;
+  thickness: string | null;
   quantity: number;
-  length_mm: number;
-  width_mm: number;
+  length_mm: number | null;
+  width_mm: number | null;
   thickness_mm: number | null;
   unit_input: string;
   notes: string | null;
@@ -158,11 +165,88 @@ export interface AIQuoteDraft {
   warnings: string[];
 }
 
-// Sprint 020: mirrors the two values app/database/models.py's Quote.status
-// column and app/quotes/service.py's approve()/handoff() actually use.
-export const QUOTE_STATUSES = ["draft", "approved"] as const;
+// Sprint 036 — "sent" joins the lifecycle. Marking a quote as sent
+// records that a person gave it to the customer; GeoCore has no email,
+// SMS or messaging channel and transmits nothing itself.
+export const QUOTE_STATUSES = ["draft", "sent", "approved"] as const;
 
 export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
+
+export const QUOTE_STATUS_LABELS: Record<QuoteStatus, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  approved: "Approved",
+};
+
+/* ---------------------------------------------------------------------
+   Sprint 036 (Workstream E) — universal quoting.
+
+   A quote is one of two kinds. "stone" is the specialist worktop
+   workflow, priced by slab area from the material catalogue, unchanged
+   since Sprint 033. "general" is every other kind of construction and
+   renovation work, priced as quantity x unit price per line.
+
+   They share a lifecycle (draft -> sent -> approved -> project) and share
+   nothing else, which is exactly why the discriminator exists.
+--------------------------------------------------------------------- */
+
+export const QUOTE_KINDS = ["general", "stone"] as const;
+export type QuoteKind = (typeof QUOTE_KINDS)[number];
+
+export const LINE_KINDS = ["labour", "material", "other"] as const;
+export type LineKind = (typeof LINE_KINDS)[number];
+
+export const LINE_KIND_LABELS: Record<LineKind, string> = {
+  labour: "Labour",
+  material: "Materials",
+  other: "Other",
+};
+
+/** Served by GET /api/v1/quotes/meta/trades — never duplicated as a
+ * frontend constant, so the quote form, the project form and the
+ * onboarding picker cannot drift apart. */
+export interface Trade {
+  key: string;
+  label: string;
+  default_quote_kind: QuoteKind;
+}
+
+/** Served by GET /api/v1/quotes/meta/units. */
+export interface QuoteUnit {
+  key: string;
+  label: string;
+}
+
+export interface GeneralQuoteLineRequest {
+  line_kind: LineKind;
+  description: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  notes?: string | null;
+}
+
+export interface GeneralQuoteRequest {
+  customer_id?: string | null;
+  title: string;
+  trade?: string | null;
+  site_address_line1?: string | null;
+  site_address_line2?: string | null;
+  site_city?: string | null;
+  site_postcode?: string | null;
+  scope_of_works?: string | null;
+  notes?: string | null;
+  exclusions?: string | null;
+  terms?: string | null;
+  valid_until?: string | null;
+  vat_rate?: number;
+  discount_amount?: number | null;
+  lines: GeneralQuoteLineRequest[];
+}
+
+/** PATCH body. Omitting `lines` leaves the existing ones untouched;
+ * sending them replaces the set wholesale. */
+export type GeneralQuoteUpdate = Partial<GeneralQuoteRequest>;
 
 /** Shape returned by GET /api/v1/quotes and GET /api/v1/quotes/{id} —
  * the persisted row, not the freshly-calculated response. `items` is the
@@ -171,9 +255,30 @@ export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
 export interface Quote {
   id: string;
   customer_id: string | null;
-  material: string;
-  thickness: string;
-  kitchen_length: number;
+
+  // --- Sprint 036: the universal quote envelope. ---
+  quote_kind: QuoteKind;
+  title: string | null;
+  trade: string | null;
+  site_address_line1: string | null;
+  site_address_line2: string | null;
+  site_city: string | null;
+  site_postcode: string | null;
+  scope_of_works: string | null;
+  notes: string | null;
+  exclusions: string | null;
+  terms: string | null;
+  valid_until: string | null;
+  currency: string;
+  vat_rate: number;
+  subtotal: number | null;
+  discount_amount: number | null;
+  sent_at: string | null;
+
+  // --- Stone-only. Null on a general quote. ---
+  material: string | null;
+  thickness: string | null;
+  kitchen_length: number | null;
   quantity?: number;
   length_mm?: number;
   width_mm?: number;
