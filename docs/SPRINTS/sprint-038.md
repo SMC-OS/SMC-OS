@@ -767,16 +767,119 @@ promotion for the webhook path specifically. Production deployment of everything
 
 ---
 
-## 14. Status
+## 14. Webhook verification (staging) and production deployment
 
-**Phases 1–3 merged, deployed to staging, and verified for real** — migration applied
-cleanly, health/readiness green, honest capability flags confirmed live, and a genuine
-transactional email sent and accepted by Resend (§12). Not yet done: webhook secret
-configuration (§13, owner checkpoint) and production deployment (gated on the owner's
-own "successful staging verification" instruction, now satisfied for the send path;
-production promotion is a decision being handed back rather than taken unilaterally).
-Phase 4 (history UI, notification preferences, AI drafting) and Phase 5 (trade-neutral
-pipeline) are not started.
+### 14.1 Staging — full send→webhook→delivered loop, verified for real
+
+`RESEND_WEBHOOK_SECRET` confirmed present (by variable name only,
+`mcp__railway__get-service-config`) on both `simo-api-staging` and
+`simo-api-production` once the owner registered both webhooks. Verified live rather
+than assumed: an unsigned `POST /communications/webhook` moved from **503**
+("not configured") to **400** ("Invalid webhook signature") — proving the running
+process, not just the Railway dashboard, has the secret.
+
+A second real invitation send to the owner's own mailbox (same approved target as
+§12) was used as the controlled test — no synthetic self-signed webhook payload, the
+**genuine article**: Resend delivered the email, then Resend's own webhook fired
+against the exact registered staging URL, signed with the real secret. The
+`communications` row transitioned `sent` → **`delivered`** on its own, observed via a
+direct database read (`provider_message_id`, `updated_at` both changed with no
+manual intervention). This is the strongest verification available — it exercises
+registration, signing, delivery, and this service's handling, end to end, for real.
+
+**Staging: fully green.** Proceeded to production per instruction.
+
+### 14.2 Production deployment
+
+Same exact merge SHA verified on staging (`f0b2f1e`), deployed from a clean
+`git archive` export, one service at a time:
+
+| Service | Result |
+|---|---|
+| `simo-api-production` | ✅ SUCCESS |
+| `simo-web-production` | ✅ SUCCESS |
+
+- `alembic current` = `alembic heads` = `b2c3d4e5f6a7` (pre-deploy: `d5e6f7a8b9c0` —
+  confirmed the five Sprint 038 migrations were genuinely pending, not already
+  applied). No drift.
+- `/health` → 200 `{"status":"healthy"}`; `/ready` → 200
+  `{"status":"ready","database":"reachable"}`.
+- PID 1 confirmed non-root (`Uid: 10001`, via `/proc/1/status`, not `railway ssh …
+  whoami` — Production Runbook §10 explains why that check is the wrong one).
+- `POST /communications/webhook` (unsigned) → 400, confirming
+  `RESEND_WEBHOOK_SECRET` live in production too.
+- `app.geocore.one`, `geocore.one` (marketing) both 200. Every Sprint 038-relevant
+  route (`/automations`, `/ai`, `/quotes/new`, `/quotes/new/stone`, `/customers`,
+  `/projects`, `/calendar`, `/settings`) 200.
+
+### 14.3 Production-safe verification
+
+`alkawaritm@gmail.com` (the approved test target) is **already a registered real user
+in production** — `POST /invitations` correctly returned 409 "A user with that email
+already exists", which is the invitation system working exactly as designed, not a
+defect. Pivoted to the **quote delivery** path instead — the same approved address as
+a synthetic *customer* record has no such uniqueness constraint, and this covers the
+sprint's quote-delivery claim directly:
+
+1. Isolated synthetic tenant (owner-only — no real tenant's data read, written, or
+   touched).
+2. One customer record, email = the approved test address.
+3. One general quote, one line item.
+4. `POST /quotes/{id}/send-email` → real send via `DeliveryService` →
+   `ResendEmailProvider`. Response: quote `status: "sent"` (only because the send
+   was genuinely accepted — contract §3.4), `communication.status: "sent"`.
+5. The real production webhook fired moments later: `communications` row →
+   **`delivered`**, new `provider_message_id` distinct from the staging one, confirmed
+   via direct database read.
+
+No customer-facing production data was created — only this session's own isolated
+synthetic tenant/customer/quote, following the exact "safe QA mechanism" pattern this
+sprint's own automated tests already establish. No real (Simo Marble & Construction
+or any other pre-existing) tenant's data was read, modified, or touched at any point.
+
+### 14.4 Sprint 038 — the four things it set out to prove, in production
+
+1. **Real transactional email works** — two independent genuine sends (staging
+   invitation, production quote), both accepted by Resend, both independently
+   confirmed via `provider_message_id`.
+2. **Webhook-driven delivery tracking works** — both sends' `communications` rows
+   transitioned `sent → delivered` from Resend's own real webhook callback, not a
+   fabricated one.
+3. **Quote delivery is real** — `POST /quotes/{id}/send-email` only marks a quote
+   sent on confirmed provider acceptance; verified against production.
+4. **Nothing about this required weakening tenant isolation, RBAC, or Microsoft 365
+   mail** — every verification used isolated synthetic tenants; no existing DNS
+   record was read or touched at any point in this sprint (§4.3); every new route
+   carries the RBAC posture recorded in `tests/test_rbac_matrix.py`.
+
+### 14.5 Remaining limitations (honest, not silently dropped)
+
+- **Bounce/complaint tracking** is built and unit-tested (`tests/test_communications_webhooks.py`)
+  but not exercised against a real Resend bounce/complaint event in either
+  environment this session — doing so deliberately would need a
+  known-to-bounce test address, which this session did not create (out of scope for
+  "do not send email to real customers" and not requested).
+- **Phase 4** (communication history UI, server-side notification preferences,
+  GeoCore AI drafting integration) and **Phase 5** (trade-neutral project pipeline)
+  are not started — recorded in §9 as a deliberate, separately-scoped follow-up, not
+  an oversight.
+- Synthetic verification tenants created in both staging and production during this
+  sprint's own testing (this session's and the account owner's) are left in place,
+  consistent with how prior sprints' own verification has operated; no delete
+  endpoints exist for most of these rows.
+
+## 15. Status
+
+**SPRINT 038 CLOSED — staging and production both verified with genuine, real
+end-to-end evidence**: real transactional sends, real Resend webhook callbacks, real
+`sent → delivered` transitions, in both environments, independently confirmed via
+direct database reads rather than API response bodies alone. No Microsoft 365 DNS
+record was ever read or touched. No real tenant's data was read, modified, or
+exposed. No secret value was ever requested, printed, logged, or committed.
+
+Phase 4 (history UI, notification preferences, AI drafting) and Phase 5
+(trade-neutral pipeline) remain explicitly out of scope for this closeout — recorded
+in §9 as deliberate follow-up work, not silently dropped.
 
 **SPRINT 038 IN PROGRESS — Phases 1–3 merged and verified on staging with a real
 transactional send. BLOCKED on the owner registering the Resend webhook (§13) for
