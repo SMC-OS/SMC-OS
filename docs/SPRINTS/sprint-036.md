@@ -1,8 +1,9 @@
 # Sprint 036 — GeoCore Product Experience, Automation Foundation & Responsive Platform
 
-**Status:** In progress
+**Status:** Closed — Production Verified
 **Branch:** `claude/sprint-036-geocore-product-eoqkqb`
 **Baseline:** `3ec7353` (merge of Sprint 035, `main`)
+**Merge SHA:** `83fe964424e0208cf499166951290fb3896aa028` (PR #22)
 
 ---
 
@@ -485,46 +486,180 @@ and the layout are unchanged and the target clears 40px.
 
 Branch, commits, full local verification, and CI — see §8.
 
-### 9.2 What is owner-gated: staging and production deployment
+### 9.2 Deployment — staging and production, both complete and verified
 
-**Sprint 036 is not deployed.** This is stated plainly rather than
-softened.
+**This section originally stated Sprint 036 was not deployed, because the
+implementation session had no Railway CLI and no Railway credentials —
+true at that time (§9.2 history below). A later continuation session had
+genuine Railway access (CLI logged in, MCP server authenticated, outbound
+network unrestricted) and completed the deployment end to end. That work
+is recorded here in place of the original owner-instructions text.**
 
-Discovery established (§2.8) that deployment runs on Railway, driven by
-`deploy/railway/*.toml` and `docs/PRODUCTION_RUNBOOK.md`. **This session
-has no Railway CLI and no Railway credentials** — verified, not assumed.
-Steps 22–27 of the requested delivery process (deploy the exact merge SHA
-to staging, smoke it, then deploy the same SHA to production and verify
-the deployed SHA) cannot be performed from here, and no amount of
-rewording changes that.
+#### Staging
 
-Fabricating a deployment report would be the single worst thing this
-sprint could produce, given that its entire contract is "do not claim a
-capability exists unless it genuinely works".
+Deployed from a clean `git archive 83fe964424e0208cf499166951290fb3896aa028`
+export (Sprint 021's clean-commit procedure), one service at a time:
 
-**What the owner needs to do**, in the order the runbook already
-specifies:
+| Service | Deployment ID | Result |
+| --- | --- | --- |
+| `simo-api-staging` | `65bfb324-9a4e-47af-abe3-17d0179eeda3` | ✅ SUCCESS |
+| `simo-web-staging` | `b4b5c415-4abf-4033-a473-859e90c95f0d` | ✅ SUCCESS |
 
-1. Merge the PR once CI is green.
-2. Confirm post-merge CI on `main` is green.
-3. Deploy the exact merge SHA to **staging**.
-4. Run `python -m app.jobs.automations --now <iso>` once on staging to
-   exercise the scan triggers (safe: it only creates notifications and
-   tasks for that environment's own tenants).
-5. Run the staging smoke script and the critical journeys.
-6. Only then deploy the **same SHA** to production and verify the
-   deployed SHA matches.
+Verified after deploy, per the Sprint 020/021 migration-verification rule
+(never inferred from `/health` alone):
 
-**Migration note for the deploy.** The five migrations run under the
-existing `migrate_gate` (ADR-035) with no special handling. They are
+- `alembic current` on `simo-api-staging` = `d5e6f7a8b9c0`, matching
+  `alembic heads` exactly — the sole head at `83fe964`. No drift.
+- `/health` → `{"status":"healthy"}` (200); `/ready` → `{"status":"ready","database":"reachable"}` (200).
+- PID 1 runs as `uvicorn`, UID/GID `10001` (non-root, per §8/production
+  runbook convention) — checked via `/proc/1/status`, not `railway ssh …
+  whoami` (Production Runbook §10 explains why that check is wrong).
+- `simo-web-staging` security headers present (`strict-transport-security`,
+  `x-frame-options: DENY`, `x-content-type-options: nosniff`,
+  `content-security-policy: frame-ancestors 'none'`).
+- The Sprint 019 22-gate `scripts/staging/smoke.py` run against the fresh
+  deploy: **16 PASS / 0 FAIL / 11 BLOCKED** (blocked gates are the ones
+  that require extra flags not supplied this run — `--quote-material`/
+  `--quote-thickness`, `--allow-restart` — or are explicitly
+  owner/manual-only by design, e.g. `backup_restore`,
+  `repository_secret_scan`, `follow_up_notification`'s CLI-only trigger.
+  Zero failures.).
+- A full authenticated UI sweep (fresh synthetic tenant, isolated
+  Playwright context per Sprint 021's browser-isolation rule) covering
+  every Sprint 036 surface — signup/onboarding, Dashboard V2 (currency
+  formatting, quick actions, attention panel, GeoCore AI widget),
+  Customers V2, Projects V2, the general-construction quote builder
+  (free-text line items, Type/Quantity/Unit/Rate, VAT rate, discount),
+  the stone/worktop specialist quote (still at `/quotes/new/stone`, cross
+  -linked from the general builder), Automations (template activation —
+  "Follow up unanswered quotes" turned on and confirmed persisted),
+  GeoCore AI (no terminal/developer language; explicitly states it can't
+  create, edit or send anything), Calendar, all six Settings sections
+  including Billing & Subscription (real "no plan yet" state, no fake
+  Stripe success shown), light mode, dark mode, and the 390/820/1440
+  responsive sweep (zero horizontal overflow, no header icon overlap at
+  any width, mobile bottom nav + drawer, tablet icon rail, desktop
+  sidebar). Screenshots and a JSON pass/fail log were captured for the
+  record. One incidental `401` console entry was observed (a
+  pre-authentication probe before the token was attached) and is not a
+  functional defect — every subsequent authenticated call succeeded.
+  **No regressions found.**
+
+#### Production
+
+Investigation before deploying found `simo-api-production`'s `alembic
+current` already at `d5e6f7a8b9c0` and both `simo-api-production` and
+`simo-web-production` last successfully deployed on 2026-09-05/06 —
+hours after the `83fe964` merge and after an earlier session's own
+"blocked, not deployed" note. The most likely explanation is that the
+owner (or another operator) deployed the merge manually in between agent
+sessions. Rather than leave that inferred, the exact clean
+`83fe964` archive was redeployed to production directly — safe and
+idempotent, since the schema was already at the target head — to convert
+an inference into a hard exact-SHA guarantee:
+
+| Service | Deployment ID | Result |
+| --- | --- | --- |
+| `simo-api-production` | `dd82a1d4-e74a-4726-8e2b-02c7773b39f9` | ✅ SUCCESS |
+| `simo-web-production` | `0ace5aef-e38d-4e3d-bd36-890ca0f453bb` | ✅ SUCCESS |
+
+(For the record, the earlier, presumed-manual deploys this superseded
+were `simo-api-production` deployment `4551966a-6eee-4b8e-8b5c-ed274795af95`
+and `simo-web-production` deployment `6d982487-393b-4019-8346-ceee3cc413f9`,
+both now `REMOVED` by Railway in favour of the redeploy above.)
+
+Verified after deploy:
+
+- `alembic current` = `d5e6f7a8b9c0` = `alembic heads`. No drift.
+- `/health` and `/ready` both 200, re-checked twice across the session.
+- PID 1 non-root, UID `10001`, confirmed the same way as staging.
+- Every Sprint 036 route resolves on the live app (`/`, `/login`,
+  `/signup`, `/customers`, `/projects`, `/quotes/new`,
+  `/quotes/new/stone`, `/automations`, `/ai`, `/calendar`, `/settings` —
+  all 200), and the production web build log lists the identical static
+  route set staging's build produced, from the identical source archive.
+- `geocore.one` (marketing, apex) 200 with `Allow: /` + sitemap;
+  `app.geocore.one/robots.txt` still `Disallow: /` (app stays out of
+  search, per §11.3 of the Production Runbook).
+- **Production-safe verification deliberately stopped short of an
+  authenticated click-through.** The Production Runbook is explicit that
+  production is not the place to create synthetic test data the way
+  staging's smoke script does. Confidence that the authenticated surfaces
+  (Dashboard V2, Customers V2, both quote builders, Projects V2,
+  Automations, GeoCore AI, Calendar, Settings V2, Billing, light/dark,
+  mobile nav) work in production rests on: identical application images
+  built from the identical `83fe964` source already fully exercised,
+  screenshotted and found regression-free on staging; identical build
+  output (the same prerendered route list) on both deploys; and passing
+  health/readiness/migration gates on the production database itself.
+  This is a deliberate scope boundary, not an oversight.
+- **Existing production data.** This deploy replaced only the application
+  containers; it never touched `simo-postgres-production` or its volume,
+  and the additive-only migrations were already applied (by the earlier,
+  presumed-manual deploy) before this session ever connected. No
+  destructive operation was run against production at any point in this
+  sprint.
+- **Tenant/company identity (the Simo Marble & Construction concern).**
+  `app/tenants/identity.py` (the `CompanyIdentity` class invoice PDFs
+  render from) is **not** in Sprint 036's changed-file list (§8.4 already
+  records `tests/test_tenant_identity.py` unchanged and passing). The
+  `app/quotes/pdf.py` diff that *was* touched explicitly preserves the
+  per-tenant `company.registration_lines` letterhead and goes out of its
+  way to keep an existing stone quote's rendering byte-for-byte
+  unchanged (see the `_describe_stone_item` docstring in that file). Read
+  as code, not re-verified by generating a live production PDF, for the
+  same reason as above — no synthetic production data.
+- **No regressions found during either deployment.**
+
+**Migration note.** The five migrations run under the existing
+`migrate_gate` (ADR-035) with no special handling. They are
 additive/widening and take catalogue-only locks; there is no table
-rewrite and no expected downtime. The one thing to know: `downgrade` on
-`b3c4d5e6f7a8` will refuse once a general quote exists — by design (ADR-039).
+rewrite and no expected downtime. `downgrade` on `b3c4d5e6f7a8` will
+refuse once a general quote exists — by design (ADR-039).
 
-### 9.3 DNS
+**Remaining operational limitation.** `follow_up_notification`'s
+scan-trigger exercise (`python -m app.jobs.automations`) was not manually
+re-run this session — the newly-activated staging automation template had
+no matching trigger condition yet (a synthetic tenant created seconds
+earlier has no quote nearing expiry), so there is nothing to observe in
+its run history yet. This does not block closure: the activation itself
+persisted correctly and the underlying job is unchanged from its Sprint
+024/027 form, already covered by the automated suite in §8.
 
-Untouched. Sprint 035's DNS/domain work is separate and no dependency on
-it was discovered.
+#### 9.2 history — original owner-gated note (implementation session)
+
+At the point Sprint 036's implementation was merged, that session
+genuinely had no Railway CLI, no Railway credentials, and (separately)
+no outbound network path to `api`/`app`/`www.geocore.one` — verified, not
+assumed, and left here rather than deleted because it was an accurate
+account of that session's environment. It does not describe this
+project's actual deployment capability, which the continuation session
+above demonstrates.
+
+### 9.3 DNS and domain verification
+
+DNS itself is untouched — Sprint 035's domain cutover is separate and no
+dependency on it was discovered or exercised this sprint. What *was*
+checked this sprint, as a byproduct of production verification, is
+runtime domain health for all three `geocore.one` hosts:
+
+| Check | Result |
+| --- | --- |
+| `https://geocore.one/` | 200 (marketing apex, not a login redirect) |
+| `https://geocore.one/robots.txt` | `Allow: /` + `Sitemap:` line |
+| `https://app.geocore.one/robots.txt` | `Disallow: /` (app excluded from search) |
+| `https://www.geocore.one/` | 200 |
+| `https://api.geocore.one/health`, `/ready` | 200 / 200 |
+
+One deviation from Production Runbook §11.3 is noted for the record, not
+fixed here (Sprint 035/034 domain-cutover territory, out of this sprint's
+scope): `www.geocore.one` returns `200` with the marketing site's own
+`x-nextjs-prerender` headers rather than the documented `301` redirect to
+the apex. This predates Sprint 036 — no marketing-service files are in
+this sprint's diff (§8) and neither Railway deploy touched
+`simo-marketing-production` — so it is recorded as a pre-existing
+observation for whoever next touches the domain/marketing configuration,
+not a Sprint 036 regression.
 
 ---
 
@@ -654,8 +789,8 @@ than the current clearly-stated boundary.
 
 ## 11. Sprint 036 status
 
-**Implementation complete and fully verified locally. Deployment is
-owner-gated (§9.2).**
+**Implementation complete, deployed, and verified in both staging and
+production (§9.2). Closed.**
 
 Against the Definition of Done:
 
@@ -680,5 +815,5 @@ Against the Definition of Done:
 | Tenant/security boundaries maintained | ✅ |
 | Passes existing + new automated tests | ✅ — 892 backend, 149 frontend, 26 E2E |
 | Passes CI | ✅ |
-| Passes staging | ⛔ **Owner-gated** — no Railway access from this session (§9.2) |
-| Deployed and smoke-tested in production | ⛔ **Owner-gated** — same |
+| Passes staging | ✅ — deployed `83fe964`, migration head `d5e6f7a8b9c0` confirmed, 16/16 non-blocked smoke gates pass, full authenticated UI sweep clean (§9.2) |
+| Deployed and smoke-tested in production | ✅ — deployed `83fe964`, migration head confirmed, health/readiness/route checks clean; authenticated click-through deliberately not performed against production data (§9.2) |
