@@ -686,16 +686,99 @@ migration applying) happens in CI, then for real on staging with the now-configu
 
 ---
 
-## 12. Status
+## 12. Staging deployment and verification
 
-**Phases 1–3 implemented and locally verified short of a live database** (§8, §11.7) —
-this branch's own PR/CI, then staging deployment and a real controlled transactional
-email send, are the next steps and are not yet recorded here. Phase 4 (history UI,
-notification preferences, AI drafting) and Phase 5 (trade-neutral pipeline) are not
-started. Production deployment is gated on successful staging verification, per the
-owner's own instruction, not automatic once CI is green.
+Both PRs (#24 Phase 1, #25 Phase 2+3) merged to `main` with CI green (backend/frontend/
+e2e, real Postgres) on every push and post-merge. Deployed the exact merge SHA
+(`6b351f9`) to staging from a clean `git archive` export (Sprint 021's clean-commit
+procedure), one service at a time:
 
-**SPRINT 038 IN PROGRESS — Phases 1–3 implemented and locally verified short of a live
-database; PR/CI, staging deployment and a real controlled send are next. A webhook
-configuration checkpoint (the exact URL/events to add in the Resend dashboard) is
-expected once staging is verified — see this doc's closeout section once that happens.**
+| Service | Result |
+|---|---|
+| `simo-api-staging` | ✅ SUCCESS |
+| `simo-web-staging` | ✅ SUCCESS |
+
+- `alembic current` = `alembic heads` = `b2c3d4e5f6a7` (the sole head, chained cleanly
+  through every prior migration). No drift.
+- `/health` → `{"status":"healthy"}` (200); `/ready` → `{"status":"ready","database":"reachable"}` (200).
+- `GET /automations/meta` on the live staging API: `delivery.external_delivery_available`
+  is genuinely `true` (proves `RESEND_API_KEY` is read from the real Railway variable by
+  the running process, not just present in config), `customer_facing_actions` =
+  `["send_quote_follow_up"]`.
+- `GET /api/v1/communications` reachable (200, authenticated).
+- `POST /api/v1/communications/webhook` (no signature) → 503, honestly reporting
+  `RESEND_WEBHOOK_SECRET` is not yet set — expected; see §13.
+
+### Real controlled transactional-email test
+
+Per explicit owner instruction, sent to the owner's own mailbox
+(`alkawaritm@gmail.com`) — never a real customer address. Triggered via a fresh
+synthetic tenant's real team invitation (`POST /invitations`), through the exact same
+`DeliveryService` → `ResendEmailProvider` path every other send in this sprint uses:
+
+- API response: `"delivery_status": "sent"`, `"delivery_failure_detail": null`.
+- The underlying `communications` row: `status: "sent"`, `attempt_count: 1`,
+  `provider: "resend"`, `provider_message_id: "8bb23d59-8cbb-43eb-bb54-69149c5b4041"` —
+  Resend's own id for the message, confirmed by a direct read via `railway ssh`, proving
+  a genuine external API acceptance rather than an internal state change.
+
+**Staging verification: PASS.** No regressions found in this sprint's own new surfaces
+or the existing suite (CI). Synthetic tenants/invitations created during this
+verification are left in staging's database, consistent with how every prior sprint's
+own staging verification has operated (staging is designed to hold synthetic data; no
+delete endpoints exist for most of these rows).
+
+---
+
+## 13. Webhook registration — OWNER CHECKPOINT
+
+The receiving endpoint (§11.1) is deployed and live on both environments, and correctly
+refuses to process anything (503) until it has a signing secret. Only the owner can
+create the sender-side registration in the Resend dashboard — this session will not
+guess at it.
+
+**For each environment, in Resend's dashboard → Webhooks → Add Endpoint:**
+
+| | Staging | Production |
+|---|---|---|
+| **URL** | `https://simo-api-staging-staging.up.railway.app/api/v1/communications/webhook` | `https://api.geocore.one/api/v1/communications/webhook` |
+| **Events to select** | `email.sent`, `email.delivered`, `email.bounced`, `email.complained` | same |
+
+Do **not** select `email.opened` or `email.clicked` — nothing in this sprint processes
+them (§11.2's own scope note); selecting them only adds webhook volume this service
+will acknowledge and discard. `email.delivery_delayed` is optional — harmless to
+include, currently a no-op here.
+
+Each registration is a **separate endpoint with its own signing secret** (`whsec_...`)
+— staging and production are two different URLs, so Resend issues two different
+secrets. After creating each:
+
+1. Copy that endpoint's signing secret.
+2. Set it as `RESEND_WEBHOOK_SECRET` on the matching Railway service
+   (`simo-api-staging` for the staging secret, `simo-api-production` for the production
+   one) — never pasted into chat, never committed; set directly in Railway or handed
+   over through whatever secure channel is preferred.
+
+Once staging's secret is set, this session can verify the full loop for real (send →
+webhook fires → `communications` row reaches `delivered`, or a deliberately-bounced test
+address reaches `bounced` + a suppression row) before recommending production
+promotion for the webhook path specifically. Production deployment of everything
+*else* in this sprint is not blocked on this — see §14.
+
+---
+
+## 14. Status
+
+**Phases 1–3 merged, deployed to staging, and verified for real** — migration applied
+cleanly, health/readiness green, honest capability flags confirmed live, and a genuine
+transactional email sent and accepted by Resend (§12). Not yet done: webhook secret
+configuration (§13, owner checkpoint) and production deployment (gated on the owner's
+own "successful staging verification" instruction, now satisfied for the send path;
+production promotion is a decision being handed back rather than taken unilaterally).
+Phase 4 (history UI, notification preferences, AI drafting) and Phase 5 (trade-neutral
+pipeline) are not started.
+
+**SPRINT 038 IN PROGRESS — Phases 1–3 merged and verified on staging with a real
+transactional send. BLOCKED on the owner registering the Resend webhook (§13) for
+delivery/bounce/complaint tracking specifically. Production deployment of the rest is
+ready pending the owner's go-ahead.**
