@@ -22,7 +22,7 @@ from app.communications.webhooks import WebhookSignatureError, verify_svix_signa
 from app.core.config import settings
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import Communication, EmailSuppression, Tenant
+from app.database.models import ActivityLog, Communication, EmailSuppression, Tenant
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 from sqlalchemy import delete
@@ -45,6 +45,11 @@ def _cleanup():
         if tenant is not None:
             db.execute(delete(EmailSuppression).where(EmailSuppression.tenant_id == tenant.id))
             db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
+            # TenantService.create() logs a real ActivityLog row against the
+            # new tenant's own id (ADR-029) — must go before the Tenant row
+            # or the FK constraint rejects the delete. Same requirement
+            # every other test file's cleanup already follows.
+            db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
             db.execute(delete(Tenant).where(Tenant.id == tenant.id))
         db.commit()
     finally:

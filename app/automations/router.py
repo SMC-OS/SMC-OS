@@ -74,10 +74,17 @@ def automation_meta():
                 "person reviewing it first."
             )
             if settings.resend_api_key
+            # Exact original Sprint 036 wording, unchanged — the frontend
+            # only ever renders this note in the unconfigured branch
+            # (apps/web/app/automations/page.tsx), and
+            # apps/web/e2e/automations.spec.ts asserts this precise phrase
+            # as "the honesty constraint, asserted in the product itself".
+            # Sprint 038 does not get to quietly change a sentence that
+            # test exists specifically to hold in place.
             else (
-                "Automations act inside your workspace only for now. Email "
-                "delivery is not yet configured, so a drafted message is "
-                "prepared for a person to review and send instead."
+                "Automations act inside your workspace only. GeoCore does not "
+                "send email, SMS or messages to customers; a drafted message "
+                "is prepared for a person to review and send."
             ),
         },
     }
