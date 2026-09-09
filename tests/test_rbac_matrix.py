@@ -184,6 +184,9 @@ EXPECTED_ROUTE_AUTH: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/tasks", AUTHENTICATED),
     ("POST", "/api/v1/tasks", AUTHENTICATED),
     ("PATCH", f"/api/v1/tasks/{_ID}/status", AUTHENTICATED),
+    # app/communications/router.py (Sprint 038) — history is read-only,
+    # day-to-day work, same posture as tasks/calendar.
+    ("GET", "/api/v1/communications", AUTHENTICATED),
     # app/calendar/router.py — read-only, any member.
     ("GET", "/api/v1/calendar", AUTHENTICATED),
     # app/ai/router.py — no write capability to gate; the service has no

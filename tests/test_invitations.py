@@ -18,7 +18,7 @@ from sqlalchemy import delete
 from app.auth.service import auth_service
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Invitation, Tenant, User
+from app.database.models import ActivityLog, Communication, Invitation, Tenant, User
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -43,6 +43,12 @@ def _cleanup():
         tenant = db.query(Tenant).filter(Tenant.name == TENANT_NAME).first()
         if tenant is not None:
             db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+            # Sprint 038: every real create_invitation() call now also
+            # attempts an email send, which writes a Communication row
+            # (tenant_id NOT NULL, no ondelete — see that model's
+            # docstring) — same "delete before the Tenant row" requirement
+            # as ActivityLog above.
+            db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
         db.execute(delete(Tenant).where(Tenant.name == TENANT_NAME))
         db.commit()
     finally:
@@ -276,3 +282,86 @@ def test_expired_invitation_reads_as_expired_and_cannot_be_accepted(client, owne
     )
     assert accept.status_code == 409
     assert "expired" in accept.json()["detail"].lower()
+
+
+# Sprint 038 — DeliveryService integration (docs/SPRINTS/sprint-038.md §7
+# Phase 1). No provider is configured in the test environment (no
+# RESEND_API_KEY), so every real send through the default delivery_service
+# singleton resolves to a truthful "failed"/"unavailable" outcome — these
+# tests prove that resolves honestly *and* never blocks invitation
+# creation, which is this sprint's core contract (§3.4).
+
+
+def test_create_invitation_surfaces_delivery_status_when_provider_unconfigured(client, owner_headers):
+    r = client.post("/api/v1/invitations", json={"email": INVITEE_EMAIL}, headers=owner_headers)
+    assert r.status_code == 201
+    body = r.json()
+    # The manual-link fallback is unaffected either way.
+    assert body["token"]
+    assert body["status"] == "pending"
+    # The email attempt itself is truthfully recorded as failed — never a
+    # fabricated "sent".
+    assert body["delivery_status"] == "failed"
+    assert body["delivery_failure_detail"]
+
+
+def test_list_invitations_includes_delivery_status(client, owner_headers):
+    client.post("/api/v1/invitations", json={"email": INVITEE_EMAIL}, headers=owner_headers)
+    listed = client.get("/api/v1/invitations", headers=owner_headers)
+    matching = [inv for inv in listed.json() if inv["email"] == INVITEE_EMAIL]
+    assert matching and matching[0]["delivery_status"] == "failed"
+
+
+def test_create_invitation_succeeds_even_if_delivery_service_raises_unexpectedly(owner_and_staff):
+    """The broad except in InvitationService._send_invitation_email exists
+    for exactly this: something inside the delivery attempt raises a type
+    of error DeliveryService itself doesn't normally produce (a genuine
+    bug, a DB hiccup) — invitation creation, which has already committed
+    by that point, must still return successfully."""
+    from unittest.mock import MagicMock
+
+    from app.invitations.service import InvitationService
+
+    tenant, owner, _staff = owner_and_staff
+    broken_delivery = MagicMock()
+    broken_delivery.send.side_effect = RuntimeError("unexpected failure")
+    service = InvitationService(delivery=broken_delivery)
+
+    db = SessionLocal()
+    try:
+        row, raw_token = service.create_invitation(
+            db, tenant_id=tenant.id, invited_by_user_id=owner.id, email=INVITEE_EMAIL
+        )
+        assert row.status == "pending"
+        assert raw_token
+        broken_delivery.send.assert_called_once()
+    finally:
+        db.close()
+
+
+def test_invitation_email_uses_the_raw_token_not_the_row_id(owner_and_staff):
+    """Regression guard: the accept link must key off the opaque raw
+    token (the only thing that can actually accept the invitation), never
+    the row's internal id."""
+    from unittest.mock import MagicMock
+
+    from app.invitations.service import InvitationService
+
+    tenant, owner, _staff = owner_and_staff
+    fake_delivery = MagicMock()
+    service = InvitationService(delivery=fake_delivery)
+
+    db = SessionLocal()
+    try:
+        row, raw_token = service.create_invitation(
+            db, tenant_id=tenant.id, invited_by_user_id=owner.id, email=INVITEE_EMAIL
+        )
+        fake_delivery.send.assert_called_once()
+        call_kwargs = fake_delivery.send.call_args.kwargs
+        assert raw_token in call_kwargs["html"]
+        assert raw_token in call_kwargs["text"]
+        assert str(row.id) not in call_kwargs["html"]
+        assert call_kwargs["dedupe_key"] == f"invitation:{row.id}"
+        assert call_kwargs["invitation_id"] == row.id
+    finally:
+        db.close()

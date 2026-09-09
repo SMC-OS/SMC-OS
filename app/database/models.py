@@ -906,3 +906,145 @@ class ProcessedStripeEvent(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Communication(Base):
+    """One outbound email attempt (Sprint 038, docs/SPRINTS/sprint-038.md
+    §5). Named `Communication`/`communications` rather than `Message` —
+    that name and table are already taken by app/database/models.py's
+    `Message` (Sprint 017, ADR-033: portal customer<->staff chat). This
+    is a genuinely different thing: an auditable record of one attempted
+    transmission out of the platform (invitation, quote, follow-up,
+    project update, review request), not a conversation thread.
+
+    Every row is written before the provider is ever called (status
+    "queued") and updated in place as the attempt progresses — never
+    replaced — so a crash mid-send still leaves an inspectable row rather
+    than nothing. `status` values are only ever ones the provider can
+    actually establish (see app/communications/models.py's
+    `CommunicationStatus`): "delivered" is set only from a verified
+    provider webhook event, never assumed from the send API accepting the
+    request.
+
+    No relationship() (repo convention) — every FK is a plain column,
+    resolved via explicit crud lookups. No API key, token, or credential
+    is ever stored on this table.
+
+    Every subject FK below is `ondelete="SET NULL"` — this is an audit
+    ledger, and a hard-deleted quote/invitation/etc. (which today only
+    ever happens from a test's own cleanup SQL, since no product code path
+    hard-deletes any of these) must not either block that delete via a
+    dangling FK or silently take the communication history down with it.
+    `tenant_id` deliberately has no such override: there is no code path,
+    test or product, that hard-deletes a Tenant row.
+    """
+
+    __tablename__ = "communications"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+
+    # All nullable — which of these is set depends on message_type. A
+    # quote-follow-up carries a quote_id; a team invitation carries none
+    # of them.
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    quote_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    invitation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invitations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    automation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("automations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    automation_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("automation_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    channel: Mapped[str] = mapped_column(String, nullable=False, server_default="email")
+    direction: Mapped[str] = mapped_column(String, nullable=False, server_default="outbound")
+    message_type: Mapped[str] = mapped_column(String, nullable=False)
+
+    recipient: Mapped[str] = mapped_column(String, nullable=False)
+    sender_identity: Mapped[str] = mapped_column(String, nullable=False)
+
+    subject: Mapped[str] = mapped_column(String, nullable=False)
+    # The content actually sent, snapshotted at send time — never
+    # re-rendered from live data later, so a customer-history view stays
+    # accurate even after a template or the underlying quote/project
+    # changes. html/text are both stored so a plain-text fallback is
+    # always available without re-rendering.
+    body_html: Mapped[str] = mapped_column(Text, nullable=False)
+    body_text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="draft", index=True)
+
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # "transient" | "permanent" | "suppressed" | None — drives whether the
+    # delivery worker (Phase 3) retries or gives up. Never a raw provider
+    # stack trace; failure_detail is deliberately short, user-facing text.
+    failure_category: Mapped[str | None] = mapped_column(String, nullable=True)
+    failure_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Tenant-scoped idempotency key. A duplicate insert attempt (a retried
+    # worker tick, a double-click) must resolve to the existing row, not a
+    # second send — enforced by the unique index, same shape as
+    # Notification.dedupe_key / Task.dedupe_key.
+    dedupe_key: Mapped[str] = mapped_column(String, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "dedupe_key", name="uq_communications_tenant_dedupe_key"),
+    )
+
+
+class EmailSuppression(Base):
+    """One email address this tenant must not be sent to again (Sprint
+    038) — a hard bounce, a provider complaint, or a manual suppression.
+    Checked by DeliveryService before every send attempt; automation
+    execution respects it the same way.
+
+    Tenant-scoped rather than global: one tenant's customer bouncing does
+    not affect another tenant's ability to email that same address (a
+    shared inbox at a supplier used by two different tenants' customers,
+    for instance) — each tenant's sending reputation and suppression
+    state is its own, matching every other per-tenant isolation boundary
+    in this schema.
+    """
+
+    __tablename__ = "email_suppressions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    # "hard_bounce" | "complaint" | "manual"
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    # The communication that caused this suppression, where applicable
+    # (null for a manually-added suppression).
+    source_communication_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("communications.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_email_suppressions_tenant_email"),
+    )

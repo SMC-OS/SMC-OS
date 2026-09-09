@@ -14,6 +14,11 @@ Auth is applied per-route below.
 This is also the first sprint where require_role(UserRole.OWNER) is
 attached to a real route — see app/auth/dependencies.py's docstring and
 docs/DECISIONS.md ADR-027.
+
+Sprint 038 — create/list now also return `delivery_status`, the real
+outcome of the invitation email DeliveryService attempts on creation
+(app/invitations/service.py). The manual-link fallback (`token` in the
+create response) is unchanged either way.
 """
 
 import uuid
@@ -53,6 +58,20 @@ _UNUSABLE_MESSAGES = {
 }
 
 
+def _with_delivery_status(db: Session, tenant_id: uuid.UUID, item: InvitationOut) -> InvitationOut:
+    """Sprint 038 — enrich an already-built InvitationOut with the real
+    outcome of its invitation email, from the latest matching
+    app.communications.Communication row. Never raises: a missing/absent
+    communication (delivery not yet attempted, or this row predates Sprint
+    038) just leaves delivery_status as None, which the frontend renders
+    as "link only" rather than a failure."""
+    communication = crud.get_latest_communication_for_invitation(db, tenant_id, item.id)
+    if communication is not None:
+        item.delivery_status = communication.status
+        item.delivery_failure_detail = communication.failure_detail
+    return item
+
+
 @router.post(
     "",
     response_model=InvitationCreateOut,
@@ -77,7 +96,9 @@ def create_invitation(
             status_code=status.HTTP_409_CONFLICT,
             detail="An invitation is already pending for this email.",
         )
-    return InvitationCreateOut(**InvitationOut.model_validate(row).model_dump(), token=raw_token)
+    item = InvitationOut.model_validate(row)
+    item = _with_delivery_status(db, current_user.tenant_id, item)
+    return InvitationCreateOut(**item.model_dump(), token=raw_token)
 
 
 @router.get("", response_model=list[InvitationOut])
@@ -91,6 +112,7 @@ def list_invitations(
     for row in rows:
         item = InvitationOut.model_validate(row)
         item.status = invitation_service.derive_status(row)
+        item = _with_delivery_status(db, current_user.tenant_id, item)
         out.append(item)
     return out
 

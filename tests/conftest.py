@@ -11,8 +11,10 @@ from app.database.models import (
     Appointment,
     Automation,
     AutomationRun,
+    Communication,
     Customer,
     Document,
+    EmailSuppression,
     Invitation,
     Message,
     NotificationRecord,
@@ -103,6 +105,15 @@ def _cleanup_other_tenant():
             # apply in production, where deleting a tenant's data by
             # accident is exactly what the constraints exist to prevent.
             quote_ids = select(Quote.id).where(Quote.tenant_id == tenant_id)
+            # Sprint 038: Communication/EmailSuppression's FKs to
+            # Invitation/Quote/Project/Automation/AutomationRun/Customer
+            # are all ondelete="SET NULL" (see Communication's own
+            # docstring) so they don't need to be ordered relative to
+            # those deletes below — but tenant_id on both has no such
+            # override, so they still need to go before the Tenant delete
+            # at the bottom, same as every other table here.
+            db.execute(delete(EmailSuppression).where(EmailSuppression.tenant_id == tenant_id))
+            db.execute(delete(Communication).where(Communication.tenant_id == tenant_id))
             db.execute(delete(AutomationRun).where(AutomationRun.tenant_id == tenant_id))
             db.execute(delete(Automation).where(Automation.tenant_id == tenant_id))
             db.execute(delete(Task).where(Task.tenant_id == tenant_id))

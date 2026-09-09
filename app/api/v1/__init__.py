@@ -14,6 +14,7 @@ from app.automations.router import router as automations_router
 from app.auth.router import router as auth_router
 from app.calendar.router import router as calendar_router
 from app.billing.router import router as billing_router
+from app.communications.router import router as communications_router
 from app.customers.router import router as customers_router
 from app.dashboard.router import router as dashboard_router
 from app.documents.router import router as documents_router
@@ -34,6 +35,7 @@ api_router.include_router(automations_router)
 api_router.include_router(auth_router)
 api_router.include_router(billing_router)
 api_router.include_router(calendar_router)
+api_router.include_router(communications_router)
 api_router.include_router(customers_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(documents_router)

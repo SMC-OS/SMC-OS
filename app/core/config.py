@@ -110,6 +110,21 @@ class Settings(BaseSettings):
     # completion/cancellation — the deployed frontend's own origin.
     frontend_base_url: str = "http://localhost:3000"
 
+    # Sprint 038 — transactional email (Resend). Same "ships dark until
+    # configured" pattern as openai_api_key/stripe_secret_key above: the
+    # app runs fully normally with both unset, and
+    # app/communications/provider.py's ResendEmailProvider only ever
+    # constructs its HTTP client lazily, on first real send attempt.
+    # DeliveryService returns a truthful "unavailable" result rather than
+    # a fake success when unset — nothing ever claims an email was sent
+    # without a real provider-accepted send. Sends from a dedicated
+    # subdomain (never the apex, which carries this domain's Microsoft 365
+    # mail — see docs/DNS_GEOCORE_ONE.md) so DNS for it is entirely
+    # additive; no existing mail record is ever touched.
+    resend_api_key: str | None = None
+    resend_webhook_secret: str | None = None
+    email_sending_domain: str = "send.geocore.one"
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def normalize_cors_allowed_origins(cls, value: object) -> list[str]:
