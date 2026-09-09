@@ -21,6 +21,7 @@ from app.database import crud
 from app.database.database import SessionLocal
 from app.database.models import (
     ActivityLog,
+    Communication,
     Invitation,
     ProcessedStripeEvent,
     Subscription,
@@ -61,6 +62,12 @@ def _cleanup():
         if tenant is not None:
             db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
             db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+            # Sprint 038: this file's seat-limit tests create real
+            # invitations, each of which now also attempts an email send
+            # and writes a Communication row (tenant_id NOT NULL, no
+            # ondelete) — same "delete before the Tenant row" requirement
+            # as Subscription/ActivityLog above.
+            db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
         db.execute(delete(Tenant).where(Tenant.name == TENANT_NAME))
         db.commit()
     finally:

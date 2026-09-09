@@ -20,6 +20,18 @@ class InvitationOut(BaseModel):
     expires_at: datetime
     created_at: datetime
 
+    # Sprint 038 — not columns on Invitation itself (absent from the ORM
+    # row, so model_validate(row) leaves these None); populated by the
+    # router from the invitation's latest app.communications.Communication
+    # row, if one exists. `status` above is unchanged (still the
+    # membership lifecycle: pending/accepted/revoked/expired) —
+    # delivery_status is the separate, truthful record of whether the
+    # invitation *email* itself reached a mailbox, so a "pending" (not yet
+    # accepted) invitation whose email failed to send doesn't quietly look
+    # the same as one that's sitting unread in someone's inbox.
+    delivery_status: str | None = None
+    delivery_failure_detail: str | None = None
+
 
 class InvitationCreateOut(InvitationOut):
     """Same shape as InvitationOut, plus the one-time raw token. Only ever

@@ -369,57 +369,194 @@ Phase 1 (§7) proceeds in parallel and does not depend on this gate.
 
 ---
 
-## 5. Communication data model (design, pending implementation)
+## 5. Communication data model (built, Phase 1)
 
-A new `messages` table, tenant-scoped, following the `Notification`/`Invitation` token
+**Naming correction from this document's own first draft**: §2.9 originally called this
+"the messages table". It isn't — `messages`/`Message` already exist
+(`app/database/models.py`, Sprint 017/ADR-033: portal customer↔staff chat). Building a
+second, unrelated thing under the same name would have been a real collision (same table
+name, same Python class name, genuinely different concept). The implemented table is
+**`communications`** / `app.database.models.Communication`, migration
+`a1b2c3d4e5f6_add_communications_and_email_suppressions` (down-revision
+`d5e6f7a8b9c0`, the sole existing head — no branch created). Verified via offline
+`alembic upgrade/downgrade --sql` (no live DB available in this environment; see §8) —
+both directions generate clean, additive-only SQL with no changes to any existing table.
+
+Built exactly as designed, tenant-scoped, following the `Notification`/`Invitation` token
 and dedupe conventions already proven in this codebase:
 
 - `id`, `tenant_id` (indexed, NOT NULL — every query filters by it, per contract §3.7)
-- `customer_id`, `quote_id`, `project_id`, `automation_id`, `automation_run_id` — all
-  nullable FKs, indexed where used for history lookups
+- `customer_id`, `quote_id`, `project_id`, `invitation_id`, `automation_id`,
+  `automation_run_id` — all nullable FKs, indexed, and all `ondelete="SET NULL"` (an
+  audit ledger must not block or cascade-delete when its subject is hard-deleted — see
+  the model's own docstring; `tenant_id` deliberately has no such override)
 - `channel` (`"email"` only initially — no SMS/WhatsApp toggle before those channels
   exist, per the brief's own §16 instruction)
-- `direction` (`"outbound"` only initially; modeled as an enum for future inbound
-  parity with the portal's existing two-way messaging)
+- `direction` (`"outbound"` only initially)
 - `message_type` (`invitation`, `quote_sent`, `quote_follow_up`, `project_confirmation`,
-  `project_update`, `project_completion`, `review_request`)
+  `project_update`, `project_completion`, `review_request` — `app.communications.models
+  .CommunicationType`)
 - `recipient`, `sender_identity` (rendered tenant display name/reply-to, never a raw
   credential)
-- `subject`, `body_snapshot` (the rendered content actually sent — a safe, immutable
-  record; never re-rendered from live data later, so history stays accurate even if a
-  template changes)
+- `subject`, `body_html`, `body_text` (the content actually sent, snapshotted at send
+  time — never re-rendered from live data later, so history stays accurate even after a
+  template or the underlying quote/project changes)
 - `provider`, `provider_message_id` (nullable until accepted), `status` (`draft`,
-  `queued`, `sending`, `sent`, `delivered`, `failed`, `bounced`, `suppressed` — only
-  states Resend's API/webhooks can actually establish; **`delivered` is only ever set
-  from a verified webhook event, never assumed from the send-API's 200 response**)
+  `queued`, `sending`, `sent`, `delivered`, `failed`, `bounced`, `suppressed` —
+  `app.communications.models.CommunicationStatus`; **`delivered` is reserved for a
+  verified provider webhook event — nothing in Phase 1 ever sets it, since no webhook
+  endpoint exists yet (Phase 2)**)
 - `attempt_count`, `last_attempted_at`, `failure_category` (`transient`/`permanent`/
-  `suppressed`), `failure_detail` (safe, user-facing text only — no raw provider
-  stack traces)
-- `dedupe_key` (unique index, tenant-scoped) — the idempotency primitive for both
-  duplicate-click and duplicate-worker-retry prevention
+  `suppressed`/`unavailable` — the last one distinct on purpose: a worker must never
+  busy-retry a send that was never actually attempted against a provider because none was
+  configured), `failure_detail` (short, safe, user-facing text — never a raw provider
+  response body or stack trace)
+- `dedupe_key`, enforced by a `UNIQUE(tenant_id, dedupe_key)` **database constraint**,
+  not merely a pre-check in code — same defence-in-depth pattern Sprint 036 already
+  established for `tasks.dedupe_key`/`automation_runs.dedupe_key`
 - `created_at`, `updated_at`
 
-No API keys, tokens, or credentials are ever stored on a message row (contract §3).
+A second table, `email_suppressions` (tenant-scoped, `UNIQUE(tenant_id, email)`), was
+added in the same migration — see §7.
+
+No API key, token, or credential is ever stored on either table (contract §3; confirmed
+by reading every column definition — none exists).
 
 ---
 
-## 6. Delivery abstraction (design, pending implementation)
+## 6. Delivery abstraction (built, Phase 1)
 
 ```
-DeliveryService (domain layer)
-  → EmailProvider (protocol/ABC: send(), classify_failure(), verify_webhook())
-    → ResendEmailProvider (concrete, lazily constructed — same shape as
-      AIDraftService/billing's Stripe client)
+DeliveryService (app/communications/service.py)
+  → EmailProvider (app/communications/provider.py — ABC: send())
+    → ResendEmailProvider (concrete, lazily constructed over plain httpx —
+      already a dependency, no new SDK — same shape as
+      AIDraftService/BillingService's vendor clients)
 ```
 
-`DeliveryService` is the only thing `app/quotes`, `app/invitations`, and
-`app/automations` ever call — none of them import a provider SDK directly. If
-`resend_api_key` is unset, `DeliveryService` returns a typed "unavailable" result; no
-caller ever fabricates a success state to work around it.
+`DeliveryService.send()` is the only thing `app/invitations` calls this phase (Phase 3
+adds `app/quotes` and `app/automations` callers). No caller anywhere imports a provider
+SDK directly. Ordering inside `send()` is deliberate and tested (`tests/test_communications
+.py`): dedupe check first (a retry returns the existing row, provider never called
+again) → suppression check next (a suppressed recipient is recorded as `suppressed`
+without ever reaching the provider) → the `communications` row is written with status
+`queued` and committed *before* the provider is called, so a crash mid-send still leaves
+an inspectable row → only then is the provider invoked, and the row updated in place
+with the real outcome. If `resend_api_key` is unset, `ResendEmailProvider` raises
+`EmailProviderUnavailable`, which `DeliveryService` turns into a truthful
+`failed`/`unavailable` row — never a fake success, and never raised back out to the
+caller (an invitation is created successfully either way; see §7).
+
+`ResendEmailProvider.send()` classifies a provider response into `ACCEPTED` (2xx),
+`TRANSIENT_FAILURE` (429, 5xx, or a network/timeout error — retry may help), or
+`PERMANENT_FAILURE` (any other 4xx — a bad request/key/unverified sender that a retry
+cannot fix). Covered by `tests/test_communications.py::TestResendEmailProvider` against
+a fake HTTP client (no real network call anywhere in the test suite).
+
+`resolve_sender_identity()` reuses `app.tenants.identity.resolve()`'s exact display-name
+fallback chain (trading name → legal name → workspace name) so the name a customer sees
+in their inbox matches the name on their PDF letterhead, and never sends "From" a
+tenant's own address (no way to verify a tenant controls it) — always
+`"{Tenant} via GeoCore" <noreply@send.geocore.one>`, Reply-To the tenant's own
+`contact_email` when set.
 
 ---
 
-## 7. Phased delivery plan
+## 7. What Phase 1 actually built
+
+Everything below is implemented, tested (against mocks — no real provider account
+exists yet), and merged to this branch. Nothing here required the §4 owner gate.
+
+- **`app/communications/`** — the full module: `models.py` (Pydantic:
+  `CommunicationStatus`, `CommunicationType`, `FailureCategory`, `CommunicationOut`,
+  `EmailSuppressionOut`), `provider.py` (`EmailProvider`, `ResendEmailProvider`,
+  `resolve_sender_identity`), `templates.py` (all seven system templates — invitation,
+  quote sent, quote follow-up, project confirmation, project update, project completion,
+  review request — each escaping every piece of tenant/customer/quote content through
+  `html.escape()` before it reaches markup; only `render_invitation` is called from
+  anywhere yet), `service.py` (`DeliveryService`), `router.py` (read-only
+  `GET /api/v1/communications` history endpoint, filterable by customer/quote/project/
+  invitation — `AUTHENTICATED`, same posture as `app/tasks`).
+- **Migration** `a1b2c3d4e5f6` — `communications` + `email_suppressions` (§5).
+- **`app/core/config.py`** — `resend_api_key`, `resend_webhook_secret`,
+  `email_sending_domain` (default `send.geocore.one`), all optional, "ships dark"
+  exactly like `openai_api_key`/`stripe_secret_key`.
+- **`app/database/crud.py`** — `create_communication`, `get_communication_by_dedupe_key`,
+  `update_communication_result`, `list_communications`,
+  `get_latest_communication_for_invitation`, `get_email_suppression`,
+  `create_email_suppression`, `list_email_suppressions`.
+- **Invitation flow rewrite** (`app/invitations/service.py`,
+  `app/invitations/router.py`, `app/invitations/models.py`) — `create_invitation()` now
+  renders and attempts to send a real invitation email via `DeliveryService`, using the
+  raw (never the row id) token in the accept link. This is strictly additive: the
+  manual-link fallback (`token` in the create response) is unchanged, and a delivery
+  failure — including "no provider configured at all", which is every environment's
+  reality until §4 is resolved — is caught and never prevents invitation creation from
+  succeeding (`InvitationService._send_invitation_email`'s own docstring states this
+  contract). `InvitationOut` gains `delivery_status`/`delivery_failure_detail`, populated
+  by the router from the invitation's latest `Communication` row; `Invitation.status`
+  itself (the pending/accepted/revoked membership lifecycle) is unchanged. **Role is
+  deliberately still Staff-only** — the invitations router's own existing docstring
+  already framed widening it as a materially bigger RBAC decision left to a future
+  sprint, and that decision now specifically belongs to the sibling
+  `sprint-037-commercial-security-ai` branch's "3-tier RBAC model" phase, not here;
+  building a second, competing RBAC change in this sprint would risk directly
+  conflicting with that in-progress work.
+- **Tests** — `tests/test_communications.py` (new: `DeliveryService` send/dedupe/
+  suppression/tenant-isolation, `ResendEmailProvider` response classification, sender
+  identity resolution, template escaping) plus additions to `tests/test_invitations.py`
+  (the email attempt happens, survives an unexpected `DeliveryService` exception, uses
+  the raw token not the row id, and the honest `delivery_status` reaches the API
+  response). `tests/test_rbac_matrix.py` gains the new route row (`GET
+  /api/v1/communications`, `AUTHENTICATED`), per this repo's own contract that every new
+  route is registered there.
+- **Cross-cutting fix, found during implementation**: three existing test files
+  (`tests/test_invitations.py`, `tests/test_billing.py`, `tests/conftest.py`'s
+  `other_tenant_auth_headers`) create real invitations and hard-delete their tenant in
+  cleanup. Once invitation creation started writing a `Communication` row, that would
+  have failed those cleanups on the tenant-delete step (an FK referencing a still-NOT
+  -NULL `tenant_id`). Fixed by (a) making every *subject* FK on `communications`
+  `ondelete="SET NULL"` (§5) so a hard-deleted quote/invitation/etc. never blocks or
+  silently destroys audit history, and (b) explicitly deleting `communications` rows
+  before the tenant-delete step in all three affected cleanup functions, matching the
+  established `ActivityLog`-before-`Tenant` pattern already in this codebase.
+
+Deliberately not touched this phase (Phase 3, needs a live provider — §4, §9 below):
+`app/quotes` (the existing manual `POST /quotes/{id}/send` "mark sent" endpoint is
+untouched), `app/automations` (no new action types registered), any webhook endpoint,
+any delivery-retry worker.
+
+---
+
+## 8. Local verification performed, and its limit
+
+This environment has no Docker daemon and no local PostgreSQL, and no interactive shell
+to install one via WSL (`sudo` requires a password this session doesn't have). What was
+verified without a live database:
+
+- `python -m py_compile` on every new/changed file — clean.
+- `python -c "import app.main"` — the full app, including the new router registration,
+  imports with no errors.
+- `alembic heads` — `a1b2c3d4e5f6` is the sole head, chained cleanly after
+  `d5e6f7a8b9c0`, no branch.
+- `alembic upgrade/downgrade --sql` (offline mode, no DB connection) for the new
+  migration in both directions — clean, additive-only SQL, correct `ON DELETE SET NULL`
+  clauses present on every subject FK, no statement touches an existing table.
+- `pytest --collect-only` — all 923 tests (892 existing + this phase's additions)
+  collect with zero errors, confirming every new/changed test file imports and
+  parametrizes correctly.
+
+**Not yet verified locally**: actually running the test suite against a real Postgres
+(dedupe/suppression/idempotency behaviour, the FK `ondelete` clauses firing correctly,
+RBAC gate assertions). This repo's CI (`.github/workflows/ci.yml`) runs `alembic upgrade
+head` then `pytest` against a real `postgres:16-alpine` service container — that is
+where this phase gets its first real-database run, watched and iterated on before
+merge, exactly as Sprint 036's own deployment work did for its own local-environment
+gaps.
+
+---
+
+## 9. Phased delivery plan
 
 Following this repo's own established pattern for security/data-sensitive multi-part
 work (the sibling Sprint 037 branch's explicit phase table), Sprint 038 ships in
@@ -427,10 +564,10 @@ separate, independently-reviewable phases rather than one large PR:
 
 | Phase | Scope | Depends on §4 owner gate? |
 |---|---|---|
-| **1** | `messages` table + migration, `DeliveryService`/`EmailProvider` abstraction (provider unset → honest unavailable state throughout), template system with escaping, invitation-flow rewrite (role becomes settable, truthful pending/sent/failed/accepted/expired/revoked states, manual-link fallback preserved), full test suite for all of the above against a mock provider | No |
-| **2** | Provider wiring (`ResendEmailProvider`), webhook endpoint + signature verification + idempotent event handling, suppression list | **Yes — blocked until §4 is resolved** |
+| **1** | Communications data model + migration, `DeliveryService`/`EmailProvider` abstraction (provider unset → honest unavailable state throughout), template system with escaping, invitation-flow rewrite (truthful pending/sent/failed/accepted/expired/revoked states, manual-link fallback preserved), full test suite for all of the above against mocks — **complete, §7** | No |
+| **2** | Provider activation (setting the real `resend_api_key`/`email_sending_domain` once the owner has completed §4), webhook endpoint + signature verification + idempotent event handling wired to the suppression list | **Yes — blocked until §4 is resolved** |
 | **3** | Quote delivery ("Send quote" UI using the portal-link pattern, not a raw PDF attachment), quote-follow-up automation (delay + cancellation-on-approval + dedupe), new customer-facing automation actions (`send_email`, `send_quote`, `send_quote_follow_up`, `send_project_update`, `send_review_request`), delivery-retry worker as its own Railway service | Yes (needs Phase 2) |
-| **4** | Communication history UI (customer/quote/project timelines), server-side notification-preference foundation (in-app/email only), GeoCore AI drafting integration (draft-only, never sends), full responsive sweep | Partially (history UI for real messages needs Phase 2/3 data) |
+| **4** | Communication history UI (customer/quote/project timelines), server-side notification-preference foundation (in-app/email only), GeoCore AI drafting integration (draft-only, never sends), full responsive sweep | Partially (history UI for real messages needs Phase 2/3 data; the read API itself already exists, §7) |
 | **5** | Trade-neutral project pipeline — its own migration with a deterministic value mapping, `PipelineCounts`/dashboard contract update, upgrade/downgrade safety tests, stone-tenant behaviour preserved exactly. Deliberately last and separately reviewable: it is a schema-risk change to `projects` with no dependency on anything else in this sprint, exactly the kind of change Sprint 036 §10.2 already declined to bundle with a quote-model rewrite for the same reason. | No |
 
 Password-recovery activation (brief §17): discovery did not find an existing,
@@ -440,11 +577,12 @@ not silently dropped.
 
 ---
 
-## 8. Status
+## 10. Status
 
-**Phase 0 (this document) complete.** Phase 1 (provider-independent groundwork) begins
-next and does not wait on §4. Phases 2–3 are blocked on the owner resolving §4.
-Overall sprint status while any phase is incomplete:
+**Phase 1 complete** (§7), pending this branch's own PR/CI (§8's local-verification
+limit) — not yet merged. Phases 2–3 remain blocked on the owner resolving §4
+(provider account + DNS). Phase 4's read side (communication history API) already
+exists from Phase 1; its UI and the rest of Phase 4/5 are not started.
 
-**SPRINT 038 IN PROGRESS — Phase 1 starting; Phases 2–3 BLOCKED on provider/DNS owner
-action (§4).**
+**SPRINT 038 IN PROGRESS — Phase 1 implemented and locally verified short of a live
+database (§8); PR/CI pending. Phases 2–3 BLOCKED on provider/DNS owner action (§4).**

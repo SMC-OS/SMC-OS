@@ -33,8 +33,10 @@ from app.database.models import (
     Appointment,
     Automation,
     AutomationRun,
+    Communication,
     Customer,
     Document,
+    EmailSuppression,
     Invitation,
     Material,
     Message,
@@ -1597,4 +1599,171 @@ def list_automation_runs(
     if automation_id is not None:
         stmt = stmt.where(AutomationRun.automation_id == automation_id)
     stmt = stmt.order_by(AutomationRun.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt))
+
+
+# Sprint 038 — communications (outbound email ledger). See
+# app/database/models.py's Communication docstring for why this isn't
+# named `Message`/`get_message_*` (that name is app/messages's portal-chat
+# feature already).
+
+
+def create_communication(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    message_type: str,
+    recipient: str,
+    sender_identity: str,
+    subject: str,
+    body_html: str,
+    body_text: str,
+    dedupe_key: str,
+    channel: str = "email",
+    direction: str = "outbound",
+    status: str = "draft",
+    customer_id: uuid.UUID | None = None,
+    quote_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    invitation_id: uuid.UUID | None = None,
+    automation_id: uuid.UUID | None = None,
+    automation_run_id: uuid.UUID | None = None,
+) -> Communication:
+    row = Communication(
+        id=id,
+        tenant_id=tenant_id,
+        message_type=message_type,
+        recipient=recipient,
+        sender_identity=sender_identity,
+        subject=subject,
+        body_html=body_html,
+        body_text=body_text,
+        dedupe_key=dedupe_key,
+        channel=channel,
+        direction=direction,
+        status=status,
+        customer_id=customer_id,
+        quote_id=quote_id,
+        project_id=project_id,
+        invitation_id=invitation_id,
+        automation_id=automation_id,
+        automation_run_id=automation_run_id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_communication_by_dedupe_key(
+    db: Session, tenant_id: uuid.UUID, dedupe_key: str
+) -> Communication | None:
+    stmt = select(Communication).where(
+        Communication.tenant_id == tenant_id, Communication.dedupe_key == dedupe_key
+    )
+    return db.scalars(stmt).first()
+
+
+def update_communication_result(
+    db: Session,
+    communication_id: uuid.UUID,
+    *,
+    status: str,
+    provider: str | None = None,
+    provider_message_id: str | None = None,
+    failure_category: str | None = None,
+    failure_detail: str | None = None,
+    last_attempted_at: datetime | None = None,
+    increment_attempt: bool = True,
+) -> Communication | None:
+    row = db.get(Communication, communication_id)
+    if row is None:
+        return None
+    row.status = status
+    if provider is not None:
+        row.provider = provider
+    row.provider_message_id = provider_message_id
+    row.failure_category = failure_category
+    row.failure_detail = failure_detail
+    if last_attempted_at is not None:
+        row.last_attempted_at = last_attempted_at
+    if increment_attempt:
+        row.attempt_count += 1
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_communications(
+    db: Session,
+    tenant_id: uuid.UUID,
+    *,
+    customer_id: uuid.UUID | None = None,
+    quote_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    invitation_id: uuid.UUID | None = None,
+    limit: int = 50,
+) -> list[Communication]:
+    stmt = select(Communication).where(Communication.tenant_id == tenant_id)
+    if customer_id is not None:
+        stmt = stmt.where(Communication.customer_id == customer_id)
+    if quote_id is not None:
+        stmt = stmt.where(Communication.quote_id == quote_id)
+    if project_id is not None:
+        stmt = stmt.where(Communication.project_id == project_id)
+    if invitation_id is not None:
+        stmt = stmt.where(Communication.invitation_id == invitation_id)
+    stmt = stmt.order_by(Communication.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt))
+
+
+def get_latest_communication_for_invitation(
+    db: Session, tenant_id: uuid.UUID, invitation_id: uuid.UUID
+) -> Communication | None:
+    stmt = (
+        select(Communication)
+        .where(Communication.tenant_id == tenant_id, Communication.invitation_id == invitation_id)
+        .order_by(Communication.created_at.desc())
+        .limit(1)
+    )
+    return db.scalars(stmt).first()
+
+
+def get_email_suppression(db: Session, tenant_id: uuid.UUID, email: str) -> EmailSuppression | None:
+    stmt = select(EmailSuppression).where(
+        EmailSuppression.tenant_id == tenant_id, EmailSuppression.email == email
+    )
+    return db.scalars(stmt).first()
+
+
+def create_email_suppression(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    email: str,
+    reason: str,
+    source_communication_id: uuid.UUID | None = None,
+) -> EmailSuppression:
+    row = EmailSuppression(
+        id=id,
+        tenant_id=tenant_id,
+        email=email,
+        reason=reason,
+        source_communication_id=source_communication_id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_email_suppressions(db: Session, tenant_id: uuid.UUID, limit: int = 100) -> list[EmailSuppression]:
+    stmt = (
+        select(EmailSuppression)
+        .where(EmailSuppression.tenant_id == tenant_id)
+        .order_by(EmailSuppression.created_at.desc())
+        .limit(limit)
+    )
     return list(db.scalars(stmt))

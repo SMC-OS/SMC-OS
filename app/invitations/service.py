@@ -12,6 +12,16 @@ the full JWT-vs-opaque-token reasoning.
 Reuses app.auth.service.auth_service.create_user() to actually create the
 Staff user on accept, the same cross-module reuse precedent
 AuthService.signup() already set with tenant_service.create().
+
+Sprint 038 — create_invitation() now also attempts to email the invitee
+via DeliveryService, replacing the "copy-paste link only" experience.
+This is additive, never a new failure mode for the caller: a delivery
+failure (or no provider configured at all) never raises out of
+create_invitation() and never prevents the invitation row/raw token from
+being created — the manual-link fallback this sprint's own contract
+requires (docs/SPRINTS/sprint-038.md §3) stays fully intact regardless of
+whether the email send succeeded. The router surfaces the real outcome
+separately (InvitationOut.delivery_status).
 """
 
 import hashlib
@@ -23,6 +33,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import UserRole
 from app.auth.service import auth_service
+from app.communications.models import CommunicationType
+from app.communications.service import DeliveryService, delivery_service
+from app.communications.templates import render_invitation
 from app.core.config import settings
 from app.database import crud
 from app.database.models import Invitation, Tenant, User
@@ -55,6 +68,12 @@ class InvitationNotUsableError(Exception):
 
 
 class InvitationService:
+    def __init__(self, delivery: DeliveryService | None = None) -> None:
+        # Constructor-injectable, same DI shape as DeliveryService's own
+        # provider param — tests pass a fake/mock DeliveryService rather
+        # than reaching into a private attribute.
+        self._delivery = delivery or delivery_service
+
     def create_invitation(
         self, db: Session, *, tenant_id: uuid.UUID, invited_by_user_id: uuid.UUID, email: str
     ) -> tuple[Invitation, str]:
@@ -79,7 +98,57 @@ class InvitationService:
             token_hash=token_hash,
             expires_at=expires_at,
         )
+        self._send_invitation_email(
+            db, row, raw_token=raw_token, invited_by_user_id=invited_by_user_id
+        )
         return row, raw_token
+
+    def _send_invitation_email(
+        self, db: Session, row: Invitation, *, raw_token: str, invited_by_user_id: uuid.UUID
+    ) -> None:
+        """Best-effort — see this module's own docstring for why nothing
+        here ever raises out to the caller. The raw token/link is already
+        safely returned to the caller by create_invitation() regardless of
+        what happens in here.
+
+        Uses `raw_token` (never `row.id`) in the accept URL — the frontend
+        route and the public `/invitations/token/{token}` endpoint both
+        key off the opaque token, not the row's internal id; the id alone
+        cannot accept an invitation."""
+        try:
+            tenant = crud.get_tenant_by_id(db, row.tenant_id)
+            inviter = crud.get_user_by_id(db, invited_by_user_id)
+            inviter_name = inviter.name if inviter is not None else "A teammate"
+            tenant_display_name = tenant.name if tenant is not None else "your team"
+
+            accept_url = f"{settings.frontend_base_url}/invite/{raw_token}"
+            rendered = render_invitation(
+                tenant_display_name=tenant_display_name,
+                inviter_name=inviter_name,
+                accept_url=accept_url,
+            )
+            self._delivery.send(
+                db,
+                tenant=tenant,
+                message_type=CommunicationType.INVITATION,
+                recipient=row.email,
+                subject=rendered.subject,
+                html=rendered.html,
+                text=rendered.text,
+                dedupe_key=f"invitation:{row.id}",
+                invitation_id=row.id,
+            )
+        except Exception:
+            # Anything unexpected here (a DB hiccup building the row, a
+            # provider surprise DeliveryService itself didn't catch) must
+            # never take down invitation creation, which has already
+            # committed by this point. Deliberately broad and silent at
+            # this layer — DeliveryService is the place failures are
+            # actually recorded (in the communications table, inspectable
+            # by the Owner); this except exists only to guarantee
+            # create_invitation()'s own contract, not to hide the failure
+            # from history.
+            pass
 
     def get_invitation_by_token(self, db: Session, token: str) -> Invitation | None:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
