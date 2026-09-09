@@ -42,6 +42,7 @@ from app.database.models import (
     Message,
     NotificationRecord,
     PortalLink,
+    ProcessedEmailEvent,
     ProcessedStripeEvent,
     Project,
     Quote,
@@ -1764,6 +1765,50 @@ def list_email_suppressions(db: Session, tenant_id: uuid.UUID, limit: int = 100)
         select(EmailSuppression)
         .where(EmailSuppression.tenant_id == tenant_id)
         .order_by(EmailSuppression.created_at.desc())
+        .limit(limit)
+    )
+    return list(db.scalars(stmt))
+
+
+def get_communication_by_provider_message_id(db: Session, provider_message_id: str) -> Communication | None:
+    """Not tenant-scoped at lookup — the webhook that calls this doesn't
+    know a tenant. Safe: `provider_message_id` is the provider's own
+    globally-unique id for one specific send, generated once and never
+    guessable/shared, so at most one row can ever match; the caller reads
+    `tenant_id` off the row it finds rather than assuming one."""
+    stmt = select(Communication).where(Communication.provider_message_id == provider_message_id)
+    return db.scalars(stmt).first()
+
+
+def mark_email_event_processed(db: Session, event_id: str, event_type: str) -> bool:
+    """Returns True if this call recorded the event (first delivery),
+    False if it was already processed (a retried webhook delivery) — the
+    caller must skip re-applying side effects in the False case. Same
+    shape as mark_stripe_event_processed."""
+    if db.get(ProcessedEmailEvent, event_id) is not None:
+        return False
+    db.add(ProcessedEmailEvent(id=event_id, event_type=event_type))
+    db.commit()
+    return True
+
+
+def list_retryable_communications(db: Session, *, limit: int = 100) -> list[Communication]:
+    """Failed sends a retry worker should attempt again — `transient`
+    (the provider itself signalled "try later") or `unavailable` (no
+    provider was configured at send time, which may no longer be true).
+    Deliberately excludes `permanent` (a retry cannot fix a rejected
+    request) and `suppressed` (retrying would defeat the suppression
+    list's purpose). Not tenant-scoped — this is a scheduled job with no
+    caller, same rationale as list_quotes_by_status/
+    list_projects_with_start_date; each row still carries its own
+    tenant_id for the retry itself to use."""
+    stmt = (
+        select(Communication)
+        .where(
+            Communication.status == "failed",
+            Communication.failure_category.in_(["transient", "unavailable"]),
+        )
+        .order_by(Communication.last_attempted_at.asc())
         .limit(limit)
     )
     return list(db.scalars(stmt))

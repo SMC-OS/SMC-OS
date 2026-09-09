@@ -1,14 +1,19 @@
-"""What an automation is allowed to do (Sprint 036, Workstream G).
+"""What an automation is allowed to do (Sprint 036, Workstream G; extended
+Sprint 038, Phase 3).
 
-**Every action in this module is internal to the workspace. None of them
-transmits anything to a customer.** GeoCore has no outbound email, SMS or
-messaging infrastructure — that was verified across the whole repository
-during Sprint 036 discovery — so an action that claimed to "email the
-customer a review request" would be a lie in the product. Instead, the
-`draft_message` action *prepares* the message and hands it to a human as a
-task; a person reads it and sends it themselves.
+Sprint 036 built four actions, **all internal to the workspace** — none
+transmitted anything to a customer, because GeoCore had no outbound email
+infrastructure at all. `draft_message` *prepared* a message and handed it
+to a human as a task; a person read it and sent it themselves.
 
-Four actions:
+Sprint 038 adds the first genuinely customer-facing action,
+`send_quote_follow_up`, now that real transactional email exists
+(app/communications/). The internal/customer-facing line is still drawn
+sharply — see `CUSTOMER_FACING_ACTION_TYPES` below — because a rule that
+reaches a real customer's inbox deserves a different trust posture than
+one that only ever creates a row in this tenant's own workspace.
+
+Five actions:
 
   create_notification      — an in-app notification for the workspace.
   create_task              — an internal follow-up someone has to do.
@@ -18,10 +23,14 @@ Four actions:
                              idempotent quote_service.handoff. Valid only
                              on quote.approved, because handoff refuses
                              anything that is not approved anyway.
+  send_quote_follow_up     — customer-facing. Sends a real email via
+                             DeliveryService using a fixed, reviewed
+                             template — never rule-author free text.
 
 Idempotency is per-action, not just per-run: each side effect carries its
 own dedupe_key derived from the run's, so a run that fails at action 2 of
-3 and is retried does not double-create action 1's task.
+3 and is retried does not double-create action 1's task (or, now,
+double-send action 3's email).
 """
 
 import uuid
@@ -36,8 +45,21 @@ from app.database import crud
 from app.notifications.models import NotificationType
 
 ACTION_TYPES = frozenset(
-    {"create_notification", "create_task", "draft_message", "create_project_from_quote"}
+    {
+        "create_notification",
+        "create_task",
+        "draft_message",
+        "create_project_from_quote",
+        "send_quote_follow_up",
+    }
 )
+
+# The builder UI's own distinction (brief §9): these reach a real
+# customer inbox and deserve stronger confirmation than an internal
+# action. Served from the backend (app/automations/router.py's /meta)
+# rather than duplicated in the frontend, same reasoning as ACTION_TYPES
+# itself already being served rather than hardcoded client-side.
+CUSTOMER_FACING_ACTION_TYPES = frozenset({"send_quote_follow_up"})
 
 # A due date offset has to be bounded: an automation with due_in_days of
 # 100000 produces a task nobody will ever see, and one with a negative
@@ -206,11 +228,101 @@ def _run_create_project_from_quote(db, *, tenant_id, subject, config, dedupe_key
     return f"project {project.id} ready"
 
 
+def _run_send_quote_follow_up(db, *, tenant_id, subject, config, dedupe_key, now, context):
+    """Email the customer a follow-up on a quote nearing expiry, still
+    unanswered — Sprint 038's first genuinely customer-facing action.
+    Distinct on purpose from draft_message (which stays purely internal,
+    §9 above): this reaches the customer's own inbox, through
+    DeliveryService, using the same reviewed template "Send quote" uses.
+    `config` carries no free-text fields — unlike the internal actions,
+    what a customer receives is not something a rule author gets to type;
+    only the template does.
+
+    Delivery failure/suppression/no-provider-configured never raises
+    ActionError — DeliveryService.send() already returns a truthful
+    Communication row for every one of those; this action's own job ends
+    once that row exists. A stuck-forever automation because the mailbox
+    is unreachable would be a worse failure than an honestly-recorded
+    failed send."""
+    # Imported here for the same reason _run_create_project_from_quote's
+    # quote-service import is: keeps this the only place in the
+    # automations package that needs app.communications/app.portal, no
+    # cycle risk at module-import time.
+    from app.communications.models import CommunicationType
+    from app.communications.service import delivery_service
+    from app.communications.templates import render_quote_follow_up
+    from app.core.config import settings
+    from app.portal.service import portal_service
+
+    quote_id = _subject_uuid(subject)
+    if quote_id is None:
+        raise ActionError("send_quote_follow_up needs a quote subject")
+
+    quote = crud.get_quote_by_id(db, quote_id, tenant_id)
+    if quote is None:
+        raise ActionError("quote not found")
+    if quote.status != "sent":
+        # The scan that dispatches this only selects "sent" quotes, but a
+        # delayed/retried run can land after the customer has since
+        # approved or the quote was otherwise taken off the table —
+        # re-check against the live row rather than trust the subject
+        # snapshot the scan took.
+        return "skipped: quote is no longer awaiting a response"
+    if quote.customer_id is None:
+        return "skipped: quote has no linked customer"
+
+    customer = crud.get_customer_by_id(db, quote.customer_id, tenant_id)
+    if customer is None or not customer.email:
+        return "skipped: customer has no email on file"
+
+    tenant = crud.get_tenant_by_id(db, tenant_id)
+    owner_id = _resolve_recipient(db, tenant_id, {})
+    if owner_id is None:
+        raise ActionError("no active Owner to attribute the portal link to")
+
+    # A fresh portal link every time, deliberately: a link's raw token is
+    # only ever returned once, at creation (same convention as
+    # Invitation), so an existing link's token cannot be recovered to
+    # reuse. Links are not single-use, so this does not invalidate any
+    # link already shared with this customer some other way.
+    _portal_link, raw_token = portal_service.create_link(
+        db, tenant_id=tenant_id, created_by_user_id=owner_id, customer_id=customer.id
+    )
+    portal_url = f"{settings.frontend_base_url}/portal/{raw_token}"
+
+    rendered = render_quote_follow_up(
+        tenant_display_name=tenant.name if tenant is not None else "",
+        customer_name=customer.name,
+        quote_title=quote.title or "your quote",
+        portal_url=portal_url,
+    )
+    communication = delivery_service.send(
+        db,
+        tenant=tenant,
+        message_type=CommunicationType.QUOTE_FOLLOW_UP,
+        recipient=customer.email,
+        subject=rendered.subject,
+        html=rendered.html,
+        text=rendered.text,
+        # The engine's own dedupe_key (per-action, derived from the run's
+        # discriminator — see this module's docstring) is reused as-is
+        # here, so a single quote can never receive two automated
+        # follow-up emails for the same expiry window even under a
+        # concurrent/retried worker — the same guarantee dedupe_key
+        # already gives every other action, now extended to a real send.
+        dedupe_key=dedupe_key,
+        customer_id=customer.id,
+        quote_id=quote.id,
+    )
+    return f"follow-up email {communication.status}"
+
+
 _HANDLERS = {
     "create_notification": _run_create_notification,
     "create_task": _run_create_task,
     "draft_message": _run_draft_message,
     "create_project_from_quote": _run_create_project_from_quote,
+    "send_quote_follow_up": _run_send_quote_follow_up,
 }
 
 

@@ -117,7 +117,48 @@ class DeliveryService:
             text=text,
             idempotency_key=f"{tenant_id}:{dedupe_key}",
         )
+        return self._attempt(db, row, message)
 
+    # Bounded retries — a communication stuck retrying forever is a worse
+    # failure mode than one that eventually gives up and stays visible as
+    # failed for a human to notice. Matches the brief's own "no endless
+    # retries" requirement (§11).
+    MAX_ATTEMPTS = 5
+
+    def retry(self, db: Session, communication_id: uuid.UUID) -> Communication | None:
+        """Re-attempt a row already in `failed` state with a retryable
+        `failure_category` (`transient` or `unavailable` — see
+        crud.list_retryable_communications's docstring for why not the
+        others). Updates the same row in place; never creates a second
+        one, so `dedupe_key`'s uniqueness is never at risk. Returns None
+        for an unknown id, or the row unchanged if it is no longer in a
+        retryable state (already retried past MAX_ATTEMPTS, or resolved by
+        something else since the caller last looked) — never raises."""
+        row = db.get(Communication, communication_id)
+        if row is None:
+            return None
+        if row.status != "failed" or row.failure_category not in ("transient", "unavailable"):
+            return row
+        if row.attempt_count >= self.MAX_ATTEMPTS:
+            return row
+
+        tenant = crud.get_tenant_by_id(db, row.tenant_id)
+        sender_identity, reply_to = resolve_sender_identity(tenant)
+        message = EmailMessage(
+            recipient=row.recipient,
+            sender_identity=sender_identity,
+            reply_to=reply_to,
+            subject=row.subject,
+            html=row.body_html,
+            text=row.body_text,
+            idempotency_key=f"{row.tenant_id}:{row.dedupe_key}",
+        )
+        return self._attempt(db, row, message)
+
+    def _attempt(self, db: Session, row: Communication, message: EmailMessage) -> Communication:
+        """Call the provider once for an already-persisted `row` and
+        record the real outcome in place. Shared by the first attempt
+        (send()) and every subsequent one (retry())."""
         try:
             result = self._provider.send(message)
         except EmailProviderUnavailable as exc:
@@ -157,6 +198,27 @@ class DeliveryService:
             failure_detail=result.detail,
             last_attempted_at=now,
         )
+
+    def retry_pending(self, db: Session, *, limit: int = 100) -> dict:
+        """Sweep every retryable failed communication (across every
+        tenant — a scheduled job has no caller, same rationale as
+        app.automations.scan) and retry each once. The single entrypoint
+        `app/jobs/automations.py` calls alongside its existing scan, so
+        this sprint does not introduce a second scheduled Railway service
+        for what the existing cron job architecture already handles
+        safely at this scale (brief §11: "do not introduce unnecessary
+        infrastructure")."""
+        retried = succeeded = still_failed = 0
+        for row in crud.list_retryable_communications(db, limit=limit):
+            result = self.retry(db, row.id)
+            if result is None:
+                continue
+            retried += 1
+            if result.status == "sent":
+                succeeded += 1
+            elif result.status == "failed":
+                still_failed += 1
+        return {"retried": retried, "succeeded": succeeded, "still_failed": still_failed}
 
     def list_history(
         self,
@@ -200,6 +262,84 @@ class DeliveryService:
             reason=reason,
             source_communication_id=source_communication_id,
         )
+
+    # Resend's own documented webhook event types. `email.sent` is a
+    # no-op here (the row is already "sent" from send()'s own ACCEPTED
+    # branch); `email.opened`/`email.clicked` are deliberately not
+    # handled — this sprint tracks delivery/failure, not open/click
+    # analytics, which is a separate product decision this doesn't make.
+    _DELIVERED_EVENTS = frozenset({"email.delivered"})
+    _BOUNCED_EVENTS = frozenset({"email.bounced"})
+    _COMPLAINED_EVENTS = frozenset({"email.complained"})
+
+    def record_webhook_event(self, db: Session, event: dict) -> str:
+        """Apply one verified Resend webhook event. Returns a short,
+        human-readable outcome string for logging — never raises for an
+        event shape this doesn't recognise or can't resolve (an unknown
+        event type, or a provider_message_id with no matching row, are
+        both acknowledged rather than treated as errors — Resend would
+        otherwise retry a webhook this service can never successfully
+        process). Idempotency against a *replayed* delivery of the same
+        event is the router's job (crud.mark_email_event_processed),
+        before this is ever called."""
+        event_type = event.get("type")
+        data = event.get("data") or {}
+        provider_message_id = data.get("email_id")
+        if not provider_message_id:
+            return "no email_id in event payload"
+
+        row = crud.get_communication_by_provider_message_id(db, provider_message_id)
+        if row is None:
+            return f"no communication found for provider_message_id {provider_message_id}"
+
+        if event_type in self._DELIVERED_EVENTS:
+            crud.update_communication_result(
+                db,
+                row.id,
+                status="delivered",
+                provider="resend",
+                provider_message_id=row.provider_message_id,
+                failure_category=None,
+                failure_detail=None,
+                increment_attempt=False,
+            )
+            return "marked delivered"
+
+        if event_type in self._BOUNCED_EVENTS:
+            crud.update_communication_result(
+                db,
+                row.id,
+                status="bounced",
+                provider="resend",
+                provider_message_id=row.provider_message_id,
+                failure_category=FailureCategory.PERMANENT.value,
+                failure_detail="This address bounced and has been suppressed.",
+                increment_attempt=False,
+            )
+            self.suppress(
+                db,
+                tenant_id=row.tenant_id,
+                email=row.recipient,
+                reason="hard_bounce",
+                source_communication_id=row.id,
+            )
+            return "marked bounced and suppressed"
+
+        if event_type in self._COMPLAINED_EVENTS:
+            # The message itself already reached the inbox (that's what a
+            # complaint means) — its own status is left alone. What
+            # matters going forward is that this address never receives
+            # another send.
+            self.suppress(
+                db,
+                tenant_id=row.tenant_id,
+                email=row.recipient,
+                reason="complaint",
+                source_communication_id=row.id,
+            )
+            return "suppressed on complaint"
+
+        return f"no handler for event type {event_type!r}"
 
 
 delivery_service = DeliveryService()

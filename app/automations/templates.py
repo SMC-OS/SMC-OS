@@ -11,9 +11,15 @@ action model to get value on day one. Activating "Follow up unanswered
 quotes" is one click; editing it afterwards is how someone learns what the
 model actually is.
 
-Every template uses only internal actions. None of them contacts a
-customer, because GeoCore has no channel to do so — the review-request
-template drafts a message for a human to send, and says so.
+Sprint 036 shipped every template built only from internal actions — none
+contacted a customer, because GeoCore had no channel to do so; the
+review-request template drafted a message for a human to send, and said
+so. Sprint 038 (Phase 3) adds the first customer-facing template,
+`quote_follow_up_email`, alongside the original internal-task one rather
+than replacing it — a tenant who already activated "Follow up unanswered
+quotes" for an internal task keeps getting exactly that; automatic
+customer email is an explicit second choice, not a silent behaviour
+change to what they already turned on.
 """
 
 from dataclasses import dataclass
@@ -52,6 +58,26 @@ TEMPLATES: tuple[AutomationTemplate, ...] = (
                     "due_in_days": 0,
                 },
             },
+        ),
+    ),
+    AutomationTemplate(
+        key="quote_follow_up_email",
+        name="Automatically email unanswered quotes",
+        description=(
+            "When a quote is nearing the end of its validity and still "
+            "hasn't been approved, email the customer a follow-up "
+            "automatically — no one has to remember to chase it by hand. "
+            "Requires email delivery to be configured (Settings)."
+        ),
+        trigger_type="quote.expiring",
+        conditions=(),
+        actions=(
+            # No editable config, unlike the internal template above — a
+            # customer-facing send uses the fixed, reviewed
+            # render_quote_follow_up template, not rule-author free text
+            # (app/automations/actions.py's send_quote_follow_up
+            # docstring).
+            {"type": "send_quote_follow_up", "config": {}},
         ),
     ),
     AutomationTemplate(
