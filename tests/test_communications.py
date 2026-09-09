@@ -362,3 +362,113 @@ class TestResendEmailProvider:
 
         with pytest.raises(EmailProviderUnavailable):
             provider.send(self._message())
+
+
+class TestRetry:
+    def test_retry_succeeds_after_a_transient_failure_updates_the_same_row(self, db, tenant):
+        provider = FakeProvider(SendResult(outcome=SendOutcome.TRANSIENT_FAILURE, detail="temporary"))
+        delivery = DeliveryService(provider=provider)
+        first = _send(db, tenant, delivery, dedupe_key="test:retry-succeeds")
+        assert first.status == "failed"
+
+        provider.result = SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="msg_retry_1")
+        retried = delivery.retry(db, first.id)
+
+        assert retried.id == first.id
+        assert retried.status == "sent"
+        assert retried.provider_message_id == "msg_retry_1"
+        assert retried.attempt_count == 2
+        assert len(provider.calls) == 2
+
+    def test_retry_on_a_permanent_failure_is_a_no_op(self, db, tenant):
+        provider = FakeProvider(SendResult(outcome=SendOutcome.PERMANENT_FAILURE, detail="rejected"))
+        delivery = DeliveryService(provider=provider)
+        first = _send(db, tenant, delivery, dedupe_key="test:retry-permanent")
+        assert first.failure_category == "permanent"
+
+        retried = delivery.retry(db, first.id)
+
+        assert retried.status == "failed"
+        assert retried.failure_category == "permanent"
+        assert len(provider.calls) == 1  # no second provider call
+
+    def test_retry_on_a_suppressed_send_is_a_no_op(self, db, tenant):
+        crud.create_email_suppression(
+            db, id=uuid.uuid4(), tenant_id=tenant.id, email="blocked@example.invalid", reason="manual"
+        )
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="msg_1"))
+        delivery = DeliveryService(provider=provider)
+        first = _send(db, tenant, delivery, dedupe_key="test:retry-suppressed", recipient="blocked@example.invalid")
+        assert first.status == "suppressed"
+
+        retried = delivery.retry(db, first.id)
+
+        assert retried.status == "suppressed"
+        assert len(provider.calls) == 0
+
+    def test_retry_stops_after_max_attempts(self, db, tenant):
+        provider = FakeProvider(SendResult(outcome=SendOutcome.TRANSIENT_FAILURE, detail="temporary"))
+        delivery = DeliveryService(provider=provider)
+        row = _send(db, tenant, delivery, dedupe_key="test:retry-bounded")
+
+        for _ in range(delivery.MAX_ATTEMPTS + 2):
+            row = delivery.retry(db, row.id)
+
+        assert row.attempt_count == delivery.MAX_ATTEMPTS
+        assert row.status == "failed"
+
+    def test_retry_of_unknown_id_returns_none(self, db, tenant):
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED))
+        delivery = DeliveryService(provider=provider)
+        assert delivery.retry(db, uuid.uuid4()) is None
+
+    def test_retry_of_an_already_sent_row_is_a_no_op(self, db, tenant):
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="msg_1"))
+        delivery = DeliveryService(provider=provider)
+        row = _send(db, tenant, delivery, dedupe_key="test:retry-already-sent")
+        assert row.status == "sent"
+
+        retried = delivery.retry(db, row.id)
+
+        assert retried.status == "sent"
+        assert len(provider.calls) == 1  # unchanged
+
+
+class TestRetryPending:
+    def test_retry_pending_only_touches_transient_and_unavailable_failures(self, db, tenant):
+        transient_provider = FakeProvider(SendResult(outcome=SendOutcome.TRANSIENT_FAILURE, detail="x"))
+        delivery = DeliveryService(provider=transient_provider)
+        transient_row = _send(db, tenant, delivery, dedupe_key="test:pending-transient")
+
+        permanent_provider = FakeProvider(SendResult(outcome=SendOutcome.PERMANENT_FAILURE, detail="x"))
+        delivery_permanent = DeliveryService(provider=permanent_provider)
+        permanent_row = _send(db, tenant, delivery_permanent, dedupe_key="test:pending-permanent")
+
+        succeeding_provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="m"))
+        sweep_delivery = DeliveryService(provider=succeeding_provider)
+        result = sweep_delivery.retry_pending(db)
+
+        assert result["retried"] == 1
+        assert result["succeeded"] == 1
+
+        db.refresh(transient_row)
+        db.refresh(permanent_row)
+        assert transient_row.status == "sent"
+        assert permanent_row.status == "failed"  # untouched
+        assert permanent_row.failure_category == "permanent"
+
+
+class TestWebhookEventRecording:
+    def test_delivered_event_with_no_matching_communication_is_a_safe_no_op(self, db, tenant):
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED))
+        delivery = DeliveryService(provider=provider)
+        outcome = delivery.record_webhook_event(
+            db, {"type": "email.delivered", "data": {"email_id": "nonexistent"}}
+        )
+        assert "no communication found" in outcome
+
+    def test_event_with_no_email_id_is_a_safe_no_op(self, db, tenant):
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED))
+        delivery = DeliveryService(provider=provider)
+        outcome = delivery.record_webhook_event(db, {"type": "email.delivered", "data": {}})
+        assert "no email_id" in outcome

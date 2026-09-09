@@ -1048,3 +1048,19 @@ class EmailSuppression(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "email", name="uq_email_suppressions_tenant_email"),
     )
+
+
+class ProcessedEmailEvent(Base):
+    """Idempotency ledger for the Resend webhook (Sprint 038, Phase 2).
+    Same shape and reasoning as `ProcessedStripeEvent`: `id` is the
+    webhook delivery's own unique id (the `svix-id` header — Resend's
+    webhooks are delivered via Svix, which guarantees at-least-once
+    delivery), used as the primary key so a second delivery's INSERT
+    fails on the existing-row constraint rather than needing a separate
+    SELECT-then-INSERT race window."""
+
+    __tablename__ = "processed_email_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

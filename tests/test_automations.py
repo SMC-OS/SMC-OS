@@ -105,20 +105,37 @@ def _runs(client, auth_headers, automation_id):
 # --- Vocabulary and honesty ----------------------------------------------
 
 
-def test_no_action_can_contact_a_customer(client, auth_headers):
+def test_internal_actions_are_exactly_the_original_four_plus_one_customer_facing(client, auth_headers):
+    """Sprint 036's binding constraint ("no action can contact a
+    customer") is now Sprint 038's binding constraint that the line
+    between internal and customer-facing actions is exact and asserted,
+    not just documented: if someone adds a new action, this test fails
+    and they have to come mark it one or the other deliberately."""
     meta = client.get("/api/v1/automations/meta", headers=auth_headers).json()
 
-    assert meta["delivery"]["external_delivery_available"] is False
-    # The binding constraint of this workstream, asserted rather than
-    # merely documented: if someone adds an action that sends anything,
-    # this test fails and they have to come and change it deliberately.
     assert set(meta["actions"]) == {
         "create_notification",
         "create_project_from_quote",
         "create_task",
         "draft_message",
+        "send_quote_follow_up",
     }
     assert set(meta["actions"]) == set(ACTION_TYPES)
+    assert set(meta["customer_facing_actions"]) == {"send_quote_follow_up"}
+
+
+def test_delivery_availability_reflects_whether_a_provider_is_actually_configured(
+    client, auth_headers, monkeypatch
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "resend_api_key", None)
+    unconfigured = client.get("/api/v1/automations/meta", headers=auth_headers).json()
+    assert unconfigured["delivery"]["external_delivery_available"] is False
+
+    monkeypatch.setattr(settings, "resend_api_key", "re_test_fake_key")
+    configured = client.get("/api/v1/automations/meta", headers=auth_headers).json()
+    assert configured["delivery"]["external_delivery_available"] is True
 
 
 def test_meta_lists_every_trigger_with_its_kind(client, auth_headers):
@@ -408,6 +425,87 @@ def test_expiring_quote_scan_ignores_an_approved_quote(client, auth_headers, db)
 
     result = automation_scanner.run(db, now=datetime.now(timezone.utc))
     assert result.runs_succeeded == 0
+
+    _delete_template_rules(client, auth_headers)
+
+
+# --- send_quote_follow_up (Sprint 038, Phase 3) ---------------------------
+#
+# The provider is always faked here (a MagicMock swapped for the real
+# delivery_service singleton, same pattern tests/test_billing.py uses for
+# Stripe) — no real network call, and no dependency on RESEND_API_KEY
+# being configured in this test environment.
+
+
+def _customer_with_email(client, auth_headers, email: str) -> dict:
+    r = client.post(
+        "/api/v1/customers", json={"name": f"{TEST_PREFIX} customer", "email": email}, headers=auth_headers
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_send_quote_follow_up_action_emails_the_linked_customer(client, auth_headers, db, monkeypatch):
+    from unittest.mock import MagicMock
+
+    import app.communications.service as communications_service_module
+    from app.database.models import Communication
+
+    fake_communication = Communication(
+        id=uuid.uuid4(), tenant_id=uuid.uuid4(), status="sent", message_type="quote_follow_up",
+        recipient="customer@example.invalid", sender_identity="x", subject="x", body_html="x",
+        body_text="x", dedupe_key="x",
+    )
+    fake_delivery = MagicMock()
+    fake_delivery.send.return_value = fake_communication
+    monkeypatch.setattr(communications_service_module, "delivery_service", fake_delivery)
+
+    client.post(
+        "/api/v1/automations/templates",
+        json={"template_key": "quote_follow_up_email"},
+        headers=auth_headers,
+    )
+    customer = _customer_with_email(client, auth_headers, f"{TEST_PREFIX.lower().replace(' ', '-')}@example.invalid")
+    expiry = date.today() + timedelta(days=2)
+    quote = _general_quote(
+        client, auth_headers, valid_until=expiry.isoformat(), customer_id=customer["id"]
+    )
+    client.post(f"/api/v1/quotes/{quote['id']}/send", headers=auth_headers)
+
+    result = automation_scanner.run(db, now=datetime.now(timezone.utc))
+
+    assert result.runs_succeeded == 1
+    fake_delivery.send.assert_called_once()
+    call_kwargs = fake_delivery.send.call_args.kwargs
+    assert call_kwargs["recipient"] == customer["email"]
+    assert call_kwargs["quote_id"] == uuid.UUID(quote["id"])
+
+    _delete_template_rules(client, auth_headers)
+
+
+def test_send_quote_follow_up_action_skips_a_quote_with_no_customer(client, auth_headers, db, monkeypatch):
+    from unittest.mock import MagicMock
+
+    import app.communications.service as communications_service_module
+
+    fake_delivery = MagicMock()
+    monkeypatch.setattr(communications_service_module, "delivery_service", fake_delivery)
+
+    client.post(
+        "/api/v1/automations/templates",
+        json={"template_key": "quote_follow_up_email"},
+        headers=auth_headers,
+    )
+    expiry = date.today() + timedelta(days=2)
+    quote = _general_quote(client, auth_headers, valid_until=expiry.isoformat())
+    client.post(f"/api/v1/quotes/{quote['id']}/send", headers=auth_headers)
+
+    result = automation_scanner.run(db, now=datetime.now(timezone.utc))
+
+    # The run itself still "succeeds" (the action ran and returned a
+    # skip reason, not an exception) — it just never touches delivery.
+    assert result.runs_succeeded == 1
+    fake_delivery.send.assert_not_called()
 
     _delete_template_rules(client, auth_headers)
 

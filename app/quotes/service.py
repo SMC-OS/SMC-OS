@@ -61,6 +61,13 @@ class QuoteEditStateError(Exception):
     holding a copy of; changing its prices underneath them is a
     substitution, not an edit."""
 
+
+class QuoteRecipientMissingError(Exception):
+    """Raised by send_and_mark_sent (Sprint 038) when there is nobody to
+    email — no linked customer, or a linked customer with no email on
+    file. mark_sent()'s manual fallback (§9 below) is unaffected — this
+    only blocks the real-send path."""
+
 # Sprint 036. A tuple, not a set literal inline at the call site, so the
 # lifecycle is stated in one readable place.
 _APPROVABLE_STATUSES = frozenset({"draft", "sent"})
@@ -486,6 +493,84 @@ class QuoteService:
         sent = crud.mark_quote_sent(db, quote_id, tenant_id, datetime.now(timezone.utc))
         automation_dispatcher.dispatch_quote_sent(db, sent)
         return sent
+
+    def send_and_mark_sent(
+        self, db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID, *, sender_user_id: uuid.UUID
+    ):
+        """Actually email the quote to its customer via DeliveryService,
+        and mark it sent only on a confirmed provider-accepted send
+        (contract: docs/SPRINTS/sprint-038.md §3.4 — never mark "sent" on
+        a failed delivery). Additive alongside mark_sent() above, which is
+        unchanged and stays available as the manual "I already sent this
+        myself" fallback the sprint's own contract requires regardless of
+        whether real delivery is configured.
+
+        Returns (quote, communication). quote.status only becomes "sent"
+        when communication.status == "sent" — any other outcome (failed,
+        suppressed) leaves the quote exactly where it was, so the caller
+        shows the real reason rather than a state this schema doesn't
+        have ("delivery pending").
+
+        A retry of an already-attempted, still-retryable failure (a
+        transient provider error, or "wasn't configured yet") goes
+        through DeliveryService.retry() rather than send() — send()'s own
+        dedupe_key check would otherwise just return the stale failed row
+        forever, since the key is fixed per quote. A click on an already
+        succeeded/suppressed/permanently-failed send is a true no-op.
+        """
+        from app.communications.models import CommunicationType
+        from app.communications.service import delivery_service
+        from app.communications.templates import render_quote_sent
+        from app.core.config import settings
+        from app.portal.service import portal_service
+
+        quote = crud.get_quote_by_id(db, quote_id, tenant_id)
+        if quote is None:
+            raise QuoteNotFoundError(quote_id)
+        if quote.status not in ("draft", "sent"):
+            raise QuoteApprovalStateError(quote.status)
+        if quote.customer_id is None:
+            raise QuoteRecipientMissingError("This quote has no linked customer.")
+
+        customer = crud.get_customer_by_id(db, quote.customer_id, tenant_id)
+        if customer is None or not customer.email:
+            raise QuoteRecipientMissingError("The linked customer has no email address on file.")
+
+        dedupe_key = f"quote_sent:{quote.id}"
+        existing = crud.get_communication_by_dedupe_key(db, tenant_id, dedupe_key)
+
+        if existing is not None:
+            communication = delivery_service.retry(db, existing.id)
+        else:
+            tenant = crud.get_tenant_by_id(db, tenant_id)
+            _portal_link, raw_token = portal_service.create_link(
+                db, tenant_id=tenant_id, created_by_user_id=sender_user_id, customer_id=customer.id
+            )
+            portal_url = f"{settings.frontend_base_url}/portal/{raw_token}"
+            rendered = render_quote_sent(
+                tenant_display_name=tenant.name if tenant is not None else "",
+                customer_name=customer.name,
+                quote_title=quote.title or "your quote",
+                portal_url=portal_url,
+            )
+            communication = delivery_service.send(
+                db,
+                tenant=tenant,
+                message_type=CommunicationType.QUOTE_SENT,
+                recipient=customer.email,
+                subject=rendered.subject,
+                html=rendered.html,
+                text=rendered.text,
+                dedupe_key=dedupe_key,
+                customer_id=customer.id,
+                quote_id=quote.id,
+            )
+
+        if communication.status == "sent" and quote.status != "sent":
+            quote = crud.mark_quote_sent(db, quote_id, tenant_id, datetime.now(timezone.utc))
+            automation_dispatcher.dispatch_quote_sent(db, quote)
+
+        return quote, communication
 
 
 quote_service = QuoteService()

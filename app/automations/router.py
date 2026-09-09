@@ -18,7 +18,7 @@ from app.auth.dependencies import get_current_user, require_role
 from app.auth.models import UserRole
 from app.automations import templates as template_catalogue
 from app.automations import triggers as trigger_catalogue
-from app.automations.actions import ACTION_TYPES
+from app.automations.actions import ACTION_TYPES, CUSTOMER_FACING_ACTION_TYPES
 from app.automations.conditions import OPS
 from app.automations.models import (
     AutomationCreate,
@@ -28,6 +28,7 @@ from app.automations.models import (
     AutomationUpdate,
 )
 from app.automations.service import AutomationNotFoundError, automation_service
+from app.core.config import settings
 from app.database.database import get_db
 from app.database.models import User
 
@@ -56,15 +57,27 @@ def automation_meta():
             for trigger in trigger_catalogue.TRIGGERS
         ],
         "actions": sorted(ACTION_TYPES),
+        "customer_facing_actions": sorted(CUSTOMER_FACING_ACTION_TYPES),
         "operators": sorted(OPS),
         # Stated in the API, not only in the UI, so any client is told the
-        # same truth: nothing here reaches a customer.
+        # same truth. Sprint 038 (Phase 2): flips honestly to whether a
+        # real email provider is actually configured — never hardcoded
+        # true just because the code path now exists, since an
+        # unconfigured environment (no RESEND_API_KEY) must keep telling
+        # the truth about what it can currently do.
         "delivery": {
-            "external_delivery_available": False,
+            "external_delivery_available": bool(settings.resend_api_key),
             "note": (
-                "Automations act inside your workspace only. GeoCore does not "
-                "send email, SMS or messages to customers; a drafted message "
-                "is prepared for a person to review and send."
+                "GeoCore can email your customer directly for actions marked "
+                "customer-facing. Every other automation still acts inside "
+                "your workspace only — nothing else is sent without a "
+                "person reviewing it first."
+            )
+            if settings.resend_api_key
+            else (
+                "Automations act inside your workspace only for now. Email "
+                "delivery is not yet configured, so a drafted message is "
+                "prepared for a person to review and send instead."
             ),
         },
     }

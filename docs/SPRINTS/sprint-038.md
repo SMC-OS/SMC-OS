@@ -346,26 +346,28 @@ geocore.one` and `_dmarc.send.geocore.one` are disjoint from `@` and the bare
 applies — this sending subdomain gets its own single SPF record, entirely separate from
 the apex's existing one.
 
-### 4.3 Owner actions required, in order
+### 4.3 Owner actions required, in order — CLEARED
 
-1. Confirm the provider choice (Resend, or state a preference for Postmark or another).
-2. Create the provider account (this session cannot and will not do this).
-3. Add `send.geocore.one` as a verified sending domain in the provider's dashboard;
-   copy the exact SPF/DKIM/DMARC record values it issues (they will differ slightly in
-   selector names from the illustrative table above — provider-generated, not
-   predictable in advance).
-4. Apply those exact records in the GoDaddy DNS panel, additively — nothing existing is
-   edited or removed.
-5. Confirm domain verification succeeds in the provider dashboard (DNS propagation,
-   typically minutes to a few hours).
-6. Generate a production API key; provide it to be set as a Railway secret (never pasted
-   into chat/committed — set directly in Railway, or handed over through whatever secure
-   channel the owner prefers).
-7. Confirm a safe test-recipient mailbox for staging/production live-send verification
-   (never a real customer address).
+1. ~~Confirm the provider choice~~ — Resend, confirmed.
+2. ~~Create the provider account~~ — done by the owner.
+3. ~~Add `send.geocore.one` as a verified sending domain~~ — **verified in Resend**,
+   confirmed by the owner.
+4. ~~Apply those exact records in the GoDaddy DNS panel~~ — done; per the owner, no
+   existing Microsoft 365 record was touched.
+5. ~~Confirm domain verification succeeds~~ — confirmed.
+6. ~~Generate a production API key; provide it to be set as a Railway secret~~ —
+   `RESEND_API_KEY` is set on both `simo-api-staging` and `simo-api-production`,
+   confirmed by variable name only via `mcp__railway__get-service-config` (never a
+   value — the tool doesn't return one). This session has not requested, seen, printed,
+   logged, or committed either key.
+7. A safe test-recipient mailbox for the live-send verification in §11.7/§12 is still
+   needed before that step — not yet confirmed.
 
-**This session will not create the account, generate the DNS values, or touch DNS.**
-Phase 1 (§7) proceeds in parallel and does not depend on this gate.
+**Still outstanding, and expected to become its own checkpoint once staging is
+verified**: creating/configuring the actual webhook endpoint in the Resend
+dashboard (exact URL + events + resulting `RESEND_WEBHOOK_SECRET`) — §11.1 built the
+receiving endpoint, but only the owner can create the sender-side webhook
+registration. This will be presented as an explicit stop, not guessed.
 
 ---
 
@@ -565,9 +567,9 @@ separate, independently-reviewable phases rather than one large PR:
 | Phase | Scope | Depends on §4 owner gate? |
 |---|---|---|
 | **1** | Communications data model + migration, `DeliveryService`/`EmailProvider` abstraction (provider unset → honest unavailable state throughout), template system with escaping, invitation-flow rewrite (truthful pending/sent/failed/accepted/expired/revoked states, manual-link fallback preserved), full test suite for all of the above against mocks — **complete, §7** | No |
-| **2** | Provider activation (setting the real `resend_api_key`/`email_sending_domain` once the owner has completed §4), webhook endpoint + signature verification + idempotent event handling wired to the suppression list | **Yes — blocked until §4 is resolved** |
-| **3** | Quote delivery ("Send quote" UI using the portal-link pattern, not a raw PDF attachment), quote-follow-up automation (delay + cancellation-on-approval + dedupe), new customer-facing automation actions (`send_email`, `send_quote`, `send_quote_follow_up`, `send_project_update`, `send_review_request`), delivery-retry worker as its own Railway service | Yes (needs Phase 2) |
-| **4** | Communication history UI (customer/quote/project timelines), server-side notification-preference foundation (in-app/email only), GeoCore AI drafting integration (draft-only, never sends), full responsive sweep | Partially (history UI for real messages needs Phase 2/3 data; the read API itself already exists, §7) |
+| **2** | Provider activation, webhook endpoint + signature verification + idempotent event handling wired to the suppression list — **complete, §11** | Was blocked on §4; **§4 resolved by the owner** (Resend account created, `send.geocore.one` verified, `RESEND_API_KEY` set on both Railway environments) |
+| **3** | Quote delivery (real send via the portal-link pattern, retry-not-resend on repeat clicks), quote-follow-up automation (customer-facing action + template, reusing the existing `quote.expiring` scan trigger and its per-window dedupe), a delivery-retry sweep — **complete, §11** | No longer — folded into the existing `app/jobs/automations.py` cron entrypoint rather than a new Railway service (§11) |
+| **4** | Communication history UI (customer/quote/project timelines), server-side notification-preference foundation (in-app/email only), GeoCore AI drafting integration (draft-only, never sends), full responsive sweep | Partially (history UI needs frontend work not started this pass; the read API itself has existed since Phase 1, §7) |
 | **5** | Trade-neutral project pipeline — its own migration with a deterministic value mapping, `PipelineCounts`/dashboard contract update, upgrade/downgrade safety tests, stone-tenant behaviour preserved exactly. Deliberately last and separately reviewable: it is a schema-risk change to `projects` with no dependency on anything else in this sprint, exactly the kind of change Sprint 036 §10.2 already declined to bundle with a quote-model rewrite for the same reason. | No |
 
 Password-recovery activation (brief §17): discovery did not find an existing,
@@ -577,12 +579,123 @@ not silently dropped.
 
 ---
 
-## 10. Status
+## 11. What Phase 2 and Phase 3 actually built
 
-**Phase 1 complete** (§7), pending this branch's own PR/CI (§8's local-verification
-limit) — not yet merged. Phases 2–3 remain blocked on the owner resolving §4
-(provider account + DNS). Phase 4's read side (communication history API) already
-exists from Phase 1; its UI and the rest of Phase 4/5 are not started.
+The owner gate (§4) cleared: a Resend account exists, `send.geocore.one` is verified,
+and `RESEND_API_KEY` is set as a Railway variable on both `simo-api-staging` and
+`simo-api-production` (confirmed by variable **name** only —
+`mcp__railway__get-service-config`, which never returns values — per the explicit
+instruction not to request, print, log, expose or commit either secret). Everything
+below was built and tested against mocks/fakes before touching either environment.
 
-**SPRINT 038 IN PROGRESS — Phase 1 implemented and locally verified short of a live
-database (§8); PR/CI pending. Phases 2–3 BLOCKED on provider/DNS owner action (§4).**
+### 11.1 Webhook handling (`app/communications/webhooks.py`, `POST /api/v1/communications/webhook`)
+
+Resend delivers webhooks via Svix; verification implements Svix's own publicly
+documented HMAC-SHA256 scheme directly (no extra SDK, same "stdlib over a vendor
+library where stdlib suffices" choice `provider.py` made for sending) — see that
+module's docstring for the exact algorithm. A request with a bad signature, missing
+headers, or a timestamp more than 5 minutes from now is rejected (400) before any
+payload parsing happens. The route itself returns 503 if `resend_webhook_secret` isn't
+set — "ships dark" applies here too.
+
+Idempotency: `processed_email_events` (migration `b2c3d4e5f6a7`), the same
+first-INSERT-wins shape as `processed_stripe_events`, keyed on the delivery's own
+`svix-id` — a replayed delivery is acknowledged (200) without re-applying side effects.
+
+### 11.2 Delivery/bounce/complaint tracking
+
+`DeliveryService.record_webhook_event()` resolves the event to a `communications` row
+by `provider_message_id` (globally unique, generated once by Resend — safe to look up
+without a tenant, per that method's own docstring) and:
+
+- `email.delivered` → `status = "delivered"`.
+- `email.bounced` → `status = "bounced"`, **and** a suppression is created
+  (`reason="hard_bounce"`) so this tenant never sends to that address again.
+- `email.complained` → the communication's own status is left alone (it *was*
+  delivered — that's what a complaint means) but a suppression is created
+  (`reason="complaint"`).
+- Anything else (`email.sent`, `email.opened`, `email.clicked`, or an event type this
+  sprint doesn't recognise) is acknowledged and ignored — Resend must never see a
+  different response for an event this service can't or doesn't need to act on, or it
+  will keep retrying it.
+
+### 11.3 Retry behaviour
+
+`DeliveryService.retry()` re-attempts a `failed` row **in place** (same row, same
+`dedupe_key` — never a second send) when its `failure_category` is `transient` or
+`unavailable`; `permanent` and `suppressed` are deliberately never retried. Bounded at
+`MAX_ATTEMPTS = 5` (brief §11's "no endless retries"). `retry_pending()` sweeps every
+tenant's retryable failures and is called from the **existing**
+`app/jobs/automations.py` cron entrypoint, right after its scan — no new Railway
+service, per the brief's own "do not introduce unnecessary infrastructure" and this
+job already running on a schedule against every tenant.
+
+### 11.4 Quote delivery (`POST /quotes/{id}/send-email`)
+
+Additive alongside the untouched Sprint 007 `POST /quotes/{id}/send` (still transmits
+nothing — the deliberate manual fallback, unaffected either way). The new endpoint
+creates a fresh portal link (a link's raw token is only ever returned once, so an
+existing link's token can't be reused), emails it via `DeliveryService`, and marks the
+quote `sent` **only** when the communication's own status is `sent` — a failed or
+suppressed attempt leaves the quote exactly where it was and reports the real reason in
+the response body's `communication` field. Clicking again after a transient failure
+retries the same row (`DeliveryService.retry()`) rather than sending a second time;
+clicking again after success is a true no-op (no new provider call).
+
+### 11.5 Quote follow-up automation
+
+A new customer-facing action, `send_quote_follow_up`
+(`app/automations/actions.py`), and a new template, "Automatically email unanswered
+quotes" (`quote_follow_up_email`), reusing the *existing* `quote.expiring` scan trigger
+— no new trigger type needed. Added **alongside** the original "Follow up unanswered
+quotes" internal-task template rather than replacing it: a tenant who already activated
+that one keeps getting exactly an internal task, unchanged; automatic customer email is
+an explicit second choice they turn on separately. The engine's own per-action
+`dedupe_key` (derived from the run's discriminator — the expiry window) is reused
+directly as `DeliveryService`'s dedupe_key, so a single quote can never receive two
+automated follow-up emails for the same expiry window, even under a retried/concurrent
+worker. `GET /automations/meta` now reports `customer_facing_actions` and an honest
+`delivery.external_delivery_available` that reflects whether `resend_api_key` is
+*actually* set, not a hardcoded value — verified by a monkeypatch-driven test in both
+directions.
+
+### 11.6 Scope note: invitation role widening still deliberately out of scope
+
+`send_quote_follow_up` is the only new customer-facing action this phase. §9 of the
+original Sprint 038 brief lists `send_email`/`send_quote`/`send_project_update`/
+`send_review_request` as candidates too — those, and the frontend UI for any of this
+(communication history timelines, a "review before sending" screen, notification
+preferences), are Phase 4 and not started this pass. Invitation role widening remains
+the sibling Sprint 037 branch's territory, unchanged from §7's original reasoning.
+
+### 11.7 Local verification performed, and its limit (same constraint as §8)
+
+`py_compile` clean on every new/changed file; `python -c "import app.main"` clean
+(including the router split now needed for a mixed public/authenticated
+`communications` router — the webhook cannot sit behind `Depends(get_current_user)` at
+the router level, and the fix mirrors the shape `app/invitations/router.py` and
+`app/billing/router.py` already document); `alembic heads` — `b2c3d4e5f6a7` is the sole
+head; `alembic upgrade/downgrade --sql` clean and additive for the new migration;
+`pytest --collect-only` — 960 tests (923 after Phase 1 + this phase's additions)
+collect with zero errors. One real bug was caught only by re-running the import check
+after an edit: a stray `__table_args__` had been left detached from its owning class by
+an earlier edit's match boundary — fixed before it ever reached a commit. Real-database
+verification (dedupe/retry/webhook-idempotency behaviour actually firing, the new
+migration applying) happens in CI, then for real on staging with the now-configured
+`RESEND_API_KEY` — see this doc's closeout section once that run completes.
+
+---
+
+## 12. Status
+
+**Phases 1–3 implemented and locally verified short of a live database** (§8, §11.7) —
+this branch's own PR/CI, then staging deployment and a real controlled transactional
+email send, are the next steps and are not yet recorded here. Phase 4 (history UI,
+notification preferences, AI drafting) and Phase 5 (trade-neutral pipeline) are not
+started. Production deployment is gated on successful staging verification, per the
+owner's own instruction, not automatic once CI is green.
+
+**SPRINT 038 IN PROGRESS — Phases 1–3 implemented and locally verified short of a live
+database; PR/CI, staging deployment and a real controlled send are next. A webhook
+configuration checkpoint (the exact URL/events to add in the Resend dashboard) is
+expected once staging is verified — see this doc's closeout section once that happens.**

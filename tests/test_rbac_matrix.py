@@ -165,6 +165,7 @@ EXPECTED_ROUTE_AUTH: list[tuple[str, str, str]] = [
     ("POST", "/api/v1/quotes", OWNER_STAFF),
     ("PATCH", f"/api/v1/quotes/{_ID}", OWNER_STAFF),
     ("POST", f"/api/v1/quotes/{_ID}/send", OWNER_STAFF),
+    ("POST", f"/api/v1/quotes/{_ID}/send-email", OWNER_STAFF),
     ("GET", "/api/v1/quotes/meta/trades", AUTHENTICATED),
     ("GET", "/api/v1/quotes/meta/units", AUTHENTICATED),
     # app/automations/router.py — reading what the system will do to your
@@ -187,6 +188,9 @@ EXPECTED_ROUTE_AUTH: list[tuple[str, str, str]] = [
     # app/communications/router.py (Sprint 038) — history is read-only,
     # day-to-day work, same posture as tasks/calendar.
     ("GET", "/api/v1/communications", AUTHENTICATED),
+    # Public — Resend/Svix authenticates via signature, not a bearer
+    # token, same shape as the Stripe webhook above.
+    ("POST", "/api/v1/communications/webhook", PUBLIC),
     # app/calendar/router.py — read-only, any member.
     ("GET", "/api/v1/calendar", AUTHENTICATED),
     # app/ai/router.py — no write capability to gate; the service has no

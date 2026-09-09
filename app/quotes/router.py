@@ -14,6 +14,7 @@ from app.quotes.service import (
     QuoteEditStateError,
     QuoteKindError,
     QuoteNotFoundError,
+    QuoteRecipientMissingError,
     quote_service,
 )
 from app.trades.catalogue import TRADES
@@ -232,14 +233,18 @@ def send_quote(
     current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
     db: Session = Depends(get_db),
 ):
-    """Mark a quote as sent to the customer.
+    """Mark a quote as sent to the customer, WITHOUT emailing it.
 
-    This transmits NOTHING. GeoCore has no outbound email, SMS or
-    messaging infrastructure — the user sends the PDF or the portal link
-    themselves and records it here, and the UI says so in as many words.
-    What it buys is a real pipeline state: a sent quote is the one worth
-    chasing, and it drives the quote.sent automation trigger and the
-    unanswered-quote follow-up.
+    This transmits NOTHING — the user sends the PDF or the portal link
+    themselves (by hand, or via a channel outside GeoCore) and records it
+    here, and the UI says so in as many words. This is the manual
+    fallback: it works identically whether or not real email delivery
+    (Sprint 038) is configured, and stays available on purpose even once
+    it is — see POST /{quote_id}/send-email below for the alternative
+    that actually emails the customer via DeliveryService. What marking
+    sent buys either way is a real pipeline state: a sent quote is the
+    one worth chasing, and it drives the quote.sent automation trigger
+    and the unanswered-quote follow-up.
 
     Idempotent: sending an already-sent quote returns it unchanged rather
     than erroring, so a double-click cannot fire the automation twice.
@@ -255,6 +260,44 @@ def send_quote(
         )
 
     return _serialize(quote)
+
+
+@router.post("/{quote_id}/send-email")
+def send_quote_email(
+    quote_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    db: Session = Depends(get_db),
+):
+    """Actually email the quote to its linked customer (Sprint 038),
+    using a portal link rather than attaching the PDF directly — the
+    existing secure customer-portal architecture, not a second way of
+    exposing the same sensitive quote data. The quote is marked "sent"
+    only if the provider genuinely accepted the send; a failed or
+    suppressed attempt leaves it exactly where it was and reports why, in
+    `communication`, rather than silently lying about what happened
+    (contract: docs/SPRINTS/sprint-038.md §3.4). Clicking again after a
+    transient failure retries the same attempt rather than sending twice.
+    """
+    from app.communications.models import CommunicationOut
+
+    try:
+        quote, communication = quote_service.send_and_mark_sent(
+            db, quote_id, current_user.tenant_id, sender_user_id=current_user.id
+        )
+    except QuoteNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    except QuoteApprovalStateError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a draft or already-sent quote can be emailed",
+        )
+    except QuoteRecipientMissingError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    return {
+        "quote": _serialize(quote),
+        "communication": CommunicationOut.model_validate(communication).model_dump(mode="json"),
+    }
 
 
 @router.post("/{quote_id}/approve")
