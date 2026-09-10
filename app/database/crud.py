@@ -1697,6 +1697,44 @@ def update_communication_result(
     return row
 
 
+def get_communication_by_id(
+    db: Session, communication_id: uuid.UUID, tenant_id: uuid.UUID
+) -> Communication | None:
+    """Tenant-scoped lookup (Sprint 039). The user-facing retry endpoint
+    reads through this rather than `db.get(Communication, id)`, so knowing
+    another tenant's communication id is never enough to act on it — the
+    same id-is-not-proof-of-ownership rule as every other module
+    (ADR-029)."""
+    stmt = select(Communication).where(
+        Communication.id == communication_id, Communication.tenant_id == tenant_id
+    )
+    return db.scalars(stmt).first()
+
+
+def list_complained_communication_ids(
+    db: Session, tenant_id: uuid.UUID, communication_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of these communications drew a spam complaint (Sprint 039,
+    §4 Decision 1).
+
+    A complaint is proof the message *reached* the inbox, so Sprint 038
+    deliberately leaves the communication's own status alone and records
+    the complaint as an EmailSuppression pointing back at it. This reads
+    that relationship so the API can surface the fact without any of
+    Sprint 038's production-verified write paths changing.
+
+    One query for a whole page of rows, never one per row.
+    """
+    if not communication_ids:
+        return set()
+    stmt = select(EmailSuppression.source_communication_id).where(
+        EmailSuppression.tenant_id == tenant_id,
+        EmailSuppression.reason == "complaint",
+        EmailSuppression.source_communication_id.in_(communication_ids),
+    )
+    return {row for row in db.scalars(stmt) if row is not None}
+
+
 def list_communications(
     db: Session,
     tenant_id: uuid.UUID,
@@ -1706,6 +1744,7 @@ def list_communications(
     project_id: uuid.UUID | None = None,
     invitation_id: uuid.UUID | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[Communication]:
     stmt = select(Communication).where(Communication.tenant_id == tenant_id)
     if customer_id is not None:
@@ -1716,7 +1755,14 @@ def list_communications(
         stmt = stmt.where(Communication.project_id == project_id)
     if invitation_id is not None:
         stmt = stmt.where(Communication.invitation_id == invitation_id)
-    stmt = stmt.order_by(Communication.created_at.desc()).limit(limit)
+    # Ordered by created_at then id: two communications written in the
+    # same transaction can share a timestamp, and an unstable order would
+    # make `offset` paging drop or repeat rows between pages.
+    stmt = (
+        stmt.order_by(Communication.created_at.desc(), Communication.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     return list(db.scalars(stmt))
 
 

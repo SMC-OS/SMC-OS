@@ -92,6 +92,18 @@ class CommunicationOut(BaseModel):
     last_attempted_at: datetime | None
     failure_category: str | None
     failure_detail: str | None
+    # Sprint 039 (§4 Decision 1). Derived, never stored: a spam complaint
+    # proves the message *reached* the inbox, so overwriting `status` with
+    # it would destroy the one fact this row exists to record. Sprint 038
+    # records the complaint as an EmailSuppression pointing back here, and
+    # this flag reads that relationship — leaving Sprint 038's
+    # production-verified webhook handler untouched.
+    complained: bool = False
+    # Sprint 039 — whether the user-facing retry action applies. Served
+    # rather than re-derived client-side, the same reason
+    # /automations/meta and /projects/meta/pipeline are: a UI must never
+    # offer an action the service will refuse.
+    retryable: bool = False
     created_at: datetime
     updated_at: datetime
 

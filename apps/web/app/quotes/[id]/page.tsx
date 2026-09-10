@@ -8,7 +8,9 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { SendIcon } from "@/components/ui/icons";
+import { MailIcon, SendIcon } from "@/components/ui/icons";
+import { CommunicationTimeline } from "@/components/communications/CommunicationTimeline";
+import { STATUS_LABEL } from "@/lib/communications";
 import { ApiError, api } from "@/lib/api";
 import { formatDate, formatMoney, formatRelativeTime } from "@/lib/utils";
 import type { Customer } from "@/types/customer";
@@ -67,6 +69,15 @@ export default function QuoteDetailPage() {
   const [downloading, setDownloading] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sending, setSending] = useState(false);
+  // Sprint 039 (Workstream A) — emailing the quote for real, through
+  // Sprint 038's DeliveryService. Kept separate from `sending` (which
+  // drives the manual "mark as sent") so a page can never show both
+  // actions busy at once.
+  const [emailing, setEmailing] = useState(false);
+  const [deliveryNotice, setDeliveryNotice] = useState<string | null>(null);
+  // Bumped after a send so the timeline below re-reads rather than
+  // showing a stale history that is missing the message just sent.
+  const [historyKey, setHistoryKey] = useState(0);
   const [handingOff, setHandingOff] = useState(false);
 
   useEffect(() => {
@@ -128,6 +139,14 @@ export default function QuoteDetailPage() {
         <Card className="mb-6">
           <CardContent>
             <p className="text-sm text-danger">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {deliveryNotice && (
+        <Card className="mb-6 border-info/25 bg-info/5">
+          <CardContent className="py-4">
+            <p className="text-sm text-foreground">{deliveryNotice}</p>
           </CardContent>
         </Card>
       )}
@@ -205,19 +224,54 @@ export default function QuoteDetailPage() {
 
               <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-4">
                 {quote.status === "draft" && canAct && (
-                  <Button
-                    disabled={sending}
-                    onClick={() =>
-                      run(
-                        async () => setQuote(await api.sendQuote(quote.id)),
-                        setSending,
-                        "Could not mark the quote as sent."
-                      )
-                    }
-                  >
-                    <SendIcon className="h-4 w-4" />
-                    {sending ? "Saving…" : "Mark as sent"}
-                  </Button>
+                  <>
+                    {/* Sprint 039 — the primary action is now the one that
+                        actually delivers. "Mark as sent" stays beside it,
+                        because a business that posts the PDF or hands it
+                        over on site still needs to record that it went. */}
+                    <Button
+                      disabled={emailing || sending}
+                      onClick={() =>
+                        run(
+                          async () => {
+                            const result = await api.sendQuoteByEmail(quote.id);
+                            setQuote(result.quote);
+                            setHistoryKey((key) => key + 1);
+                            // The communication row is authoritative about
+                            // what happened — never a cheerful "Sent!"
+                            // regardless of outcome.
+                            setDeliveryNotice(
+                              result.communication.status === "sent"
+                                ? "Emailed to the customer. You'll see it confirmed as delivered here once their mail server accepts it."
+                                : `Not delivered — ${STATUS_LABEL[result.communication.status].toLowerCase()}. ${
+                                    result.communication.failure_detail ?? ""
+                                  }`.trim()
+                            );
+                          },
+                          setEmailing,
+                          "Could not email the quote."
+                        )
+                      }
+                    >
+                      <MailIcon className="h-4 w-4" />
+                      {emailing ? "Sending…" : "Email to customer"}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      disabled={sending || emailing}
+                      onClick={() =>
+                        run(
+                          async () => setQuote(await api.sendQuote(quote.id)),
+                          setSending,
+                          "Could not mark the quote as sent."
+                        )
+                      }
+                    >
+                      <SendIcon className="h-4 w-4" />
+                      {sending ? "Saving…" : "Mark as sent"}
+                    </Button>
+                  </>
                 )}
 
                 {(quote.status === "draft" || quote.status === "sent") && canAct && (
@@ -361,6 +415,19 @@ export default function QuoteDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Sprint 039 (Workstream A) — what has been sent about this
+              quote, and whether it arrived. `key` forces a re-read after a
+              send rather than leaving a history that is missing it. */}
+          <div className="mt-6">
+            <CommunicationTimeline
+              key={historyKey}
+              title="Communications"
+              filters={{ quoteId: quote.id }}
+              emptyTitle="Nothing sent about this quote yet"
+              emptyDescription="Email this quote to your customer and it will be recorded here, with whether it arrived."
+            />
+          </div>
         </>
       )}
     </div>

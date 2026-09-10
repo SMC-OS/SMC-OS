@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { findStage, nextStages, stageLabel, stageTone } from "@/lib/projects";
+import { CommunicationTimeline } from "@/components/communications/CommunicationTimeline";
 import { ProjectForm } from "@/components/projects/ProjectForm";
 import { ProjectTasksPanel } from "@/components/projects/ProjectTasksPanel";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
@@ -624,6 +625,19 @@ export default function ProjectDetailPage() {
         </Card>
       )}
       {project && !editing && <ProjectTasksPanel projectId={project.id} />}
+
+      {/* Sprint 039 (Workstream A) — what has actually been said to this
+          customer about this job, and whether it arrived. */}
+      {project && !editing && (
+        <div className="mt-6">
+          <CommunicationTimeline
+            title="Communications"
+            filters={{ projectId: project.id }}
+            emptyTitle="Nothing sent about this job yet"
+            emptyDescription="Emails GeoCore sends about this project will appear here."
+          />
+        </div>
+      )}
 
     </div>
   );

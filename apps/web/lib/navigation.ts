@@ -5,6 +5,7 @@ import {
   FileTextIcon,
   FolderIcon,
   HomeIcon,
+  MailIcon,
   PaletteIcon,
   BellIcon,
   SettingsIcon,
@@ -33,9 +34,13 @@ export interface NavItem {
  * The information architecture is the workflow a construction business
  * actually runs, in order:
  *
- *   Dashboard → Customers → Quotes → Projects → Calendar → Automations → GeoCore AI
+ *   Dashboard → Customers → Quotes → Projects → Communications → Calendar
+ *   → Automations → GeoCore AI
  *
  * which is the lead-to-aftercare journey the product is organised around.
+ * Communications (Sprint 039, Workstream A) sits after Projects because
+ * that is where it belongs in the journey: what the business has actually
+ * said to a customer, and whether it arrived.
  * Settings is deliberately not in this list: it is administrative, it is
  * visited rarely, and putting it alongside daily work is what made the
  * previous six-item sidebar read as a list of screens rather than a
@@ -51,6 +56,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Customers", href: "/customers", icon: UsersIcon, primaryOnMobile: true },
   { label: "Quotes", href: "/quotes", icon: FileTextIcon, primaryOnMobile: true },
   { label: "Projects", href: "/projects", icon: FolderIcon, primaryOnMobile: true },
+  { label: "Communications", href: "/communications", icon: MailIcon },
   { label: "Calendar", href: "/calendar", icon: CalendarIcon },
   { label: "Automations", href: "/automations", icon: ZapIcon },
   { label: "GeoCore AI", href: "/ai", icon: SparklesIcon },

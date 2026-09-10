@@ -100,11 +100,17 @@ test("customer_quote_approval_handoff_persists_project", async ({ page }) => {
   expect(projectId).toBeTruthy();
 
   // ---- Verify the real Project page ----
-  await expect(page.getByText("Booked", { exact: true })).toBeVisible();
+  // Sprint 039 — the stage badge on the new job. `.first()` because
+  // "Approved" is also this project's originating quote status, and the
+  // assertion is about the stage badge being rendered at all.
+  await expect(page.getByText("Approved", { exact: true }).first()).toBeVisible();
 
   // ---- Verify persistence: reload proves it was saved, not just client state ----
   await page.reload();
-  await expect(page.getByText("Booked", { exact: true })).toBeVisible();
+  // Sprint 039 — the stage badge on the new job. `.first()` because
+  // "Approved" is also this project's originating quote status, and the
+  // assertion is about the stage badge being rendered at all.
+  await expect(page.getByText("Approved", { exact: true }).first()).toBeVisible();
 
   // ---- Verify Quote linkage through the live API (not rendered in the UI) ----
   const projectRes = await api.get(`/api/v1/projects/${projectId}`, {

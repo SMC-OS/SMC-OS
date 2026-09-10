@@ -71,7 +71,10 @@ test("unlinked_enquiry_can_be_converted_to_customer_and_persists", async ({ page
   // ---- Open the real Project detail page ----
   await page.goto(`/projects/${projectId}`);
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText("Enquiry", { exact: true })).toBeVisible();
+  // Sprint 039 — the stage badge shows the label this workspace's own
+  // pipeline gives its opening stage. A workspace signing up today is on
+  // the trade-neutral pipeline, so that word is "Planning".
+  await expect(page.getByText("Planning", { exact: true })).toBeVisible();
   await expect(page.getByText("—", { exact: true }).first()).toBeVisible();
   const convertButton = page.getByRole("button", { name: "Convert to Customer" });
   await expect(convertButton).toBeVisible();

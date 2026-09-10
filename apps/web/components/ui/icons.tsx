@@ -412,3 +412,12 @@ export function UploadIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function MailIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" />
+      <path d="m3 7 8.15 5.43a1.5 1.5 0 0 0 1.7 0L21 7" />
+    </Icon>
+  );
+}

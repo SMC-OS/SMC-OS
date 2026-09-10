@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Field";
 import { EditIcon } from "@/components/ui/icons";
+import { CommunicationTimeline } from "@/components/communications/CommunicationTimeline";
 import { CustomerContextPanel } from "@/components/customers/CustomerContextPanel";
 import { CustomerForm } from "@/components/customers/CustomerForm";
 import { usePolling } from "@/hooks/usePolling";
@@ -354,6 +355,19 @@ export default function CustomerDetailPage() {
       )}
 
       {customer && !editing && <CustomerContextPanel customerId={customer.id} />}
+
+      {/* Sprint 039 (Workstream A) — every email this customer has been
+          sent, across all their quotes and jobs, in one place. */}
+      {customer && !editing && (
+        <div className="mt-6">
+          <CommunicationTimeline
+            title="Communications"
+            filters={{ customerId: customer.id }}
+            emptyTitle="Nothing sent to this customer yet"
+            emptyDescription="Emails GeoCore sends to this customer will appear here, with whether they arrived."
+          />
+        </div>
+      )}
 
       {customer && (
         <Card className="mt-6">

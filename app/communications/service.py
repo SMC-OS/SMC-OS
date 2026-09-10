@@ -41,6 +41,18 @@ from app.database import crud
 from app.database.models import Communication
 
 
+class CommunicationNotFoundError(Exception):
+    """Raised by retry_for_tenant() when the id does not belong to the
+    caller's own tenant — indistinguishable from "does not exist", which
+    is the point (ADR-029)."""
+
+
+class CommunicationNotRetryableError(Exception):
+    """Raised by retry_for_tenant() for a communication that is not in a
+    retryable state: already delivered or sent, suppressed, permanently
+    rejected, or already retried up to MAX_ATTEMPTS."""
+
+
 class DeliveryService:
     def __init__(self, provider: EmailProvider | None = None) -> None:
         # Constructor-injectable, same pattern as BillingService — tests
@@ -220,6 +232,23 @@ class DeliveryService:
                 still_failed += 1
         return {"retried": retried, "succeeded": succeeded, "still_failed": still_failed}
 
+    #: A failed send worth attempting again. `transient` means the
+    #: provider itself said "try later"; `unavailable` means no provider
+    #: was configured when it was attempted, which may no longer be true.
+    #: `permanent` (the request was rejected) and `suppressed` (retrying
+    #: would defeat the suppression list) are deliberately excluded —
+    #: the same split crud.list_retryable_communications applies to the
+    #: scheduled worker, stated once here so a person and a worker can
+    #: never disagree about what is retryable.
+    RETRYABLE_FAILURE_CATEGORIES = frozenset({"transient", "unavailable"})
+
+    def is_retryable(self, row: Communication) -> bool:
+        return (
+            row.status == "failed"
+            and row.failure_category in self.RETRYABLE_FAILURE_CATEGORIES
+            and row.attempt_count < self.MAX_ATTEMPTS
+        )
+
     def list_history(
         self,
         db: Session,
@@ -230,8 +259,9 @@ class DeliveryService:
         project_id: uuid.UUID | None = None,
         invitation_id: uuid.UUID | None = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[Communication]:
-        return crud.list_communications(
+        rows = crud.list_communications(
             db,
             tenant_id,
             customer_id=customer_id,
@@ -239,7 +269,58 @@ class DeliveryService:
             project_id=project_id,
             invitation_id=invitation_id,
             limit=limit,
+            offset=offset,
         )
+        self._decorate(db, tenant_id, rows)
+        return rows
+
+    def _decorate(self, db: Session, tenant_id: uuid.UUID, rows: list[Communication]) -> None:
+        """Attach the two derived, never-stored fields CommunicationOut
+        reads (`complained`, `retryable`).
+
+        Transient attributes on the instances, for the same reason
+        Project.status_role is one: both are facts derived from other
+        rows, and persisting a second copy invites the two to disagree.
+        The complaint lookup is one query for the whole page, never one
+        per row.
+        """
+        complained = crud.list_complained_communication_ids(
+            db, tenant_id, [row.id for row in rows]
+        )
+        for row in rows:
+            row.complained = row.id in complained
+            row.retryable = self.is_retryable(row)
+
+    def get_for_tenant(
+        self, db: Session, tenant_id: uuid.UUID, communication_id: uuid.UUID
+    ) -> Communication | None:
+        row = crud.get_communication_by_id(db, communication_id, tenant_id)
+        if row is not None:
+            self._decorate(db, tenant_id, [row])
+        return row
+
+    def retry_for_tenant(
+        self, db: Session, tenant_id: uuid.UUID, communication_id: uuid.UUID
+    ) -> Communication:
+        """A person pressing "try again" on a failed message.
+
+        Tenant-scoped by construction, and refuses anything not genuinely
+        retryable rather than quietly no-opping: a retry button that
+        silently does nothing is worse than one that says why it cannot.
+        Delegates the actual attempt to `retry()`, so a user retry and the
+        scheduled sweep share one code path — a user can never re-send a
+        delivered message or push past a suppression, because that path
+        cannot.
+        """
+        row = crud.get_communication_by_id(db, communication_id, tenant_id)
+        if row is None:
+            raise CommunicationNotFoundError(communication_id)
+        if not self.is_retryable(row):
+            raise CommunicationNotRetryableError(row.status, row.failure_category)
+
+        updated = self.retry(db, row.id)
+        self._decorate(db, tenant_id, [updated])
+        return updated
 
     def suppress(
         self,

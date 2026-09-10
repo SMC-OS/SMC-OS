@@ -33,6 +33,10 @@ import type {
 } from "@/types/invitation";
 import type { MessageOut } from "@/types/message";
 import type { AppNotification } from "@/types/notification";
+import type {
+  Communication,
+  CommunicationFilters,
+} from "@/types/communication";
 import type { PortalLinkCreateOut, PortalLinkOut, PortalPublicOut } from "@/types/portal";
 import type {
   Project,
@@ -494,7 +498,52 @@ export const api = {
   // Records that a person gave this quote to the customer. Sends
   // nothing — GeoCore has no email, SMS or messaging channel, and the UI
   // says so where this is offered.
+  /**
+   * Marks a quote as sent without transmitting anything — the manual
+   * route, for a business that sends the PDF or the portal link itself.
+   * `sendQuoteByEmail` below is the one that actually delivers.
+   */
   sendQuote: (id: string) => request<Quote>(`/quotes/${id}/send`, { method: "POST" }),
+
+  /**
+   * Sprint 039 (Workstream A) — really emails the quote, through Sprint
+   * 038's DeliveryService. The quote is marked sent only if the provider
+   * genuinely accepted it; the returned `communication` says truthfully
+   * what happened either way, and a repeat click retries the same attempt
+   * rather than sending twice.
+   */
+  sendQuoteByEmail: (id: string) =>
+    request<{ quote: Quote; communication: Communication }>(
+      `/quotes/${id}/send-email`,
+      { method: "POST" }
+    ),
+
+  // --- Communications (Sprint 039, Workstream A) ------------------------
+  //
+  // One endpoint serves both the central Communications view (no filter)
+  // and every entity timeline (one filter), because the only difference
+  // between those screens is which filter they pass.
+
+  getCommunications: (
+    filters: CommunicationFilters = {},
+    limit = 50,
+    offset = 0
+  ) => {
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (filters.customerId) query.set("customer_id", filters.customerId);
+    if (filters.quoteId) query.set("quote_id", filters.quoteId);
+    if (filters.projectId) query.set("project_id", filters.projectId);
+    if (filters.invitationId) query.set("invitation_id", filters.invitationId);
+    return request<Communication[]>(`/communications?${query.toString()}`);
+  },
+
+  /** Try a failed message again. Never creates a second communication and
+   * never re-sends a delivered one — the service path underneath cannot. */
+  retryCommunication: (id: string) =>
+    request<Communication>(`/communications/${id}/retry`, { method: "POST" }),
 
   // Served from the backend rather than duplicated as frontend constants,
   // so the quote form, the project form and onboarding cannot drift.

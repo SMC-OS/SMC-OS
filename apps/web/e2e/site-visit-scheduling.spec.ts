@@ -108,7 +108,14 @@ test("a_site_visit_can_be_scheduled_and_completed_through_the_ui_and_persists", 
 
   await expect(page.getByText("completed", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Complete" })).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "Cancel" })).not.toBeVisible();
+  // `exact: true`: Playwright matches an accessible name by substring by
+  // default, and this assertion is about the site visit's own Cancel
+  // action — not about every button whose label happens to contain the
+  // word (Sprint 039 added "Cancel this job" to the pipeline panel on
+  // this same page).
+  await expect(
+    page.getByRole("button", { name: "Cancel", exact: true })
+  ).not.toBeVisible();
 
   // ---- Verify persistence again after reload ----
   await page.reload();

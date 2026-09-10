@@ -122,7 +122,7 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.getByLabel("Customer").selectOption({ label: CUSTOMER_NAME });
   await page.getByRole("button", { name: /save project|create project/i }).click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/, { timeout: 15_000 });
-  await expect(page.getByText("Enquiry", { exact: true })).toBeVisible();
+  await expect(page.getByText("Planning", { exact: true })).toBeVisible();
 
   // ==== 5. Schedule and complete a site visit ====
   await expect(page.getByText("Site Visits", { exact: true })).toBeVisible();
@@ -177,7 +177,9 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   expect(handoff.status()).toBe(200);
   const handedOffProject = await handoff.json();
   expect(handedOffProject.status_role).toBe("approved");
-  await expect(page.getByText("Booked", { exact: true })).toBeVisible();
+  // The handed-off job's stage badge. "Approved" on the trade-neutral
+  // pipeline; a stone workspace would read "Booked" here.
+  await expect(page.getByText("Approved", { exact: true }).first()).toBeVisible();
 
   // ==== 8. Assignment + status operations on the handed-off Project ====
   await page.goto(`/projects/${handedOffProject.id}`);
