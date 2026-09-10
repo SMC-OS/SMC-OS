@@ -6,7 +6,7 @@ import { BACKEND_URL } from "../playwright.config";
  * Sprint 023 — true browser E2E for project operations (staff assignment +
  * validated status transitions). Structural twin of
  * e2e/site-visit-scheduling.spec.ts (Sprint 022). Setup (tenant, Owner,
- * Staff via a real invitation accept, and a booked Project) goes through
+ * Staff via a real invitation accept, and an approved Project) goes through
  * the real API directly, but the critical business actions — assigning
  * Staff and advancing the Project's status — run through the real
  * Chromium browser against the real Next.js app and real FastAPI server
@@ -67,12 +67,16 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
     data: { status: "quoted" },
   });
   expect(quoted.ok()).toBeTruthy();
-  const booked = await api.patch(`/api/v1/projects/${projectId}/status`, {
+  // Sprint 039 — this workspace signs up fresh, so it is on GeoCore's
+  // trade-neutral pipeline: lead -> quoted -> approved -> scheduled ->
+  // in_progress -> completed, plus on_hold/cancelled. Forward progress is
+  // still exactly one stage per PATCH.
+  const approved = await api.patch(`/api/v1/projects/${projectId}/status`, {
     headers: ownerHeaders,
-    data: { status: "booked" },
+    data: { status: "approved" },
   });
-  expect(booked.ok()).toBeTruthy();
-  expect((await booked.json()).status).toBe("booked");
+  expect(approved.ok()).toBeTruthy();
+  expect((await approved.json()).status).toBe("approved");
 
   // ---- Authenticate through the real login UI ----
   // networkidle after each full navigation: Next dev/Turbopack compiles a
@@ -112,7 +116,7 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   await expect(page.getByLabel("Assigned to")).toHaveValue(assignedProject.assigned_user_id);
 
   // ---- Advance the Project's status through the UI ----
-  const advanceButton = page.getByRole("button", { name: "Advance to Templated" });
+  const advanceButton = page.getByRole("button", { name: "Advance to Scheduled" });
   await expect(advanceButton).toBeVisible();
   const statusResponsePromise = page.waitForResponse(
     (res) =>
@@ -122,14 +126,14 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   await advanceButton.click();
   const statusResponse = await statusResponsePromise;
   expect(statusResponse.status()).toBe(200);
-  expect((await statusResponse.json()).status).toBe("templated");
+  expect((await statusResponse.json()).status).toBe("scheduled");
 
-  await expect(page.getByText("Templated", { exact: true })).toBeVisible();
+  await expect(page.getByText("Scheduled", { exact: true })).toBeVisible();
 
   // ---- Verify persistence again after reload ----
   await page.reload();
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText("Templated", { exact: true })).toBeVisible();
+  await expect(page.getByText("Scheduled", { exact: true })).toBeVisible();
 
   // ---- Verify persisted state through the live API (server-side truth) ----
   const persistedProjectRes = await api.get(`/api/v1/projects/${projectId}`, {
@@ -138,7 +142,7 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   expect(persistedProjectRes.ok()).toBeTruthy();
   const persistedProject = await persistedProjectRes.json();
   expect(persistedProject.assigned_user_id).toBe(assignedProject.assigned_user_id);
-  expect(persistedProject.status).toBe("templated");
+  expect(persistedProject.status).toBe("scheduled");
 
   // ---- Verify exactly one project_assigned and one
   // project_status_changed activity exist for this Project (tenant-scoped:
@@ -156,9 +160,9 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   expect(matchingAssigned).toHaveLength(1);
 
   // Setup above already made two status transitions of its own
-  // (enquiry -> quoted -> booked) through the real API, so this checks for
-  // exactly the one transition the UI action just caused (booked ->
-  // templated), not every project_status_changed event for this Project.
+  // (lead -> quoted -> approved) through the real API, so this checks for
+  // exactly the one transition the UI action just caused (approved ->
+  // scheduled), not every project_status_changed event for this Project.
   const statusChangedActivityRes = await api.get(
     "/api/v1/activity?limit=50&type=project_status_changed",
     { headers: ownerHeaders }
@@ -167,7 +171,7 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   const statusChangedActivity = await statusChangedActivityRes.json();
   const matchingStatusChanged = statusChangedActivity.filter(
     (event: { description: string | null }) =>
-      event.description === `Project ${projectId} moved from booked to templated`
+      event.description === `Project ${projectId} moved from approved to scheduled`
   );
   expect(matchingStatusChanged).toHaveLength(1);
 

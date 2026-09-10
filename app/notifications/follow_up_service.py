@@ -19,7 +19,7 @@ from app.auth.models import UserRole
 from app.database import crud
 from app.database.models import Project
 from app.notifications.models import NotificationType
-from app.projects.models import ProjectStatus
+from app.projects import pipeline as project_pipeline
 
 # Sprint 024 §3 — the only per-Project timestamp this schema has ever had
 # (no separate "last touched" column exists or is being added). A plain
@@ -41,7 +41,11 @@ class FollowUpService:
     def run(self, db: Session, now: datetime) -> FollowUpRunResult:
         result = FollowUpRunResult()
 
-        stale_enquiries = crud.list_projects_by_status(db, ProjectStatus.ENQUIRY.value)
+        # Sprint 039 — selected by the stage's trade-neutral *role*, not
+        # by a literal "enquiry" key: this job runs across every tenant at
+        # once (it has no caller and no tenant of its own), and different
+        # tenants call their first stage different things.
+        stale_enquiries = crud.list_projects_in_role(db, project_pipeline.LEAD)
 
         for project in stale_enquiries:
             result.examined += 1

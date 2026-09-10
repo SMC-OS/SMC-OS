@@ -96,11 +96,17 @@ class CustomerQuoteSummary(BaseModel):
 
 
 class CustomerProjectSummary(BaseModel):
+    """Sprint 039 adds `status_label`/`status_role`, resolved server-side
+    against the tenant's own pipeline, so this panel renders a job's stage
+    without a second round trip for the pipeline it already had to read."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     name: str
     status: str
+    status_label: str | None = None
+    status_role: str | None = None
     project_type: str | None = None
     start_date: date | None = None
     target_completion_date: date | None = None

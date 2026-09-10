@@ -41,6 +41,7 @@ from app.database.models import (
     Material,
     Message,
     NotificationRecord,
+    PipelineStage,
     PortalLink,
     ProcessedEmailEvent,
     ProcessedStripeEvent,
@@ -1810,5 +1811,114 @@ def list_retryable_communications(db: Session, *, limit: int = 100) -> list[Comm
         )
         .order_by(Communication.last_attempted_at.asc())
         .limit(limit)
+    )
+    return list(db.scalars(stmt))
+
+
+# --- Pipeline stages (Sprint 039, Workstream D) -------------------------
+#
+# A tenant's own project pipeline. Always read whole and ordered — this is
+# configuration for one tenant, never a table anything queries into or
+# joins against, which is why `projects.status` stays a plain String with
+# no FK to here (see PipelineStage's own docstring).
+
+
+def list_pipeline_stages(db: Session, tenant_id: uuid.UUID) -> list[PipelineStage]:
+    stmt = (
+        select(PipelineStage)
+        .where(PipelineStage.tenant_id == tenant_id)
+        .order_by(PipelineStage.position)
+    )
+    return list(db.scalars(stmt))
+
+
+def create_pipeline_stages(
+    db: Session,
+    *,
+    tenant_id: uuid.UUID,
+    stages: list[dict],
+    template_key: str | None = None,
+    commit: bool = True,
+) -> list[PipelineStage]:
+    rows = [
+        PipelineStage(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            key=stage["key"],
+            label=stage["label"],
+            role=stage["role"],
+            position=stage["position"],
+            template_key=template_key,
+        )
+        for stage in stages
+    ]
+    db.add_all(rows)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    return rows
+
+
+def delete_pipeline_stages(db: Session, tenant_id: uuid.UUID, *, commit: bool = True) -> None:
+    db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant_id).delete(
+        synchronize_session=False
+    )
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+
+
+def move_projects_to_stage(
+    db: Session,
+    tenant_id: uuid.UUID,
+    *,
+    from_key: str,
+    to_key: str,
+    commit: bool = True,
+) -> int:
+    """Bulk-move every project on one stage to another, within one tenant.
+
+    Only ever called by pipeline_config.apply_template, i.e. only when a
+    person has explicitly asked to switch their pipeline having been shown
+    the mapping first.
+    """
+    moved = (
+        db.query(Project)
+        .filter(Project.tenant_id == tenant_id, Project.status == from_key)
+        .update({Project.status: to_key}, synchronize_session=False)
+    )
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    return moved
+
+
+def list_projects_in_role(db: Session, role: str) -> list[Project]:
+    """Every project, across every tenant, sitting at a stage with `role`.
+
+    The cross-tenant counterpart of `list_projects_by_status`, for the
+    scheduled jobs that have no caller and therefore no tenant of their
+    own (app/notifications/follow_up_service.py, app/automations/scan.py).
+    Joins each project to its *own* tenant's pipeline, so "the first
+    stage" resolves per tenant rather than to one shared literal.
+
+    A project whose tenant has no configured stages matches nothing here.
+    That is correct rather than a gap: every tenant is seeded at creation
+    (app/tenants/service.py) and every pre-existing one was seeded by
+    Sprint 039's migration, so an unseeded tenant means something is
+    genuinely wrong — and a follow-up job silently inventing stages for it
+    would hide that.
+    """
+    stmt = (
+        select(Project)
+        .join(
+            PipelineStage,
+            (PipelineStage.tenant_id == Project.tenant_id)
+            & (PipelineStage.key == Project.status),
+        )
+        .where(PipelineStage.role == role)
     )
     return list(db.scalars(stmt))

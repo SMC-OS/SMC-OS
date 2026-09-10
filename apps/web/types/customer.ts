@@ -1,3 +1,5 @@
+import type { PipelineRole } from "@/types/project";
+
 export const CUSTOMER_TYPES = ["individual", "company"] as const;
 export type CustomerType = (typeof CUSTOMER_TYPES)[number];
 
@@ -51,6 +53,10 @@ export interface CustomerProjectSummary {
   id: string;
   name: string;
   status: string;
+  // Sprint 039 — resolved server-side against the tenant's pipeline, so
+  // this panel needs no second round trip to render a job's stage.
+  status_label: string | null;
+  status_role: PipelineRole | null;
   project_type: string | null;
   start_date: string | null;
   target_completion_date: string | null;

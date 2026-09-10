@@ -1,3 +1,5 @@
+import type { PipelineRole } from "@/types/project";
+
 // Sprint 013 — mirrors app/portal/models.py.
 
 export interface PortalLinkOut {
@@ -21,7 +23,12 @@ export interface PortalLinkCreateOut extends PortalLinkOut {
 export interface PortalProjectOut {
   id: string;
   name: string;
+  /** Raw stage key from the contractor's own pipeline. */
   status: string;
+  /** Sprint 039 — the stage resolved server-side. The portal has no
+   * session, so it cannot fetch the tenant's pipeline itself. */
+  status_label: string | null;
+  status_role: PipelineRole | null;
   created_at: string;
 }
 

@@ -345,14 +345,33 @@ non-terminal stage. `convert_to_customer`'s gate changes from `status == "enquir
 
 ## 5. Migration plan
 
-Single migration, linear from the **verified** head `b2c3d4e5f6a7`:
+Two migrations, applied in sequence, both linear from the **verified** head
+`b2c3d4e5f6a7`. One per phase rather than one combined migration, so no phase ships a
+table nothing yet reads:
 
-- `pipeline_stages` — tenant-scoped stage configuration (key, label, role, position,
-  `is_default`, `template_key`).
-- `notification_preferences` — per-user, per-tenant, per-category channel flags.
+- **`c5d6e7f8a9b0`** (Phase 1, built) — `pipeline_stages`, tenant-scoped stage
+  configuration (key, label, role, position, `template_key`).
+- Phase 3 — `notification_preferences`, per-user, per-tenant, per-category channel
+  flags.
 
 Both are new tables. No column on an existing table is altered, dropped or retyped, and
-no existing row's data is rewritten. Downgrade drops both tables and is genuinely safe.
+no existing row's data is rewritten. Each downgrade drops its own table and is
+genuinely safe.
+
+### 5.1 Decision 6 — `pipeline_stages.tenant_id` cascades, alone in this schema
+
+Every other tenant FK in this schema deliberately **blocks** a tenant delete, because
+those tables hold business records (quotes, projects, customers, communications) and the
+constraint exists so nobody removes them by accident. `pipeline_stages` holds none: a
+stage row is regenerable configuration, and deleting every one of them leaves
+`pipeline_config.resolve()` returning the default template unchanged.
+
+Discovered concretely: adding the table with the schema's usual blocking FK broke **87
+tests** across 17 different cleanup helpers, each of which deletes a throwaway tenant.
+Patching all 17 would have preserved a safety property that protects nothing here, and
+obliged every future test author to know this table exists. `ON DELETE CASCADE` is the
+honest answer, and it is documented on the model itself so the exception cannot be
+mistaken for an oversight.
 
 ---
 
@@ -386,8 +405,69 @@ integration:
 
 ---
 
-## 8. Status
+## 8. What Phase 1 actually built
 
-**CONTRACT LOCKED.** Discovery complete and recorded above; branch and worktree created
-from `origin/main` @ `8e40039`; Alembic head verified as `b2c3d4e5f6a7`. Implementation
-proceeding from Phase 1.
+**Trade-neutral project pipeline V2 — complete, backend and frontend.**
+
+### Backend
+- `app/projects/pipeline.py` — the pure domain: eight roles, two named templates
+  (`standard`, `stone`), and the transition graph. No database, no I/O.
+- `app/projects/pipeline_config.py` — resolution (falling back to `standard` for a
+  tenant with no rows), idempotent seeding, `plan_template_change` (pure, previewable)
+  and `apply_template` (the one place that rewrites `projects.status`, and only on an
+  explicit request).
+- `PipelineStage` ORM model + migration `c5d6e7f8a9b0`, seeding every pre-existing
+  tenant with the legacy stone stages. **Verified: `alembic downgrade`/`upgrade`
+  round-trips cleanly.**
+- `ProjectService` — graph transitions replace the linear walk; `create` opens at the
+  tenant's own first stage; `convert_to_customer` gates on the `lead` role.
+- `GET /api/v1/projects/meta/pipeline` — the tenant's stages and each one's
+  `allowed_transitions`, served so no client can offer a move the engine would refuse.
+- `ProjectOut.status_role` — the neutral meaning alongside the tenant-specific key,
+  attached through one shared helper (`pipeline_config.attach_role`) used by both
+  `app/projects` and `app/quotes`'s handoff.
+- Every consumer switched to roles: dashboard `PipelineCounts` (now eight role keys),
+  quote handoff, the stale-lead scan (`crud.list_projects_in_role`, a per-tenant join
+  rather than one shared literal), GeoCore AI's workspace context, the automation
+  dispatcher's "project completed" trigger, the automation scan's terminal check, and
+  the customer context panel's open-project count — which, as a side effect of being
+  expressed as roles, stopped counting cancelled jobs as open.
+- Portal and customer-context payloads carry `status_label`/`status_role` resolved
+  server-side (the portal has no session and cannot fetch a pipeline itself).
+
+### Frontend
+- `types/project.ts` — no hardcoded status list at all any more; `PipelineRole` plus a
+  fetched `PipelineStage[]`.
+- `lib/projects.ts` — tone by role, label from the stage the tenant configured.
+- Projects list: stage filters are the tenant's own stages; "Live" now excludes
+  cancelled work as well as completed, which the old `status !== "complete"` check could
+  not express.
+- Project detail: the single "Advance to X" button became the real graph — forward
+  moves, plus put-on-hold and cancel as visually distinct secondary actions, plus a
+  resume picker when a job is on hold. Terminal and permission-denied states are stated
+  rather than rendered as an empty space.
+
+### Evidence
+| Check | Result |
+|---|---|
+| Backend suite, baseline before any change | **959 passed, 1 skipped** (18m54s) |
+| Backend suite, after Phase 1 | **1005 passed, 1 skipped, exit 0** (13m44s) |
+| `alembic downgrade -1` then `upgrade head` | clean both ways |
+| `pnpm lint` (web, marketing, @repo/ui) | 3 successful, 0 warnings |
+| `pnpm --filter web check-types` | clean |
+
+**Pre-existing local flakiness, not caused by this sprint:** on this Windows
+development machine `app/quotes/new/stone/page.test.tsx`,
+`components/quotes/GeneralQuoteBuilder.test.tsx` and
+`app/projects/[id]/page.test.tsx` intermittently fail with
+`Test timed out in 5000ms`, and the failure count varies between identical runs.
+Verified by running the same files against **pristine `origin/main`** in the other
+worktree, where they flake identically. CI is the arbiter for these.
+
+---
+
+## 9. Status
+
+**PHASE 1 COMPLETE.** Contract locked; discovery recorded; branch and worktree created
+from `origin/main` @ `8e40039`; Alembic head verified as `b2c3d4e5f6a7` and extended
+linearly to `c5d6e7f8a9b0`. Phases 2–6 in progress.

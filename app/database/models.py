@@ -1064,3 +1064,63 @@ class ProcessedEmailEvent(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PipelineStage(Base):
+    """One stage of one tenant's project pipeline (Sprint 039, Workstream D).
+
+    What a stage is *called* is this tenant's configuration; what it
+    *means* is `role`, a fixed trade-neutral value from
+    app/projects/pipeline.py's ROLES. Every other module in GeoCore — the
+    dashboard, automations, GeoCore AI, the calendar — reasons about the
+    role, which is what lets a stone tenant keep a stage called
+    "fabricated" while the product itself stops being stone-shaped.
+
+    `key` is what is persisted in `projects.status`. It is UNIQUE per
+    tenant because that column is a plain String with no FK to here:
+    resolving a project's stage is a dictionary lookup by key within the
+    tenant's own pipeline, never a join. A deliberate FK was rejected —
+    it would make deleting or renaming a stage a cascade decision about
+    live job records, and `projects.status` predates this table by
+    thirty-three migrations.
+
+    `position` orders this tenant's own pipeline. Side states (`on_hold`,
+    `cancelled`) sort after every active stage.
+
+    `template_key` is provenance — which named template this stage was
+    seeded from. Like `Automation.template_key` it records where a row came
+    from and never re-syncs it.
+
+    **`tenant_id` is the one tenant FK in this schema carrying
+    `ondelete="CASCADE"`, and the reason is worth stating.** Every other
+    table deliberately blocks a tenant delete, because those tables hold
+    business records — quotes, projects, customers, communications — and
+    the constraint exists precisely so nobody removes them by accident.
+    This table holds none. A pipeline stage is regenerable configuration:
+    delete every row and `pipeline_config.resolve()` hands back the default
+    template unchanged. Blocking a tenant delete on it would protect
+    nothing, and would oblige every caller that removes a tenant to know
+    this table exists.
+    """
+
+    __tablename__ = "pipeline_stages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    template_key: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "key", name="uq_pipeline_stages_tenant_key"),
+    )

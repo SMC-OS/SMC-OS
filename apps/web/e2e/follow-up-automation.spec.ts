@@ -60,7 +60,7 @@ test("a_stale_enquiry_notification_is_created_shown_navigable_and_deduplicated",
   });
   expect(projectRes.ok()).toBeTruthy();
   const project = await projectRes.json();
-  expect(project.status).toBe("enquiry");
+  expect(project.status_role).toBe("lead");
 
   // 8 days after the Project's own creation — past the locked 7-day
   // threshold, evaluated via the CLI's --now override instead of waiting.

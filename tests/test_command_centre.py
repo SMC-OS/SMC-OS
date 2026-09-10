@@ -77,19 +77,28 @@ def _cleanup_tenant(tenant_id: uuid.UUID) -> None:
         db.close()
 
 
-# The linear pipeline (app/projects/service.py) only accepts the exact
-# next status in sequence — a Project reaching "booked" must pass through
-# "quoted" first via two separate PATCH calls, never a single skip.
-_STATUS_SEQUENCE = ["enquiry", "quoted", "booked", "templated", "fabricated", "installed", "complete"]
+# Sprint 039 — every workspace these tests sign up is on the trade-neutral
+# `standard` pipeline, whose stage keys are the role names. Forward
+# progress is still one stage at a time (Sprint 023's invariant survived
+# Pipeline V2), so reaching "approved" still means walking through
+# "quoted" first, never a single skipping PATCH.
+_STAGE_SEQUENCE = [
+    "lead",
+    "quoted",
+    "approved",
+    "scheduled",
+    "in_progress",
+    "completed",
+]
 
 
 def _create_project(client, headers, name: str, status: str | None = None) -> str:
     r = client.post("/api/v1/projects", json={"name": name}, headers=headers)
     assert r.status_code == 201
     project_id = r.json()["id"]
-    if status is not None and status != "enquiry":
-        target_index = _STATUS_SEQUENCE.index(status)
-        for next_status in _STATUS_SEQUENCE[1 : target_index + 1]:
+    if status is not None and status != "lead":
+        target_index = _STAGE_SEQUENCE.index(status)
+        for next_status in _STAGE_SEQUENCE[1 : target_index + 1]:
             r = client.patch(
                 f"/api/v1/projects/{project_id}/status",
                 json={"status": next_status},
@@ -110,7 +119,7 @@ def test_pipeline_counts_are_exact_and_tenant_scoped(client):
         _create_project(client, headers, f"{TEST_PREFIX} Enquiry 1")
         _create_project(client, headers, f"{TEST_PREFIX} Enquiry 2")
         _create_project(client, headers, f"{TEST_PREFIX} Quoted 1", status="quoted")
-        _create_project(client, headers, f"{TEST_PREFIX} Booked 1", status="booked")
+        _create_project(client, headers, f"{TEST_PREFIX} Approved 1", status="approved")
 
         # A Project in a completely different tenant must never be counted.
         _create_project(client, other_headers, f"{TEST_PREFIX} Other Tenant Enquiry")
@@ -119,14 +128,17 @@ def test_pipeline_counts_are_exact_and_tenant_scoped(client):
         assert response.status_code == 200
         body = response.json()
 
+        # Sprint 039 (§4 Decision 3) — keyed by trade-neutral role, not by
+        # stone stage name.
         assert body["pipeline"] == {
-            "enquiry": 2,
+            "lead": 2,
             "quoted": 1,
-            "booked": 1,
-            "templated": 0,
-            "fabricated": 0,
-            "installed": 0,
-            "complete": 0,
+            "approved": 1,
+            "scheduled": 0,
+            "in_progress": 0,
+            "on_hold": 0,
+            "completed": 0,
+            "cancelled": 0,
         }
     finally:
         _cleanup_tenant(tenant_id)
@@ -364,13 +376,14 @@ def test_empty_tenant_gets_all_zeros_not_nulls_or_500(client):
         assert response.json() == {
             "customers": 0,
             "pipeline": {
-                "enquiry": 0,
+                "lead": 0,
                 "quoted": 0,
-                "booked": 0,
-                "templated": 0,
-                "fabricated": 0,
-                "installed": 0,
-                "complete": 0,
+                "approved": 0,
+                "scheduled": 0,
+                "in_progress": 0,
+                "on_hold": 0,
+                "completed": 0,
+                "cancelled": 0,
             },
             "quotes": {"draft": 0, "approved": 0, "handed_off": 0},
             "value": {"quoted_value": 0.0, "approved_quoted_value": 0.0},

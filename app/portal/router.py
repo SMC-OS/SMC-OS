@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.customers.service import customer_service
 from app.database.database import get_db
+from app.projects import pipeline_config
 from app.database.models import User
 from app.documents.models import DocumentOut
 from app.documents.service import document_service
@@ -96,12 +97,18 @@ def get_portal_by_token(token: str, db: Session = Depends(get_db)):
         row, link_status, tenant, customer, projects, quotes = portal_service.get_public_view(db, token)
     except PortalLinkNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portal link not found")
+    # Sprint 039 — one pipeline read for the whole view. `tenant` is None
+    # for a revoked/expired link, in which case `projects` is empty too and
+    # this resolves nothing.
+    portal_pipeline = (
+        pipeline_config.resolve(db, tenant.id) if tenant is not None else None
+    )
     return PortalPublicOut(
         status=link_status,
         tenant_name=tenant.name if tenant is not None else "",
         customer_name=customer.name if customer is not None else "",
         expires_at=row.expires_at,
-        projects=[PortalProjectOut.model_validate(p) for p in projects],
+        projects=[_portal_project(p, portal_pipeline) for p in projects],
         quotes=[PortalQuoteOut.model_validate(q) for q in quotes],
     )
 
@@ -185,3 +192,18 @@ def post_portal_message(token: str, data: PortalMessageCreate, db: Session = Dep
         return portal_service.post_customer_message(db, token, data.body)
     except PortalLinkNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portal link not found")
+
+
+def _portal_project(project, portal_pipeline) -> PortalProjectOut:
+    """One project, with its stage already resolved into words.
+
+    Falls back to the raw stage key rather than to a placeholder: a
+    customer reading "installed" understands more than a customer reading
+    "Unknown", even if the stage has since been reconfigured away.
+    """
+    out = PortalProjectOut.model_validate(project)
+    if portal_pipeline is not None:
+        stage = portal_pipeline.get(project.status)
+        out.status_label = stage.label if stage is not None else project.status
+        out.status_role = stage.role if stage is not None else None
+    return out

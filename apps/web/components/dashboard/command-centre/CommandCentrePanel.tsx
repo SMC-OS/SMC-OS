@@ -6,20 +6,26 @@ import { AlertCircleIcon } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useCommandCentre } from "@/hooks/useCommandCentre";
-import { PROJECT_STATUS_LABEL } from "@/lib/projects";
+import { PIPELINE_ROLE_LABEL } from "@/lib/projects";
 import { formatCurrencyGBP } from "@/lib/utils";
-import type { ProjectStatus } from "@/types/project";
+import type { PipelineRole } from "@/types/project";
 
-// The exact 7-value pipeline order this UI renders in — mirrors the
-// backend's PipelineCounts field order (docs/SPRINTS/sprint-025.md §3).
-const PIPELINE_ORDER: ProjectStatus[] = [
-  "enquiry",
+// The order this UI renders the pipeline in — mirrors the backend's
+// PipelineCounts field order (docs/SPRINTS/sprint-025.md §3), now keyed by
+// trade-neutral role rather than by stone stage name (Sprint 039).
+//
+// Deliberately every role, including the two side states: a workspace with
+// jobs stuck on hold or a run of cancellations needs to see that on the
+// dashboard, not only in the projects list.
+const PIPELINE_ORDER: PipelineRole[] = [
+  "lead",
   "quoted",
-  "booked",
-  "templated",
-  "fabricated",
-  "installed",
-  "complete",
+  "approved",
+  "scheduled",
+  "in_progress",
+  "on_hold",
+  "completed",
+  "cancelled",
 ];
 
 function SectionSkeleton() {
@@ -104,11 +110,11 @@ export function CommandCentrePanel() {
             </Link>
           </CardHeader>
           <CardContent>
-            {PIPELINE_ORDER.map((statusKey) => (
+            {PIPELINE_ORDER.map((role) => (
               <CountRow
-                key={statusKey}
-                label={PROJECT_STATUS_LABEL[statusKey]}
-                value={data.pipeline[statusKey]}
+                key={role}
+                label={PIPELINE_ROLE_LABEL[role]}
+                value={data.pipeline[role] ?? 0}
               />
             ))}
           </CardContent>

@@ -55,14 +55,14 @@ test("a_staff_session_sees_owner_only_controls_absent_not_merely_rejected", asyn
   });
   expect(projectRes.ok()).toBeTruthy();
   const projectId = (await projectRes.json()).id as string;
-  const booked = await api.patch(`/api/v1/projects/${projectId}/status`, {
+  const approved = await api.patch(`/api/v1/projects/${projectId}/status`, {
     headers: ownerHeaders,
     data: { status: "quoted" },
   });
-  expect(booked.ok()).toBeTruthy();
+  expect(approved.ok()).toBeTruthy();
   const bookedTwo = await api.patch(`/api/v1/projects/${projectId}/status`, {
     headers: ownerHeaders,
-    data: { status: "booked" },
+    data: { status: "approved" },
   });
   expect(bookedTwo.ok()).toBeTruthy();
 

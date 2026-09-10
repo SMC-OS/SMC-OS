@@ -49,17 +49,48 @@ vi.mock("@/components/auth/AuthProvider", () => ({
   }),
 }));
 
+/**
+ * Sprint 039 (Workstream D) — the tenant pipeline this page now fetches,
+ * shaped exactly as `GET /projects/meta/pipeline` serves it. Stage keys
+ * are the trade-neutral role names because that is what a workspace
+ * created today is on; `allowed_transitions` is the backend's own answer,
+ * which the page renders rather than re-deriving.
+ */
+const PIPELINE_STAGES = [
+  { key: "lead", label: "Planning", role: "lead", position: 0, is_terminal: false, is_side_state: false, allowed_transitions: ["quoted", "on_hold", "cancelled"] },
+  { key: "quoted", label: "Quoted", role: "quoted", position: 1, is_terminal: false, is_side_state: false, allowed_transitions: ["approved", "on_hold", "cancelled"] },
+  { key: "approved", label: "Approved", role: "approved", position: 2, is_terminal: false, is_side_state: false, allowed_transitions: ["scheduled", "on_hold", "cancelled"] },
+  { key: "scheduled", label: "Scheduled", role: "scheduled", position: 3, is_terminal: false, is_side_state: false, allowed_transitions: ["in_progress", "on_hold", "cancelled"] },
+  { key: "in_progress", label: "In progress", role: "in_progress", position: 4, is_terminal: false, is_side_state: false, allowed_transitions: ["completed", "on_hold", "cancelled"] },
+  { key: "completed", label: "Completed", role: "completed", position: 5, is_terminal: true, is_side_state: false, allowed_transitions: [] },
+  { key: "on_hold", label: "On hold", role: "on_hold", position: 6, is_terminal: false, is_side_state: true, allowed_transitions: ["lead", "quoted", "approved", "scheduled", "in_progress", "cancelled"] },
+  { key: "cancelled", label: "Cancelled", role: "cancelled", position: 7, is_terminal: true, is_side_state: true, allowed_transitions: [] },
+];
+
+const ROLE_BY_STAGE_KEY = Object.fromEntries(
+  PIPELINE_STAGES.map((stage) => [stage.key, stage.role])
+);
+
 function makeProject(overrides: Record<string, unknown> = {}) {
+  const status = (overrides.status as string) ?? "lead";
   return {
     id: PROJECT_ID,
     quote_id: null,
     customer_id: null,
     name: "Riverside Kitchen Enquiry",
     notes: null,
-    status: "enquiry",
+    status,
+    // Derived from the fixture pipeline rather than hardcoded per-test, so
+    // a test that overrides `status` cannot accidentally describe a
+    // project whose stage and role disagree — which the backend can never
+    // produce.
+    status_role: ROLE_BY_STAGE_KEY[status] ?? null,
     assigned_user_id: null,
     created_at: new Date().toISOString(),
     ...overrides,
+    // Re-applied after the spread so an explicit `status` override still
+    // gets its matching role.
+    ...(overrides.status ? { status_role: ROLE_BY_STAGE_KEY[status] ?? null } : {}),
   };
 }
 
@@ -154,6 +185,9 @@ beforeEach(() => {
       return jsonResponse(
         makeProject({ ...currentProjectOverrides, assigned_user_id: body.assigned_user_id })
       );
+    }
+    if (url.endsWith("/projects/meta/pipeline")) {
+      return jsonResponse({ stages: PIPELINE_STAGES });
     }
     if (url.endsWith("/users")) {
       return jsonResponse([makeTeamMember()]);
@@ -306,7 +340,7 @@ describe("ProjectDetailPage — enquiry conversion (Sprint 021)", () => {
   });
 
   it("hides_convert_to_customer_for_non_enquiry_project", async () => {
-    currentProjectOverrides = { status: "booked" };
+    currentProjectOverrides = { status: "approved" };
     render(<ProjectDetailPage />);
 
     await screen.findByText("Riverside Kitchen Enquiry");
@@ -504,7 +538,7 @@ describe("ProjectDetailPage — site visit scheduling (Sprint 022)", () => {
 
 describe("ProjectDetailPage — project operations (Sprint 023)", () => {
   it("lets_owner_assign_a_staff_member_and_it_persists", async () => {
-    currentProjectOverrides = { status: "booked" };
+    currentProjectOverrides = { status: "approved" };
     render(<ProjectDetailPage />);
 
     const select = await screen.findByLabelText(/assigned to/i);
@@ -531,12 +565,15 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
   });
 
   it("keeps_the_previous_assignment_and_shows_an_error_when_assignment_fails", async () => {
-    currentProjectOverrides = { status: "booked" };
+    currentProjectOverrides = { status: "approved" };
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
 
       if (url.endsWith(`/projects/${PROJECT_ID}/assign`) && init?.method === "PATCH") {
         return jsonResponse({ detail: "Assignment failed" }, 500);
+      }
+      if (url.endsWith("/projects/meta/pipeline")) {
+        return jsonResponse({ stages: PIPELINE_STAGES });
       }
       if (url.endsWith("/users")) {
         return jsonResponse([makeTeamMember()]);
@@ -573,7 +610,7 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
   });
 
   it("shows_the_assign_control_only_for_owner", async () => {
-    currentProjectOverrides = { status: "booked" };
+    currentProjectOverrides = { status: "approved" };
     render(<ProjectDetailPage />);
 
     await screen.findByText("Project Operations");
@@ -582,7 +619,7 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
 
   it("hides_the_assign_control_for_staff", async () => {
     currentRole = "Staff";
-    currentProjectOverrides = { status: "booked" };
+    currentProjectOverrides = { status: "approved" };
     render(<ProjectDetailPage />);
 
     await screen.findByText("Project Operations");
@@ -591,31 +628,31 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
 
   it("shows_unassigned_for_a_staff_viewer_when_no_one_is_assigned", async () => {
     currentRole = "Staff";
-    currentProjectOverrides = { status: "booked", assigned_user_id: null };
+    currentProjectOverrides = { status: "approved", assigned_user_id: null };
     render(<ProjectDetailPage />);
 
     expect(await screen.findByText("Unassigned")).toBeInTheDocument();
   });
 
   it("shows_the_advance_button_for_owner_and_staff", async () => {
-    currentProjectOverrides = { status: "booked" };
+    currentProjectOverrides = { status: "approved" };
     render(<ProjectDetailPage />);
 
     expect(
-      await screen.findByRole("button", { name: /advance to templated/i })
+      await screen.findByRole("button", { name: /advance to scheduled/i })
     ).toBeInTheDocument();
 
     currentRole = "Staff";
     cleanup();
     render(<ProjectDetailPage />);
     expect(
-      await screen.findByRole("button", { name: /advance to templated/i })
+      await screen.findByRole("button", { name: /advance to scheduled/i })
     ).toBeInTheDocument();
   });
 
   it("hides_the_advance_button_from_a_user_without_owner_or_staff_role", async () => {
     currentRole = null;
-    currentProjectOverrides = { status: "booked" };
+    currentProjectOverrides = { status: "approved" };
     render(<ProjectDetailPage />);
 
     await screen.findByText("Riverside Kitchen Enquiry");
@@ -626,12 +663,15 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
   });
 
   it("advancing_status_updates_the_badge_and_persists", async () => {
-    currentProjectOverrides = { status: "booked" };
+    currentProjectOverrides = { status: "approved" };
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
 
       if (url.endsWith(`/projects/${PROJECT_ID}/status`) && init?.method === "PATCH") {
-        return jsonResponse(makeProject({ status: "templated" }));
+        return jsonResponse(makeProject({ status: "scheduled" }));
+      }
+      if (url.endsWith("/projects/meta/pipeline")) {
+        return jsonResponse({ stages: PIPELINE_STAGES });
       }
       if (url.endsWith("/users")) {
         return jsonResponse([makeTeamMember()]);
@@ -644,7 +684,7 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
 
     render(<ProjectDetailPage />);
 
-    const advanceButton = await screen.findByRole("button", { name: /advance to templated/i });
+    const advanceButton = await screen.findByRole("button", { name: /advance to scheduled/i });
     await userEvent.click(advanceButton);
 
     await waitFor(() => {
@@ -652,21 +692,24 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
         expect.stringContaining(`/projects/${PROJECT_ID}/status`),
         expect.objectContaining({
           method: "PATCH",
-          body: JSON.stringify({ status: "templated" }),
+          body: JSON.stringify({ status: "scheduled" }),
         })
       );
     });
 
-    expect(await screen.findByText("Templated")).toBeInTheDocument();
+    expect(await screen.findByText("Scheduled")).toBeInTheDocument();
   });
 
   it("keeps_the_current_status_and_shows_an_error_when_advancing_fails", async () => {
-    currentProjectOverrides = { status: "booked" };
+    currentProjectOverrides = { status: "approved" };
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
 
       if (url.endsWith(`/projects/${PROJECT_ID}/status`) && init?.method === "PATCH") {
         return jsonResponse({ detail: "Invalid status transition" }, 409);
+      }
+      if (url.endsWith("/projects/meta/pipeline")) {
+        return jsonResponse({ stages: PIPELINE_STAGES });
       }
       if (url.endsWith("/users")) {
         return jsonResponse([makeTeamMember()]);
@@ -679,7 +722,7 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
 
     render(<ProjectDetailPage />);
 
-    const advanceButton = await screen.findByRole("button", { name: /advance to templated/i });
+    const advanceButton = await screen.findByRole("button", { name: /advance to scheduled/i });
     await userEvent.click(advanceButton);
 
     await waitFor(() => {
@@ -690,12 +733,19 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
     });
 
     // A failed transition must never advance the displayed status.
-    expect(screen.queryByText("Templated")).not.toBeInTheDocument();
-    expect(await screen.findByText("Booked")).toBeInTheDocument();
-    expect(await screen.findByText(/failed with 409/i)).toBeInTheDocument();
+    expect(screen.queryByText("Scheduled")).not.toBeInTheDocument();
+    expect(await screen.findByText("Approved")).toBeInTheDocument();
+    // Sprint 039 — a 409 is now explained rather than surfaced as the raw
+    // ApiError text ("... failed with 409"). With a stage graph rather
+    // than a linear walk, the realistic cause is that someone else moved
+    // this job while the page was open, and the message says what to do
+    // about it.
+    expect(
+      await screen.findByText(/isn.t available from this stage any more/i)
+    ).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /advance to templated/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /advance to scheduled/i })).toBeEnabled();
     });
   });
 });

@@ -8,10 +8,9 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/components/ui/Card";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { api } from "@/lib/api";
-import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
+import { stageTone } from "@/lib/projects";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { CustomerContext } from "@/types/customer";
-import type { ProjectStatus } from "@/types/project";
 import { QUOTE_STATUS_LABELS, type QuoteStatus } from "@/types/quote";
 
 const QUOTE_TONE: Record<QuoteStatus, "neutral" | "info" | "success"> = {
@@ -183,10 +182,8 @@ export function CustomerContextPanel({ customerId }: { customerId: string }) {
                           : `Added ${formatDate(project.created_at)}`}
                       </p>
                     </div>
-                    <Badge
-                      tone={PROJECT_STATUS_TONE[project.status as ProjectStatus] ?? "neutral"}
-                    >
-                      {PROJECT_STATUS_LABEL[project.status as ProjectStatus] ?? project.status}
+                    <Badge tone={stageTone(project.status_role)}>
+                      {project.status_label ?? project.status}
                     </Badge>
                   </Link>
                 </li>

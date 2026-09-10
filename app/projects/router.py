@@ -7,9 +7,11 @@ from app.auth.dependencies import get_current_user, require_role
 from app.auth.models import UserRole
 from app.customers.models import CustomerCreate, CustomerOut
 from app.projects.models import (
+    PipelineStageOut,
     ProjectAssignmentUpdate,
     ProjectCreate,
     ProjectOut,
+    ProjectPipelineOut,
     ProjectStatusUpdate,
     ProjectUpdate,
 )
@@ -33,6 +35,37 @@ def list_projects(
     limit: int = 20, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     return project_service.list_all(db, tenant_id=current_user.tenant_id, limit=limit)
+
+
+@router.get("/meta/pipeline", response_model=ProjectPipelineOut)
+def get_pipeline(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """The caller's own project pipeline, with the moves each stage allows.
+
+    Declared before `/{project_id}` because FastAPI matches routes in
+    declaration order and "meta" would otherwise be parsed as a project
+    UUID (the same ordering app/quotes/router.py's /meta routes rely on).
+
+    Served from the backend rather than hardcoded per client for the same
+    reason /automations/meta is: a UI must never be able to offer a stage
+    or a transition this tenant's pipeline does not have.
+    """
+    pipeline = project_service.pipeline(db, current_user.tenant_id)
+    return ProjectPipelineOut(
+        stages=[
+            PipelineStageOut(
+                key=stage.key,
+                label=stage.label,
+                role=stage.role,
+                position=stage.position,
+                is_terminal=stage.is_terminal,
+                is_side_state=stage.is_side_state,
+                allowed_transitions=list(pipeline.allowed_transitions(stage.key)),
+            )
+            for stage in pipeline.stages
+        ]
+    )
 
 
 @router.get("/{project_id}", response_model=ProjectOut)

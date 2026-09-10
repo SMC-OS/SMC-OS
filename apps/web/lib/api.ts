@@ -37,7 +37,7 @@ import type { PortalLinkCreateOut, PortalLinkOut, PortalPublicOut } from "@/type
 import type {
   Project,
   ProjectCreate,
-  ProjectStatus,
+  ProjectPipeline,
   ProjectUpdate,
 } from "@/types/project";
 import type { Task, TaskCreate, TaskStatus } from "@/types/task";
@@ -389,6 +389,11 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
+  // Sprint 039 (Workstream D) — the caller's own pipeline: its stages,
+  // their labels, and the moves each one allows. Fetched rather than
+  // hardcoded, because the stage vocabulary is tenant configuration now.
+  getProjectPipeline: () => request<ProjectPipeline>("/projects/meta/pipeline"),
+
   getProjects: (limit = 20) => request<Project[]>(`/projects?limit=${limit}`),
 
   getProject: (id: string) => request<Project>(`/projects/${id}`),
@@ -400,17 +405,20 @@ export const api = {
     }),
 
   // Sprint 036 (Workstream F) — a project's own details. Status keeps its
-  // own endpoint below, with its own linear-transition rules.
+  // own endpoint below, with its own transition rules.
   updateProject: (id: string, changes: ProjectUpdate) =>
     request<Project>(`/projects/${id}`, {
       method: "PATCH",
       body: JSON.stringify(changes),
     }),
 
-  updateProjectStatus: (id: string, projectStatus: ProjectStatus) =>
+  // `stageKey` is a stage of *this tenant's* pipeline (Sprint 039), not a
+  // value from a shared enum. Only ever pass a key the backend offered in
+  // the current stage's `allowed_transitions`.
+  updateProjectStatus: (id: string, stageKey: string) =>
     request<Project>(`/projects/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status: projectStatus }),
+      body: JSON.stringify({ status: stageKey }),
     }),
 
   // Sprint 023 — Owner-only server-side (require_role(OWNER)), distinct

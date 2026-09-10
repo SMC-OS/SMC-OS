@@ -49,7 +49,18 @@ def _cleanup() -> None:
         db.close()
 
 
-def _create_booked_project(client, headers: dict[str, str], name: str = TEST_PROJECT_NAME) -> dict:
+# Sprint 039 — the seeded workspace these tests run against is on the
+# trade-neutral `standard` pipeline, whose stage keys are the role names.
+# "Booked" is now "approved"; the three stone work stages
+# (templated/fabricated/installed) are one `in_progress` stage. Forward
+# progress is still strictly one stage at a time, so every walk below is
+# still a sequence of separate PATCH calls, never a skip.
+APPROVED = "approved"
+NEXT_AFTER_APPROVED = "scheduled"
+SKIPS_A_STAGE = "in_progress"
+
+
+def _create_approved_project(client, headers: dict[str, str], name: str = TEST_PROJECT_NAME) -> dict:
     project = client.post("/api/v1/projects", json={"name": name}, headers=headers)
     assert project.status_code == 201
     project_id = project.json()["id"]
@@ -59,11 +70,11 @@ def _create_booked_project(client, headers: dict[str, str], name: str = TEST_PRO
     )
     assert quoted.status_code == 200
 
-    booked = client.patch(
-        f"/api/v1/projects/{project_id}/status", json={"status": "booked"}, headers=headers
+    approved = client.patch(
+        f"/api/v1/projects/{project_id}/status", json={"status": APPROVED}, headers=headers
     )
-    assert booked.status_code == 200
-    return booked.json()
+    assert approved.status_code == 200
+    return approved.json()
 
 
 def _create_same_tenant_staff(tenant_id) -> str:
@@ -79,12 +90,12 @@ def _create_same_tenant_staff(tenant_id) -> str:
         return str(staff.id)
 
 
-def test_owner_can_assign_a_same_tenant_staff_member_to_a_booked_project(client, auth_headers):
+def test_owner_can_assign_a_same_tenant_staff_member_to_an_approved_project(client, auth_headers):
     """First Sprint 023 contract: an OWNER caller assigns a same-tenant
-    Staff member to their own booked Project."""
+    Staff member to their own approved Project."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers)
+        project = _create_approved_project(client, auth_headers)
 
         with SessionLocal() as db:
             tenant_id = db.get(Project, uuid.UUID(project["id"])).tenant_id
@@ -112,7 +123,7 @@ def test_owner_can_unassign_a_project(client, auth_headers):
     """assigned_user_id: null is a valid, explicit unassignment."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers)
+        project = _create_approved_project(client, auth_headers)
 
         with SessionLocal() as db:
             tenant_id = db.get(Project, uuid.UUID(project["id"])).tenant_id
@@ -145,7 +156,7 @@ def test_assigning_another_tenants_user_returns_404(client, auth_headers, other_
     the same tenant as the Project."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers)
+        project = _create_approved_project(client, auth_headers)
 
         other_me = client.get("/api/v1/auth/me", headers=other_tenant_auth_headers)
         assert other_me.status_code == 200
@@ -172,7 +183,7 @@ def test_assign_project_of_another_tenant_returns_404(client, auth_headers, othe
     relationship check in this codebase (ADR-029)."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_CROSS_TENANT_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_CROSS_TENANT_PROJECT_NAME)
 
         with SessionLocal() as db:
             tenant_id = db.get(Project, uuid.UUID(project["id"])).tenant_id
@@ -194,7 +205,7 @@ def test_same_tenant_staff_cannot_assign(client, auth_headers):
     caller must not be able to assign — not even themselves."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_RBAC_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_RBAC_PROJECT_NAME)
 
         with SessionLocal() as db:
             tenant_id = db.get(Project, uuid.UUID(project["id"])).tenant_id
@@ -226,7 +237,7 @@ def test_successful_assignment_logs_exactly_one_project_assigned_activity(client
     the existing ActivityLog infrastructure as its own domain event type."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_ACTIVITY_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_ACTIVITY_PROJECT_NAME)
 
         with SessionLocal() as db:
             tenant_id = db.get(Project, uuid.UUID(project["id"])).tenant_id
@@ -262,7 +273,7 @@ def test_assignment_rolls_back_if_activity_logging_fails(client, auth_headers, m
     as tests/test_appointments.py's equivalent atomicity test."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_ATOMICITY_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_ATOMICITY_PROJECT_NAME)
 
         with SessionLocal() as db:
             tenant_id = db.get(Project, uuid.UUID(project["id"])).tenant_id
@@ -295,16 +306,16 @@ def test_valid_forward_status_transition_still_succeeds_for_owner(client, auth_h
     exercises)."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
 
         response = client.patch(
             f"/api/v1/projects/{project['id']}/status",
-            json={"status": "templated"},
+            json={"status": NEXT_AFTER_APPROVED},
             headers=auth_headers,
         )
 
         assert response.status_code == 200
-        assert response.json()["status"] == "templated"
+        assert response.json()["status"] == NEXT_AFTER_APPROVED
     finally:
         _cleanup()
 
@@ -314,11 +325,11 @@ def test_skipping_a_status_stage_returns_409(client, auth_headers):
     real conflict, not silently clamped or allowed."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
 
         response = client.patch(
             f"/api/v1/projects/{project['id']}/status",
-            json={"status": "fabricated"},
+            json={"status": SKIPS_A_STAGE},
             headers=auth_headers,
         )
 
@@ -326,7 +337,7 @@ def test_skipping_a_status_stage_returns_409(client, auth_headers):
 
         with SessionLocal() as db:
             persisted = db.get(Project, uuid.UUID(project["id"]))
-            assert persisted.status == "booked"
+            assert persisted.status == APPROVED
     finally:
         _cleanup()
 
@@ -335,7 +346,7 @@ def test_reverting_a_status_backward_returns_409(client, auth_headers):
     """No arbitrary status jumping — backward moves are rejected too."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
 
         response = client.patch(
             f"/api/v1/projects/{project['id']}/status",
@@ -353,11 +364,11 @@ def test_repeating_the_current_status_returns_409(client, auth_headers):
     idempotent no-op — no UI path would ever submit it."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
 
         response = client.patch(
             f"/api/v1/projects/{project['id']}/status",
-            json={"status": "booked"},
+            json={"status": APPROVED},
             headers=auth_headers,
         )
 
@@ -367,13 +378,14 @@ def test_repeating_the_current_status_returns_409(client, auth_headers):
 
 
 def test_transition_from_complete_is_rejected(client, auth_headers):
-    """complete is terminal — no further transition is valid from it."""
+    """A completed job is terminal — no further transition is valid from
+    it, including cancellation (Sprint 039 keeps Sprint 023's rule)."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_TRANSITION_PROJECT_NAME)
         project_id = project["id"]
 
-        for target in ("templated", "fabricated", "installed", "complete"):
+        for target in ("scheduled", "in_progress", "completed"):
             step = client.patch(
                 f"/api/v1/projects/{project_id}/status",
                 json={"status": target},
@@ -383,7 +395,7 @@ def test_transition_from_complete_is_rejected(client, auth_headers):
 
         response = client.patch(
             f"/api/v1/projects/{project_id}/status",
-            json={"status": "complete"},
+            json={"status": "completed"},
             headers=auth_headers,
         )
         assert response.status_code == 409
@@ -398,11 +410,11 @@ def test_status_transition_of_another_tenants_project_returns_404(
     the existing tenant-scoped get_project_by_id lookup."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_CROSS_TENANT_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_CROSS_TENANT_PROJECT_NAME)
 
         response = client.patch(
             f"/api/v1/projects/{project['id']}/status",
-            json={"status": "templated"},
+            json={"status": NEXT_AFTER_APPROVED},
             headers=other_tenant_auth_headers,
         )
 
@@ -416,7 +428,7 @@ def test_same_tenant_user_without_owner_staff_role_cannot_advance_status(client,
     not be able to advance a Project's status."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_RBAC_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_RBAC_PROJECT_NAME)
 
         with SessionLocal() as db:
             tenant_id = db.get(Project, uuid.UUID(project["id"])).tenant_id
@@ -436,7 +448,7 @@ def test_same_tenant_user_without_owner_staff_role_cannot_advance_status(client,
 
         response = client.patch(
             f"/api/v1/projects/{project['id']}/status",
-            json={"status": "templated"},
+            json={"status": NEXT_AFTER_APPROVED},
             headers=no_role_headers,
         )
 
@@ -444,7 +456,7 @@ def test_same_tenant_user_without_owner_staff_role_cannot_advance_status(client,
 
         with SessionLocal() as db:
             persisted = db.get(Project, uuid.UUID(project["id"]))
-            assert persisted.status == "booked"
+            assert persisted.status == APPROVED
     finally:
         _cleanup()
 
@@ -454,7 +466,7 @@ def test_staff_can_advance_status(client, auth_headers):
     table)."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_RBAC_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_RBAC_PROJECT_NAME)
 
         with SessionLocal() as db:
             tenant_id = db.get(Project, uuid.UUID(project["id"])).tenant_id
@@ -468,12 +480,12 @@ def test_staff_can_advance_status(client, auth_headers):
 
         response = client.patch(
             f"/api/v1/projects/{project['id']}/status",
-            json={"status": "templated"},
+            json={"status": NEXT_AFTER_APPROVED},
             headers=staff_headers,
         )
 
         assert response.status_code == 200
-        assert response.json()["status"] == "templated"
+        assert response.json()["status"] == NEXT_AFTER_APPROVED
         assert staff_id  # created for realism/consistency with other tests
     finally:
         _cleanup()
@@ -485,7 +497,7 @@ def test_successful_status_transition_logs_exactly_one_project_status_changed_ac
     """Activity contract (sprint-023.md §4)."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_ACTIVITY_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_ACTIVITY_PROJECT_NAME)
 
         with SessionLocal() as db:
             tenant_id = db.get(Project, uuid.UUID(project["id"])).tenant_id
@@ -493,7 +505,7 @@ def test_successful_status_transition_logs_exactly_one_project_status_changed_ac
 
         response = client.patch(
             f"/api/v1/projects/{project['id']}/status",
-            json={"status": "templated"},
+            json={"status": NEXT_AFTER_APPROVED},
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -511,10 +523,12 @@ def test_successful_status_transition_logs_exactly_one_project_status_changed_ac
         # Regression lock: previous_status must be captured before
         # crud.update_project_status mutates the same identity-mapped
         # Project row (a real bug caught by e2e/project-operations.spec.ts
-        # — the description read "moved from templated to templated"
-        # instead of "moved from booked to templated" because `project`
+        # — the description read "moved from scheduled to scheduled"
+        # instead of "moved from approved to scheduled" because `project`
         # and the updated row were the same Python object).
-        assert activities[0].description == f"Project {project['id']} moved from booked to templated"
+        assert activities[0].description == (
+            f"Project {project['id']} moved from {APPROVED} to {NEXT_AFTER_APPROVED}"
+        )
     finally:
         _cleanup()
 
@@ -523,7 +537,7 @@ def test_status_transition_rolls_back_if_activity_logging_fails(client, auth_hea
     """Transaction-atomicity contract for the status route."""
     _cleanup()
     try:
-        project = _create_booked_project(client, auth_headers, TEST_ATOMICITY_PROJECT_NAME)
+        project = _create_approved_project(client, auth_headers, TEST_ATOMICITY_PROJECT_NAME)
 
         def fail_activity_log(*args, **kwargs):
             raise RuntimeError("synthetic activity failure")
@@ -533,12 +547,12 @@ def test_status_transition_rolls_back_if_activity_logging_fails(client, auth_hea
         with pytest.raises(RuntimeError, match="synthetic activity failure"):
             client.patch(
                 f"/api/v1/projects/{project['id']}/status",
-                json={"status": "templated"},
+                json={"status": NEXT_AFTER_APPROVED},
                 headers=auth_headers,
             )
 
         with SessionLocal() as db:
             persisted = db.get(Project, uuid.UUID(project["id"]))
-            assert persisted.status == "booked"
+            assert persisted.status == APPROVED
     finally:
         _cleanup()

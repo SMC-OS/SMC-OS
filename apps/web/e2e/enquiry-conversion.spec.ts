@@ -53,7 +53,7 @@ test("unlinked_enquiry_can_be_converted_to_customer_and_persists", async ({ page
   });
   expect(lockedProjectRes.ok()).toBeTruthy();
   const lockedProject = await lockedProjectRes.json();
-  expect(lockedProject.status).toBe("enquiry");
+  expect(lockedProject.status_role).toBe("lead");
   expect(lockedProject.customer_id).toBeNull();
 
   // ---- Authenticate through the real login UI ----
@@ -110,7 +110,7 @@ test("unlinked_enquiry_can_be_converted_to_customer_and_persists", async ({ page
   const persistedProject = await persistedProjectRes.json();
   expect(persistedProject.id).toBe(projectId);
   expect(persistedProject.customer_id).toBe(returnedCustomer.id);
-  expect(persistedProject.status).toBe("enquiry");
+  expect(persistedProject.status_role).toBe("lead");
 
   // ---- Verify the created Customer through the live API ----
   const persistedCustomerRes = await api.get(`/api/v1/customers/${returnedCustomer.id}`, {

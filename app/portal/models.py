@@ -34,13 +34,25 @@ class PortalLinkCreateOut(PortalLinkOut):
 class PortalProjectOut(BaseModel):
     """What the (unauthenticated) customer sees for one of their projects.
     `notes` is deliberately excluded — it may hold internal staff remarks
-    never meant for the customer."""
+    never meant for the customer.
+
+    Sprint 039 adds `status_label` and `status_role`. The portal has no
+    session and therefore cannot fetch the tenant's pipeline the way the
+    authenticated app does, so the stage is resolved server-side and sent
+    already-readable: the label is the word this business chose for the
+    stage, and the role is what lets the portal colour it consistently
+    without knowing any tenant's vocabulary.
+
+    `status` stays the raw stage key so the payload remains
+    backwards-compatible for anything already reading it."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     name: str
     status: str
+    status_label: str | None = None
+    status_role: str | None = None
     created_at: datetime
 
 

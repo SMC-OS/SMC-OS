@@ -111,7 +111,11 @@ def test_run_creates_exactly_one_notification_for_a_stale_enquiry_with_assigned_
 
         with SessionLocal() as db:
             project = db.get(Project, project_id)
-            assert project.status == "enquiry"
+            # Sprint 039 — a workspace signed up today is on the
+            # trade-neutral pipeline, so its first stage is "lead". The
+            # scan itself selects by *role*, so this test would read the
+            # same for a stone tenant sitting on "enquiry".
+            assert project.status == "lead"
             created_at = project.created_at
 
         with SessionLocal() as db:
@@ -288,10 +292,11 @@ def test_project_not_in_enquiry_status_is_not_examined(client):
                 .filter(NotificationRecord.source_id == project_id)
                 .count()
             )
-        # The global query only ever selects status=="enquiry" rows, so
-        # this "quoted" Project is never examined at all (not "examined
-        # then skipped for the wrong reason") — proven by there being no
-        # notification for it, the only externally-observable evidence.
+        # The global query only ever selects projects at a `lead`-role
+        # stage, so this "quoted" Project is never examined at all (not
+        # "examined then skipped for the wrong reason") — proven by there
+        # being no notification for it, the only externally-observable
+        # evidence.
         assert count == 0
     finally:
         _cleanup_tenant(tenant_id)

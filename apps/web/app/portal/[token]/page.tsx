@@ -8,12 +8,11 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { usePolling } from "@/hooks/usePolling";
 import { ApiError, api } from "@/lib/api";
-import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
+import { stageTone } from "@/lib/projects";
 import { formatCurrencyGBP } from "@/lib/utils";
 import type { DocumentOut } from "@/types/document";
 import type { MessageOut } from "@/types/message";
 import type { PortalPublicOut } from "@/types/portal";
-import type { ProjectStatus } from "@/types/project";
 
 const UNUSABLE_MESSAGES: Record<string, string> = {
   revoked: "This link has been revoked. Contact us for a new one.",
@@ -191,8 +190,8 @@ export default function ClientPortalPage() {
                           Started {formatDate(project.created_at)}
                         </p>
                       </div>
-                      <Badge tone={PROJECT_STATUS_TONE[project.status as ProjectStatus] ?? "neutral"}>
-                        {PROJECT_STATUS_LABEL[project.status as ProjectStatus] ?? project.status}
+                      <Badge tone={stageTone(project.status_role)}>
+                        {project.status_label ?? project.status}
                       </Badge>
                     </li>
                   ))}

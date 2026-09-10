@@ -22,14 +22,17 @@ function jsonResponse(body: unknown, status = 200) {
 
 const FULL_STATS = {
   customers: 4,
+  // Sprint 039 — keyed by trade-neutral role, mirroring the backend's
+  // re-shaped PipelineCounts (§4 Decision 3).
   pipeline: {
-    enquiry: 2,
+    lead: 2,
     quoted: 1,
-    booked: 1,
-    templated: 0,
-    fabricated: 0,
-    installed: 0,
-    complete: 0,
+    approved: 1,
+    scheduled: 0,
+    in_progress: 0,
+    on_hold: 0,
+    completed: 0,
+    cancelled: 0,
   },
   quotes: { draft: 1, approved: 2, handed_off: 1 },
   value: { quoted_value: 12500, approved_quoted_value: 9000 },
@@ -40,13 +43,14 @@ const FULL_STATS = {
 const EMPTY_STATS = {
   customers: 0,
   pipeline: {
-    enquiry: 0,
+    lead: 0,
     quoted: 0,
-    booked: 0,
-    templated: 0,
-    fabricated: 0,
-    installed: 0,
-    complete: 0,
+    approved: 0,
+    scheduled: 0,
+    in_progress: 0,
+    on_hold: 0,
+    completed: 0,
+    cancelled: 0,
   },
   quotes: { draft: 0, approved: 0, handed_off: 0 },
   value: { quoted_value: 0, approved_quoted_value: 0 },
@@ -83,7 +87,13 @@ describe("CommandCentrePanel — business command centre (Sprint 025)", () => {
       expect(screen.getByText("Business Command Centre")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Enquiry")).toBeInTheDocument();
+    expect(screen.getByText("Planning")).toBeInTheDocument();
+    // Sprint 039 — held work is on the dashboard now. It was invisible
+    // before, because the old seven-stage pipeline could not say it at
+    // all. ("Cancelled" is deliberately not asserted here: the Site Visits
+    // card uses the same word, so the match would be ambiguous rather than
+    // meaningful.)
+    expect(screen.getByText("On hold")).toBeInTheDocument();
     expect(screen.getByText("Handed off")).toBeInTheDocument();
     expect(screen.getByText("Quoted value")).toBeInTheDocument();
     expect(screen.getByText("£12,500")).toBeInTheDocument();

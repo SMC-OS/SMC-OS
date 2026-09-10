@@ -1,24 +1,45 @@
 import uuid
 from datetime import date, datetime
-from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.trades.catalogue import TRADE_KEYS
 
 
-class ProjectStatus(str, Enum):
-    """The job pipeline (docs/ROADMAP.md, Sprint 006). Stored as a plain
-    String column (app/database/models.py's Project.status), not a native
-    Postgres enum — same convention as ActivityType/NotificationType."""
+# Sprint 039 (Workstream D) removed `ProjectStatus`. A project's status is
+# no longer a fixed enum shared by every business on GeoCore: the set of
+# stages is per-tenant configuration (app/projects/pipeline_config.py) and
+# the *meaning* of each stage is a trade-neutral role
+# (app/projects/pipeline.py's ROLES). Sprint 006's stone-shaped enum
+# survives as the `stone` template.
+#
+# Anything that used to compare against `ProjectStatus.ENQUIRY` now asks
+# for the role instead — `pipeline.stage_for_role("lead")` — so the same
+# code works for a stone tenant whose lead stage is called "enquiry" and a
+# roofing tenant whose lead stage is called "lead".
 
-    ENQUIRY = "enquiry"
-    QUOTED = "quoted"
-    BOOKED = "booked"
-    TEMPLATED = "templated"
-    FABRICATED = "fabricated"
-    INSTALLED = "installed"
-    COMPLETE = "complete"
+
+class PipelineStageOut(BaseModel):
+    """One stage of the caller's own pipeline, with the moves it allows.
+
+    `allowed_transitions` is served rather than re-derived client-side for
+    the same reason /automations/meta serves its trigger and action lists:
+    a UI must not be able to offer a transition the engine will refuse.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    label: str
+    role: str
+    position: int
+    is_terminal: bool
+    is_side_state: bool
+    allowed_transitions: list[str]
+
+
+class ProjectPipelineOut(BaseModel):
+    stages: list[PipelineStageOut]
 
 
 class ProjectCreate(BaseModel):
@@ -87,17 +108,28 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectOut(ProjectCreate):
+    """Sprint 039: `status` is a stage *key* from this tenant's own
+    pipeline — a plain string, because the valid set is configuration and
+    differs between tenants. `status_role` is the trade-neutral meaning,
+    served alongside it so no client has to map a tenant-specific name
+    back onto a stage in the shared vocabulary."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    status: ProjectStatus
+    status: str
+    status_role: str | None = None
     created_at: datetime
     quote_id: uuid.UUID | None = None
     assigned_user_id: uuid.UUID | None = None
 
 
 class ProjectStatusUpdate(BaseModel):
-    status: ProjectStatus
+    """`status` is a stage key, validated against the caller's own
+    pipeline in the service (not here): which keys are valid depends on
+    the tenant, which a Pydantic model has no access to."""
+
+    status: str
 
 
 class ProjectAssignmentUpdate(BaseModel):

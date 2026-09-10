@@ -41,7 +41,7 @@ def test_the_original_body_still_works(client, auth_headers):
     project = _create(client, auth_headers, notes="Just a note")
 
     assert project["notes"] == "Just a note"
-    assert project["status"] == "enquiry"
+    assert project["status"] == "lead"
     assert project["project_type"] is None
     assert project["start_date"] is None
 
@@ -94,20 +94,20 @@ def test_patch_updates_details_without_touching_status(client, auth_headers):
     assert updated["estimated_value"] == 9000
     # Status has its own endpoint with its own linear-transition rules,
     # and a general PATCH must not be able to route around them.
-    assert updated["status"] == "enquiry"
+    assert updated["status"] == "lead"
 
 
 def test_patch_cannot_set_status(client, auth_headers):
     project = _create(client, auth_headers)
     r = client.patch(
         f"/api/v1/projects/{project['id']}",
-        json={"status": "complete"},
+        json={"status": "completed"},
         headers=auth_headers,
     )
     # Unknown field is ignored by the model rather than rejected; what
     # matters is that it cannot take effect.
     assert r.status_code == 200
-    assert r.json()["status"] == "enquiry"
+    assert r.json()["status"] == "lead"
 
 
 def test_patch_rejects_another_tenants_customer(

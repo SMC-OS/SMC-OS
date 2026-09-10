@@ -20,6 +20,8 @@ from app.customers.models import (
     CustomerUpdate,
 )
 from app.database import crud
+from app.projects import pipeline as project_pipeline
+from app.projects import pipeline_config
 from app.database.models import Customer
 
 
@@ -33,7 +35,12 @@ class CustomerService:
     # Sprint 036 — a project is "open" until it reaches the end of the
     # pipeline. Defined here once rather than inline at each call site so
     # the dashboard and the customer page cannot disagree about it.
-    _CLOSED_PROJECT_STATUSES = frozenset({"complete"})
+    #
+    # Sprint 039 — expressed as trade-neutral *roles* rather than the
+    # literal stage key "complete", which only ever closed a stone
+    # tenant's jobs and silently counted every cancelled job as still
+    # open.
+    _CLOSED_PROJECT_ROLES = frozenset(project_pipeline.TERMINAL_ROLES)
 
     def get_context(
         self, db: Session, customer_id: uuid.UUID, tenant_id: uuid.UUID
@@ -51,16 +58,20 @@ class CustomerService:
         quotes = crud.list_quotes_by_customer(db, tenant_id, customer_id)
         projects = crud.list_projects_by_customer(db, tenant_id, customer_id)
 
+        pipeline = pipeline_config.resolve(db, tenant_id)
+
         return CustomerContextOut(
             customer=customer,
             quotes=[CustomerQuoteSummary.model_validate(q) for q in quotes],
-            projects=[CustomerProjectSummary.model_validate(p) for p in projects],
+            projects=[_project_summary(p, pipeline) for p in projects],
             quoted_value=sum(q.total or 0.0 for q in quotes),
             approved_value=sum(
                 q.total or 0.0 for q in quotes if q.status == "approved"
             ),
             open_projects=sum(
-                1 for p in projects if p.status not in self._CLOSED_PROJECT_STATUSES
+                1
+                for p in projects
+                if pipeline.role_of(p.status) not in self._CLOSED_PROJECT_ROLES
             ),
         )
 
@@ -118,3 +129,14 @@ class CustomerService:
 
 
 customer_service = CustomerService()
+
+
+def _project_summary(project, pipeline) -> CustomerProjectSummary:
+    """One project row with its stage resolved into words the panel can
+    render directly. Falls back to the raw stage key rather than to a
+    placeholder, same reasoning as the portal's own resolver."""
+    out = CustomerProjectSummary.model_validate(project)
+    stage = pipeline.get(project.status)
+    out.status_label = stage.label if stage is not None else project.status
+    out.status_role = stage.role if stage is not None else None
+    return out

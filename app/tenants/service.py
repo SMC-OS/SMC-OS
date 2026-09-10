@@ -20,6 +20,7 @@ from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
 from app.database import crud
 from app.database.models import Tenant
+from app.projects import pipeline_config
 from app.tenants.models import (
     OnboardingStateOut,
     TenantCreate,
@@ -195,6 +196,12 @@ class TenantService:
             slug = f"{slug}-{secrets.token_hex(3)}"
 
         tenant = crud.create_tenant(db, id=uuid.uuid4(), name=data.name, slug=slug)
+        # Sprint 039 (Workstream D) — a new workspace gets GeoCore's
+        # trade-neutral pipeline. This is the single choke point every
+        # tenant is created through, so no signup path can produce a
+        # workspace with no stages; pipeline_config.resolve() still falls
+        # back to the same template if one ever somehow does.
+        pipeline_config.seed_for_tenant(db, tenant.id)
         # Sprint 008: matches the precedent every other module's create()
         # follows (customers, projects, quotes) — creation and its activity
         # record happen atomically in one place.

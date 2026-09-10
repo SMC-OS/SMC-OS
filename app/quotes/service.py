@@ -16,7 +16,8 @@ from app.activity.service import activity_service
 from app.automations.dispatcher import automation_dispatcher
 from app.database import crud
 from app.database.models import Project
-from app.projects.models import ProjectStatus
+from app.projects import pipeline as project_pipeline
+from app.projects import pipeline_config
 from app.quotes.calculator import QuoteCalculator
 from app.quotes.general import (
     GeneralQuoteLineRequest,
@@ -143,6 +144,8 @@ class QuoteService:
         )
         name = customer.name if customer is not None else f"Quote {quote.id}"
 
+        pipeline = pipeline_config.resolve(db, tenant_id)
+
         project = crud.create_project(
             db,
             id=uuid.uuid4(),
@@ -150,7 +153,12 @@ class QuoteService:
             name=name,
             customer_id=quote.customer_id,
             notes=None,
-            status=ProjectStatus.BOOKED.value,
+            # Sprint 039 — an approved quote becomes a job at whatever
+            # this tenant calls its `approved` stage ("booked" on the
+            # stone pipeline, "approved" on the standard one). Never a
+            # hardcoded stage key: app/quotes must not know another
+            # module's vocabulary.
+            status=pipeline.stage_for_role(project_pipeline.APPROVED).key,
             quote_id=quote.id,
             # Sprint 036 (Workstream F) — carry what the quote already
             # knows onto the project it becomes, rather than making
@@ -181,7 +189,9 @@ class QuoteService:
             tenant_id=tenant_id,
         )
 
-        return project
+        # Decorated before returning: this method's caller responds with a
+        # ProjectOut, which carries `status_role`.
+        return pipeline_config.attach_role(project, pipeline)
 
     def create(self, db: Session, quote: QuoteRequest, tenant_id: uuid.UUID | None = None) -> dict:
         if (

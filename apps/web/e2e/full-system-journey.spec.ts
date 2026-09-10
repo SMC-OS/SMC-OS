@@ -176,7 +176,7 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   const handoff = await handoffResponse;
   expect(handoff.status()).toBe(200);
   const handedOffProject = await handoff.json();
-  expect(handedOffProject.status).toBe("booked");
+  expect(handedOffProject.status_role).toBe("approved");
   await expect(page.getByText("Booked", { exact: true })).toBeVisible();
 
   // ==== 8. Assignment + status operations on the handed-off Project ====

@@ -27,6 +27,8 @@ from app.automations.subjects import (
     quote_subject,
 )
 from app.database import crud
+from app.projects import pipeline as project_pipeline
+from app.projects import pipeline_config
 
 logger = logging.getLogger("simo_os")
 
@@ -116,6 +118,7 @@ class AutomationDispatcher:
             project,
             customer_name=self._customer_name(db, project.customer_id, project.tenant_id),
             previous_status=previous_status,
+            pipeline=pipeline_config.resolve(db, project.tenant_id),
         )
 
     def dispatch_project_created(self, db: Session, project) -> None:
@@ -149,7 +152,11 @@ class AutomationDispatcher:
             discriminator=project.status,
         )
 
-        if project.status == "complete":
+        # Sprint 039 — "finished" is a role, not the literal stage key
+        # "complete". A tenant on the standard pipeline finishes at
+        # `completed`; a stone tenant finishes at `complete`; both fire
+        # this trigger, and neither fires it at `cancelled`.
+        if subject.get("status_role") == project_pipeline.COMPLETED:
             self._dispatch(
                 db,
                 tenant_id=project.tenant_id,

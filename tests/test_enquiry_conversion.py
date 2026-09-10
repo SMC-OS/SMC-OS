@@ -1,4 +1,8 @@
-"""Sprint 021 — Enquiry (Project.status == "enquiry") to Customer conversion.
+"""Sprint 021 — Enquiry (a project at a `lead`-role stage) to Customer
+conversion. Sprint 039 moved the gate from the literal status "enquiry"
+onto the stage's trade-neutral role, so this reads the same for a stone
+tenant (whose lead stage is "enquiry") and a standard one (whose is
+"lead"); these tests run against the latter.
 
 See docs/SPRINTS/sprint-021.md for the locked contract this test implements
 the first RED cycle of. Same route-level-client test pattern as
@@ -127,7 +131,10 @@ def _create_unlinked_enquiry_project(client, headers: dict[str, str]) -> dict:
     )
     assert project.status_code == 201
     body = project.json()
-    assert body["status"] == "enquiry"
+    # Sprint 039 — asserted on the trade-neutral role. Which key this
+    # workspace's opening stage carries depends on its pipeline; that a new
+    # job starts there does not.
+    assert body["status_role"] == "lead"
     assert body["customer_id"] is None
     return body
 
@@ -165,7 +172,7 @@ def test_staff_can_convert_an_unlinked_enquiry_project_into_a_customer(client, a
         with SessionLocal() as db:
             persisted_project = db.get(Project, uuid.UUID(project["id"]))
             assert str(persisted_project.customer_id) == customer["id"]
-            assert persisted_project.status == "enquiry"
+            assert persisted_project.status == "lead"
 
             customers_after = db.query(Customer).filter_by(name=TEST_CUSTOMER_NAME).count()
             assert customers_after == customers_before + 1
@@ -192,7 +199,7 @@ def test_repeat_conversion_returns_the_same_customer_without_creating_another(
         )
         assert project.status_code == 201
         project_body = project.json()
-        assert project_body["status"] == "enquiry"
+        assert project_body["status_role"] == "lead"
         assert project_body["customer_id"] is None
 
         payload = {
@@ -222,7 +229,7 @@ def test_repeat_conversion_returns_the_same_customer_without_creating_another(
         with SessionLocal() as db:
             persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
             assert str(persisted_project.customer_id) == first_customer["id"]
-            assert persisted_project.status == "enquiry"
+            assert persisted_project.status == "lead"
 
             customer_count = (
                 db.query(Customer).filter_by(name=TEST_RETRY_CUSTOMER_NAME).count()
@@ -302,7 +309,7 @@ def test_conversion_of_another_tenants_project_returns_404(
         )
         assert project.status_code == 201
         project_body = project.json()
-        assert project_body["status"] == "enquiry"
+        assert project_body["status_role"] == "lead"
         assert project_body["customer_id"] is None
 
         response = client.post(
@@ -325,7 +332,7 @@ def test_conversion_of_another_tenants_project_returns_404(
 
             persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
             assert persisted_project.customer_id is None
-            assert persisted_project.status == "enquiry"
+            assert persisted_project.status == "lead"
     finally:
         _cleanup()
 
@@ -354,7 +361,7 @@ def test_same_tenant_user_without_owner_staff_role_cannot_convert_enquiry(
         )
         assert project.status_code == 201
         project_body = project.json()
-        assert project_body["status"] == "enquiry"
+        assert project_body["status_role"] == "lead"
         assert project_body["customer_id"] is None
 
         with SessionLocal() as db:
@@ -392,7 +399,7 @@ def test_same_tenant_user_without_owner_staff_role_cannot_convert_enquiry(
 
             persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
             assert persisted_project.customer_id is None
-            assert persisted_project.status == "enquiry"
+            assert persisted_project.status == "lead"
     finally:
         _cleanup()
 
@@ -420,7 +427,7 @@ def test_successful_enquiry_conversion_creates_exactly_one_tenant_scoped_activit
         )
         assert project.status_code == 201
         project_body = project.json()
-        assert project_body["status"] == "enquiry"
+        assert project_body["status_role"] == "lead"
         assert project_body["customer_id"] is None
 
         with SessionLocal() as db:
@@ -476,7 +483,7 @@ def test_conversion_rolls_back_customer_and_project_link_if_activity_logging_fai
         )
         assert project.status_code == 201
         project_body = project.json()
-        assert project_body["status"] == "enquiry"
+        assert project_body["status_role"] == "lead"
         assert project_body["customer_id"] is None
 
         with SessionLocal() as db:
@@ -526,7 +533,7 @@ def test_conversion_rolls_back_customer_and_project_link_if_activity_logging_fai
 
             persisted_project = db.get(Project, uuid.UUID(project_body["id"]))
             assert persisted_project.customer_id is None
-            assert persisted_project.status == "enquiry"
+            assert persisted_project.status == "lead"
 
             activity_count = (
                 db.query(ActivityLog)

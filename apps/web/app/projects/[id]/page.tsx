@@ -10,17 +10,16 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
-import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
+import { findStage, nextStages, stageLabel, stageTone } from "@/lib/projects";
 import { ProjectForm } from "@/components/projects/ProjectForm";
 import { ProjectTasksPanel } from "@/components/projects/ProjectTasksPanel";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { EditIcon } from "@/components/ui/icons";
 import type { Trade } from "@/types/quote";
 import { formatDate, formatMoney, formatRelativeTime } from "@/lib/utils";
-import { PROJECT_STATUSES } from "@/types/project";
 import type { AppointmentOut, AppointmentTransitionTarget } from "@/types/appointment";
 import type { Customer } from "@/types/customer";
-import type { Project } from "@/types/project";
+import type { PipelineStage, Project } from "@/types/project";
 import type { TeamMemberOut } from "@/types/user";
 
 const APPOINTMENT_STATUS_TONE: Record<AppointmentOut["status"], "info" | "success" | "neutral"> = {
@@ -59,6 +58,12 @@ export default function ProjectDetailPage() {
   const [scheduling, setScheduling] = useState(false);
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
 
+  // Sprint 039 (Workstream D) — this tenant's own stages and the moves
+  // each one allows, so the actions offered below are exactly the ones the
+  // backend will accept.
+  const [stages, setStages] = useState<PipelineStage[] | null>(null);
+  const [pendingStage, setPendingStage] = useState<string | null>(null);
+
   // Sprint 023 — project operations (docs/SPRINTS/sprint-023.md).
   const [teamMembers, setTeamMembers] = useState<TeamMemberOut[] | null>(null);
   const [operationsError, setOperationsError] = useState<string | null>(null);
@@ -82,6 +87,16 @@ export default function ProjectDetailPage() {
       );
   }
 
+  function loadPipeline() {
+    // A failed pipeline fetch degrades this panel to read-only rather than
+    // erroring the whole page — someone came here to read a job, and the
+    // stage controls are not the only thing on the screen.
+    api
+      .getProjectPipeline()
+      .then((pipeline) => setStages(pipeline.stages))
+      .catch(() => {});
+  }
+
   function loadAppointments() {
     api
       .getProjectAppointments(params.id)
@@ -101,6 +116,7 @@ export default function ProjectDetailPage() {
       return;
     }
     load();
+    loadPipeline();
     // Appointments are Owner/Staff only server-side (require_role(OWNER,
     // STAFF)) — same RBAC gating as convert-to-customer, so a caller
     // without that role never even requests the list.
@@ -124,22 +140,37 @@ export default function ProjectDetailPage() {
   const tradeLabel =
     trades.find((trade) => trade.key === project?.project_type)?.label ?? null;
 
-  const currentIndex = project ? PROJECT_STATUSES.indexOf(project.status) : -1;
-  const nextStatus =
-    currentIndex >= 0 && currentIndex < PROJECT_STATUSES.length - 1
-      ? PROJECT_STATUSES[currentIndex + 1]
-      : null;
+  const currentStage = project ? findStage(stages, project.status) : undefined;
+  const transitions = project ? nextStages(stages, project.status) : [];
+  // Forward moves versus the two side states. Split so "put this job on
+  // hold" never sits in the same visual slot as "move it to the next
+  // stage" — they are different kinds of decision, and one of them is
+  // hard to explain to a customer afterwards.
+  const forwardMoves = transitions.filter((stage) => !stage.is_side_state);
+  const sideMoves = transitions.filter((stage) => stage.is_side_state);
+  const onHold = project?.status_role === "on_hold";
 
-  async function handleAdvance() {
-    if (!project || !nextStatus) return;
+  async function handleStageChange(stageKey: string) {
+    if (!project) return;
     setAdvancing(true);
+    setPendingStage(stageKey);
+    setOperationsError(null);
     try {
-      const updated = await api.updateProjectStatus(project.id, nextStatus);
+      const updated = await api.updateProjectStatus(project.id, stageKey);
+      // The server's returned Project is authoritative — applied only
+      // after a successful response, never optimistically.
       setProject(updated);
     } catch (err) {
-      setOperationsError(err instanceof ApiError ? err.message : "Something went wrong.");
+      setOperationsError(
+        err instanceof ApiError && err.status === 409
+          ? "That move isn't available from this stage any more. Reload to see where this job is now."
+          : err instanceof ApiError
+            ? err.message
+            : "Something went wrong."
+      );
     } finally {
       setAdvancing(false);
+      setPendingStage(null);
     }
   }
 
@@ -162,7 +193,7 @@ export default function ProjectDetailPage() {
 
   const showConvertAction =
     !!project &&
-    project.status === "enquiry" &&
+    project.status_role === "lead" &&
     project.customer_id == null &&
     canManageAppointments;
 
@@ -282,8 +313,8 @@ export default function ProjectDetailPage() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Badge tone={PROJECT_STATUS_TONE[project.status]}>
-                  {PROJECT_STATUS_LABEL[project.status]}
+                <Badge tone={stageTone(project.status_role)}>
+                  {stageLabel(stages, project.status)}
                 </Badge>
                 <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
                   <EditIcon className="h-4 w-4" />
@@ -393,16 +424,71 @@ export default function ProjectDetailPage() {
               </dl>
 
               <div className="mt-4">
-                {!canManageAppointments ? null : nextStatus ? (
-                  <Button onClick={handleAdvance} disabled={advancing}>
-                    {advancing
-                      ? "Advancing…"
-                      : `Advance to ${PROJECT_STATUS_LABEL[nextStatus]}`}
-                  </Button>
-                ) : (
+                {!canManageAppointments ? (
+                  // Permission-denied is stated, not silently hidden:
+                  // someone who cannot move a job should understand why
+                  // the controls are absent rather than assume the page
+                  // is broken.
                   <p className="text-sm text-muted">
-                    This project has completed the pipeline.
+                    Only an owner or a member of staff can move a job through
+                    the pipeline.
                   </p>
+                ) : currentStage?.is_terminal ? (
+                  <p className="text-sm text-muted">
+                    This job is closed. Nothing more happens to it.
+                  </p>
+                ) : transitions.length === 0 ? (
+                  <p className="text-sm text-muted">
+                    No stage changes are available for this job.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {forwardMoves.length > 0 && (
+                      <div>
+                        {onHold && (
+                          <p className="mb-2 text-xs font-medium text-muted">
+                            Resume this job at
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {forwardMoves.map((stage, index) => (
+                            <Button
+                              key={stage.key}
+                              variant={index === 0 ? "primary" : "outline"}
+                              onClick={() => handleStageChange(stage.key)}
+                              disabled={advancing}
+                            >
+                              {advancing && pendingStage === stage.key
+                                ? "Saving…"
+                                : onHold
+                                  ? stage.label
+                                  : `Advance to ${stage.label}`}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {sideMoves.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {sideMoves.map((stage) => (
+                          <Button
+                            key={stage.key}
+                            variant={stage.role === "cancelled" ? "danger" : "secondary"}
+                            size="sm"
+                            onClick={() => handleStageChange(stage.key)}
+                            disabled={advancing}
+                          >
+                            {advancing && pendingStage === stage.key
+                              ? "Saving…"
+                              : stage.role === "cancelled"
+                                ? "Cancel this job"
+                                : `Put on ${stage.label.toLowerCase()}`}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

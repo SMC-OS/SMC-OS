@@ -11,17 +11,21 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, EmptyState } from "@/components/ui/Card";
 import { CalendarIcon, FolderIcon, MapPinIcon, PlusIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
-import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
+import { stageLabel, stageTone } from "@/lib/projects";
 import { cn, formatCurrency, formatDate, formatRelativeTime } from "@/lib/utils";
-import { PROJECT_STATUSES, type Project, type ProjectStatus } from "@/types/project";
+import type { PipelineStage, Project } from "@/types/project";
 
 export default function ProjectsPage() {
   const router = useRouter();
   const { isAuthenticated, isReady } = useAuth();
   const { currency } = useWorkspace();
   const [projects, setProjects] = useState<Project[] | null>(null);
+  // Sprint 039 — the stage filters are this tenant's own stages, fetched
+  // rather than hardcoded: a stone business filters by "Fabricated", a
+  // roofing business by "In progress", from the same component.
+  const [stages, setStages] = useState<PipelineStage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<ProjectStatus | "live" | "all">("live");
+  const [filter, setFilter] = useState<string>("live");
 
   useEffect(() => {
     if (!isReady) return;
@@ -35,26 +39,37 @@ export default function ProjectsPage() {
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Something went wrong.")
       );
+    // A failed pipeline fetch degrades the filters and the stage labels to
+    // raw keys; it never blocks the list itself, which is the thing
+    // someone came here to read.
+    api
+      .getProjectPipeline()
+      .then((pipeline) => setStages(pipeline.stages))
+      .catch(() => {});
   }, [isReady, isAuthenticated, router]);
 
   const filtered = useMemo(() => {
     if (!projects) return null;
     if (filter === "all") return projects;
-    // "Live" is the default view because a completed job is history and a
-    // list dominated by history is a list nobody scans.
-    if (filter === "live") return projects.filter((p) => p.status !== "complete");
+    // "Live" is the default view because finished work is history and a
+    // list dominated by history is a list nobody scans. Keyed off the
+    // trade-neutral role, so it excludes cancelled jobs too — which the
+    // old `status !== "complete"` check silently could not express.
+    if (filter === "live") {
+      return projects.filter(
+        (project) =>
+          project.status_role !== "completed" && project.status_role !== "cancelled"
+      );
+    }
     return projects.filter((project) => project.status === filter);
   }, [projects, filter]);
 
   if (!isReady || !isAuthenticated) return null;
 
-  const filters: Array<{ key: ProjectStatus | "live" | "all"; label: string }> = [
+  const filters: Array<{ key: string; label: string }> = [
     { key: "live", label: "Live" },
     { key: "all", label: "All" },
-    ...PROJECT_STATUSES.map((status) => ({
-      key: status,
-      label: PROJECT_STATUS_LABEL[status],
-    })),
+    ...(stages ?? []).map((stage) => ({ key: stage.key, label: stage.label })),
   ];
 
   return (
@@ -170,8 +185,8 @@ export default function ProjectsPage() {
                       </span>
                     )}
 
-                    <Badge tone={PROJECT_STATUS_TONE[project.status]}>
-                      {PROJECT_STATUS_LABEL[project.status]}
+                    <Badge tone={stageTone(project.status_role)}>
+                      {stageLabel(stages, project.status)}
                     </Badge>
                   </Link>
                 </li>

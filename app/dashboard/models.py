@@ -2,17 +2,26 @@ from pydantic import BaseModel
 
 
 class PipelineCounts(BaseModel):
-    """Count of the caller's tenant's Projects currently in each pipeline
-    status (app.projects.models.ProjectStatus). All 7 keys always present,
-    0 if none — never a sparse/partial dict (docs/SPRINTS/sprint-025.md §3)."""
+    """Count of the caller's tenant's Projects at each pipeline *role*.
 
-    enquiry: int
+    Sprint 039 (Workstream D, §4 Decision 3) re-keyed this from the seven
+    stone-named stages to the eight trade-neutral roles
+    (app/projects/pipeline.py). That is what makes the dashboard read
+    correctly for a roofing business and a worktop fabricator at the same
+    time: a stone tenant's `templated`, `fabricated` and `installed` jobs
+    all count as `in_progress`, without a single project row changing.
+
+    All 8 keys always present, 0 if none — never a sparse/partial dict
+    (docs/SPRINTS/sprint-025.md §3)."""
+
+    lead: int
     quoted: int
-    booked: int
-    templated: int
-    fabricated: int
-    installed: int
-    complete: int
+    approved: int
+    scheduled: int
+    in_progress: int
+    on_hold: int
+    completed: int
+    cancelled: int
 
 
 class QuoteFunnel(BaseModel):

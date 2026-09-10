@@ -31,6 +31,8 @@ from sqlalchemy.orm import Session
 
 from app.automations.engine import automation_engine
 from app.automations.subjects import project_subject, quote_subject
+from app.projects import pipeline as project_pipeline
+from app.projects import pipeline_config
 from app.database import crud
 
 # How far ahead each scan trigger looks. Plain constants, not
@@ -141,10 +143,20 @@ class AutomationScanner:
         for automation in automations:
             by_tenant.setdefault(automation.tenant_id, []).append(automation)
 
+        # Sprint 039 — this job spans every tenant, and each has its own
+        # stage vocabulary, so pipelines are resolved once per tenant here
+        # rather than re-read per project.
+        pipelines = {
+            tenant_id: pipeline_config.resolve(db, tenant_id) for tenant_id in by_tenant
+        }
+
         for project in crud.list_projects_with_start_date(db):
             if project.tenant_id not in by_tenant:
                 continue
-            if project.status == "complete":
+            pipeline = pipelines[project.tenant_id]
+            # A finished or cancelled job is not "about to start", whatever
+            # this tenant happens to call those stages.
+            if pipeline.role_of(project.status) in project_pipeline.TERMINAL_ROLES:
                 continue
 
             due_from = project.start_date - PROJECT_START_LOOKAHEAD
@@ -162,7 +174,9 @@ class AutomationScanner:
                 tenant_id=project.tenant_id,
                 trigger_type="project.starting",
                 subject=project_subject(
-                    project, customer_name=customer.name if customer else ""
+                    project,
+                    customer_name=customer.name if customer else "",
+                    pipeline=pipeline,
                 ),
                 now=now,
                 automations=by_tenant[project.tenant_id],

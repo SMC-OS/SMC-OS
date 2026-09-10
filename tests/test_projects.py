@@ -35,7 +35,11 @@ def created_project(client, auth_headers):
     _cleanup()
 
 
-def test_create_project_defaults_to_enquiry(client, auth_headers):
+def test_create_project_starts_at_the_first_stage_of_the_pipeline(client, auth_headers):
+    """Sprint 039: asserted on the trade-neutral *role*, not on a stage
+    key. Which key a new job starts on depends on this workspace's own
+    pipeline ("lead" on the standard one, "enquiry" for a stone tenant);
+    that it starts at the beginning does not."""
     _cleanup()
     try:
         r = client.post(
@@ -44,7 +48,7 @@ def test_create_project_defaults_to_enquiry(client, auth_headers):
         assert r.status_code == 201
         body = r.json()
         assert body["name"] == TEST_NAME
-        assert body["status"] == "enquiry"
+        assert body["status_role"] == "lead"
         assert "id" in body
         assert "created_at" in body
     finally:
@@ -117,13 +121,17 @@ def test_advance_project_status(client, auth_headers, created_project):
     assert r2.json()["status"] == "quoted"
 
 
-def test_update_status_invalid_value_returns_422(client, auth_headers, created_project):
+def test_update_status_unknown_stage_is_refused(client, auth_headers, created_project):
+    """Sprint 039: a stage key is no longer validated against a shared
+    enum at the Pydantic boundary — which stages exist is per-tenant
+    configuration, so the check moved into the service and the refusal is
+    a 409 (this pipeline does not allow that move) rather than a 422."""
     r = client.patch(
         f"/api/v1/projects/{created_project['id']}/status",
         json={"status": "not-a-real-stage"},
         headers=auth_headers,
     )
-    assert r.status_code == 422
+    assert r.status_code == 409
 
 
 def test_update_status_unknown_project_returns_404(client, auth_headers):
@@ -180,10 +188,10 @@ def test_update_status_cross_tenant_returns_404_and_does_not_mutate(
     )
     assert r.status_code == 404
 
-    # Confirm it genuinely wasn't mutated — still "enquiry" for its actual
-    # owner.
+    # Confirm it genuinely wasn't mutated — still at its opening stage for
+    # its actual owner.
     r2 = client.get(f"/api/v1/projects/{created_project['id']}", headers=auth_headers)
-    assert r2.json()["status"] == "enquiry"
+    assert r2.json()["status_role"] == "lead"
 
 
 def test_create_project_with_other_tenants_customer_id_returns_404(

@@ -59,12 +59,33 @@ def quote_subject(quote, *, customer_name: str | None = None) -> dict:
 
 
 def project_subject(
-    project, *, customer_name: str | None = None, previous_status: str | None = None
+    project,
+    *,
+    customer_name: str | None = None,
+    previous_status: str | None = None,
+    pipeline=None,
 ) -> dict:
+    """Sprint 039 adds `status_role`/`previous_status_role`.
+
+    `status` remains this tenant's own stage key, so every rule written
+    before this sprint keeps matching exactly what it always matched. The
+    roles are what a *portable* rule should compare against — "when a job
+    reaches in_progress" holds for a stone tenant and a roofing tenant
+    alike, where "when status == fabricated" only ever meant one trade.
+
+    `pipeline` is optional so a caller with no session (a test building a
+    subject by hand) still gets a usable dict; both role keys are then
+    None, and conditions._compare treats None as matching nothing, so such
+    a rule declines to fire rather than firing on everything — the same
+    guarantee `previous_status` already had.
+    """
+    role_of = pipeline.role_of if pipeline is not None else (lambda _key: None)
     return {
         "id": str(project.id),
         "name": project.name,
         "status": project.status,
+        "status_role": role_of(project.status),
+        "previous_status_role": role_of(previous_status) if previous_status else None,
         # Only present for project.status_changed. A rule that reads it
         # under any other trigger sees None, which no comparison operator
         # treats as a match (see conditions._compare) — so such a rule

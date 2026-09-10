@@ -28,6 +28,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.database import crud
+from app.projects import pipeline_config
 
 _HEADLINE_LIMIT = 5
 
@@ -41,9 +42,14 @@ def build(db: Session, tenant_id: uuid.UUID) -> dict:
     for quote in quotes:
         by_status[quote.status] = by_status.get(quote.status, 0) + 1
 
+    # Sprint 039 — grouped by trade-neutral role, not by raw stage key, so
+    # GeoCore AI describes a workspace the same way whatever a tenant calls
+    # its stages, and never has to explain "fabricated" to a roofer.
+    pipeline = pipeline_config.resolve(db, tenant_id)
     project_status: dict[str, int] = {}
     for project in projects:
-        project_status[project.status] = project_status.get(project.status, 0) + 1
+        role = pipeline.role_of(project.status) or "unknown"
+        project_status[role] = project_status.get(role, 0) + 1
 
     return {
         "customers": crud.count_customers(db, tenant_id),
@@ -56,7 +62,7 @@ def build(db: Session, tenant_id: uuid.UUID) -> dict:
             # here in the key name so a model cannot read it as income.
             "quoted_value_recent": round(sum(q.total or 0 for q in quotes), 2),
         },
-        "projects": {"total_recent": len(projects), "by_status": project_status},
+        "projects": {"total_recent": len(projects), "by_stage": project_status},
         # Titles only. Deliberately no customer names, emails, phone
         # numbers or addresses — see rule 2 above.
         "recent_quote_titles": [

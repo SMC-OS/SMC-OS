@@ -11,7 +11,8 @@ from app.dashboard.models import (
     SiteVisitCounts,
 )
 from app.database import crud
-from app.projects.models import ProjectStatus
+from app.projects import pipeline as project_pipeline
+from app.projects import pipeline_config
 from app.appointments.models import AppointmentStatus
 
 
@@ -26,9 +27,7 @@ def build_command_centre(db: Session, tenant_id: uuid.UUID) -> CommandCentreResp
 
     return CommandCentreResponse(
         customers=crud.count_customers(db, tenant_id),
-        pipeline=PipelineCounts(
-            **{status.value: project_counts.get(status.value, 0) for status in ProjectStatus}
-        ),
+        pipeline=PipelineCounts(**_counts_by_role(db, tenant_id, project_counts)),
         quotes=QuoteFunnel(
             draft=quote_counts.get("draft", 0),
             approved=quote_counts.get("approved", 0),
@@ -48,3 +47,22 @@ def build_command_centre(db: Session, tenant_id: uuid.UUID) -> CommandCentreResp
             unread_follow_ups=crud.count_unread_follow_up_notifications(db, tenant_id)
         ),
     )
+
+
+def _counts_by_role(db: Session, tenant_id: uuid.UUID, project_counts: dict) -> dict:
+    """Fold this tenant's per-stage counts into the trade-neutral roles.
+
+    No extra query: `count_projects_by_status` already returned every
+    stage's count in one grouped statement, and resolving the pipeline is
+    the same single read the projects screen does. A stage key with no
+    matching stage in the tenant's pipeline (a job left behind by a
+    reconfiguration) is counted nowhere rather than crashing the
+    dashboard — the projects list still shows it truthfully.
+    """
+    pipeline = pipeline_config.resolve(db, tenant_id)
+    counts = {role: 0 for role in project_pipeline.ROLES}
+    for status_key, count in project_counts.items():
+        role = pipeline.role_of(status_key)
+        if role is not None:
+            counts[role] += count
+    return counts

@@ -81,7 +81,7 @@ test("business_command_centre_shows_exact_controlled_metrics_and_excludes_other_
   });
   expect(otherProject.ok()).toBeTruthy();
 
-  // ---- Pipeline: two Projects stay "enquiry", one walked to "quoted" ----
+  // ---- Pipeline: two Projects stay at the opening stage, one walked to "quoted" ----
   const staleProjectRes = await api.post("/api/v1/projects", {
     headers,
     data: { name: `${COMPANY_NAME} Stale Enquiry Project` },
@@ -177,7 +177,7 @@ test("business_command_centre_shows_exact_controlled_metrics_and_excludes_other_
   // shared dev database also have stale enquiries — same reasoning as
   // e2e/follow-up-automation.spec.ts's >=1 assertion. What's exact and
   // tenant-scoped is the Command Centre's own follow_up count below, not
-  // this global job-return count. Both unassigned "enquiry" Projects
+  // this global job-return count. Both unassigned lead-stage Projects
   // created above (staleProject and secondEnquiryRes) are equally stale
   // relative to staleNow, so at least 2 of the created notifications are
   // ours. ----
@@ -190,14 +190,17 @@ test("business_command_centre_shows_exact_controlled_metrics_and_excludes_other_
   // dataset above (docs/SPRINTS/sprint-025.md §3's exact semantics) ----
   const expected = {
     customers: 1,
+    // Sprint 039 (§4 Decision 3) — keyed by trade-neutral role, so this
+    // assertion reads the same for a stone tenant and a roofing one.
     pipeline: {
-      enquiry: 2,
+      lead: 2,
       quoted: 1,
-      booked: 1, // created by the handoff above, not by a manual PATCH
-      templated: 0,
-      fabricated: 0,
-      installed: 0,
-      complete: 0,
+      approved: 1, // created by the handoff above, not by a manual PATCH
+      scheduled: 0,
+      in_progress: 0,
+      on_hold: 0,
+      completed: 0,
+      cancelled: 0,
     },
     quotes: { draft: 1, approved: 2, handed_off: 1 },
     site_visits: { scheduled: 1, completed: 1, cancelled: 1 },
@@ -222,10 +225,10 @@ test("business_command_centre_shows_exact_controlled_metrics_and_excludes_other_
   });
   expect(otherCommandCentre.ok()).toBeTruthy();
   const otherBody = await otherCommandCentre.json();
-  expect(otherBody.pipeline.enquiry).toBe(1); // only otherProject, not Tenant A's
+  expect(otherBody.pipeline.lead).toBe(1); // only otherProject, not Tenant A's
   expect(otherBody.quotes).toEqual({ draft: 0, approved: 0, handed_off: 0 });
   // Not asserting follow_up here: otherProject is itself an unassigned
-  // "enquiry" Project created moments before staleProject, so it is
+  // lead-stage Project created moments before staleProject, so it is
   // equally stale relative to staleNow and legitimately picks up its own
   // notification from the automation's global scan (docs/SPRINTS/
   // sprint-024.md §6) — that's correct behavior, not a tenant-isolation

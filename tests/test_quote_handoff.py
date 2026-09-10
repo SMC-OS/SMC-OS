@@ -153,12 +153,18 @@ def test_staff_can_hand_off_an_approved_quote_into_a_project(client, auth_header
         assert handoff.status_code in (200, 201)
         project = handoff.json()
         assert project["customer_id"] == customer["id"]
-        assert project["status"] == "booked"
+        # Sprint 039 — handoff creates the job at this tenant's `approved`
+        # stage, whatever it is called ("booked" on the stone pipeline,
+        # "approved" on the standard one this workspace is on).
+        assert project["status_role"] == "approved"
 
         fetched = client.get(f"/api/v1/projects/{project['id']}", headers=auth_headers)
         assert fetched.status_code == 200
         assert fetched.json()["customer_id"] == customer["id"]
-        assert fetched.json()["status"] == "booked"
+        # The re-read agrees with the handoff response — same stage, and
+        # the role that stage carries.
+        assert fetched.json()["status"] == project["status"]
+        assert fetched.json()["status_role"] == "approved"
 
         assert project["quote_id"] == quote["id"]
     finally:

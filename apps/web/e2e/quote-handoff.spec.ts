@@ -115,7 +115,9 @@ test("customer_quote_approval_handoff_persists_project", async ({ page }) => {
   expect(project.id).toBe(projectId);
   expect(project.quote_id).toBe(quoteId);
   expect(project.customer_id).toBe(customer.id);
-  expect(project.status).toBe("booked");
+  // Sprint 039 — handoff lands the job at this tenant's `approved`
+  // stage, whatever it is called.
+  expect(project.status_role).toBe("approved");
 
   // ---- Verify exactly one Project exists for this Quote ----
   // GET /api/v1/projects exposes quote_id per-row (same ProjectOut model as

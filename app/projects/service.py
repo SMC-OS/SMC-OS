@@ -13,7 +13,9 @@ from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
 from app.automations.dispatcher import automation_dispatcher
 from app.customers.models import CustomerCreate
-from app.projects.models import ProjectCreate, ProjectStatus, ProjectUpdate
+from app.projects import pipeline as pipeline_module
+from app.projects import pipeline_config
+from app.projects.models import ProjectCreate, ProjectUpdate
 from app.database import crud
 from app.database.models import Customer, Project
 
@@ -27,19 +29,32 @@ class CustomerNotFoundError(Exception):
 
 
 class ProjectNotInEnquiryStateError(Exception):
-    """Raised by convert_to_customer() when the tenant-scoped Project's
-    status isn't "enquiry" (Sprint 021, docs/SPRINTS/sprint-021.md §4,
-    Decision 1) — same service-raises-a-domain-error /
+    """Raised by convert_to_customer() when the tenant-scoped Project is no
+    longer at a `lead`-role stage (Sprint 021, docs/SPRINTS/sprint-021.md
+    §4, Decision 1) — same service-raises-a-domain-error /
     router-maps-to-HTTP convention as QuoteApprovalStateError
-    (app/quotes/service.py)."""
+    (app/quotes/service.py).
+
+    Sprint 039 changed the gate from `status == "enquiry"` to the stage's
+    trade-neutral *role*, so it means the same thing for a stone tenant
+    (whose lead stage is called "enquiry") and for a tenant on the
+    standard pipeline (whose lead stage is called "lead"). The name is
+    kept because it is what the router, its HTTP message and its tests
+    already say, and "enquiry" is still the product word for a job at
+    this stage."""
 
 
 class InvalidProjectTransitionError(Exception):
-    """Raised by update_status() when the requested status isn't the exact
-    next value in the linear pipeline for the Project's current status
-    (Sprint 023, docs/SPRINTS/sprint-023.md §4/Decision 4) — covers a
-    repeat, a skip, any backward move, and any transition attempted from
-    the terminal "complete" status."""
+    """Raised by update_status() when the requested stage is not one the
+    Project's current stage allows.
+
+    Sprint 023 enforced this against a fixed linear sequence. Sprint 039
+    (Workstream D) enforces it against the caller's own pipeline graph
+    (app/projects/pipeline.py) instead, which still covers every case
+    Sprint 023 did — a repeat, a skip, any backward move, any transition
+    out of a terminal stage — and adds two more: a stage key this tenant's
+    pipeline does not contain at all, and an attempt to reach a terminal
+    stage by coming off hold."""
 
 
 class AssignedUserNotFoundError(Exception):
@@ -49,24 +64,38 @@ class AssignedUserNotFoundError(Exception):
     CustomerNotFoundError above."""
 
 
-# The linear pipeline (Sprint 006, unchanged): each status's only valid
-# next value is the one immediately after it here. "complete" has none —
-# it is terminal (Sprint 023 §4).
-_STATUS_SEQUENCE = list(ProjectStatus)
+_with_role = pipeline_config.attach_role
 
 
 class ProjectService:
+    def pipeline(self, db: Session, tenant_id: uuid.UUID):
+        """This tenant's own pipeline. Exposed so the router can serve
+        `GET /projects/meta/pipeline` without reaching past the service
+        into pipeline_config itself."""
+        return pipeline_config.resolve(db, tenant_id)
+
     def list_all(self, db: Session, tenant_id: uuid.UUID, limit: int = 20) -> list[Project]:
-        return crud.list_projects(db, tenant_id, limit=limit)
+        pipeline = pipeline_config.resolve(db, tenant_id)
+        return [
+            _with_role(project, pipeline)
+            for project in crud.list_projects(db, tenant_id, limit=limit)
+        ]
 
     def get(self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> Project | None:
-        return crud.get_project_by_id(db, project_id, tenant_id)
+        return _with_role(
+            crud.get_project_by_id(db, project_id, tenant_id),
+            pipeline_config.resolve(db, tenant_id),
+        )
 
     def create(self, db: Session, data: ProjectCreate, tenant_id: uuid.UUID) -> Project:
         if data.customer_id is not None and crud.get_customer_by_id(
             db, data.customer_id, tenant_id
         ) is None:
             raise CustomerNotFoundError(data.customer_id)
+
+        # Sprint 039 — a new job starts at whatever this tenant calls its
+        # first stage, never at a hardcoded "enquiry".
+        pipeline = pipeline_config.resolve(db, tenant_id)
 
         project = crud.create_project(
             db,
@@ -75,7 +104,7 @@ class ProjectService:
             name=data.name,
             customer_id=data.customer_id,
             notes=data.notes,
-            status=ProjectStatus.ENQUIRY.value,
+            status=pipeline.initial_stage().key,
             project_type=data.project_type,
             description=data.description,
             site_address_line1=data.site_address_line1,
@@ -97,7 +126,7 @@ class ProjectService:
             tenant_id=tenant_id,
         )
         automation_dispatcher.dispatch_project_created(db, project)
-        return project
+        return _with_role(project, pipeline)
 
     def update(
         self,
@@ -122,22 +151,31 @@ class ProjectService:
         ) is None:
             raise CustomerNotFoundError(changes["customer_id"])
 
+        pipeline = pipeline_config.resolve(db, tenant_id)
         if not changes:
-            return crud.get_project_by_id(db, project_id, tenant_id)
-        return crud.update_project(db, project_id, tenant_id, changes)
+            return _with_role(crud.get_project_by_id(db, project_id, tenant_id), pipeline)
+        return _with_role(crud.update_project(db, project_id, tenant_id, changes), pipeline)
 
     def update_status(
-        self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, status: ProjectStatus
+        self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, status: str
     ) -> Project | None:
-        """Sprint 023 (docs/SPRINTS/sprint-023.md §4): only the exact next
-        value in `_STATUS_SEQUENCE` is accepted — a repeat, a skip, any
-        backward move, or any transition from the terminal "complete"
-        status raises InvalidProjectTransitionError. The status write and
-        its PROJECT_STATUS_CHANGED activity are one transaction, same
-        caller-owned-transaction pattern as Sprint 021/022."""
+        """Move a project to another stage of its tenant's own pipeline.
+
+        Sprint 039 (Workstream D): the target must be in the current
+        stage's `allowed_transitions` (app/projects/pipeline.py) — which
+        keeps Sprint 023's no-skip/no-reverse/terminal-is-terminal rules
+        and adds hold, resume and cancel. Anything else raises
+        InvalidProjectTransitionError, including a stage key this tenant's
+        pipeline does not contain.
+
+        The status write and its PROJECT_STATUS_CHANGED activity are one
+        transaction, same caller-owned-transaction pattern as Sprint
+        021/022."""
         project = crud.get_project_by_id(db, project_id, tenant_id)
         if project is None:
             return None
+
+        pipeline = pipeline_config.resolve(db, tenant_id)
 
         # Captured as a plain str, not read from `project` again below:
         # crud.update_project_status's query re-fetches the same row via
@@ -145,24 +183,18 @@ class ProjectService:
         # Python object — mutating one's `.status` mutates both in place.
         previous_status = project.status
 
-        current_index = _STATUS_SEQUENCE.index(ProjectStatus(previous_status))
-        next_status = (
-            _STATUS_SEQUENCE[current_index + 1]
-            if current_index + 1 < len(_STATUS_SEQUENCE)
-            else None
-        )
-        if status != next_status:
-            raise InvalidProjectTransitionError(previous_status, status.value)
+        if status not in pipeline.allowed_transitions(previous_status):
+            raise InvalidProjectTransitionError(previous_status, status)
 
         try:
             updated = crud.update_project_status(
-                db, project_id, tenant_id, status.value, commit=False
+                db, project_id, tenant_id, status, commit=False
             )
             activity_service.log(
                 ActivityEventCreate(
                     type=ActivityType.PROJECT_STATUS_CHANGED,
                     title="Project status changed",
-                    description=f"Project {project_id} moved from {previous_status} to {status.value}",
+                    description=f"Project {project_id} moved from {previous_status} to {status}",
                 ),
                 tenant_id=tenant_id,
                 db=db,
@@ -179,7 +211,7 @@ class ProjectService:
         automation_dispatcher.dispatch_project_status_changed(
             db, updated, previous_status
         )
-        return updated
+        return _with_role(updated, pipeline)
 
     def assign(
         self,
@@ -225,7 +257,7 @@ class ProjectService:
             db.rollback()
             raise
 
-        return updated
+        return _with_role(updated, pipeline_config.resolve(db, tenant_id))
 
     def convert_to_customer(
         self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, data: CustomerCreate
@@ -253,7 +285,10 @@ class ProjectService:
         if project is None:
             return None
 
-        if project.status != ProjectStatus.ENQUIRY.value:
+        # Sprint 039 — gated on the stage's trade-neutral role, so this
+        # means the same thing whatever this tenant calls its first stage.
+        pipeline = pipeline_config.resolve(db, tenant_id)
+        if pipeline.role_of(project.status) != pipeline_module.LEAD:
             raise ProjectNotInEnquiryStateError(project.status)
 
         if project.customer_id is not None:
