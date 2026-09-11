@@ -34,6 +34,7 @@ from app.database.models import (
     ActivityLog,
     Communication,
     EmailSuppression,
+    NotificationRecord,
     Tenant,
     User,
 )
@@ -49,6 +50,14 @@ def _cleanup():
     try:
         tenant = db.query(Tenant).filter(Tenant.name == TENANT_NAME).first()
         if tenant is not None:
+            # Sprint 039 — a failed send now notifies the workspace
+            # (app/notifications/delivery_alerts.py), so these tests
+            # produce notification rows they did not before. Deleted
+            # before their recipient, children-before-parents, same
+            # convention as tests/conftest.py's own teardown.
+            db.execute(
+                delete(NotificationRecord).where(NotificationRecord.tenant_id == tenant.id)
+            )
             db.execute(delete(EmailSuppression).where(EmailSuppression.tenant_id == tenant.id))
             db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
             db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))

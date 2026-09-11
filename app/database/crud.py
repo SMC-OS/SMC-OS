@@ -40,6 +40,7 @@ from app.database.models import (
     Invitation,
     Material,
     Message,
+    NotificationPreference,
     NotificationRecord,
     PipelineStage,
     PortalLink,
@@ -1968,3 +1969,63 @@ def list_projects_in_role(db: Session, role: str) -> list[Project]:
         .where(PipelineStage.role == role)
     )
     return list(db.scalars(stmt))
+
+
+# --- Notification preferences (Sprint 039, Workstream B) ----------------
+#
+# Per user, per category. A category with no row falls back to the
+# defaults in app/notifications/categories.py, so nothing is backfilled
+# and a user who has never opened Settings behaves exactly as before.
+
+
+def list_notification_preferences(
+    db: Session, tenant_id: uuid.UUID, user_id: uuid.UUID
+) -> list[NotificationPreference]:
+    stmt = select(NotificationPreference).where(
+        NotificationPreference.tenant_id == tenant_id,
+        NotificationPreference.user_id == user_id,
+    )
+    return list(db.scalars(stmt))
+
+
+def get_notification_preference(
+    db: Session, tenant_id: uuid.UUID, user_id: uuid.UUID, category: str
+) -> NotificationPreference | None:
+    stmt = select(NotificationPreference).where(
+        NotificationPreference.tenant_id == tenant_id,
+        NotificationPreference.user_id == user_id,
+        NotificationPreference.category == category,
+    )
+    return db.scalars(stmt).first()
+
+
+def upsert_notification_preference(
+    db: Session,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    category: str,
+    in_app: bool,
+    email: bool,
+    commit: bool = True,
+) -> NotificationPreference:
+    row = get_notification_preference(db, tenant_id, user_id, category)
+    if row is None:
+        row = NotificationPreference(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            user_id=user_id,
+            category=category,
+            in_app=in_app,
+            email=email,
+        )
+        db.add(row)
+    else:
+        row.in_app = in_app
+        row.email = email
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
+    return row

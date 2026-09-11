@@ -152,6 +152,7 @@ class AutomationEngine:
                 )
                 result.failed += 1
                 result.details.append(str(exc))
+                self._notify_failure(db, automation, str(exc), now)
                 continue
             except Exception as exc:  # noqa: BLE001 — see invariant 1 above
                 # A genuinely unexpected failure inside a user-authored
@@ -169,6 +170,7 @@ class AutomationEngine:
                     dedupe_key=None,
                 )
                 result.failed += 1
+                self._notify_failure(db, automation, f"{type(exc).__name__}: {exc}", now)
                 continue
 
             recorded = self._record(
@@ -188,6 +190,33 @@ class AutomationEngine:
                 result.skipped += 1
 
         return result
+
+    def _notify_failure(self, db: Session, automation, detail: str, now) -> None:
+        """Tell the Owner an automation failed, at most once per day per rule.
+
+        The daily window is the point: an automation broken for a week
+        should be one unread item, not four hundred. Sprint 036 built
+        AutomationRun because "an automation that quietly stopped working
+        is the failure mode this feature has to defend against", and then
+        made that failure visible only in a panel nobody opens until they
+        already suspect a problem. This closes the loop.
+
+        Imported inside the method (app.notifications reaches back into
+        app.automations nowhere, but this keeps it that way) and never
+        raises — invariant 1 of this module is that nothing here may break
+        the user action that triggered the run.
+        """
+        from app.notifications import automation_alerts
+
+        day = now.date().isoformat() if now is not None else "unknown"
+        automation_alerts.notify_automation_failure(
+            db,
+            tenant_id=automation.tenant_id,
+            automation_name=automation.name,
+            detail=detail[:300],
+            dedupe_key=f"automation_failure:{automation.id}:{day}",
+            automation_id=automation.id,
+        )
 
     def _record(
         self,

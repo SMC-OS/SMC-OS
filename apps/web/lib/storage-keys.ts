@@ -22,9 +22,13 @@
 export const TOKEN_KEY = "geocore-token";
 export const THEME_KEY = "geocore-theme";
 export const SIDEBAR_COLLAPSED_KEY = "geocore-sidebar-collapsed";
-// Sprint 036 — in-app notification preferences. New in this release, so
-// it has no legacy counterpart to migrate from.
-export const NOTIFICATION_PREFERENCE_KEY = "geocore-notification-preferences";
+// Sprint 039 removed NOTIFICATION_PREFERENCE_KEY. Sprint 036 kept
+// notification preferences in this browser and said plainly that a
+// per-user server-side table was follow-up work; that table now exists
+// (app/notifications/preferences.py), so the key has nothing left to
+// hold. The stale value in an existing user's browser is simply never
+// read again — there is nothing to migrate, because the server-side
+// defaults are the same as the ones this key stored.
 
 export const LEGACY_TOKEN_KEY = "simo-os-token";
 export const LEGACY_THEME_KEY = "simo-os-theme";

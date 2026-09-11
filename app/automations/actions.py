@@ -42,6 +42,8 @@ from sqlalchemy.orm import Session
 from app.auth.models import UserRole
 from app.automations.subjects import render
 from app.database import crud
+from app.notifications import categories as notification_categories
+from app.notifications import preferences
 from app.notifications.models import NotificationType
 
 ACTION_TYPES = frozenset(
@@ -122,34 +124,56 @@ def _subject_uuid(subject: dict) -> uuid.UUID | None:
 
 
 def _run_create_notification(db, *, tenant_id, subject, config, dedupe_key, now, context):
+    """An in-app notification for the workspace.
+
+    Sprint 039 (Workstream B) routes this through
+    `preferences.notify()` rather than straight to
+    `crud.create_notification`. A recipient who has muted this category
+    gets no row at all — not a hidden one — and the run says so, which is
+    the difference between "the automation did nothing" and "the
+    automation did what this person asked for".
+    """
     title = render(config.get("title") or "Automation", subject)
     message = render(config.get("message") or "", subject)
 
     if crud.get_notification_by_dedupe_key(db, dedupe_key) is not None:
         return "notification already existed"
 
-    try:
-        crud.create_notification(
-            db,
-            id=uuid.uuid4(),
-            tenant_id=tenant_id,
-            title=title[:200],
-            message=message[:500],
-            type=NotificationType.INFO.value,
-            timestamp=now,
-            read=False,
-            recipient_user_id=_resolve_recipient(db, tenant_id, subject),
-            source_type=context["subject_type"],
-            source_id=_subject_uuid(subject),
-            dedupe_key=dedupe_key,
-        )
-    except IntegrityError:
-        # A concurrent dispatch won the race to the same dedupe_key. The
-        # UNIQUE constraint is the hard backstop the pre-check above is
-        # defending in depth, not replacing (Sprint 024's precedent). Roll
-        # back so this session stays usable for the next action.
-        db.rollback()
+    recipient_id = _resolve_recipient(db, tenant_id, subject)
+    category = notification_categories.for_subject_type(context["subject_type"])
+
+    created = preferences.notify(
+        db,
+        tenant_id=tenant_id,
+        recipient_user_id=recipient_id,
+        category=category,
+        title=title,
+        message=message,
+        dedupe_key=dedupe_key,
+        notification_type=NotificationType.INFO.value,
+        source_type=context["subject_type"],
+        source_id=_subject_uuid(subject),
+        now=now,
+    )
+    if created is None:
+        # Either the recipient muted this category, or a concurrent
+        # dispatch won the dedupe race. Both are "nothing to do", and
+        # neither is a failure — see preferences.notify()'s docstring.
+        if recipient_id is not None and not preferences.allows(
+            db, tenant_id, recipient_id, category, notification_categories.IN_APP
+        ):
+            return "skipped: the recipient has muted this notification preference"
         return "notification already existed"
+
+    _maybe_email_copy(
+        db,
+        tenant_id=tenant_id,
+        recipient_user_id=recipient_id,
+        category=category,
+        title=title,
+        message=message,
+        dedupe_key=dedupe_key,
+    )
     return "notification created"
 
 
@@ -160,6 +184,8 @@ def _run_create_task(db, *, tenant_id, subject, config, dedupe_key, now, context
     if crud.get_task_by_dedupe_key(db, dedupe_key) is not None:
         return "task already existed"
 
+    assignee_id = _resolve_recipient(db, tenant_id, subject)
+
     try:
         crud.create_task(
             db,
@@ -168,7 +194,7 @@ def _run_create_task(db, *, tenant_id, subject, config, dedupe_key, now, context
             title=title[:200],
             body=task_body,
             due_at=_due_at(config, now),
-            assigned_user_id=_resolve_recipient(db, tenant_id, subject),
+            assigned_user_id=assignee_id,
             source_type=context["subject_type"],
             source_id=_subject_uuid(subject),
             dedupe_key=dedupe_key,
@@ -176,6 +202,24 @@ def _run_create_task(db, *, tenant_id, subject, config, dedupe_key, now, context
     except IntegrityError:
         db.rollback()
         return "task already existed"
+
+    # Sprint 039 (Workstream B) — tell the person whose name is on it.
+    # Sprint 036's settings card already promised "when something an
+    # automation created is waiting on you" and nothing produced it.
+    #
+    # Deliberately after the task is committed, and deliberately not
+    # allowed to change this action's result: muting the notification must
+    # never stop the *work* being recorded, because the task is the record
+    # of what has to happen.
+    _notify_assignee(
+        db,
+        tenant_id=tenant_id,
+        assignee_id=assignee_id,
+        task_title=title,
+        dedupe_key=dedupe_key,
+        source_type=context["subject_type"],
+        source_id=_subject_uuid(subject),
+    )
     return "task created"
 
 
@@ -350,3 +394,63 @@ def perform(
         now=now,
         context=context,
     )
+
+
+def _maybe_email_copy(db, *, tenant_id, recipient_user_id, category, title, message, dedupe_key):
+    """Email the recipient a copy, if they asked for one (Sprint 039).
+
+    Off by default for every category, so this is a no-op for everyone who
+    has not deliberately opted in. Never raises: a failure here must not
+    turn a successful automation run into a failed one, and
+    DeliveryService already records every outcome truthfully.
+    """
+    if recipient_user_id is None:
+        return
+    try:
+        preferences.send_email_copy(
+            db,
+            tenant_id=tenant_id,
+            recipient_user_id=recipient_user_id,
+            category=category,
+            headline=title,
+            detail=message,
+            dedupe_key=dedupe_key,
+        )
+    except Exception:  # noqa: BLE001 — an email copy is never load-bearing
+        db.rollback()
+
+
+def _notify_assignee(db, *, tenant_id, assignee_id, task_title, dedupe_key, source_type, source_id):
+    """Tell whoever a new automated task was assigned to.
+
+    Never raises and never changes the caller's result — see the comment
+    at its call site for why the task must survive a muted or failed
+    notification.
+    """
+    if assignee_id is None:
+        return
+    try:
+        created = preferences.notify(
+            db,
+            tenant_id=tenant_id,
+            recipient_user_id=assignee_id,
+            category="task_assignment",
+            title="A task is waiting for you",
+            message=task_title,
+            dedupe_key=f"task_assigned:{dedupe_key}",
+            notification_type=NotificationType.INFO.value,
+            source_type=source_type,
+            source_id=source_id,
+        )
+        if created is not None:
+            preferences.send_email_copy(
+                db,
+                tenant_id=tenant_id,
+                recipient_user_id=assignee_id,
+                category="task_assignment",
+                headline="A task is waiting for you",
+                detail=task_title,
+                dedupe_key=f"task_assigned:{dedupe_key}",
+            )
+    except Exception:  # noqa: BLE001 — a notification is never load-bearing
+        db.rollback()

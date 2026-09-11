@@ -191,7 +191,11 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.getByLabel("Assigned to").selectOption({ label: STAFF_NAME });
   await assignResponse;
 
-  for (const nextLabel of ["Templated", "Fabricated", "Installed", "Complete"]) {
+  // Sprint 039 — the walk from "approved" to the end of GeoCore's
+  // trade-neutral pipeline. The three stone work stages
+  // (Templated/Fabricated/Installed) are one "In progress" stage now, and
+  // a job is Scheduled before work starts.
+  for (const nextLabel of ["Scheduled", "In progress", "Completed"]) {
     const advanceButton = page.getByRole("button", { name: `Advance to ${nextLabel}` });
     await expect(advanceButton).toBeVisible();
     const statusResponse = page.waitForResponse(

@@ -37,6 +37,10 @@ import type {
   Communication,
   CommunicationFilters,
 } from "@/types/communication";
+import type {
+  NotificationPreference,
+  NotificationPreferenceUpdate,
+} from "@/types/notification";
 import type { PortalLinkCreateOut, PortalLinkOut, PortalPublicOut } from "@/types/portal";
 import type {
   Project,
@@ -168,6 +172,23 @@ export const api = {
 
   getUnreadNotificationCount: () =>
     request<{ unread: number }>("/notifications/unread-count"),
+
+  // --- Notification preferences (Sprint 039, Workstream B) -------------
+  //
+  // Per user, not per browser, and enforced server-side: a muted
+  // notification is never created, rather than created and hidden.
+
+  getNotificationPreferences: () =>
+    request<NotificationPreference[]>("/notifications/preferences"),
+
+  /** A partial update — only the categories passed are written, so a
+   * client that knows about fewer categories than the server cannot reset
+   * the ones it has not heard of. Returns the full, authoritative list. */
+  updateNotificationPreferences: (preferences: NotificationPreferenceUpdate[]) =>
+    request<NotificationPreference[]>("/notifications/preferences", {
+      method: "PUT",
+      body: JSON.stringify({ preferences }),
+    }),
 
   markNotificationRead: (id: string) =>
     request<AppNotification>(`/notifications/${id}/read`, { method: "PATCH" }),

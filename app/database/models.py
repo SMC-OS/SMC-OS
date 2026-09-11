@@ -1124,3 +1124,62 @@ class PipelineStage(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "key", name="uq_pipeline_stages_tenant_key"),
     )
+
+
+class NotificationPreference(Base):
+    """What one user wants to be told about, and where (Sprint 039,
+    Workstream B).
+
+    Sprint 036 shipped this as four `localStorage` keys and said so
+    plainly: a server-side table was "genuine follow-up work", and a
+    server-backed setting that nothing read would have been worse than a
+    local one that something did. This is the table, and
+    app/notifications/preferences.py is the thing that reads it.
+
+    One row per (user, category). A category with no row means the
+    defaults in app/notifications/categories.py apply — in-app on, email
+    off — so a user who has never opened Settings behaves exactly as they
+    did before this sprint, and nobody starts receiving email they did not
+    ask for.
+
+    `tenant_id` is carried alongside `user_id` even though a user belongs
+    to exactly one tenant: every query in this codebase filters by
+    tenant_id (ADR-029), and a preferences lookup on the notification
+    write path is not the place to make an exception.
+
+    Both FKs cascade, for the same reason `pipeline_stages`'s does: this
+    is regenerable configuration, not a business record. Deleting every
+    row restores the defaults, so blocking a user or tenant delete on it
+    would protect nothing.
+    """
+
+    __tablename__ = "notification_preferences"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    in_app: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    email: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "category", name="uq_notification_preferences_user_category"
+        ),
+    )

@@ -246,3 +246,42 @@ def render_review_request(*, tenant_display_name: str, customer_name: str, proje
         ],
     )
     return RenderedEmail(subject=subject, html=html, text=text)
+
+
+def render_workspace_alert(
+    *, tenant_display_name: str, recipient_name: str, headline: str, detail: str
+) -> RenderedEmail:
+    """An email copy of an in-app notification (Sprint 039, Workstream B).
+
+    The one template in this module addressed to a **colleague**, not to a
+    customer, and it says so: no portal link, no marketing tone, and a
+    closing line pointing at where the setting that produced it lives.
+    Nobody receives one of these without having turned the email channel
+    on for that category themselves — it is off by default.
+    """
+    subject = f"{headline} — {tenant_display_name}"
+    safe_recipient = _escape(recipient_name)
+    safe_headline = _escape(headline)
+    safe_detail = _escape(detail)
+
+    html, text = _wrap(
+        tenant_display_name=tenant_display_name,
+        preheader=headline,
+        body_html_lines=[
+            f"Hi {safe_recipient},",
+            f"<strong>{safe_headline}</strong>",
+            safe_detail,
+            "You're getting this because you turned on email for this kind of "
+            "notification in GeoCore. You can turn it off again in Settings "
+            "&rarr; Notifications.",
+        ],
+        body_text_lines=[
+            f"Hi {recipient_name},",
+            headline,
+            detail,
+            "You're getting this because you turned on email for this kind of "
+            "notification in GeoCore. You can turn it off again in Settings > "
+            "Notifications.",
+        ],
+    )
+    return RenderedEmail(subject=subject, html=html, text=text)

@@ -45,6 +45,10 @@ class CommunicationType(str, Enum):
     PROJECT_UPDATE = "project_update"
     PROJECT_COMPLETION = "project_completion"
     REVIEW_REQUEST = "review_request"
+    # Sprint 039 (Workstream B) — the first message type addressed to a
+    # colleague rather than a customer: an email copy of an in-app
+    # notification, sent only to someone who explicitly opted in.
+    WORKSPACE_ALERT = "workspace_alert"
 
 
 class FailureCategory(str, Enum):

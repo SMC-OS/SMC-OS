@@ -448,8 +448,17 @@ class TestRetryPending:
         sweep_delivery = DeliveryService(provider=succeeding_provider)
         result = sweep_delivery.retry_pending(db)
 
-        assert result["retried"] == 1
-        assert result["succeeded"] == 1
+        # Asserted as "at least", not "exactly" (Sprint 039). retry_pending
+        # deliberately sweeps every tenant — it is a scheduled job with no
+        # caller — so an exact global tally is really an assertion that no
+        # other row anywhere in the database is retryable. That holds on a
+        # clean database and stops holding the moment a crashed earlier run
+        # leaves one behind, which makes it a latent flake rather than a
+        # stronger check. What this test is actually about is which of *its
+        # own* two rows the sweep touched, and the three assertions below
+        # say exactly that.
+        assert result["retried"] >= 1
+        assert result["succeeded"] >= 1
 
         db.refresh(transient_row)
         db.refresh(permanent_row)

@@ -466,8 +466,96 @@ worktree, where they flake identically. CI is the arbiter for these.
 
 ---
 
-## 9. Status
+## 9. What Phase 2 actually built
 
-**PHASE 1 COMPLETE.** Contract locked; discovery recorded; branch and worktree created
-from `origin/main` @ `8e40039`; Alembic head verified as `b2c3d4e5f6a7` and extended
-linearly to `c5d6e7f8a9b0`. Phases 2–6 in progress.
+**Communications Centre (Workstream A) — and a send button that sends.**
+
+The discovery finding that mattered most: the quote page's send button called
+`POST /quotes/{id}/send`, the endpoint whose own docstring says *"This transmits
+NOTHING"*. Sprint 038's real delivery path existed and nothing in the product used it.
+
+### Backend
+- `GET /communications` gains `offset` paging and a **stable secondary sort**. Two
+  communications written in one transaction share a `created_at`, and an unstable order
+  makes offset paging drop or repeat rows between pages.
+- `CommunicationOut` gains two derived, never-stored fields:
+  `complained` (read from the complaint's `EmailSuppression`, one query per page rather
+  than one per row) and `retryable`.
+- `POST /communications/{id}/retry` — tenant-scoped via a new
+  `crud.get_communication_by_id`, delegating to the same `DeliveryService.retry()` the
+  scheduled sweep uses. It **cannot** create a second row, re-send a delivered message
+  or push past a suppression — not because the route checks, but because the path
+  underneath it never could. A non-retryable message is refused with 409 rather than
+  silently no-opping.
+
+### Frontend
+- A Communications entry in the primary nav, and **one** `CommunicationTimeline`
+  component behind five screens (central view, customer, quote, project, invitations) —
+  they differ only by which filter they pass.
+- The vocabulary problem solved once, in `lib/communications.ts`: `queued`,
+  `suppressed` and `unavailable` are the right words for a database and the wrong ones
+  for someone running a building firm at 8am. Each maps to plain English plus, where a
+  failure is actionable, what to do about it — without softening what happened.
+- **"Sent" is never rendered as "arrived."** The card on the Communications page says
+  so explicitly, and `STATUS_TONE` gives `sent` an `info` tone rather than `success`.
+- The quote page's primary action is now **Email to customer**, through
+  `DeliveryService`. "Mark as sent" stays beside it, because a business that posts the
+  PDF or hands it over on site still needs to record that it went.
+
+### One honest limitation, recorded rather than papered over
+Retrying over HTTP runs through the *application's own* configured provider. In an
+environment with no `RESEND_API_KEY` that is a truthful `failed`/`unavailable` outcome,
+not a send. The test suite asserts exactly that, and proves a *successful* retry reaches
+`sent` separately at the service level against an injected provider — because nothing in
+this sprint may imply a provider accepted a message when no provider was called.
+
+---
+
+## 10. What Phase 3 actually built
+
+**Server-side notification preferences (Workstream B).**
+
+Sprint 036 shipped this screen as four `localStorage` keys and said so in its own
+docstring. The replacement had to be more than a table:
+
+- `notification_preferences` (migration `d6e7f8a9b0c1`) — per user, per tenant, per
+  category. **Nothing is backfilled.** A user with no row gets in-app on / email off,
+  which is exactly today's behaviour, so the upgrade changes nobody's experience and
+  starts no unexpected email.
+- **Enforcement is at the write path, not the render path.** A muted notification is
+  never created. The old version created the row and hid it, which left the unread count
+  still counting it and any second client still showing it.
+- Three rules, each a test: defaults preserve today's behaviour; a tenant-wide broadcast
+  has no addressee so no preference applies; an unrecognised category **fails open**,
+  because silence is the one thing a notification system must not produce by accident.
+
+### The honesty rule, applied to the category list
+A preference that controls nothing is a mock with a database table behind it. So each
+of the six categories had to name something GeoCore genuinely produces — and three of
+them did not yet, so Phase 3 built them:
+
+| Category | What now produces it |
+|---|---|
+| `quote_activity` / `project_activity` / `customer_activity` | automation notifications, routed through the preference gate; the stale-lead follow-up scan |
+| `task_assignment` | **new** — an automated task now notifies the person whose name is on it. Sprint 036's card already promised this ("when something an automation created is waiting on you") and nothing produced it |
+| `automation_outcome` | **new** — `app/notifications/automation_alerts.py`. Sprint 036 built `AutomationRun` because "an automation that quietly stopped working is the failure mode this feature has to defend against", then made that failure visible only in a panel nobody opens until they already suspect a problem. Deduped per rule per day, so a week-long breakage is one unread item, not four hundred |
+| `communication_failure` | **new** — `app/notifications/delivery_alerts.py`. Sprint 038 recorded delivery failures faithfully and told nobody; a bounced quote looks exactly like a quote the customer is still thinking about |
+
+Muting a task notification still creates the task. The notification is a courtesy; the
+task is the record of what has to happen.
+
+### The email channel
+Real, through Sprint 038's `DeliveryService` and a new `WORKSPACE_ALERT` message type —
+the first template in `app/communications/templates.py` addressed to a colleague rather
+than a customer, and it says so. **Off by default for every category**, so no upgrade
+ever starts mailing a person. Sent only after the in-app record exists, and never able
+to break the automation that triggered it.
+
+---
+
+## 11. Status
+
+**PHASES 1–3 COMPLETE.** Contract locked; discovery recorded; branch and worktree
+created from `origin/main` @ `8e40039`; Alembic head verified as `b2c3d4e5f6a7` and
+extended linearly to `c5d6e7f8a9b0` → `d6e7f8a9b0c1`, both round-tripped. Phases 4–6 in
+progress.

@@ -17,3 +17,30 @@ export interface AppNotification {
   source_type: NotificationSourceType | null;
   source_id: string | null;
 }
+
+/**
+ * Notification preferences (Sprint 039, Workstream B) — mirrors
+ * app/notifications/models.py's `NotificationPreferenceOut`.
+ *
+ * `label` and `description` are served alongside the flags rather than
+ * hardcoded in the settings screen, so the UI can never offer a switch
+ * for a category GeoCore does not actually produce — the same
+ * served-vocabulary rule as /automations/meta and /projects/meta/pipeline.
+ */
+export interface NotificationPreference {
+  category: string;
+  label: string;
+  description: string;
+  /** The bell menu. On by default for every category, which is exactly
+   * what the Sprint 036 localStorage card defaulted to. */
+  in_app: boolean;
+  /** A real email. Off by default for every category — turning it on is
+   * always a deliberate act, never an upgrade's side effect. */
+  email: boolean;
+}
+
+export interface NotificationPreferenceUpdate {
+  category: string;
+  in_app: boolean;
+  email: boolean;
+}

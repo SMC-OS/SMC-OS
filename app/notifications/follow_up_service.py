@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import UserRole
 from app.database import crud
+from app.notifications import preferences
 from app.database.models import Project
 from app.notifications.models import NotificationType
 from app.projects import pipeline as project_pipeline
@@ -65,18 +66,37 @@ class FollowUpService:
                 continue
 
             try:
-                crud.create_notification(
+                # Sprint 039 (Workstream B) — through the preference gate
+                # rather than straight to crud, so a user who has muted
+                # project activity genuinely stops getting these rather
+                # than having them hidden client-side.
+                created = preferences.notify(
                     db,
-                    id=uuid.uuid4(),
                     tenant_id=project.tenant_id,
+                    recipient_user_id=recipient_id,
+                    category="project_activity",
                     title="Enquiry needs follow-up",
                     message=f"{project.name} has had no progress since it was created.",
-                    type=NotificationType.WARNING.value,
-                    timestamp=now,
-                    read=False,
-                    recipient_user_id=recipient_id,
+                    dedupe_key=dedupe_key,
+                    notification_type=NotificationType.WARNING.value,
                     source_type="project",
                     source_id=project.id,
+                    now=now,
+                )
+                if created is None:
+                    # Muted, or a concurrent run won the dedupe race.
+                    # Counted as "already existed" rather than "created",
+                    # which is what the caller's own summary means by it:
+                    # nothing new was written.
+                    result.skipped_existing += 1
+                    continue
+                preferences.send_email_copy(
+                    db,
+                    tenant_id=project.tenant_id,
+                    recipient_user_id=recipient_id,
+                    category="project_activity",
+                    headline="Enquiry needs follow-up",
+                    detail=f"{project.name} has had no progress since it was created.",
                     dedupe_key=dedupe_key,
                 )
                 result.created += 1

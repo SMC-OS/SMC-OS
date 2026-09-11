@@ -201,7 +201,7 @@ class DeliveryService:
             if result.outcome == SendOutcome.TRANSIENT_FAILURE
             else FailureCategory.PERMANENT
         )
-        return crud.update_communication_result(
+        failed = crud.update_communication_result(
             db,
             row.id,
             status="failed",
@@ -210,6 +210,17 @@ class DeliveryService:
             failure_detail=result.detail,
             last_attempted_at=now,
         )
+        # Sprint 039 (Workstream B) — Sprint 038 recorded delivery failures
+        # faithfully and told nobody. A bounced quote looks exactly like a
+        # quote the customer is still thinking about, and the difference
+        # matters to whoever is waiting on the answer. Imported here rather
+        # than at module scope: app.notifications imports this module's
+        # delivery_service, and a top-level import in both directions is a
+        # cycle.
+        from app.notifications import delivery_alerts
+
+        delivery_alerts.notify_delivery_failure(db, failed)
+        return failed
 
     def retry_pending(self, db: Session, *, limit: int = 100) -> dict:
         """Sweep every retryable failed communication (across every
@@ -404,6 +415,12 @@ class DeliveryService:
                 reason="hard_bounce",
                 source_communication_id=row.id,
             )
+            # Sprint 039 — the workspace hears about it. Idempotent through
+            # the notification's own dedupe key, so a replayed webhook
+            # cannot produce a second one.
+            from app.notifications import delivery_alerts
+
+            delivery_alerts.notify_delivery_failure(db, row)
             return "marked bounced and suppressed"
 
         if event_type in self._COMPLAINED_EVENTS:
