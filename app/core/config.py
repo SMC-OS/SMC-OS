@@ -101,8 +101,20 @@ class Settings(BaseSettings):
     # returns 503 for anything that needs Stripe, same "ships dark until
     # configured" pattern as openai_api_key above). Price IDs are read
     # from config, never hardcoded (see app/billing/plans.py).
+    #
+    # Sprint 039 Production Readiness Defect Gate, Blocker 3 — widened
+    # from 2 self-service plans to 4 (Starter/Team added; Pro/Business
+    # keep their Sprint 032 setting names but must be repointed to NEW
+    # Stripe Price objects at the new locked amounts — see
+    # docs/SPRINTS/sprint-039.md §14.3 for the exact owner-gate spec of
+    # what to create in Stripe and which of these 8 variables each one
+    # fills). No value here is a real Stripe id; none is fabricated.
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
+    stripe_price_starter_monthly: str | None = None
+    stripe_price_starter_annual: str | None = None
+    stripe_price_team_monthly: str | None = None
+    stripe_price_team_annual: str | None = None
     stripe_price_pro_monthly: str | None = None
     stripe_price_pro_annual: str | None = None
     stripe_price_business_monthly: str | None = None

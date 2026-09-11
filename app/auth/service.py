@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import SignupRequest, UserOut, UserRole
 from app.auth.security import hash_password, verify_password
+from app.billing.trial import start_trial_if_eligible
 from app.database import crud
 from app.database.models import Tenant, User
 from app.tenants.models import TenantCreate
@@ -93,6 +94,11 @@ class AuthService:
             role=UserRole.OWNER.value,
             email_verified=False,
         )
+        # Sprint 039 Production Readiness Defect Gate, Blocker 3 — every
+        # new workspace starts a 14-day trial automatically, no card
+        # required (see app/billing/trial.py's own docstring for why no
+        # Stripe object is created at this point).
+        start_trial_if_eligible(db, tenant.id)
         return tenant, user
 
     def build_user_out(self, db: Session, user: User) -> UserOut:

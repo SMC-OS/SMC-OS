@@ -10,12 +10,16 @@ itself is exercised via its failure path (a bad signature really is
 rejected) without needing a real signing secret to construct a valid one.
 """
 
+import uuid
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import delete
 
+from app.auth.models import SignupRequest
 from app.auth.service import auth_service
+from app.billing.entitlements import is_trial_expired
 from app.billing.service import billing_service
 from app.database import crud
 from app.database.database import SessionLocal
@@ -41,6 +45,7 @@ _TEST_STRIPE_EVENT_IDS = [
     "evt_test_checkout_1",
     "evt_test_replay_1",
     "evt_test_updated_1",
+    "evt_test_trial_conversion_1",
 ]
 
 
@@ -115,26 +120,38 @@ def _reset_stripe_mock():
 
 
 def test_list_plans_is_public(client):
+    # Sprint 039 Production Readiness Defect Gate, Blocker 3 — the locked
+    # 4-tier catalogue (docs/SPRINTS/sprint-039.md §14.3). Do not restore
+    # the old £79/£149 2-tier pricing here.
     r = client.get("/api/v1/billing/plans")
     assert r.status_code == 200
     plans = {p["plan"]: p for p in r.json()}
-    assert plans["pro"]["monthly_price_gbp"] == 79
-    assert plans["pro"]["annual_price_gbp"] == 790
-    assert plans["business"]["monthly_price_gbp"] == 149
-    assert plans["business"]["annual_price_gbp"] == 1490
-    assert plans["pro"]["annual_recommended"] is True
-    assert plans["business"]["annual_recommended"] is True
-    assert plans["pro"]["self_service"] is True
-    assert plans["business"]["self_service"] is True
+    assert plans["starter"]["monthly_price_gbp"] == 29
+    assert plans["starter"]["annual_price_gbp"] == 290
+    assert plans["team"]["monthly_price_gbp"] == 59
+    assert plans["team"]["annual_price_gbp"] == 590
+    assert plans["pro"]["monthly_price_gbp"] == 99
+    assert plans["pro"]["annual_price_gbp"] == 990
+    assert plans["business"]["monthly_price_gbp"] == 199
+    assert plans["business"]["annual_price_gbp"] == 1990
+    for plan in ("starter", "team", "pro", "business"):
+        assert plans[plan]["self_service"] is True
+        assert plans[plan]["annual_recommended"] is True
+    assert plans["starter"]["entitlements"]["seats"] == 1
+    assert plans["team"]["entitlements"]["seats"] == 3
+    assert plans["pro"]["entitlements"]["seats"] == 10
+    assert plans["business"]["entitlements"]["seats"] == 25
     assert plans["enterprise"]["self_service"] is False
     assert plans["enterprise"]["monthly_price_gbp"] is None
+    assert plans["enterprise"]["entitlements"]["seats"] is None
 
 
-def test_annual_pricing_is_cheaper_than_twelve_months_of_monthly(client):
+def test_annual_pricing_is_exactly_ten_months_of_monthly(client):
+    # Locked contract: annual = 10x monthly (2 months free), not merely
+    # "cheaper than 12x" — every self-service plan, exactly.
     plans = {p["plan"]: p for p in client.get("/api/v1/billing/plans").json()}
-    for plan in ("pro", "business"):
-        monthly_total = plans[plan]["monthly_price_gbp"] * 12
-        assert plans[plan]["annual_price_gbp"] < monthly_total
+    for plan in ("starter", "team", "pro", "business"):
+        assert plans[plan]["annual_price_gbp"] == plans[plan]["monthly_price_gbp"] * 10
 
 
 # --- Subscription status ---------------------------------------------------
@@ -381,6 +398,74 @@ def test_webhook_checkout_completed_creates_active_subscription(
         db.close()
 
 
+def test_checkout_completed_converts_a_trial_to_paid_and_preserves_trial_history(
+    client, owner_and_staff, monkeypatch
+):
+    """Sprint 039 Blocker 3 — a real checkout completing for a tenant
+    already on a trial (see app/billing/trial.py) must flip it to a paid,
+    active subscription while keeping trial_start/trial_end as historical
+    record, not clearing them."""
+    tenant, _, _ = owner_and_staff
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_fake")
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_fake")
+
+    trial_start = datetime.now(timezone.utc) - timedelta(days=3)
+    trial_end = trial_start + timedelta(days=14)
+    db = SessionLocal()
+    try:
+        crud.upsert_subscription(
+            db,
+            tenant_id=tenant.id,
+            plan="pro",
+            billing_period="monthly",
+            status="trialing",
+            trial_start=trial_start,
+            trial_end=trial_end,
+        )
+    finally:
+        db.close()
+
+    event = {
+        "id": "evt_test_trial_conversion_1",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "customer": "cus_converted",
+                "subscription": "sub_converted",
+                "client_reference_id": str(tenant.id),
+                "metadata": {"tenant_id": str(tenant.id), "plan": "business", "billing_period": "annual"},
+            }
+        },
+    }
+    fake_stripe = MagicMock()
+    fake_stripe.Webhook.construct_event.return_value = event
+    billing_service._stripe = fake_stripe
+
+    db = SessionLocal()
+    try:
+        db.query(ProcessedStripeEvent).filter(ProcessedStripeEvent.id == event["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.post("/api/v1/billing/webhook", content=b"{}", headers={"stripe-signature": "sig"})
+    assert r.status_code == 200
+
+    db = SessionLocal()
+    try:
+        row = crud.get_subscription_by_tenant_id(db, tenant.id)
+        assert row.status == "active"
+        assert row.plan == "business"
+        assert row.stripe_customer_id == "cus_converted"
+        # Trial history is preserved, not wiped by the upgrade.
+        assert row.trial_start is not None
+        assert row.trial_end is not None
+    finally:
+        db.close()
+
+
 def test_webhook_is_idempotent_on_replayed_event(client, owner_and_staff, monkeypatch):
     tenant, _, _ = owner_and_staff
     from app.core.config import settings
@@ -530,25 +615,26 @@ def test_seat_limit_enforced_once_subscribed(client, owner_headers, owner_and_st
 
     db = SessionLocal()
     try:
-        # Pro plan = 5 seats. Tenant already has 2 users (owner + staff);
-        # 3 more pending invitations reach the limit exactly.
+        # Team plan = 3 seats (Sprint 039 Blocker 3's locked entitlements).
+        # Tenant already has 2 users (owner + staff); one more pending
+        # invitation reaches the limit exactly.
         crud.upsert_subscription(
             db,
             tenant_id=tenant.id,
-            plan="pro",
+            plan="team",
             billing_period="monthly",
             status="active",
         )
     finally:
         db.close()
 
-    emails = [f"pytest-billing-seat-{i}@example.invalid" for i in range(3)]
+    emails = [f"pytest-billing-seat-{i}@example.invalid" for i in range(1)]
     try:
         for email in emails:
             r = client.post("/api/v1/invitations", json={"email": email}, headers=owner_headers)
             assert r.status_code == 201
 
-        # 5th seat (2 users + 3 invites) already reached -> the 6th is blocked.
+        # 3rd seat (2 users + 1 invite) already reached -> the 4th is blocked.
         r = client.post(
             "/api/v1/invitations",
             json={"email": "pytest-billing-seat-over-limit@example.invalid"},
@@ -566,3 +652,216 @@ def test_seat_limit_enforced_once_subscribed(client, owner_headers, owner_and_st
             db.commit()
         finally:
             db.close()
+
+
+# --- Trial (Sprint 039 Production Readiness Defect Gate, Blocker 3) --------
+
+TRIAL_SIGNUP_EMAIL = "pytest-billing-trial-signup@example.invalid"
+TRIAL_SIGNUP_COMPANY = "Pytest Billing Trial Signup Co"
+
+
+def _cleanup_trial_signup():
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).first()
+        if user is not None:
+            db.execute(delete(Subscription).where(Subscription.tenant_id == user.tenant_id))
+            db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == user.tenant_id))
+            db.execute(delete(Communication).where(Communication.tenant_id == user.tenant_id))
+        db.execute(delete(User).where(User.email == TRIAL_SIGNUP_EMAIL))
+        db.execute(delete(Tenant).where(Tenant.name == TRIAL_SIGNUP_COMPANY))
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_signup_starts_a_real_trial_with_no_stripe_object(client):
+    """No card required, and — critically — no Stripe customer/subscription
+    id at all: Stripe is never contacted during the trial (see
+    app/billing/trial.py's own docstring for why this, rather than
+    Stripe's own trial-on-Checkout mechanism, makes an accidental charge
+    of a card-less tenant structurally impossible)."""
+    _cleanup_trial_signup()
+    try:
+        r = client.post(
+            "/api/v1/auth/signup",
+            json={
+                "company_name": TRIAL_SIGNUP_COMPANY,
+                "name": "Pytest Trial Owner",
+                "email": TRIAL_SIGNUP_EMAIL,
+                "password": "a-real-password-123",
+            },
+        )
+        assert r.status_code == 201
+        headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+        sub = client.get("/api/v1/billing/subscription", headers=headers).json()
+        assert sub is not None
+        assert sub["status"] == "trialing"
+        assert sub["plan"] == "pro"
+        assert sub["trial_start"] is not None
+        assert sub["trial_end"] is not None
+
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).first()
+            row = crud.get_subscription_by_tenant_id(db, user.tenant_id)
+            assert row.stripe_customer_id is None
+            assert row.stripe_subscription_id is None
+            trial_length = row.trial_end - row.trial_start
+            assert trial_length == timedelta(days=14)
+        finally:
+            db.close()
+    finally:
+        _cleanup_trial_signup()
+
+
+def test_a_tenant_never_gets_a_second_trial(client):
+    _cleanup_trial_signup()
+    try:
+        r = client.post(
+            "/api/v1/auth/signup",
+            json={
+                "company_name": TRIAL_SIGNUP_COMPANY,
+                "name": "Pytest Trial Owner",
+                "email": TRIAL_SIGNUP_EMAIL,
+                "password": "a-real-password-123",
+            },
+        )
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).first()
+            tenant_id = user.tenant_id
+            first_trial_end = crud.get_subscription_by_tenant_id(db, tenant_id).trial_end
+        finally:
+            db.close()
+
+        # Calling it again (e.g. a retried signup handler) must not reset
+        # or extend the trial window.
+        from app.billing.trial import start_trial_if_eligible
+
+        db = SessionLocal()
+        try:
+            start_trial_if_eligible(db, tenant_id)
+            second_trial_end = crud.get_subscription_by_tenant_id(db, tenant_id).trial_end
+        finally:
+            db.close()
+        assert second_trial_end == first_trial_end
+    finally:
+        _cleanup_trial_signup()
+
+
+def test_is_trial_expired_helper():
+    active_trial = Subscription(
+        id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        plan="pro",
+        billing_period="monthly",
+        status="trialing",
+        trial_start=datetime.now(timezone.utc) - timedelta(days=1),
+        trial_end=datetime.now(timezone.utc) + timedelta(days=13),
+    )
+    assert is_trial_expired(active_trial) is False
+
+    expired_trial = Subscription(
+        id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        plan="pro",
+        billing_period="monthly",
+        status="trialing",
+        trial_start=datetime.now(timezone.utc) - timedelta(days=20),
+        trial_end=datetime.now(timezone.utc) - timedelta(days=6),
+    )
+    assert is_trial_expired(expired_trial) is True
+
+    paid = Subscription(
+        id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        plan="pro",
+        billing_period="monthly",
+        status="active",
+        trial_start=datetime.now(timezone.utc) - timedelta(days=20),
+        trial_end=datetime.now(timezone.utc) - timedelta(days=6),
+    )
+    assert is_trial_expired(paid) is False  # converted to paid — no longer "trialing"
+
+
+def test_expired_trial_blocks_new_seats_without_disabling_existing_users(
+    client, owner_headers, owner_and_staff
+):
+    tenant, owner, staff = owner_and_staff
+
+    db = SessionLocal()
+    try:
+        crud.upsert_subscription(
+            db,
+            tenant_id=tenant.id,
+            plan="pro",
+            billing_period="monthly",
+            status="trialing",
+            trial_start=datetime.now(timezone.utc) - timedelta(days=20),
+            trial_end=datetime.now(timezone.utc) - timedelta(days=6),
+        )
+    finally:
+        db.close()
+
+    r = client.post(
+        "/api/v1/invitations",
+        json={"email": "pytest-billing-expired-trial-invitee@example.invalid"},
+        headers=owner_headers,
+    )
+    assert r.status_code == 402
+
+    # Existing users are untouched — never disabled/deleted by an expired trial.
+    db = SessionLocal()
+    try:
+        assert db.get(User, owner.id).is_active is True
+        assert db.get(User, staff.id).is_active is True
+    finally:
+        db.close()
+
+
+# --- Checkout cannot be tampered with (server-side price authority) --------
+
+
+def test_checkout_ignores_a_client_supplied_price_or_amount(client, owner_headers, monkeypatch):
+    """The request schema has no price/amount field at all — only plan +
+    billing_period, both validated server-side against the authoritative
+    catalogue (app/billing/plans.py). Extra client-supplied fields
+    (a spoofed price_id/amount) are silently ignored by Pydantic, not
+    trusted, matching the brief's 'never trust a price/amount supplied
+    directly by the browser' requirement."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_fake")
+    monkeypatch.setattr(settings, "stripe_price_starter_monthly", "price_real_starter_monthly")
+
+    fake_stripe = MagicMock()
+    fake_stripe.checkout.Session.create.return_value = MagicMock(
+        url="https://checkout.stripe.com/pay/cs_test_fake"
+    )
+    billing_service._stripe = fake_stripe
+
+    r = client.post(
+        "/api/v1/billing/checkout",
+        json={
+            "plan": "starter",
+            "billing_period": "monthly",
+            "price_id": "price_attacker_supplied",
+            "amount": 1,
+        },
+        headers=owner_headers,
+    )
+    assert r.status_code == 200
+
+    call_kwargs = fake_stripe.checkout.Session.create.call_args.kwargs
+    assert call_kwargs["line_items"][0]["price"] == "price_real_starter_monthly"
+
+
+def test_checkout_rejects_an_unknown_plan_string(client, owner_headers):
+    r = client.post(
+        "/api/v1/billing/checkout",
+        json={"plan": "not-a-real-plan", "billing_period": "monthly"},
+        headers=owner_headers,
+    )
+    assert r.status_code == 422

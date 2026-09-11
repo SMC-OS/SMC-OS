@@ -1,6 +1,9 @@
 /**
  * Sprint 032 (Workstream A) — pricing page: annual-recommended messaging,
- * Pro/Business/Enterprise rendering, and checkout initiation.
+ * plan rendering, and checkout initiation. Widened to the locked 4-tier
+ * catalogue (Starter/Team/Pro/Business/Enterprise) in Sprint 039
+ * Production Readiness Defect Gate, Blocker 3 — do not restore the old
+ * 2-tier Pro/Business-only fixture.
  */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -25,22 +28,40 @@ function jsonResponse(body: unknown, status = 200) {
 
 const PLANS = [
   {
+    plan: "starter",
+    name: "GeoCore Starter",
+    self_service: true,
+    monthly_price_gbp: 29,
+    annual_price_gbp: 290,
+    annual_recommended: true,
+    entitlements: { seats: 1, ai_usage_per_month: 100, automations: 5, integrations: 1, advanced_analytics: false },
+  },
+  {
+    plan: "team",
+    name: "GeoCore Team",
+    self_service: true,
+    monthly_price_gbp: 59,
+    annual_price_gbp: 590,
+    annual_recommended: true,
+    entitlements: { seats: 3, ai_usage_per_month: 500, automations: 20, integrations: 3, advanced_analytics: false },
+  },
+  {
     plan: "pro",
     name: "GeoCore Pro",
     self_service: true,
-    monthly_price_gbp: 79,
-    annual_price_gbp: 790,
+    monthly_price_gbp: 99,
+    annual_price_gbp: 990,
     annual_recommended: true,
-    entitlements: { seats: 5, ai_usage_per_month: 500, automations: 10, integrations: 3, advanced_analytics: false },
+    entitlements: { seats: 10, ai_usage_per_month: 2000, automations: 75, integrations: 10, advanced_analytics: true },
   },
   {
     plan: "business",
     name: "GeoCore Business",
     self_service: true,
-    monthly_price_gbp: 149,
-    annual_price_gbp: 1490,
+    monthly_price_gbp: 199,
+    annual_price_gbp: 1990,
     annual_recommended: true,
-    entitlements: { seats: 25, ai_usage_per_month: 5000, automations: 100, integrations: 15, advanced_analytics: true },
+    entitlements: { seats: 25, ai_usage_per_month: 5000, automations: 150, integrations: 15, advanced_analytics: true },
   },
   {
     plan: "enterprise",
@@ -54,12 +75,15 @@ const PLANS = [
 ];
 
 let fetchMock: ReturnType<typeof vi.fn>;
+let subscriptionResponse: unknown = null;
 
 beforeEach(() => {
   authState = { isAuthenticated: true, role: "Owner" };
+  subscriptionResponse = null;
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
     if (url.endsWith("/billing/plans")) return jsonResponse(PLANS);
+    if (url.endsWith("/billing/subscription")) return jsonResponse(subscriptionResponse);
     if (url.endsWith("/billing/checkout") && init?.method === "POST") {
       return jsonResponse({ checkout_url: "https://checkout.stripe.com/pay/cs_fake" });
     }
@@ -74,10 +98,12 @@ afterEach(() => {
 });
 
 describe("PricingPage", () => {
-  it("shows all three plans with annual savings messaging", async () => {
+  it("shows all five plans with annual savings messaging", async () => {
     render(<PricingPage />);
 
-    expect(await screen.findByText("GeoCore Pro")).toBeInTheDocument();
+    expect(await screen.findByText("GeoCore Starter")).toBeInTheDocument();
+    expect(screen.getByText("GeoCore Team")).toBeInTheDocument();
+    expect(screen.getByText("GeoCore Pro")).toBeInTheDocument();
     expect(screen.getByText("GeoCore Business")).toBeInTheDocument();
     expect(screen.getByText("Enterprise")).toBeInTheDocument();
     expect(screen.getAllByText(/save 2 months/i).length).toBeGreaterThan(0);
@@ -121,7 +147,7 @@ describe("PricingPage", () => {
     authState = { isAuthenticated: false, role: null };
     render(<PricingPage />);
 
-    expect(await screen.findAllByRole("button", { name: /sign in to subscribe/i })).toHaveLength(2);
+    expect(await screen.findAllByRole("button", { name: /sign in to subscribe/i })).toHaveLength(4);
     expect(screen.queryByRole("button", { name: /choose geocore pro/i })).not.toBeInTheDocument();
   });
 
@@ -129,6 +155,32 @@ describe("PricingPage", () => {
     authState = { isAuthenticated: true, role: "Staff" };
     render(<PricingPage />);
 
-    expect(await screen.findAllByText(/ask your workspace owner/i)).toHaveLength(2);
+    expect(await screen.findAllByText(/ask your workspace owner/i)).toHaveLength(4);
+  });
+
+  it("shows the trial countdown and marks the trialing plan as current", async () => {
+    subscriptionResponse = {
+      id: "sub-1",
+      tenant_id: "tenant-1",
+      plan: "pro",
+      billing_period: "monthly",
+      status: "trialing",
+      current_period_end: null,
+      cancel_at_period_end: false,
+      trial_start: new Date().toISOString(),
+      trial_end: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    render(<PricingPage />);
+
+    expect(await screen.findByText(/days left in your trial/i)).toBeInTheDocument();
+    expect(screen.getByText("Your trial")).toBeInTheDocument();
+    // The trialing plan's own card is disabled ("Trialing this plan"),
+    // not offered as something to "upgrade to" — every *other*
+    // self-service plan gets the upgrade CTA instead.
+    expect(screen.getByRole("button", { name: /trialing this plan/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /upgrade to geocore business/i })).toBeInTheDocument();
   });
 });

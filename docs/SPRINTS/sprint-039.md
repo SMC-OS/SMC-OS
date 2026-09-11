@@ -652,7 +652,7 @@ phase-per-PR precedent):
 |---|---|---|---|
 | 1 | Email verification | Genuinely missing — signup never verified an email anywhere. | `sprint-039-gate-a-email-verification` — **done, see below.** |
 | 2 | Forgot/reset password | Genuinely missing — no route, no token table, no UI link. | `sprint-039-gate-b-password-reset` — **done, see below.** |
-| 3 | Stripe pricing/billing | Correct checkout/webhook/seat architecture on solid rails, but still the old 2-tier £79/£149 catalogue; no trial. | Not started. |
+| 3 | Stripe pricing/billing | Correct checkout/webhook/seat architecture on solid rails, but still the old 2-tier £79/£149 catalogue; no trial. | `sprint-039-gate-c-billing-pricing` — **done, see below.** |
 | 4 | GeoCore AI | Combination: `OPENAI_API_KEY` genuinely unset (owner gate) + tool-calling genuinely never built (v1 scope limit); frontend copy is accurate, not stale. | Not started. |
 | 5 | Quote editing | Stone quotes have no edit endpoint at all; general quotes have a tested backend `PATCH` that the frontend never calls (dead code) and no edit UI. No revision concept exists. | Not started. |
 | 6 | Blurry logo | Real: `next/image` requests the 590×143px source at a display size that exceeds it at 2×/3× DPR; separately, the correct 1200×630 OG image already exists on disk but was never copied into `apps/marketing/public/brand/`. | Not started. |
@@ -917,3 +917,154 @@ local machine too.
 - This branch is pushed and open as PR #29 (`sprint-039-gate-b-password-reset`), with a
   real green GitHub Actions CI run (backend/frontend/e2e all passing, on the commit that
   includes the `token_version` fix) — not yet merged, not yet deployed to staging.
+
+### 14.3 Blocker 3 — GeoCore pricing, Stripe subscriptions and billing: evidence
+
+**Branch:** `sprint-039-gate-c-billing-pricing` (off `origin/main` @ `8e40039`).
+**Alembic:** extends the verified head `b2c3d4e5f6a7` → `a3b4c5d6e7f8` (`add
+subscription trial columns`), linear, round-tripped. NOTE: the sibling Blocker 1/2
+branches also extend `b2c3d4e5f6a7` in parallel (migrations `e1f2a3b4c5d6`,
+`f2a3b4c5d6e7`) — whichever of the three merges last must rebase its `down_revision`
+onto the others' new head before it can merge cleanly; documented in all three
+migration files' own docstrings, not a mistake.
+
+**Reproduction, before any change:** production genuinely still served the old 2-tier
+catalogue — `app/billing/plans.py`'s `PRICING_GBP` was `{pro: £79/£790, business:
+£149/£1490}`, confirmed by reading the file directly (not assumed from a screenshot),
+and the "Billing isn't fully configured yet" string traced to `app/billing/service.py`'s
+`_get_stripe()` raising whenever `STRIPE_SECRET_KEY` is unset — a real, honest 503, not
+a bug, but paired with genuinely stale pricing rather than the locked one. No trial
+column, model, or code path existed anywhere (`Subscription` had no `trial_start`/
+`trial_end`; confirmed by reading `app/database/models.py`).
+
+**Existing architecture confirmed solid, not rebuilt from scratch** (matching the
+earlier audit's assessment): checkout already looked up the Stripe Price ID
+server-side from a plan+billing_period pair validated against a Pydantic enum-like
+`field_validator` (`app/billing/models.py`'s `CheckoutSessionRequest`) — a client can
+supply extra fields (a spoofed `price_id`/`amount`) and they are silently ignored,
+never trusted (proven by `test_checkout_ignores_a_client_supplied_price_or_amount`,
+not merely assumed from reading the code). Webhook signature verification
+(`stripe.Webhook.construct_event`) and idempotency (`ProcessedStripeEvent`, PK on
+Stripe's own event id) were already correctly implemented and tested.
+
+**What shipped:**
+- `app/billing/plans.py` rewritten to the locked 4-tier catalogue — Starter
+  (£29/£290, 1 seat), Team (£59/£590, 3 seats), Pro (£99/£990, 10 seats), Business
+  (£199/£1,990, 25 seats), annual = exactly 10× monthly on every tier — plus
+  Enterprise (custom, contact-sales/demo, never self-service). This remains the single
+  authoritative plan catalogue: `GET /billing/plans` is built entirely from this file,
+  and the frontend pricing page and Settings → Billing card both render whatever it
+  returns — neither hardcodes a price.
+- `app/billing/trial.py` (new) — every signup now starts a real 14-day trial
+  (`start_trial_if_eligible`, called from `AuthService.signup()`), deliberately
+  creating the `Subscription` row with **no Stripe customer/subscription id at all**.
+  Stripe is never contacted during the trial — a stronger guarantee than Stripe's own
+  trial-on-Checkout mechanism, since it makes charging a card-less tenant structurally
+  impossible rather than merely policy. A real checkout later (via
+  `create_checkout_session`) creates a genuine Stripe subscription at that point,
+  converting the same row in place (proven by
+  `test_checkout_completed_converts_a_trial_to_paid_and_preserves_trial_history` —
+  trial_start/trial_end survive the upgrade as historical record).
+- `app/billing/entitlements.py` gained `is_trial_expired()` — an expired trial is
+  deliberately **not** treated as "no subscription" (which would fail open to
+  unmetered/unlimited, the opposite of "must not accidentally receive permanent paid
+  access"): `require_seat_available` now blocks any *new* seat once a trial has
+  expired without conversion, while never removing or disabling anyone already there
+  (same "handle safely, never delete/disable" principle the brief applies to a tenant
+  exceeding a newly-assigned tier). Full access-blocking beyond the seat dimension
+  (e.g. read-only mode) was not built — see Known limitations.
+- 8 Stripe Price settings (`app/core/config.py`) — Starter/Team are new;
+  Pro/Business reuse Sprint 032's original setting names but must be repointed to NEW
+  Stripe Price objects at the new amounts (see the owner-gate spec below) — the old
+  £79/£149 Price objects stay live in Stripe untouched, still serving any
+  already-existing subscriber bound to them directly (a Stripe subscription
+  references its Price by id, independent of what this app's env vars point to).
+- Frontend: pricing page rebuilt for 5 plans (was a 3-column, 2-self-service-plan
+  grid), trial countdown banner, current-plan/trialing-plan state per card, "Book a
+  demo" as Enterprise's primary CTA (`NEXT_PUBLIC_DEMO_BOOKING_URL`, same
+  "never hardcode an unverified destination" pattern Sprint 034 already established
+  for `NEXT_PUBLIC_SALES_EMAIL` — the existing `sales-cta.test.mjs` contract test
+  still passes unmodified). Settings → Billing card gained the same trial banner and
+  a 5-column change-plan grid.
+- Seat enforcement numbers (1/3/10/25) now match the locked entitlements exactly —
+  `require_seat_available` itself needed no logic change, only the new
+  `ENTITLEMENTS` map it already reads generically.
+
+**Regressions found and fixed as a direct, verified consequence of this change** (the
+same "every real signup now creates a new row" lesson Blockers 1 and 2 each hit
+independently, this time for `Subscription` instead of `EmailVerificationToken`/none):
+- `tests/conftest.py`'s `_cleanup_other_tenant`, plus `test_auth.py`,
+  `test_follow_up_automation.py`, `test_command_centre.py`, and
+  `test_cleanup_launch_qa.py`'s own manual tenant-teardown helpers, all needed a
+  `delete(Subscription)` added before their `Tenant`/`User` deletes — real
+  `IntegrityError`s, reproduced then fixed one at a time.
+- **`scripts/production/cleanup_launch_qa.py`** — the real Sprint 031 production
+  cleanup script — would have hit the identical `IntegrityError` deleting a real QA
+  tenant's users in production, since `Subscription` was never added to its
+  `_TENANT_SCOPED_TABLES_IN_ORDER` list. Fixed (it has a plain `tenant_id` column, no
+  join needed, unlike Blocker 1's `EmailVerificationToken` fix on this same script).
+
+**Owner gate — Stripe Products/Prices to create (nothing fabricated, no live object
+touched):** see the exact 8-row table, environment variable names, staging-vs-production
+and test-vs-live-mode split, and what to leave untouched, already delivered in this
+gate's conversation record and unchanged since — reproduced here for the permanent
+record:
+
+| Product | Price | Amount | Interval |
+|---|---|---|---|
+| GeoCore Starter | Starter Monthly | £29.00 | month |
+| GeoCore Starter | Starter Annual | £290.00 | year |
+| GeoCore Team | Team Monthly | £59.00 | month |
+| GeoCore Team | Team Annual | £590.00 | year |
+| GeoCore Pro | Pro Monthly | £99.00 | month |
+| GeoCore Pro | Pro Annual | £990.00 | year |
+| GeoCore Business | Business Monthly | £199.00 | month |
+| GeoCore Business | Business Annual | £1,990.00 | year |
+
+Env vars: `STRIPE_PRICE_STARTER_MONTHLY`, `STRIPE_PRICE_STARTER_ANNUAL`,
+`STRIPE_PRICE_TEAM_MONTHLY`, `STRIPE_PRICE_TEAM_ANNUAL`, `STRIPE_PRICE_PRO_MONTHLY`
+(repoint), `STRIPE_PRICE_PRO_ANNUAL` (repoint), `STRIPE_PRICE_BUSINESS_MONTHLY`
+(repoint), `STRIPE_PRICE_BUSINESS_ANNUAL` (repoint). Create the full set twice — once
+in Stripe Test mode (→ `simo-api-staging`) and once in Live mode (→
+`simo-api-production`, only after staging's full test-mode lifecycle passes). Old
+£79/£149 Price objects: leave untouched in Stripe, for rollback/history — no
+existing subscriber is affected by an env var repoint. Enterprise: no Stripe object,
+ever, for self-service.
+
+**Verification run (this branch, local, plus real GitHub Actions CI):**
+- Backend: `python -m pytest tests/` — **964 passed, 1 skipped, 0 failed** (+28 in
+  `tests/test_billing.py`, up from the pre-existing 20). Two intermittent failures
+  seen along the way (`test_runtime_config.py`, `test_runtime_http.py`) are the same
+  pre-existing, this-machine-specific flake already documented and confirmed against
+  unmodified `origin/main` in Blocker 2's own evidence (§14.2) — both pass cleanly in
+  isolation and are unrelated to this branch's changes.
+- Frontend: `pnpm run check-types`, `pnpm run lint`, `pnpm run build` all clean;
+  `pnpm run test:sales-cta` (the Sprint 034 no-hardcoded-mailbox contract test) still
+  passes unmodified. `apps/web/app/pricing/page.test.tsx`: 5 passed (widened from 4
+  to 5 plans, trial-state assertions added).
+- E2E: new `e2e/billing-pricing.spec.ts` (2 specs) written to prove the 4-tier
+  catalogue renders with the exact locked prices in both monthly and annual view, a
+  new Owner is shown as trialing Pro, and checkout's 503 "not configured yet"
+  fallback is proven honest. Local Playwright runs on this specific machine hit the
+  same demonstrated sandbox instability already documented in Blocker 2's evidence
+  (§14.2) — a zombie dev-server process re-appeared on port 3000 from an earlier run
+  (confirmed via `netstat`/`taskkill`, not guessed) and, after clearing it, even a
+  bare `curl` to `localhost`/`127.0.0.1` timed out or was refused, which is an
+  environment-level networking fault, not a Next.js/FastAPI problem (both servers
+  logged themselves as ready). **Full local E2E confirmation was not reached in this
+  session** — deferred to real GitHub Actions CI, the same authoritative signal
+  Blockers 1 and 2 both relied on successfully throughout this gate. Stated here
+  honestly rather than claimed as done.
+
+**Known limitations, honestly stated:**
+- Trial-expiry enforcement is scoped to seats only (the existing enforcement lever in
+  this codebase) — an expired, unconverted trial does not lose access to the product
+  more broadly (e.g. read-only mode). Flagged as a deliberate scope decision, not an
+  oversight; extending it is straightforward future work on the same
+  `is_trial_expired()` helper.
+- No real Stripe test-mode lifecycle (checkout → subscription created → webhook →
+  GeoCore reflects it) has been exercised yet — that requires the owner-gate Price
+  objects above to exist first, and is the next step before any staging sign-off.
+- This branch is pushed and open as PR #30 (`sprint-039-gate-c-billing-pricing`), with
+  a real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet
+  merged, not yet deployed to staging.

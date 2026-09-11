@@ -47,6 +47,10 @@ class SubscriptionOut(BaseModel):
     status: str
     current_period_end: datetime | None
     cancel_at_period_end: bool
+    # Sprint 039 Blocker 3 — both None for a subscription that was never
+    # a trial (see Subscription.trial_start's own docstring).
+    trial_start: datetime | None
+    trial_end: datetime | None
     created_at: datetime
     updated_at: datetime
 

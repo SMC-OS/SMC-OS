@@ -28,6 +28,7 @@ from app.database.models import (
     Project,
     Quote,
     QuoteItem,
+    Subscription,
     Tenant,
     User,
 )
@@ -82,6 +83,11 @@ def _cleanup_tenant(tenant_id: uuid.UUID) -> None:
             )
         )
         db.execute(delete(Communication).where(Communication.tenant_id == tenant_id))
+        # Sprint 039 Production Readiness Defect Gate, Blocker 3 — _signup()
+        # now also starts a real trial Subscription row (tenant_id FK, no
+        # ondelete) — same "children before parents" ordering as everything
+        # else here.
+        db.execute(delete(Subscription).where(Subscription.tenant_id == tenant_id))
         db.execute(delete(User).where(User.tenant_id == tenant_id))
         db.execute(delete(Tenant).where(Tenant.id == tenant_id))
         db.commit()

@@ -28,6 +28,9 @@ from app.billing.plans import (
     PLAN_BUSINESS,
     PLAN_ENTERPRISE,
     PLAN_PRO,
+    PLAN_STARTER,
+    PLAN_TEAM,
+    PLANS,
     PRICING_GBP,
     SELF_SERVICE_PLANS,
 )
@@ -39,6 +42,8 @@ from app.database.models import User
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 _PLAN_DISPLAY_NAMES = {
+    PLAN_STARTER: "GeoCore Starter",
+    PLAN_TEAM: "GeoCore Team",
     PLAN_PRO: "GeoCore Pro",
     PLAN_BUSINESS: "GeoCore Business",
     PLAN_ENTERPRISE: "Enterprise",
@@ -49,7 +54,7 @@ _PLAN_DISPLAY_NAMES = {
 def list_plans():
     """Public — powers the pricing page. No auth required."""
     plans = []
-    for plan in (PLAN_PRO, PLAN_BUSINESS, PLAN_ENTERPRISE):
+    for plan in PLANS:
         pricing = PRICING_GBP.get(plan, {})
         entitlements = ENTITLEMENTS[plan]
         plans.append(
