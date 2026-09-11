@@ -1051,10 +1051,21 @@ ever, for self-service.
   (confirmed via `netstat`/`taskkill`, not guessed) and, after clearing it, even a
   bare `curl` to `localhost`/`127.0.0.1` timed out or was refused, which is an
   environment-level networking fault, not a Next.js/FastAPI problem (both servers
-  logged themselves as ready). **Full local E2E confirmation was not reached in this
-  session** — deferred to real GitHub Actions CI, the same authoritative signal
-  Blockers 1 and 2 both relied on successfully throughout this gate. Stated here
-  honestly rather than claimed as done.
+  logged themselves as ready). Full local E2E confirmation was not reached in that
+  session, so this was deferred to real GitHub Actions CI (the same authoritative
+  signal Blockers 1 and 2 both relied on) — which then caught two genuine bugs in the
+  new spec itself: `getByText("GeoCore Starter")` and `getByText("Your trial")` each
+  resolved to two elements in real Chromium (a plan's name also appears inside its
+  own "Upgrade to"/"Choose" button, and the trial badge's text is a case-insensitive
+  substring of the trial countdown banner's own copy), both fixed by scoping to
+  `getByRole("heading", …)` and `{ exact: true }` respectively. A separate, genuine
+  regression was also caught in the **pre-existing** `geocore-ai-and-settings.spec.ts`
+  (Sprint 036): its billing journey asserted the old "No plan yet" state and a
+  "Choose GeoCore Pro" button, both of which stopped existing once every signup
+  started a real trial of Pro (Pro's card now shows "Current plan" instead) — fixed
+  to assert the trial banner and exercise checkout on GeoCore Business instead. CI
+  run [34655456149](https://github.com/SMC-OS/SMC-OS/actions/runs/34655456149) on
+  commit `189ad06` is fully green: **backend ✓, frontend ✓, e2e ✓** (all 28 specs).
 
 **Known limitations, honestly stated:**
 - Trial-expiry enforcement is scoped to seats only (the existing enforcement lever in
