@@ -68,8 +68,11 @@ test("pricing_page_shows_the_locked_four_tier_catalogue_and_new_owner_is_on_a_tr
   await expect(page.getByText("£199").first()).toBeVisible();
 
   // ---- The new owner is automatically on a trial of the Pro plan ----
+  // exact: true — the countdown banner's own text ("...left in your
+  // trial") case-insensitively contains "Your trial" too, which would
+  // otherwise make this a strict-mode violation against the badge.
   await expect(page.getByText(/days left in your trial/i)).toBeVisible();
-  await expect(page.getByText("Your trial")).toBeVisible();
+  await expect(page.getByText("Your trial", { exact: true })).toBeVisible();
 
   await api.dispose();
 });
