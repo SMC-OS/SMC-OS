@@ -104,11 +104,15 @@ test("settings_sections_are_navigable_and_billing_has_its_own_place", async ({ p
   // single scrolling page — and it is linkable.
   await sectionNav.getByRole("button", { name: "Billing & subscription" }).click();
   await expect(page).toHaveURL(/section=billing/);
-  await expect(page.getByText("No plan yet")).toBeVisible({ timeout: 10_000 });
+  // Sprint 039 Blocker 3: every new signup starts on a 14-day trial of
+  // GeoCore Pro rather than landing on a bare "no plan" state.
+  await expect(page.getByText(/days left in your free trial/i)).toBeVisible({ timeout: 10_000 });
 
   // Stripe is not configured in this environment, and the product says
-  // so plainly rather than faking a checkout.
-  await page.getByRole("button", { name: /choose geocore pro/i }).first().click();
+  // so plainly rather than faking a checkout. Pro is the trial plan the
+  // Owner is already on (its card shows "Current plan" instead of a
+  // "Choose" button), so exercise checkout on a different plan.
+  await page.getByRole("button", { name: /choose geocore business/i }).first().click();
   // Matched without the apostrophe: the copy uses a straight quote and a
   // curly one in the test would silently never match.
   // Next.js renders its own empty role="alert" route announcer, so this

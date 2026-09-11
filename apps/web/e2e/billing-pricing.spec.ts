@@ -47,11 +47,13 @@ test("pricing_page_shows_the_locked_four_tier_catalogue_and_new_owner_is_on_a_tr
   await page.goto("/pricing");
   await page.waitForLoadState("networkidle");
 
-  await expect(page.getByText("GeoCore Starter")).toBeVisible();
-  await expect(page.getByText("GeoCore Team")).toBeVisible();
-  await expect(page.getByText("GeoCore Pro")).toBeVisible();
-  await expect(page.getByText("GeoCore Business")).toBeVisible();
-  await expect(page.getByText("Enterprise")).toBeVisible();
+  // By heading: each plan name also appears inside its own "Upgrade to
+  // ..." / "Choose ..." button, so a plain text match is ambiguous.
+  await expect(page.getByRole("heading", { name: "GeoCore Starter" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "GeoCore Team" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "GeoCore Pro" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "GeoCore Business" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Enterprise" })).toBeVisible();
 
   // Annual is the default toggle — locked prices, not the old £79/£149.
   await expect(page.getByText("£290").first()).toBeVisible();
