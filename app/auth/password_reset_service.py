@@ -106,9 +106,7 @@ class PasswordResetService:
             raise ResetTokenInvalidError(raw_token)
 
         crud.mark_password_reset_token_used(db, row.id, now)
-        user = crud.set_user_password(
-            db, row.user_id, password_hash=hash_password(new_password), token_valid_after=now
-        )
+        user = crud.set_user_password(db, row.user_id, password_hash=hash_password(new_password))
         if user is None:
             # The token's own user_id FK guarantees this row cannot exist
             # without a real user; only reachable if that user row was

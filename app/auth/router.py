@@ -58,7 +58,9 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
         ),
         tenant_id=tenant.id,
     )
-    token = create_access_token(subject=str(user.id), tenant_id=str(tenant.id))
+    token = create_access_token(
+        subject=str(user.id), tenant_id=str(tenant.id), token_version=user.token_version
+    )
     return TokenResponse(access_token=token, user=auth_service.build_user_out(db, user))
 
 
@@ -119,7 +121,9 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
             detail="Incorrect email or password",
         )
     login_rate_limiter.reset(credentials.email)
-    token = create_access_token(subject=str(user.id), tenant_id=str(user.tenant_id))
+    token = create_access_token(
+        subject=str(user.id), tenant_id=str(user.tenant_id), token_version=user.token_version
+    )
     return TokenResponse(access_token=token, user=auth_service.build_user_out(db, user))
 
 

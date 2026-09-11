@@ -251,14 +251,14 @@ def set_user_email_verified_at(db: Session, user_id: uuid.UUID, verified_at: dat
     return row
 
 
-def set_user_password(
-    db: Session, user_id: uuid.UUID, *, password_hash: str, token_valid_after: datetime
-) -> User | None:
+def set_user_password(db: Session, user_id: uuid.UUID, *, password_hash: str) -> User | None:
     row = db.get(User, user_id)
     if row is None:
         return None
     row.password_hash = password_hash
-    row.token_valid_after = token_valid_after
+    # Revokes every existing session — see User.token_version's own
+    # docstring for why this is an integer counter, not a timestamp.
+    row.token_version += 1
     db.commit()
     db.refresh(row)
     return row

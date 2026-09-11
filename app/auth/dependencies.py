@@ -75,25 +75,21 @@ def get_current_user(
     if user is None or not user.is_active:
         raise credentials_error
     # Sprint 039 Production Readiness Defect Gate, Blocker 2 — a password
-    # reset sets token_valid_after; any token issued before that instant
-    # is rejected here even if it hasn't otherwise expired (see
-    # app/auth/security.py's create_access_token). Deliberately NOT a
-    # blanket "iat is now required" cutover the way tenant_id's claim
-    # was (this file's own Sprint 009 precedent) — that would force
-    # every already-signed-in production user to re-authenticate the
-    # moment this migration deploys, not just the ones who actually
-    # reset a password. `token_valid_after` stays NULL until a user's
-    # first real reset (see that column's own migration docstring), so
-    # this branch is unreachable for every existing session today; a
-    # token that reaches here missing `iat` only after a real reset has
-    # happened is rejected, since it can't prove it was issued after it.
-    if user.token_valid_after is not None:
-        issued_at = payload.get("iat")
-        if issued_at is None:
-            raise credentials_error
-        issued_at_dt = datetime.fromtimestamp(issued_at, tz=timezone.utc)
-        if issued_at_dt < user.token_valid_after:
-            raise credentials_error
+    # reset increments token_version; any token whose own claim doesn't
+    # match the user's current value is rejected here even if it hasn't
+    # otherwise expired (see app/auth/security.py's create_access_token
+    # and User.token_version's migration docstring for why this is an
+    # exact integer check, not a timestamp comparison against `iat` — a
+    # real CI run proved the timestamp version could falsely reject a
+    # genuinely fresh login issued within the same wall-clock second as
+    # the reset, since `iat` is second-precision by spec). A token with
+    # no `token_version` claim at all (issued before this feature
+    # existed) is treated as claiming version 0, matching every existing
+    # user's starting value — so no existing production session is
+    # affected by this migration deploying; only a user's own future
+    # reset ever changes what their tokens must claim.
+    if payload.get("token_version", 0) != user.token_version:
+        raise credentials_error
     return user
 
 

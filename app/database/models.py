@@ -631,15 +631,17 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
     # Sprint 039 Production Readiness Defect Gate, Blocker 2 (migration
-    # f2a3b4c5d6e7). NULL until a user resets their password for the
-    # first time. get_current_user rejects any JWT whose `iat` claim
-    # predates this timestamp, even if the token hasn't otherwise
-    # expired — see app/auth/dependencies.py and app/auth/security.py's
-    # create_access_token for how "reset revokes existing sessions" works
-    # against stateless JWTs with no server-side session table.
-    token_valid_after: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    # f2a3b4c5d6e7). Incremented by exactly 1 on every successful
+    # password reset. get_current_user rejects any JWT whose
+    # `token_version` claim doesn't match this value, even if the token
+    # hasn't otherwise expired — see app/auth/dependencies.py and
+    # app/auth/security.py's create_access_token for how "reset revokes
+    # existing sessions" works against stateless JWTs with no
+    # server-side session table. An exact integer counter, not a
+    # timestamp compared against JWT's second-precision `iat` claim (see
+    # this column's own migration docstring for why that first design
+    # was wrong — a real CI run proved it).
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
 
 class EmailVerificationToken(Base):

@@ -167,5 +167,7 @@ def accept_invitation(token: str, data: AcceptInvitationRequest, db: Session = D
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="A user with that email already exists."
         )
-    access_token = create_access_token(subject=str(user.id), tenant_id=str(tenant.id))
+    access_token = create_access_token(
+        subject=str(user.id), tenant_id=str(tenant.id), token_version=user.token_version
+    )
     return TokenResponse(access_token=access_token, user=auth_service.build_user_out(db, user))

@@ -23,15 +23,24 @@ verification routes; no `/password/forgot` or `/password/reset` route,
 no reset-token table, existed before this migration).
 
 THE CHANGE:
-- `users.token_valid_after` (nullable timestamptz) — NULL until a user
-  resets their password for the first time. Lets `get_current_user`
-  reject a JWT issued before this timestamp even if it hasn't otherwise
-  expired, which is how "reset revokes existing sessions" works against
-  stateless JWTs with no server-side session table to delete rows from
-  (see app/auth/security.py's `create_access_token`'s new `iat` claim and
-  app/auth/dependencies.py's `get_current_user`). NULL for every existing
-  user, so no existing session is touched by this migration itself —
-  only a *future* password reset ever sets it.
+- `users.token_version` (integer, not null, default 0) — incremented by
+  exactly 1 on every successful password reset. `get_current_user`
+  rejects a JWT whose `token_version` claim doesn't match the user's
+  current value, even if the token hasn't otherwise expired — this is
+  how "reset revokes existing sessions" works against stateless JWTs
+  with no server-side session table to delete rows from (see
+  app/auth/security.py's `create_access_token` and
+  app/auth/dependencies.py's `get_current_user`). Every existing user
+  starts at 0, matching a token with no `token_version` claim at all
+  (treated as 0 — see that dependency's own docstring for why), so no
+  existing session is invalidated by this migration itself.
+  Deliberately an exact integer counter, not a timestamp compared against
+  JWT's `iat` claim (the first version of this migration/design) — `iat`
+  is second-precision by spec (PyJWT truncates any sub-second component),
+  which a real GitHub Actions CI run of the test suite proved can falsely
+  reject a genuinely-fresh post-reset login issued within the same
+  wall-clock second as the reset. An integer equality check has no such
+  precision-loss failure mode.
 - `password_reset_tokens` — a new table, same opaque-hashed-single-use
   shape as `email_verification_tokens` (Blocker 1) / `invitations` /
   `portal_links`: token_hash (sha256 hex digest, unique, never the
@@ -57,7 +66,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column(
         "users",
-        sa.Column("token_valid_after", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("token_version", sa.Integer(), nullable=False, server_default="0"),
     )
 
     op.create_table(
@@ -85,4 +94,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_password_reset_tokens_user_id", table_name="password_reset_tokens")
     op.drop_table("password_reset_tokens")
-    op.drop_column("users", "token_valid_after")
+    op.drop_column("users", "token_version")

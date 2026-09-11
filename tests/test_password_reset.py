@@ -23,11 +23,14 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import jwt as pyjwt
 import pytest
 from sqlalchemy import delete
 
+from app.auth.dependencies import get_current_user
 from app.auth.rate_limit import CooldownLimiter
 from app.auth.service import auth_service
+from app.core.config import settings
 from app.database import crud
 from app.database.database import SessionLocal
 from app.database.models import ActivityLog, Communication, PasswordResetToken, Tenant, User
@@ -197,6 +200,84 @@ def test_reset_revokes_an_existing_session(client, user_and_headers):
     fresh_headers = {"Authorization": f"Bearer {fresh_login.json()['access_token']}"}
     fresh_me = client.get("/api/v1/auth/me", headers=fresh_headers)
     assert fresh_me.status_code == 200
+
+
+def test_login_issued_in_the_same_second_as_a_reset_is_not_wrongly_rejected(
+    client, user_and_headers, db
+):
+    """Regression test for a real bug a GitHub Actions CI run of
+    test_reset_revokes_an_existing_session caught (assert 401 == 200,
+    intermittent — it depended on exact sub-second timing, which is why
+    it didn't show up in every run). The first version of this feature
+    compared JWT's `iat` claim (second-precision by spec — PyJWT
+    truncates any sub-second component when encoding) against a
+    microsecond-precision `token_valid_after` timestamp: a real login
+    issued a genuine instant *after* a reset could still encode an `iat`
+    that floors to a second *before* the timestamp's own sub-second
+    remainder, within the same wall-clock second. Switching to an exact
+    integer `token_version` counter (see User.token_version's migration
+    docstring) removes the whole precision-loss failure mode — this test
+    proves a token whose `token_version` claim matches the user's
+    *current* value is accepted regardless of when, down to the
+    microsecond, it was issued relative to the last reset."""
+    user, _, _ = user_and_headers
+
+    # user_and_headers' own db session is already closed by this point —
+    # re-fetch a live instance on this test's own `db` fixture.
+    live_user = db.get(type(user), user.id)
+    live_user.token_version = 5
+    db.commit()
+
+    payload = {
+        "sub": str(user.id),
+        "tenant_id": str(user.tenant_id),
+        "token_version": 5,
+        "iat": datetime.now(timezone.utc),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=60),
+    }
+    token = pyjwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+    result = get_current_user(token=token, db=db)
+    assert result.id == user.id
+
+
+def test_login_with_a_stale_token_version_is_rejected(client, user_and_headers, db):
+    user, _, _ = user_and_headers
+    live_user = db.get(type(user), user.id)
+    live_user.token_version = 5
+    db.commit()
+
+    payload = {
+        "sub": str(user.id),
+        "tenant_id": str(user.tenant_id),
+        "token_version": 4,
+        "iat": datetime.now(timezone.utc),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=60),
+    }
+    token = pyjwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+    with pytest.raises(Exception) as exc_info:
+        get_current_user(token=token, db=db)
+    assert exc_info.value.status_code == 401
+
+
+def test_a_token_with_no_token_version_claim_is_treated_as_version_zero(client, user_and_headers, db):
+    """A token issued before this feature existed (no `token_version`
+    claim at all) must keep working for a user who has never reset —
+    User.token_version defaults to 0, matching this claim's own default,
+    so no existing production session is invalidated by this migration
+    deploying."""
+    user, _, _ = user_and_headers
+    payload = {
+        "sub": str(user.id),
+        "tenant_id": str(user.tenant_id),
+        "iat": datetime.now(timezone.utc),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=60),
+    }
+    token = pyjwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+    result = get_current_user(token=token, db=db)
+    assert result.id == user.id
 
 
 def test_reset_with_unknown_token_is_400(client):
