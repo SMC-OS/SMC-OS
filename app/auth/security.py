@@ -30,16 +30,22 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def create_access_token(subject: str, tenant_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    payload = {"sub": subject, "tenant_id": tenant_id, "exp": expire}
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.jwt_expire_minutes)
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2 — `iat` lets
+    # get_current_user reject a token issued before a password reset even
+    # if it hasn't otherwise expired (see User.token_valid_after and that
+    # dependency's docstring). Not used for anything else.
+    payload = {"sub": subject, "tenant_id": tenant_id, "iat": now, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> dict:
-    """Returns the full decoded payload (`sub`, `tenant_id`, `exp`).
+    """Returns the full decoded payload (`sub`, `tenant_id`, `iat`, `exp`).
 
     Raises jwt.PyJWTError if invalid/expired. Sprint 009 — previously
     returned just the `sub` string; now returns the whole payload since
-    app/auth/dependencies.py needs `tenant_id` too.
+    app/auth/dependencies.py needs `tenant_id` too (and, since Sprint 039
+    Blocker 2, `iat`).
     """
     return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])

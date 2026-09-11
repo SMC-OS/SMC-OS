@@ -120,6 +120,33 @@ def render_email_verification(
     return RenderedEmail(subject=subject, html=html, text=text)
 
 
+def render_password_reset(*, tenant_display_name: str, recipient_name: str, reset_url: str) -> RenderedEmail:
+    subject = "Reset your GeoCore password"
+    safe_name = _escape(recipient_name)
+    safe_url = _escape(reset_url)
+
+    html, text = _wrap(
+        tenant_display_name=tenant_display_name,
+        preheader="Reset your GeoCore password",
+        body_html_lines=[
+            f"Hi {safe_name},",
+            "We received a request to reset your GeoCore password.",
+            f'<a href="{safe_url}" style="display:inline-block;background:#173b2c;color:#ffffff;'
+            'text-decoration:none;padding:10px 20px;border-radius:6px;">Reset your password</a>',
+            "This link expires in 1 hour and can only be used once. If you didn't request "
+            "this, you can safely ignore this email — your password won't be changed.",
+        ],
+        body_text_lines=[
+            f"Hi {recipient_name},",
+            "We received a request to reset your GeoCore password.",
+            f"Reset your password: {reset_url}",
+            "This link expires in 1 hour and can only be used once. If you didn't request "
+            "this, you can safely ignore this email — your password won't be changed.",
+        ],
+    )
+    return RenderedEmail(subject=subject, html=html, text=text)
+
+
 def render_quote_sent(*, tenant_display_name: str, customer_name: str, quote_title: str, portal_url: str) -> RenderedEmail:
     subject = f"Your quote from {tenant_display_name}: {quote_title}"
     safe_customer = _escape(customer_name)

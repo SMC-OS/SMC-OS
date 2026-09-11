@@ -74,6 +74,26 @@ def get_current_user(
     user = crud.get_user_by_id(db, user_uuid)
     if user is None or not user.is_active:
         raise credentials_error
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2 — a password
+    # reset sets token_valid_after; any token issued before that instant
+    # is rejected here even if it hasn't otherwise expired (see
+    # app/auth/security.py's create_access_token). Deliberately NOT a
+    # blanket "iat is now required" cutover the way tenant_id's claim
+    # was (this file's own Sprint 009 precedent) — that would force
+    # every already-signed-in production user to re-authenticate the
+    # moment this migration deploys, not just the ones who actually
+    # reset a password. `token_valid_after` stays NULL until a user's
+    # first real reset (see that column's own migration docstring), so
+    # this branch is unreachable for every existing session today; a
+    # token that reaches here missing `iat` only after a real reset has
+    # happened is rejected, since it can't prove it was issued after it.
+    if user.token_valid_after is not None:
+        issued_at = payload.get("iat")
+        if issued_at is None:
+            raise credentials_error
+        issued_at_dt = datetime.fromtimestamp(issued_at, tz=timezone.utc)
+        if issued_at_dt < user.token_valid_after:
+            raise credentials_error
     return user
 
 

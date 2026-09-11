@@ -146,6 +146,20 @@ class Settings(BaseSettings):
     identity_security_cutover_at: datetime = datetime(2026, 9, 11, tzinfo=timezone.utc)
     legacy_verification_grace_days: int = 30
 
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2 — password
+    # recovery. Deliberately much shorter than Blocker 1's 24h email
+    # verification token: a reset token grants immediate account
+    # takeover if intercepted, so a narrow window matters more than
+    # convenience here.
+    password_reset_token_expire_hours: int = 1
+    password_reset_request_cooldown_seconds: float = 60.0
+    # Sprint 039 Blocker 2 — POST /auth/password/forgot always takes at
+    # least this long to respond, win or lose (padded in the router),
+    # so a timing side-channel can't distinguish "email exists" from
+    # "email doesn't exist" the way a naturally-faster not-found path
+    # otherwise would. Not a secret; safe to be a plain setting.
+    password_reset_response_floor_seconds: float = 0.3
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def normalize_cors_allowed_origins(cls, value: object) -> list[str]:

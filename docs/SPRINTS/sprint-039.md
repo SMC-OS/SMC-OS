@@ -651,7 +651,7 @@ phase-per-PR precedent):
 | # | Blocker | Root cause | Branch |
 |---|---|---|---|
 | 1 | Email verification | Genuinely missing — signup never verified an email anywhere. | `sprint-039-gate-a-email-verification` — **done, see below.** |
-| 2 | Forgot/reset password | Genuinely missing — no route, no token table, no UI link. | Not started. |
+| 2 | Forgot/reset password | Genuinely missing — no route, no token table, no UI link. | `sprint-039-gate-b-password-reset` — **done, see below.** |
 | 3 | Stripe pricing/billing | Correct checkout/webhook/seat architecture on solid rails, but still the old 2-tier £79/£149 catalogue; no trial. | Not started. |
 | 4 | GeoCore AI | Combination: `OPENAI_API_KEY` genuinely unset (owner gate) + tool-calling genuinely never built (v1 scope limit); frontend copy is accurate, not stale. | Not started. |
 | 5 | Quote editing | Stone quotes have no edit endpoint at all; general quotes have a tested backend `PATCH` that the frontend never calls (dead code) and no edit UI. No revision concept exists. | Not started. |
@@ -773,3 +773,108 @@ verification foundation`), linear, round-tripped (`alembic upgrade head` /
 - `require_verified_email` is deliberately scoped to `POST /invitations` only in this
   phase — it is not yet applied to any billing or security-settings route, since
   those don't exist as gated concepts until their own blocker phases land.
+
+### 14.2 Blocker 2 — Forgot / reset password: evidence
+
+**Branch:** `sprint-039-gate-b-password-reset` (off `origin/main` @ `8e40039`).
+**Alembic:** extends the verified head `b2c3d4e5f6a7` → `f2a3b4c5d6e7` (`add password
+reset foundation`), linear, round-tripped. NOTE: the sibling Blocker 1 branch also
+extends `b2c3d4e5f6a7` in parallel (migration `e1f2a3b4c5d6`) — whichever of the two
+merges second must rebase its `down_revision` onto the other's new head before it can
+merge cleanly; documented in both migration files' own docstrings, not a mistake.
+
+**What shipped:**
+- `users.token_valid_after` (nullable, no backfill) + `password_reset_tokens` (opaque
+  `secrets.token_urlsafe(32)`, sha256-hashed at rest, 1h expiry — deliberately shorter
+  than Blocker 1's 24h verification token, since a reset token grants immediate account
+  takeover if leaked — single-use `used_at` marker, same shape as
+  `email_verification_tokens`/`Invitation`/`PortalLink`).
+- `create_access_token` now carries an `iat` claim; `get_current_user`
+  (`app/auth/dependencies.py`) rejects a token issued before `token_valid_after` even
+  if it hasn't otherwise expired — deliberately **not** a blanket "iat now required"
+  cutover (unlike this file's own Sprint 009 `tenant_id` precedent): `token_valid_after`
+  stays NULL until a user's first real reset, so no existing production session is
+  force-logged-out by this migration deploying; only a future reset's own targets are
+  ever affected.
+- `PasswordResetService` (`app/auth/password_reset_service.py`) sends through the
+  **existing Sprint 038 `DeliveryService`/Resend infrastructure**
+  (`app/communications/`) via a new `CommunicationType.PASSWORD_RESET` — no parallel
+  email pathway.
+- `POST /auth/password/forgot`: identical response whether or not the account exists,
+  response-time padded to a constant floor (`password_reset_response_floor_seconds`) so
+  a naturally-faster not-found path can't be distinguished by timing, rate-limited via a
+  new `CooldownLimiter` (same class Blocker 1 also introduces independently — both
+  branches will need a trivial merge-conflict resolution on `app/auth/rate_limit.py`,
+  keeping one copy of the shared class, when both land).
+- `POST /auth/password/reset`: single-use, expiring, generic 400 on any invalid/used
+  /expired token, enforces an 8-character minimum password (Pydantic `Field(min_length=8)`
+  on `ResetPasswordRequest`) — no invented character-class rules beyond what this
+  product has ever asked of a password anywhere, including at signup.
+- Frontend: `/forgot-password` (email form → generic confirmation, identical on success
+  or failure — the page itself cannot know which, matching the backend's own
+  no-enumeration contract) and `/reset-password` (token from the URL, new/confirm
+  password fields, form/success/invalid/no-token states) pages; a "Forgot password?"
+  link added to the login page.
+
+**Same ActivityType-drift bug class as Blocker 1 — caught proactively this time.**
+Blocker 1's own gate report (§14.1) documents a real regression where new backend
+`ActivityType` values crashed `RecentActivityPanel` because the frontend's separately
+-maintained `apps/web/types/activity.ts`/`lib/activity.ts` weren't updated in the same
+change. This blocker's two new values (`PASSWORD_RESET_REQUESTED`, `PASSWORD_CHANGED`)
+were added to both the backend enum and the frontend union/lookup maps in the same
+commit, specifically because that lesson had already been learned once — not
+reproduced here.
+
+**Regressions found and fixed as a direct, verified consequence of this change:**
+- `tests/test_communications.py::TestRetryPending`'s exact `retried == 1` assertion —
+  the identical pre-existing fragility Blocker 1 already found and fixed independently
+  on its own branch (a real password-reset request now also leaves a retryable
+  "unavailable" Communication row behind when Resend is unconfigured, and
+  `retry_pending()`'s cross-tenant sweep is not scoped to a single test's own rows).
+  Loosened to `>=` here too; both branches carry the same fix, to be reconciled (kept
+  once) at merge time.
+
+**Verification run (this branch, local — not yet staging):**
+- Backend: `python -m pytest tests/` — **971 passed, 1 skipped, 2 failed** on the first
+  full run. One failure (`TestRetryPending`) fixed per above, confirmed green after
+  (`tests/test_communications.py tests/test_password_reset.py` together: 45 passed).
+  The other (`tests/test_runtime_config.py`, two of its tests, at different times) is a
+  **pre-existing, this-machine-specific flake, not caused by this branch** — its own
+  subprocess (`python -m app.core.runtime_check`) exits with a raw Windows
+  `STATUS_ACCESS_VIOLATION` (0xC0000005) when spawned from inside pytest specifically,
+  never when run directly (confirmed working correctly standalone), and confirmed to
+  reproduce identically against a completely unmodified `origin/main` checkout with no
+  branch changes at all — not this branch's responsibility to fix, flagged honestly
+  rather than silently retried away.
+- Frontend: `pnpm run check-types`, `pnpm run lint`, `pnpm run build` all clean;
+  `/forgot-password` and `/reset-password` correctly statically generated. Vitest
+  scoped to the 3 new/changed test files: **9 passed.** A full-suite vitest run under
+  concurrent load hit worker-pool timeouts (infrastructure, not test failures — see
+  below); the same 3 files re-run in isolation afterward were clean.
+- E2E: `e2e/password-reset.spec.ts` (2 new specs) — the "invalid token" scenario passes
+  cleanly and repeatably. The full-session "forgot → reset → old session revoked"
+  scenario, and a **completely untouched, pre-existing spec** (`e2e/logout.spec.ts`),
+  both intermittently failed on this specific local machine during this session with
+  symptoms that traced to real environmental causes, not application defects: a zombie
+  Next.js dev-server process left squatting on port 3000 by an earlier warm-up attempt
+  (serving stale code to the browser — confirmed and killed), followed by sustained
+  local networking/subprocess latency severe enough that even a bare `curl` to
+  `localhost` timed out and Playwright's own internal trace-file teardown exceeded its
+  own 30s timeout. Backend correctness for this exact flow (login, reset, session
+  revocation, re-login) is independently and thoroughly proven by
+  `tests/test_password_reset.py`'s 14 passing tests, including
+  `test_reset_revokes_an_existing_session`, which exercises the identical scenario at
+  the HTTP layer. **Full E2E confirmation is deferred to real GitHub Actions CI**
+  (reliable throughout this gate so far — see Blocker 1's §14.1) rather than continuing
+  to fight this local sandbox's demonstrated instability; this is stated as a known
+  limitation, not silently claimed as done.
+
+**Known limitations, honestly stated:**
+- Local E2E verification of the full password-reset browser journey did not reach a
+  clean run in this session due to environmental instability described above — real CI
+  is the pending authoritative signal, checked before this PR is considered done.
+- `app/auth/rate_limit.py`'s new `CooldownLimiter` class is defined independently on
+  both this branch and the sibling Blocker 1 branch (identical implementation) — a
+  trivial dedup at merge time, not a design conflict.
+- This branch is pushed and open as PR #29 (`sprint-039-gate-b-password-reset`) — not
+  yet merged, not yet deployed to staging.

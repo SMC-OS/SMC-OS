@@ -630,6 +630,16 @@ class User(Base):
     email_verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2 (migration
+    # f2a3b4c5d6e7). NULL until a user resets their password for the
+    # first time. get_current_user rejects any JWT whose `iat` claim
+    # predates this timestamp, even if the token hasn't otherwise
+    # expired — see app/auth/dependencies.py and app/auth/security.py's
+    # create_access_token for how "reset revokes existing sessions" works
+    # against stateless JWTs with no server-side session table.
+    token_valid_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class EmailVerificationToken(Base):
@@ -645,6 +655,28 @@ class EmailVerificationToken(Base):
     """
 
     __tablename__ = "email_verification_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PasswordResetToken(Base):
+    """Same opaque hashed-single-use-token shape as Invitation/PortalLink
+    (token_hash, unique, never the recoverable secret), but deliberately
+    a dedicated table rather than reusing either — a stolen reset token
+    grants immediate account takeover, a materially higher-stakes claim
+    than either of those two tokens', with its own much shorter expiry
+    (1h vs Invitation's 7 days / PortalLink's 90). No relationship()
+    (repo convention) — user_id is a plain FK column, resolved via
+    explicit crud lookups.
+    """
+
+    __tablename__ = "password_reset_tokens"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
