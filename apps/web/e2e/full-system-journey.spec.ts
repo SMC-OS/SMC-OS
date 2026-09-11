@@ -44,6 +44,37 @@ const CUSTOMER_EMAIL = `pytest-e2e-sprint027-journey-customer-${RUN_ID}@example.
 const PROJECT_NAME = `Pytest E2E Sprint 027 Journey Project ${RUN_ID}`;
 const STALE_PROJECT_NAME = `Pytest E2E Sprint 027 Journey Stale Enquiry ${RUN_ID}`;
 
+// Sprint 039 Production Readiness Defect Gate, Blocker 1 — see
+// e2e/project-operations.spec.ts's identical helper for the full
+// rationale (inviting a teammate now requires a verified email).
+async function verifyOwnerEmail(api: import("@playwright/test").APIRequestContext, email: string) {
+  const script = `
+import hashlib, secrets, uuid
+from datetime import datetime, timedelta, timezone
+from app.database import crud
+from app.database.database import SessionLocal
+
+db = SessionLocal()
+user = crud.get_user_by_email(db, ${JSON.stringify(email)})
+raw_token = secrets.token_urlsafe(32)
+token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+crud.create_email_verification_token(
+    db, id=uuid.uuid4(), user_id=user.id, token_hash=token_hash,
+    expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+)
+db.close()
+print(raw_token)
+`.trim();
+  const rawToken = execFileSync("python", ["-c", script], { cwd: REPO_ROOT, encoding: "utf-8" })
+    .trim()
+    .split("\n")
+    .pop() as string;
+  const confirm = await api.post("/api/v1/auth/email/verify/confirm", {
+    data: { token: rawToken },
+  });
+  expect(confirm.ok()).toBeTruthy();
+}
+
 function runFollowUpAutomation(now: string): { examined: number; created: number } {
   // Same real-subprocess pattern as e2e/follow-up-automation.spec.ts —
   // --now is app/jobs/follow_up.py's own documented verification-only
@@ -93,6 +124,7 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   });
   expect(ownerLogin.ok()).toBeTruthy();
   const ownerHeaders = { Authorization: `Bearer ${(await ownerLogin.json()).access_token}` };
+  await verifyOwnerEmail(api, OWNER_EMAIL);
 
   // A real Staff user, via a real invitation accept — needed for step 8.
   const invitation = await api.post("/api/v1/invitations", {

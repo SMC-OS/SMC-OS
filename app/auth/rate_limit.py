@@ -69,3 +69,43 @@ class LoginRateLimiter:
 
 
 login_rate_limiter = LoginRateLimiter()
+
+
+class CooldownLimiter:
+    """A plain "you may do this again after N seconds" throttle, for
+    endpoints where the risk isn't brute force (LoginRateLimiter's job)
+    but resend/request spam — email-verification resend, and (Blocker 2)
+    password-reset requests. Same in-memory, per-process, per-key shape
+    and the same accepted single-instance limitation as LoginRateLimiter
+    (see its docstring). Deliberately not a shared instance with
+    LoginRateLimiter — a key-namespace collision between "wrong password"
+    and "resend spam" would be a real, if unlikely, bug."""
+
+    def __init__(self, *, clock=time.monotonic):
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._last_at: dict[str, float] = {}
+
+    @staticmethod
+    def _key(identifier: str) -> str:
+        return identifier.strip().lower()
+
+    def check_and_record(self, identifier: str, *, cooldown_seconds: float) -> None:
+        """Raises 429 if called again before cooldown_seconds have
+        elapsed since the last call for this identifier; otherwise
+        records this call as the new "last call" and returns."""
+        key = self._key(identifier)
+        now = self._clock()
+        with self._lock:
+            last_at = self._last_at.get(key)
+            if last_at is not None and now - last_at < cooldown_seconds:
+                retry_after = max(0, int(cooldown_seconds - (now - last_at)) + 1)
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Please wait before requesting this again.",
+                    headers={"Retry-After": str(retry_after)},
+                )
+            self._last_at[key] = now
+
+
+email_verification_resend_limiter = CooldownLimiter()

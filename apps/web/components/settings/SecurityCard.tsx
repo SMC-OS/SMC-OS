@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { InfoIcon, LogOutIcon } from "@/components/ui/icons";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { AuthUser } from "@/types/auth";
 
 /**
@@ -26,10 +27,31 @@ import type { AuthUser } from "@/types/auth";
 export function SecurityCard() {
   const { logout, role } = useAuth();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
 
   useEffect(() => {
     api.getMe().then(setUser).catch(() => {});
   }, []);
+
+  async function handleResend() {
+    setResendState("sending");
+    setResendMessage(null);
+    try {
+      const result = await api.resendVerificationEmail();
+      setResendState("sent");
+      setResendMessage(result.message);
+    } catch (err) {
+      setResendState("error");
+      setResendMessage(
+        err instanceof ApiError && err.status === 429
+          ? "Please wait a little longer before requesting another verification email."
+          : "Something went wrong sending the verification email."
+      );
+    }
+  }
+
+  const isVerified = user?.email_verified_at != null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,7 +75,41 @@ export function SecurityCard() {
                 <Badge tone={role === "Owner" ? "accent" : "neutral"}>{role ?? "—"}</Badge>
               </dd>
             </div>
+            <div className="min-w-0">
+              <dt className="text-xs font-medium text-muted">Email verification</dt>
+              <dd className="text-sm text-foreground">
+                <Badge tone={isVerified ? "success" : "warning"}>
+                  {isVerified ? "Verified" : "Unverified"}
+                </Badge>
+              </dd>
+            </div>
           </dl>
+
+          {!isVerified && user && (
+            <div className="mt-4 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted">
+                Verify your email address to unlock inviting teammates and other
+                account actions.
+              </p>
+              <Button
+                variant="outline"
+                onClick={handleResend}
+                disabled={resendState === "sending"}
+              >
+                {resendState === "sending" ? "Sending…" : "Resend verification email"}
+              </Button>
+            </div>
+          )}
+          {resendMessage && (
+            <p
+              className={cn(
+                "mt-2 text-sm",
+                resendState === "error" ? "text-danger" : "text-success"
+              )}
+            >
+              {resendMessage}
+            </p>
+          )}
         </CardContent>
       </Card>
 

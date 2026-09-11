@@ -7,6 +7,7 @@ config, and the seeded admin account's credentials. Reads from the repo
 root .env, same file docker-compose.yml and the previous ad-hoc reads used.
 """
 
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Annotated
@@ -124,6 +125,26 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     resend_webhook_secret: str | None = None
     email_sending_domain: str = "send.geocore.one"
+
+    # Sprint 039 Production Readiness Defect Gate, Blocker 1 — email
+    # verification. Tokens sent through app/communications' DeliveryService
+    # (Resend), same "ships dark until configured" pattern as everything
+    # else in this section: with no resend_api_key set, DeliveryService
+    # truthfully records the send as unavailable rather than blocking
+    # signup or fabricating success.
+    email_verification_token_expire_hours: int = 24
+    email_verification_resend_cooldown_seconds: float = 60.0
+    # A fixed instant, not "now" at request time — computed once, at the
+    # moment this migration/feature is deployed, and never moved
+    # afterwards (docs/SPRINTS/sprint-039.md's locked contract for this
+    # blocker). Every user created before this timestamp is exempt from
+    # verification enforcement for legacy_verification_grace_days from
+    # this same fixed instant — see app/auth/dependencies.py's
+    # require_verified_email(). Deliberately a Settings field (not a
+    # bare module constant) so tests can override it to exercise the
+    # grace-period boundary without waiting on a real clock.
+    identity_security_cutover_at: datetime = datetime(2026, 9, 11, tzinfo=timezone.utc)
+    legacy_verification_grace_days: int = 30
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

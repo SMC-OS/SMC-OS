@@ -39,6 +39,7 @@ class CommunicationType(str, Enum):
     """
 
     INVITATION = "invitation"
+    EMAIL_VERIFICATION = "email_verification"
     QUOTE_SENT = "quote_sent"
     QUOTE_FOLLOW_UP = "quote_follow_up"
     PROJECT_CONFIRMATION = "project_confirmation"

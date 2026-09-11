@@ -622,6 +622,38 @@ class User(Base):
     # app/users/service.py and app/auth/dependencies.py's get_current_user.
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
 
+    # Sprint 039 Production Readiness Defect Gate, Blocker 1 (migration
+    # e1f2a3b4c5d6). NULL for every user until EmailVerificationService.
+    # verify() sets it exactly once — see app/auth/dependencies.py's
+    # require_verified_email() for how a NULL here is treated for users
+    # created before this column existed (legacy grace period).
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class EmailVerificationToken(Base):
+    """Proves the signup email's owner controls that inbox. Same opaque
+    hashed-single-use-token shape as Invitation/PortalLink (token_hash,
+    unique, never the recoverable secret) but a dedicated table rather
+    than reusing either of those — this token authenticates a materially
+    different claim ("you own this inbox") with its own lifecycle (many
+    historical rows per user across resends, no status column needed:
+    used_at nullable is enough since there is no "revoked" concept here).
+    No relationship() (repo convention) — user_id is a plain FK column,
+    resolved via explicit crud lookups.
+    """
+
+    __tablename__ = "email_verification_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 
 class Invitation(Base):
     """A pending offer to join a tenant as a Staff user. Sprint 011 — the

@@ -37,6 +37,7 @@ session mid-flight — previously only natural token expiry did.
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -45,6 +46,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import UserRole
 from app.auth.security import decode_access_token
+from app.core.config import settings
 from app.database import crud
 from app.database.database import get_db
 from app.database.models import User
@@ -114,3 +116,37 @@ def require_role(*allowed_roles: UserRole):
         return current_user
 
     return checker
+
+
+def require_verified_email(current_user: User = Depends(get_current_user)) -> User:
+    """Sprint 039 Production Readiness Defect Gate, Blocker 1 — blocks a
+    sensitive action for a user whose email is unverified, unless the
+    legacy grace period covers them.
+
+    A user is exempt (never blocked) when EITHER:
+    - `email_verified_at` is set (they verified), OR
+    - they were created before `settings.identity_security_cutover_at`
+      (a fixed instant, not "now" — see that setting's own docstring) AND
+      today is still within `legacy_verification_grace_days` of that same
+      fixed instant.
+
+    A user created *after* the cutover gets no grace at all — they were
+    always required to verify, from day one of this feature's existence.
+    Only ever attached to specific routes considered sensitive today
+    (see app/invitations/router.py); it deliberately does not gate every
+    route in the app, to avoid locking out an entire existing tenant the
+    moment this migration deploys.
+    """
+    if current_user.email_verified_at is not None:
+        return current_user
+
+    cutover = settings.identity_security_cutover_at
+    grace_ends_at = cutover + timedelta(days=settings.legacy_verification_grace_days)
+    is_legacy = current_user.created_at < cutover
+    if is_legacy and datetime.now(timezone.utc) < grace_ends_at:
+        return current_user
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Please verify your email address to continue.",
+    )

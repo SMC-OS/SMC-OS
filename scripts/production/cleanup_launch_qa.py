@@ -50,8 +50,11 @@ from app.database.database import SessionLocal
 from app.database.models import (
     ActivityLog,
     Appointment,
+    Communication,
     Customer,
     Document,
+    EmailSuppression,
+    EmailVerificationToken,
     Invitation,
     Material,
     Message,
@@ -82,6 +85,18 @@ _ENVIRONMENT_HOST_MARKERS: dict[str, tuple[str, ...]] = {
 # here has a plain `tenant_id` column (confirmed against
 # app/database/models.py) — no join through customer_id/project_id is
 # needed even for Document/Message, which are tenant-scoped directly.
+#
+# Communication/EmailSuppression (Sprint 038) were never added here when
+# that sprint shipped — a real gap, not exercised until Sprint 039's own
+# signup-sends-a-verification-email change (Blocker 1) started leaving a
+# real Communication row behind for every QA-fixture signup in this
+# file's own tests, which then failed to delete a QA tenant with a real
+# FK violation. Both tables' non-tenant_id FKs (customer/quote/project/
+# invitation/automation/automation_run for Communication,
+# source_communication_id for EmailSuppression) are all ondelete="SET
+# NULL" (see Communication's own docstring), so their position in this
+# list relative to Invitation/Project/Quote below doesn't matter — only
+# that both come before the Tenant delete.
 _TENANT_SCOPED_TABLES_IN_ORDER: tuple[type, ...] = (
     Appointment,
     Document,
@@ -89,6 +104,8 @@ _TENANT_SCOPED_TABLES_IN_ORDER: tuple[type, ...] = (
     PortalLink,
     NotificationRecord,
     ActivityLog,
+    EmailSuppression,
+    Communication,
     Invitation,
     Project,
     Quote,
@@ -174,6 +191,22 @@ def resolve_plan(db: Session) -> CleanupPlan:
             or 0
         )
 
+        # EmailVerificationToken (Sprint 039 Production Readiness Defect
+        # Gate, Blocker 1) has a user_id FK, not tenant_id — same
+        # "counted via a subquery" treatment as QuoteItem above.
+        counts["email_verification_tokens"] = (
+            db.scalar(
+                select(func.count())
+                .select_from(EmailVerificationToken)
+                .where(
+                    EmailVerificationToken.user_id.in_(
+                        select(User.id).where(User.tenant_id.in_(tenant_ids))
+                    )
+                )
+            )
+            or 0
+        )
+
         customer_ids = db.scalars(
             select(Customer.id).where(Customer.tenant_id.in_(tenant_ids))
         ).all()
@@ -225,6 +258,17 @@ def execute_plan(db: Session, plan: CleanupPlan) -> None:
         db.execute(
             delete(QuoteItem).where(
                 QuoteItem.quote_id.in_(select(Quote.id).where(Quote.tenant_id.in_(plan.tenant_ids)))
+            )
+        )
+        # EmailVerificationToken (Sprint 039 Production Readiness Defect
+        # Gate, Blocker 1) again precedes User in this same loop below —
+        # deleted first via its own user_id subquery, same treatment as
+        # QuoteItem above.
+        db.execute(
+            delete(EmailVerificationToken).where(
+                EmailVerificationToken.user_id.in_(
+                    select(User.id).where(User.tenant_id.in_(plan.tenant_ids))
+                )
             )
         )
         for model in _TENANT_SCOPED_TABLES_IN_ORDER:

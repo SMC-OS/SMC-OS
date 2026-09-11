@@ -91,6 +91,35 @@ def render_invitation(*, tenant_display_name: str, inviter_name: str, accept_url
     return RenderedEmail(subject=subject, html=html, text=text)
 
 
+def render_email_verification(
+    *, tenant_display_name: str, recipient_name: str, verify_url: str
+) -> RenderedEmail:
+    subject = "Verify your email for GeoCore"
+    safe_name = _escape(recipient_name)
+    safe_url = _escape(verify_url)
+
+    html, text = _wrap(
+        tenant_display_name=tenant_display_name,
+        preheader="Confirm your email to finish setting up your GeoCore account",
+        body_html_lines=[
+            f"Hi {safe_name},",
+            "Please confirm this is your email address to finish setting up your GeoCore account.",
+            f'<a href="{safe_url}" style="display:inline-block;background:#173b2c;color:#ffffff;'
+            'text-decoration:none;padding:10px 20px;border-radius:6px;">Verify your email</a>',
+            "This link expires in 24 hours. If you didn't create a GeoCore account, you can safely "
+            "ignore this email.",
+        ],
+        body_text_lines=[
+            f"Hi {recipient_name},",
+            "Please confirm this is your email address to finish setting up your GeoCore account.",
+            f"Verify your email: {verify_url}",
+            "This link expires in 24 hours. If you didn't create a GeoCore account, you can safely "
+            "ignore this email.",
+        ],
+    )
+    return RenderedEmail(subject=subject, html=html, text=text)
+
+
 def render_quote_sent(*, tenant_display_name: str, customer_name: str, quote_title: str, portal_url: str) -> RenderedEmail:
     subject = f"Your quote from {tenant_display_name}: {quote_title}"
     safe_customer = _escape(customer_name)
