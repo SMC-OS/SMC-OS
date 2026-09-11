@@ -105,12 +105,21 @@ def _runs(client, auth_headers, automation_id):
 # --- Vocabulary and honesty ----------------------------------------------
 
 
-def test_internal_actions_are_exactly_the_original_four_plus_one_customer_facing(client, auth_headers):
+def test_the_line_between_internal_and_customer_facing_actions_stays_exact(
+    client, auth_headers
+):
     """Sprint 036's binding constraint ("no action can contact a
-    customer") is now Sprint 038's binding constraint that the line
-    between internal and customer-facing actions is exact and asserted,
-    not just documented: if someone adds a new action, this test fails
-    and they have to come mark it one or the other deliberately."""
+    customer") became Sprint 038's constraint that the line between
+    internal and customer-facing actions is exact and asserted, not just
+    documented: if someone adds a new action, this test fails and they
+    have to come mark it one or the other deliberately.
+
+    It did exactly that when Sprint 039 added `draft_message_with_ai`.
+    That action is **internal**: GeoCore AI writes a draft into a task for
+    a person to review and send, and the drafting module has no delivery
+    import at all (see app/ai/drafting.py). The customer-facing set is
+    unchanged — one action, the same one Sprint 038 added.
+    """
     meta = client.get("/api/v1/automations/meta", headers=auth_headers).json()
 
     assert set(meta["actions"]) == {
@@ -118,6 +127,7 @@ def test_internal_actions_are_exactly_the_original_four_plus_one_customer_facing
         "create_project_from_quote",
         "create_task",
         "draft_message",
+        "draft_message_with_ai",
         "send_quote_follow_up",
     }
     assert set(meta["actions"]) == set(ACTION_TYPES)

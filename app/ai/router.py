@@ -10,9 +10,17 @@ Any authenticated member may use it. There is no write capability to gate:
 the service has no tools and cannot modify a single record.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.ai.drafting import (
+    DraftRequest,
+    DraftResult,
+    DraftingUnavailableError,
+    EntityNotFoundError,
+    RewriteRequest,
+    ai_drafting_service,
+)
 from app.ai.models import AICapabilities, ChatRequest, ChatResponse
 from app.ai.service import ai_service
 from app.auth.dependencies import get_current_user
@@ -50,3 +58,72 @@ def chat(
     the response says which engine replied.
     """
     return ai_service.chat(db, current_user.tenant_id, data.messages)
+
+
+# --- Drafting (Sprint 039, Workstream C) ---------------------------------
+#
+# These endpoints produce *text*. Neither of them sends anything, and
+# `DraftResult` has no field that could hold a delivery outcome — see
+# app/ai/drafting.py's module docstring for why that is structural rather
+# than a promise. Sending a reviewed draft is a separate, human action:
+# POST /communications/send.
+#
+# Any authenticated member may draft. There is no write capability to
+# gate — a draft changes no record, and the person who sends it is gated
+# by the send endpoint instead.
+
+
+@router.post("/draft", response_model=DraftResult)
+def draft_message(
+    data: DraftRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Draft a customer message, grounded in this workspace's own records.
+
+    Every entity referenced is re-fetched with the caller's `tenant_id`,
+    so an id belonging to another tenant produces a 404 and is never read
+    — let alone put into a prompt.
+    """
+    try:
+        return ai_drafting_service.draft(
+            db, tenant_id=current_user.tenant_id, request=data
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"{exc} not found"
+        )
+    except DraftingUnavailableError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "No AI provider is connected to this workspace, so GeoCore AI "
+                "can't draft messages yet. You can still write and send one "
+                "yourself."
+            ),
+        )
+
+
+@router.post("/rewrite", response_model=DraftResult)
+def rewrite_message(
+    data: RewriteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Shorten, expand or re-tone a draft the user already has.
+
+    Works on the supplied text rather than regenerating from context, so a
+    person's own edits survive a "make it shorter".
+    """
+    try:
+        return ai_drafting_service.rewrite(
+            db, tenant_id=current_user.tenant_id, request=data
+        )
+    except DraftingUnavailableError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "No AI provider is connected to this workspace, so GeoCore AI "
+                "can't rewrite messages yet."
+            ),
+        )

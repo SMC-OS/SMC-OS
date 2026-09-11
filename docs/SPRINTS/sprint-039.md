@@ -553,9 +553,79 @@ to break the automation that triggered it.
 
 ---
 
-## 11. Status
+## 11. What Phase 4 actually built
 
-**PHASES 1–3 COMPLETE.** Contract locked; discovery recorded; branch and worktree
+**GeoCore AI drafting (Workstream C) — and the human gate in front of it.**
+
+### "AI never sends" is structural, not a promise
+`app/ai/drafting.py` has **no delivery import**, and `DraftResult` has no field that
+could hold a delivery outcome — no `sent`, no `recipient`, no `communication_id`, no
+`status`. A response shape with nowhere to put "sent" cannot claim to have sent
+anything, which is a far stronger guarantee than a system prompt asking a model not to.
+Two tests enforce it: one asserts the exact field set, the other parses the module's
+real import graph (deliberately not its source text, so the docstring explaining *why*
+it cannot send does not fail the test proving it cannot).
+
+### Authorisation before capability
+The first version checked "is an AI provider configured?" before resolving the entities
+a draft is about — which meant a cross-tenant id returned 503 instead of 404 in an
+unconfigured environment. That is backwards: whether this workspace has AI connected has
+no bearing on whether the caller may see a record. **Tenant resolution now runs first**,
+so an id belonging to another tenant answers 404 either way, and is never read.
+
+### The human gate
+`MessageComposer` is where review actually happens. There is deliberately **no "draft
+and send" shortcut**: the moment one exists, review becomes optional and a model's guess
+about a date or a price is in a customer's inbox. Sending posts the text that is on
+screen — including every edit the reviewer made — to
+`POST /communications/send`, which:
+
+- **has no recipient field.** The address is resolved from a `Customer` row the caller's
+  tenant owns. That is the property stopping this being a general-purpose mailer wearing
+  a CRM's clothes.
+- goes through Sprint 038's `DeliveryService` into the same ledger as every other send.
+- takes an idempotency key the composer generates on the first Send press, so a
+  double-click resolves to the same communication.
+
+`_SYSTEM_PROMPT` was also corrected: it told users "GeoCore cannot send email, SMS or
+messages to customers", which had been false since Sprint 038 shipped.
+
+---
+
+## 12. What Phase 5 actually built
+
+**Automation UX (Workstream E) — by taking the descriptions away from the frontend.**
+
+The concrete bug: `apps/web/types/automation.ts` had a hardcoded map of four action
+labels for five action types, so Sprint 038's `send_quote_follow_up` — the one action
+that emails a real customer — rendered with **no label at all**. The same file's header
+still asserted that nothing in automations contacts a customer.
+
+Adding a fifth label would have fixed the symptom. Instead the backend now serves an
+`action_catalogue`: each action's label, description, and which of four classes it
+belongs to (`internal_notification`, `internal_task`, `customer_communication`,
+`ai_draft`). A UI that is *served* the catalogue cannot describe an action wrongly,
+because it no longer describes actions.
+
+`CUSTOMER_FACING_ACTION_TYPES` is now **derived** from that catalogue rather than
+maintained beside it — two sources of the same truth eventually disagree, and the
+direction this one would fail in is "sends email nobody expected".
+
+The `ai_draft` class needed something real to name, so Phase 5 added
+`draft_message_with_ai`: GeoCore AI drafts from the triggering record and leaves the
+result in a task for a person to review and send. Internal, not customer-facing — which
+`tests/test_automations.py`'s existing action-set lock forced us to state deliberately,
+exactly as that test was designed to.
+
+In the builder, choosing an action now shows what it does *before* the rule is saved,
+and a customer-facing action gets the loudest treatment on the screen.
+
+---
+
+## 13. Status
+
+**PHASES 1–5 COMPLETE.** Contract locked; discovery recorded; branch and worktree
 created from `origin/main` @ `8e40039`; Alembic head verified as `b2c3d4e5f6a7` and
-extended linearly to `c5d6e7f8a9b0` → `d6e7f8a9b0c1`, both round-tripped. Phases 4–6 in
+extended linearly to `c5d6e7f8a9b0` → `d6e7f8a9b0c1`, both round-tripped. Phase 6
+(responsive sweep, state audit, the two required E2E journeys, full regression) in
 progress.

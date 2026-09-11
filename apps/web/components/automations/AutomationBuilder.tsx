@@ -2,12 +2,18 @@
 
 import { useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { PlusIcon, TrashIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
-import { ACTION_LABELS } from "@/types/automation";
+import {
+  ACTION_KIND_LABEL,
+  ACTION_KIND_TONE,
+  actionKind,
+  actionLabel,
+} from "@/types/automation";
 import type { AutomationAction, AutomationMeta } from "@/types/automation";
 
 interface ActionRow extends AutomationAction {
@@ -175,11 +181,42 @@ export function AutomationBuilder({
                       >
                         {availableActions.map((type) => (
                           <option key={type} value={type}>
-                            {ACTION_LABELS[type] ?? type}
+                            {actionLabel(meta.action_catalogue, type)}
                           </option>
                         ))}
                       </Select>
                     </Field>
+
+                    {/* Sprint 039 (Workstream E) — what this action will
+                        actually do, shown as it is chosen rather than
+                        discovered after the rule fires. A customer-facing
+                        action gets the loudest treatment on the screen,
+                        because its mistakes land in someone else's
+                        inbox. */}
+                    {(() => {
+                      const spec = meta.action_catalogue?.find(
+                        (entry) => entry.key === action.type
+                      );
+                      const kind = actionKind(meta.action_catalogue, action.type);
+                      if (!spec || !kind) return null;
+                      return (
+                        <div className="-mt-2 flex flex-col gap-1.5">
+                          <div>
+                            <Badge tone={ACTION_KIND_TONE[kind]}>
+                              {ACTION_KIND_LABEL[kind]}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted">{spec.description}</p>
+                          {kind === "customer_communication" && (
+                            <p className="text-xs font-medium text-warning">
+                              This sends a real email to a real customer whenever
+                              the trigger fires. Check the conditions before you
+                              turn it on.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {action.type !== "create_project_from_quote" && (
                       <>

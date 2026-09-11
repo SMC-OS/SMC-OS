@@ -53,4 +53,8 @@ class AICapabilities(BaseModel):
     workspace_context: bool
     quote_drafting: bool
     material_search: bool
+    # Sprint 039 (Workstream C) — whether GeoCore AI can draft a customer
+    # message. False without a provider, and the UI hides the feature
+    # rather than offering a button that returns 503.
+    drafting: bool = False
     notes: list[str]

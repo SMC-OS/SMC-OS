@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { MailIcon, SendIcon } from "@/components/ui/icons";
 import { CommunicationTimeline } from "@/components/communications/CommunicationTimeline";
+import { MessageComposer } from "@/components/communications/MessageComposer";
 import { STATUS_LABEL } from "@/lib/communications";
 import { ApiError, api } from "@/lib/api";
 import { formatDate, formatMoney, formatRelativeTime } from "@/lib/utils";
@@ -78,6 +79,11 @@ export default function QuoteDetailPage() {
   // Bumped after a send so the timeline below re-reads rather than
   // showing a stale history that is missing the message just sent.
   const [historyKey, setHistoryKey] = useState(0);
+  // Sprint 039 (Workstream C) — the compose-and-review panel. Closed by
+  // default: writing a message is a deliberate act, not the first thing
+  // someone opening a quote should be looking at.
+  const [composing, setComposing] = useState(false);
+  const [draftingAvailable, setDraftingAvailable] = useState(false);
   const [handingOff, setHandingOff] = useState(false);
 
   useEffect(() => {
@@ -86,6 +92,14 @@ export default function QuoteDetailPage() {
       router.replace("/login");
       return;
     }
+    // Whether GeoCore AI can draft in this deployment. A failed read
+    // simply hides the drafting controls — the composer still lets a
+    // person write and send a message themselves, which is the part that
+    // must always work.
+    api
+      .getAICapabilities()
+      .then((capabilities) => setDraftingAvailable(capabilities.drafting))
+      .catch(() => {});
     api
       .getQuote(params.id)
       .then((loaded) => {
@@ -414,6 +428,30 @@ export default function QuoteDetailPage() {
                 )}
               </CardContent>
             </Card>
+          )}
+
+          {/* Sprint 039 (Workstream C) — write, review and send a message
+              about this quote. Opening it is a click, because the review
+              step only means something if a person chose to be here. */}
+          {quote.customer_id && canAct && (
+            <div className="mt-6">
+              {composing ? (
+                <MessageComposer
+                  customerId={quote.customer_id}
+                  customerName={customer?.name}
+                  quoteId={quote.id}
+                  defaultKind={quote.status === "sent" ? "quote_follow_up" : "quote_delivery"}
+                  draftingAvailable={draftingAvailable}
+                  onSent={() => setHistoryKey((key) => key + 1)}
+                  onClose={() => setComposing(false)}
+                />
+              ) : (
+                <Button variant="outline" onClick={() => setComposing(true)}>
+                  <MailIcon className="h-4 w-4" />
+                  Message the customer
+                </Button>
+              )}
+            </div>
           )}
 
           {/* Sprint 039 (Workstream A) — what has been sent about this

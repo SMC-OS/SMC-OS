@@ -68,6 +68,17 @@ const resumeSubscriptionMock = vi.fn();
 const getCompanyProfileMock = vi.fn();
 const updateCompanyProfileMock = vi.fn();
 
+const getNotificationPreferencesMock = vi.fn(async () => [
+  {
+    category: "quote_activity",
+    label: "Quote activity",
+    description: "When a quote is approved, or is about to expire.",
+    in_app: true,
+    email: false,
+  },
+]);
+const updateNotificationPreferencesMock = vi.fn(async () => []);
+
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -84,6 +95,15 @@ vi.mock("@/lib/api", async () => {
       resumeSubscription: (...args: unknown[]) => resumeSubscriptionMock(...args),
       getCompanyProfile: (...args: unknown[]) => getCompanyProfileMock(...args),
       updateCompanyProfile: (...args: unknown[]) => updateCompanyProfileMock(...args),
+      // Sprint 039 (Workstream B) — the notifications card is server-backed
+      // now, so it fetches on mount. This mock exists so the *settings
+      // page* tests keep testing navigation and role gating rather than
+      // failing on a card they are not about; the card's own behaviour is
+      // covered in components/settings/NotificationsCard.test.tsx.
+      getNotificationPreferences: (...args: unknown[]) =>
+        getNotificationPreferencesMock(...args),
+      updateNotificationPreferences: (...args: unknown[]) =>
+        updateNotificationPreferencesMock(...args),
     },
   };
 });

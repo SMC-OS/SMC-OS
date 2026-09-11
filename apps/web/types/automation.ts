@@ -1,11 +1,17 @@
 /**
- * Automations (Sprint 036, Workstream G).
+ * Automations (Sprint 036, Workstream G; corrected Sprint 039,
+ * Workstream E).
  *
- * Everything an automation can do is internal to the workspace. GeoCore
- * has no outbound email, SMS or messaging infrastructure, so nothing here
- * contacts a customer — the `draft_message` action prepares a message and
- * hands it to a person as a task. `AutomationMeta.delivery` carries that
- * fact from the backend so the UI states it rather than assuming it.
+ * The header here used to say "GeoCore has no outbound email, SMS or
+ * messaging infrastructure, so nothing here contacts a customer". That
+ * stopped being true when Sprint 038 shipped `send_quote_follow_up`, and
+ * this file did not notice: `ACTION_LABELS` below had four entries for
+ * five action types, so the one action that *does* email a customer
+ * rendered with no label at all.
+ *
+ * The fix is to stop describing actions here. `AutomationMeta.action_catalogue`
+ * carries each action's label, description and class from the backend, so
+ * the builder cannot fall out of step with the engine again.
  */
 
 export interface AutomationTrigger {
@@ -17,9 +23,30 @@ export interface AutomationTrigger {
   subject_type: string;
 }
 
+/** The four classes of thing an automation can do. The one that matters
+ * most is `customer_communication`: it reaches a real customer's inbox. */
+export type ActionKind =
+  | "internal_notification"
+  | "internal_task"
+  | "customer_communication"
+  | "ai_draft";
+
+export interface AutomationActionSpec {
+  key: string;
+  label: string;
+  description: string;
+  kind: ActionKind;
+}
+
 export interface AutomationMeta {
   triggers: AutomationTrigger[];
   actions: string[];
+  /** Sprint 038. Kept as-is; Sprint 039 derives it from the catalogue
+   * server-side so the two cannot disagree. */
+  customer_facing_actions: string[];
+  /** Sprint 039 — what each action is, in the words to show a user. */
+  action_catalogue: AutomationActionSpec[];
+  action_kinds: ActionKind[];
   operators: string[];
   delivery: {
     external_delivery_available: boolean;
@@ -90,9 +117,44 @@ export interface AutomationCreate {
 
 export type AutomationUpdate = Partial<AutomationCreate>;
 
-export const ACTION_LABELS: Record<string, string> = {
-  create_notification: "Send an in-app notification",
-  create_task: "Create a follow-up task",
-  draft_message: "Draft a message for you to send",
-  create_project_from_quote: "Create the project from the quote",
+/**
+ * How each class of action is described to a user, and how it is
+ * coloured. This is the one thing the frontend still owns, because it is
+ * presentation rather than capability — the actions themselves come from
+ * `AutomationMeta.action_catalogue`.
+ */
+export const ACTION_KIND_LABEL: Record<ActionKind, string> = {
+  internal_notification: "Notifies your team",
+  internal_task: "Creates work in your workspace",
+  customer_communication: "Emails your customer",
+  ai_draft: "GeoCore AI drafts it for you",
 };
+
+export const ACTION_KIND_TONE: Record<
+  ActionKind,
+  "neutral" | "info" | "warning" | "accent"
+> = {
+  internal_notification: "neutral",
+  internal_task: "neutral",
+  // Deliberately the loudest tone on the screen. This is the one class of
+  // action whose mistakes land in someone else's inbox.
+  customer_communication: "warning",
+  ai_draft: "accent",
+};
+
+/** Fall back to the stored key rather than to "Unknown" for an action a
+ * newer backend knows about and this build does not — a reader is better
+ * served by the raw name than by a shrug. */
+export function actionLabel(
+  catalogue: AutomationActionSpec[] | undefined,
+  type: string
+): string {
+  return catalogue?.find((entry) => entry.key === type)?.label ?? type;
+}
+
+export function actionKind(
+  catalogue: AutomationActionSpec[] | undefined,
+  type: string
+): ActionKind | null {
+  return catalogue?.find((entry) => entry.key === type)?.kind ?? null;
+}

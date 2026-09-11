@@ -38,6 +38,12 @@ import type {
   CommunicationFilters,
 } from "@/types/communication";
 import type {
+  CustomerMessageRequest,
+  Draft,
+  DraftRequest,
+  RewriteInstruction,
+} from "@/types/drafting";
+import type {
   NotificationPreference,
   NotificationPreferenceUpdate,
 } from "@/types/notification";
@@ -560,6 +566,32 @@ export const api = {
     if (filters.invitationId) query.set("invitation_id", filters.invitationId);
     return request<Communication[]>(`/communications?${query.toString()}`);
   },
+
+  // --- GeoCore AI drafting (Sprint 039, Workstream C) -------------------
+  //
+  // These produce text and nothing else. Sending a reviewed draft is
+  // `sendCustomerMessage` below — a separate call, made by a person.
+
+  // Named `spec`, not `request` — the module-level `request` helper is in
+  // scope here and a parameter of the same name would shadow it.
+  draftMessage: (spec: DraftRequest) =>
+    request<Draft>("/ai/draft", { method: "POST", body: JSON.stringify(spec) }),
+
+  rewriteMessage: (subject: string, body: string, instruction: RewriteInstruction) =>
+    request<Draft>("/ai/rewrite", {
+      method: "POST",
+      body: JSON.stringify({ subject, body, instruction }),
+    }),
+
+  /** Send a message a person has read and approved. Goes through Sprint
+   * 038's DeliveryService into the same ledger as every other send, and
+   * can only ever reach a customer of the caller's own tenant — there is
+   * no recipient field. */
+  sendCustomerMessage: (message: CustomerMessageRequest) =>
+    request<Communication>("/communications/send", {
+      method: "POST",
+      body: JSON.stringify(message),
+    }),
 
   /** Try a failed message again. Never creates a second communication and
    * never re-sends a delivered one — the service path underneath cannot. */

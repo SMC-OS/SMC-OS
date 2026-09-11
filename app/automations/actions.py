@@ -46,22 +46,81 @@ from app.notifications import categories as notification_categories
 from app.notifications import preferences
 from app.notifications.models import NotificationType
 
-ACTION_TYPES = frozenset(
-    {
-        "create_notification",
-        "create_task",
-        "draft_message",
-        "create_project_from_quote",
-        "send_quote_follow_up",
-    }
+#: The four classes of thing an automation can do, in the order a person
+#: cares about them. The distinction that matters most is the third: does
+#: this reach a real customer's inbox?
+ACTION_KINDS: tuple[str, ...] = (
+    "internal_notification",
+    "internal_task",
+    "customer_communication",
+    "ai_draft",
 )
 
-# The builder UI's own distinction (brief §9): these reach a real
-# customer inbox and deserve stronger confirmation than an internal
-# action. Served from the backend (app/automations/router.py's /meta)
-# rather than duplicated in the frontend, same reasoning as ACTION_TYPES
-# itself already being served rather than hardcoded client-side.
-CUSTOMER_FACING_ACTION_TYPES = frozenset({"send_quote_follow_up"})
+#: What each action is, in the words the builder shows.
+#:
+#: Sprint 039 (Workstream E) moved this here from the frontend, where a
+#: hardcoded label map had four entries for five action types — so Sprint
+#: 038's `send_quote_follow_up` rendered with no label at all. A UI that
+#: is *served* the catalogue cannot describe an action wrongly, because it
+#: does not describe actions.
+ACTION_CATALOGUE: dict[str, dict] = {
+    "create_notification": {
+        "label": "Send an in-app notification",
+        "description": "Puts a notification in the bell menu for whoever the record is assigned to.",
+        "kind": "internal_notification",
+    },
+    "create_task": {
+        "label": "Create a follow-up task",
+        "description": "Adds a task to your workspace and assigns it to someone.",
+        "kind": "internal_task",
+    },
+    "draft_message": {
+        "label": "Prepare a message for you to send",
+        "description": (
+            "Writes the message you specify into a task for someone to read "
+            "and send themselves. Nothing is transmitted."
+        ),
+        "kind": "internal_task",
+    },
+    "draft_message_with_ai": {
+        "label": "Ask GeoCore AI to draft a message",
+        "description": (
+            "GeoCore AI writes a draft from this record and leaves it in a "
+            "task for a person to review, edit and send. It never sends "
+            "anything itself."
+        ),
+        "kind": "ai_draft",
+    },
+    "create_project_from_quote": {
+        "label": "Turn the quote into a project",
+        "description": "Creates the job from an approved quote, carrying its details over.",
+        "kind": "internal_task",
+    },
+    "send_quote_follow_up": {
+        "label": "Email the customer a quote follow-up",
+        "description": (
+            "Sends a real email to your customer, using GeoCore's reviewed "
+            "follow-up template."
+        ),
+        "kind": "customer_communication",
+    },
+}
+
+ACTION_TYPES = frozenset(ACTION_CATALOGUE)
+
+# The builder UI's own distinction (Sprint 038 brief §9): these reach a
+# real customer inbox and deserve stronger confirmation than an internal
+# action.
+#
+# Sprint 039 derives it from the catalogue rather than maintaining a
+# second list beside it — two sources of the same truth eventually
+# disagree, and the direction this one would fail in is "sends email
+# nobody expected".
+CUSTOMER_FACING_ACTION_TYPES = frozenset(
+    key
+    for key, entry in ACTION_CATALOGUE.items()
+    if entry["kind"] == "customer_communication"
+)
 
 # A due date offset has to be bounded: an automation with due_in_days of
 # 100000 produces a task nobody will ever see, and one with a negative
@@ -361,12 +420,77 @@ def _run_send_quote_follow_up(db, *, tenant_id, subject, config, dedupe_key, now
     return f"follow-up email {communication.status}"
 
 
+def _run_draft_message_with_ai(db, *, tenant_id, subject, config, dedupe_key, now, context):
+    """Have GeoCore AI draft a message, and leave it for a person to send.
+
+    The AI-draft counterpart to `draft_message`: same destination (a task
+    a human reads), different author. It is emphatically **not** a send —
+    `app/ai/drafting.py` has no delivery import and its result shape has
+    no delivery field, so an automation cannot become a way for a model
+    to reach a customer unreviewed.
+
+    Every failure mode resolves to a skip with a reason rather than an
+    ActionError: no AI provider connected, no customer on the record, a
+    model that would not answer. An automation that is stuck failing
+    because the mailbox of a language model is unreachable is a worse
+    outcome than one that honestly records why it did nothing.
+    """
+    from app.ai.drafting import (
+        DRAFT_KINDS,
+        DraftRequest,
+        DraftingUnavailableError,
+        EntityNotFoundError,
+        ai_drafting_service,
+    )
+
+    kind = config.get("kind") or "general"
+    if kind not in DRAFT_KINDS:
+        raise ActionError(f"draft kind must be one of {sorted(DRAFT_KINDS)}")
+
+    subject_type = context["subject_type"]
+    customer_raw = subject.get("customer_id") if subject_type != "customer" else subject.get("id")
+    if not customer_raw:
+        return "skipped: nothing to draft to — this record has no customer"
+
+    try:
+        request = DraftRequest(
+            kind=kind,
+            customer_id=uuid.UUID(customer_raw),
+            quote_id=_subject_uuid(subject) if subject_type == "quote" else None,
+            project_id=_subject_uuid(subject) if subject_type == "project" else None,
+        )
+    except ValueError as exc:
+        raise ActionError(str(exc))
+
+    try:
+        draft = ai_drafting_service.draft(db, tenant_id=tenant_id, request=request)
+    except DraftingUnavailableError:
+        return "skipped: no AI provider is connected to this workspace"
+    except EntityNotFoundError:
+        return "skipped: the record this would be about no longer exists"
+
+    return _run_create_task(
+        db,
+        tenant_id=tenant_id,
+        subject=subject,
+        config={
+            "title": f"Review and send: {draft.subject}",
+            "body": draft.body,
+            **{k: v for k, v in config.items() if k == "due_in_days"},
+        },
+        dedupe_key=dedupe_key,
+        now=now,
+        context=context,
+    )
+
+
 _HANDLERS = {
     "create_notification": _run_create_notification,
     "create_task": _run_create_task,
     "draft_message": _run_draft_message,
     "create_project_from_quote": _run_create_project_from_quote,
     "send_quote_follow_up": _run_send_quote_follow_up,
+    "draft_message_with_ai": _run_draft_message_with_ai,
 }
 
 

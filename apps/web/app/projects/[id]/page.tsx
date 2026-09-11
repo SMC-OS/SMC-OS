@@ -12,10 +12,11 @@ import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { findStage, nextStages, stageLabel, stageTone } from "@/lib/projects";
 import { CommunicationTimeline } from "@/components/communications/CommunicationTimeline";
+import { MessageComposer } from "@/components/communications/MessageComposer";
 import { ProjectForm } from "@/components/projects/ProjectForm";
 import { ProjectTasksPanel } from "@/components/projects/ProjectTasksPanel";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
-import { EditIcon } from "@/components/ui/icons";
+import { EditIcon, MailIcon } from "@/components/ui/icons";
 import type { Trade } from "@/types/quote";
 import { formatDate, formatMoney, formatRelativeTime } from "@/lib/utils";
 import type { AppointmentOut, AppointmentTransitionTarget } from "@/types/appointment";
@@ -63,6 +64,10 @@ export default function ProjectDetailPage() {
   // each one allows, so the actions offered below are exactly the ones the
   // backend will accept.
   const [stages, setStages] = useState<PipelineStage[] | null>(null);
+  // Sprint 039 (Workstream C) — compose-and-review, closed by default.
+  const [composing, setComposing] = useState(false);
+  const [draftingAvailable, setDraftingAvailable] = useState(false);
+  const [historyKey, setHistoryKey] = useState(0);
   const [pendingStage, setPendingStage] = useState<string | null>(null);
 
   // Sprint 023 — project operations (docs/SPRINTS/sprint-023.md).
@@ -118,6 +123,10 @@ export default function ProjectDetailPage() {
     }
     load();
     loadPipeline();
+    api
+      .getAICapabilities()
+      .then((capabilities) => setDraftingAvailable(capabilities.drafting))
+      .catch(() => {});
     // Appointments are Owner/Staff only server-side (require_role(OWNER,
     // STAFF)) — same RBAC gating as convert-to-customer, so a caller
     // without that role never even requests the list.
@@ -626,11 +635,35 @@ export default function ProjectDetailPage() {
       )}
       {project && !editing && <ProjectTasksPanel projectId={project.id} />}
 
+      {/* Sprint 039 (Workstream C) — tell the customer how their job is
+          going, in their own language rather than a stage name. */}
+      {project && !editing && project.customer_id && canManageAppointments && (
+        <div className="mt-6">
+          {composing ? (
+            <MessageComposer
+              customerId={project.customer_id}
+              customerName={customer?.name}
+              projectId={project.id}
+              defaultKind="project_update"
+              draftingAvailable={draftingAvailable}
+              onSent={() => setHistoryKey((key) => key + 1)}
+              onClose={() => setComposing(false)}
+            />
+          ) : (
+            <Button variant="outline" onClick={() => setComposing(true)}>
+              <MailIcon className="h-4 w-4" />
+              Message the customer
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Sprint 039 (Workstream A) — what has actually been said to this
           customer about this job, and whether it arrived. */}
       {project && !editing && (
         <div className="mt-6">
           <CommunicationTimeline
+            key={historyKey}
             title="Communications"
             filters={{ projectId: project.id }}
             emptyTitle="Nothing sent about this job yet"

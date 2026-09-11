@@ -19,7 +19,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.communications.models import CommunicationOut
+from app.communications.models import (
+    DRAFT_KIND_TO_MESSAGE_TYPE,
+    CommunicationOut,
+    CustomerMessageRequest,
+)
+from app.communications.templates import render_customer_message
 from app.communications.service import (
     CommunicationNotFoundError,
     CommunicationNotRetryableError,
@@ -67,6 +72,66 @@ def list_communications(
         invitation_id=invitation_id,
         limit=min(limit, 200),
         offset=max(offset, 0),
+    )
+
+
+@router.post("/send", response_model=CommunicationOut)
+def send_customer_message(
+    data: CustomerMessageRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Send a message a person has read and approved (Sprint 039).
+
+    This is the human half of GeoCore AI drafting, and the only way an
+    AI-drafted message can ever reach a customer. It takes the reviewed
+    text — not a draft id — so what is sent is exactly what was on screen,
+    including every edit the person made.
+
+    Declared before `/{communication_id}/retry` because FastAPI matches
+    routes in declaration order and "send" would otherwise parse as a UUID.
+
+    Three properties worth stating:
+
+    * **The recipient cannot be chosen.** It is resolved from a Customer
+      row this tenant owns. There is no address field, so this is not a
+      general-purpose mailer.
+    * **Delivery goes through Sprint 038's DeliveryService**, into the
+      same ledger as every other send. No second delivery architecture.
+    * **A double-click sends once.** The client's idempotency key becomes
+      the dedupe key, and DeliveryService already returns the existing row
+      for a repeated key rather than sending again.
+    """
+    customer = crud.get_customer_by_id(db, data.customer_id, current_user.tenant_id)
+    if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
+        )
+    if not customer.email:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This customer has no email address on file.",
+        )
+
+    tenant = crud.get_tenant_by_id(db, current_user.tenant_id)
+    rendered = render_customer_message(
+        tenant_display_name=tenant.name if tenant is not None else "",
+        subject=data.subject,
+        body=data.body,
+    )
+    key = data.idempotency_key or uuid.uuid4().hex
+    return delivery_service.send(
+        db,
+        tenant=tenant,
+        message_type=DRAFT_KIND_TO_MESSAGE_TYPE[data.kind],
+        recipient=customer.email,
+        subject=rendered.subject,
+        html=rendered.html,
+        text=rendered.text,
+        dedupe_key=f"customer_message:{key}",
+        customer_id=customer.id,
+        quote_id=data.quote_id,
+        project_id=data.project_id,
     )
 
 

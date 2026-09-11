@@ -285,3 +285,30 @@ def render_workspace_alert(
         ],
     )
     return RenderedEmail(subject=subject, html=html, text=text)
+
+
+def render_customer_message(
+    *, tenant_display_name: str, body: str, subject: str
+) -> RenderedEmail:
+    """A message a person at the business wrote and reviewed themselves
+    (Sprint 039, Workstream C).
+
+    Unlike every other template here, the words are the sender's, not
+    GeoCore's — so this adds no copy of its own beyond the shared
+    envelope. What it does add is escaping: the body has passed through a
+    language model and a text area, and neither is a trustworthy source of
+    HTML. Line breaks become paragraphs so a message typed with blank
+    lines arrives looking like the person typed it.
+    """
+    paragraphs = [
+        _escape(block.strip()).replace("\n", "<br>")
+        for block in body.split("\n\n")
+        if block.strip()
+    ]
+    html, text = _wrap(
+        tenant_display_name=tenant_display_name,
+        preheader=subject,
+        body_html_lines=paragraphs or [_escape(body)],
+        body_text_lines=[body],
+    )
+    return RenderedEmail(subject=subject, html=html, text=text)

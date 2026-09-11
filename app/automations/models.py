@@ -55,6 +55,14 @@ class AutomationAction(BaseModel):
     @model_validator(mode="after")
     def _known_config_keys(self) -> "AutomationAction":
         allowed = {"title", "message", "body", "due_in_days"}
+        # Sprint 039 (Workstream E) — `draft_message_with_ai` is the one
+        # action that takes a `kind`, naming which sort of message GeoCore
+        # AI should draft. Added per-action rather than to the shared set
+        # so the other actions keep rejecting it: this allowlist exists
+        # precisely so a typo in a rule is a 422 rather than a silently
+        # ignored setting.
+        if self.type == "draft_message_with_ai":
+            allowed = allowed | {"kind"}
         unknown = set(self.config) - allowed
         if unknown:
             raise ValueError(

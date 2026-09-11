@@ -23,5 +23,9 @@ export interface AICapabilities {
   workspace_context: boolean;
   quote_drafting: boolean;
   material_search: boolean;
+  /** Sprint 039 (Workstream C) — whether GeoCore AI can draft a customer
+   * message here. False without a provider, and the UI hides the drafting
+   * controls rather than offering a button that always fails. */
+  drafting: boolean;
   notes: string[];
 }

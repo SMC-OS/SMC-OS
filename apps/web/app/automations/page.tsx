@@ -12,7 +12,12 @@ import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/componen
 import { InfoIcon, PlusIcon, TrashIcon, ZapIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { ACTION_LABELS } from "@/types/automation";
+import {
+  ACTION_KIND_LABEL,
+  ACTION_KIND_TONE,
+  actionKind,
+  actionLabel,
+} from "@/types/automation";
 import type {
   Automation,
   AutomationMeta,
@@ -217,14 +222,31 @@ export default function AutomationsPage() {
                       <p className="mt-1 text-xs text-muted">
                         When: {triggerLabel(automation.trigger_type)}
                       </p>
-                      <ul className="mt-2 flex flex-wrap gap-1.5">
-                        {automation.actions.map((action, index) => (
-                          <li key={`${automation.id}-${index}`}>
-                            <Badge tone="accent">
-                              {ACTION_LABELS[action.type] ?? action.type}
-                            </Badge>
-                          </li>
-                        ))}
+                      {/* Sprint 039 (Workstream E) — each action says what
+                          it is AND which class it belongs to, so someone
+                          scanning this list can see at a glance which
+                          rules reach a customer. Labels come from the
+                          backend catalogue; only the class wording and
+                          colour are this app's. */}
+                      <ul className="mt-2 flex flex-col gap-1.5">
+                        {automation.actions.map((action, index) => {
+                          const kind = actionKind(meta?.action_catalogue, action.type);
+                          return (
+                            <li
+                              key={`${automation.id}-${index}`}
+                              className="flex flex-wrap items-center gap-1.5"
+                            >
+                              <Badge tone="accent">
+                                {actionLabel(meta?.action_catalogue, action.type)}
+                              </Badge>
+                              {kind && (
+                                <Badge tone={ACTION_KIND_TONE[kind]}>
+                                  {ACTION_KIND_LABEL[kind]}
+                                </Badge>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
 

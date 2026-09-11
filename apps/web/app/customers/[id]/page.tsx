@@ -10,8 +10,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Field";
-import { EditIcon } from "@/components/ui/icons";
+import { EditIcon, MailIcon } from "@/components/ui/icons";
 import { CommunicationTimeline } from "@/components/communications/CommunicationTimeline";
+import { MessageComposer } from "@/components/communications/MessageComposer";
 import { CustomerContextPanel } from "@/components/customers/CustomerContextPanel";
 import { CustomerForm } from "@/components/customers/CustomerForm";
 import { usePolling } from "@/hooks/usePolling";
@@ -46,6 +47,12 @@ export default function CustomerDetailPage() {
   // create page uses so the two cannot drift into asking for different
   // things.
   const [editing, setEditing] = useState(false);
+  // Sprint 039 (Workstream C) — compose-and-review, closed by default.
+  const [composing, setComposing] = useState(false);
+  const [draftingAvailable, setDraftingAvailable] = useState(false);
+  // Bumped after a send so the timeline re-reads rather than showing a
+  // history missing the message just sent.
+  const [historyKey, setHistoryKey] = useState(0);
 
   // Sprint 013 — share a read-only client portal link. Any authenticated
   // tenant user can generate one (not Owner-only, unlike team invites).
@@ -94,6 +101,10 @@ export default function CustomerDetailPage() {
       router.replace("/login");
       return;
     }
+    api
+      .getAICapabilities()
+      .then((capabilities) => setDraftingAvailable(capabilities.drafting))
+      .catch(() => {});
     api
       .getCustomer(params.id)
       .then((c) => {
@@ -356,11 +367,33 @@ export default function CustomerDetailPage() {
 
       {customer && !editing && <CustomerContextPanel customerId={customer.id} />}
 
+      {/* Sprint 039 (Workstream C) — write, review and send a message to
+          this customer. */}
+      {customer && !editing && (
+        <div className="mt-6">
+          {composing ? (
+            <MessageComposer
+              customerId={customer.id}
+              customerName={customer.name}
+              draftingAvailable={draftingAvailable}
+              onSent={() => setHistoryKey((key) => key + 1)}
+              onClose={() => setComposing(false)}
+            />
+          ) : (
+            <Button variant="outline" onClick={() => setComposing(true)}>
+              <MailIcon className="h-4 w-4" />
+              Message this customer
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Sprint 039 (Workstream A) — every email this customer has been
           sent, across all their quotes and jobs, in one place. */}
       {customer && !editing && (
         <div className="mt-6">
           <CommunicationTimeline
+            key={historyKey}
             title="Communications"
             filters={{ customerId: customer.id }}
             emptyTitle="Nothing sent to this customer yet"

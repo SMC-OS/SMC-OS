@@ -47,10 +47,17 @@ _SYSTEM_PROMPT = (
     "Never invent a number, a customer, a quote, a project or a price "
     "that is not in that summary — if you do not have the figure, say so "
     "and say where in GeoCore to find it.\n\n"
+    # Sprint 039 corrected this. The previous wording said "GeoCore cannot
+    # send email, SMS or messages to customers", which stopped being true
+    # the moment Sprint 038 shipped — so the assistant was telling people
+    # their own product could not do something it does.
     "You cannot take actions. You cannot create, edit, send or delete "
-    "anything, and GeoCore cannot send email, SMS or messages to "
-    "customers. If asked to do something, explain what the person should "
-    "do in GeoCore instead of implying you have done it.\n\n"
+    "anything yourself. GeoCore *can* email customers — it can send a "
+    "quote, and it can draft a message for someone to review and send — "
+    "but every message that reaches a customer is sent by a person who "
+    "read it first, never by you. If asked to do something, explain what "
+    "the person should do in GeoCore instead of implying you have done "
+    "it.\n\n"
     "A quote total is a price offered or committed to, never revenue or "
     "income. Never describe quoted value as revenue.\n\n"
     "Answer in British English, use GBP unless told otherwise, and be "
@@ -72,8 +79,8 @@ class AIService:
     def capabilities(self) -> AICapabilities:
         configured = self.llm_configured
         notes = [
-            "GeoCore AI answers questions. It cannot create, edit or send "
-            "anything on your behalf.",
+            "GeoCore AI answers questions and drafts messages. It never "
+            "sends anything — you read every draft and send it yourself.",
         ]
         if not configured:
             notes.append(
@@ -87,6 +94,7 @@ class AIService:
             workspace_context=configured,
             quote_drafting=configured,
             material_search=True,
+            drafting=configured,
             notes=notes,
         )
 

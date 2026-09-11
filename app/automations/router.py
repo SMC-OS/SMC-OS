@@ -18,7 +18,12 @@ from app.auth.dependencies import get_current_user, require_role
 from app.auth.models import UserRole
 from app.automations import templates as template_catalogue
 from app.automations import triggers as trigger_catalogue
-from app.automations.actions import ACTION_TYPES, CUSTOMER_FACING_ACTION_TYPES
+from app.automations.actions import (
+    ACTION_CATALOGUE,
+    ACTION_KINDS,
+    ACTION_TYPES,
+    CUSTOMER_FACING_ACTION_TYPES,
+)
 from app.automations.conditions import OPS
 from app.automations.models import (
     AutomationCreate,
@@ -58,6 +63,14 @@ def automation_meta():
         ],
         "actions": sorted(ACTION_TYPES),
         "customer_facing_actions": sorted(CUSTOMER_FACING_ACTION_TYPES),
+        # Sprint 039 (Workstream E) — what each action is, and which of
+        # the four classes it belongs to. Served rather than described in
+        # the frontend, because a hardcoded label map is exactly what fell
+        # out of date when Sprint 038 added a fifth action type.
+        "action_catalogue": [
+            {"key": key, **entry} for key, entry in sorted(ACTION_CATALOGUE.items())
+        ],
+        "action_kinds": list(ACTION_KINDS),
         "operators": sorted(OPS),
         # Stated in the API, not only in the UI, so any client is told the
         # same truth. Sprint 038 (Phase 2): flips honestly to whether a
