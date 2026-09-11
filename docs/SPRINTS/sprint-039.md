@@ -746,11 +746,20 @@ verification foundation`), linear, round-tripped (`alembic upgrade head` /
   timeouts under full-suite parallel load); both confirmed to pass in isolation and
   are unrelated to this change (neither file touches auth/invitations).
 - E2E (`npx playwright test`, full suite, real Chromium + real FastAPI + real
-  Postgres): **25 passed**, 3 failed — `automations.spec.ts`'s dashboard-visibility
-  assertion and two `geocore-ai-and-settings.spec.ts` responsive/theme-toggle
-  timeouts, none touching auth/invitations/verification; not yet root-caused against
-  a clean `origin/main` baseline (flagged as a known limitation below, not silently
-  dismissed).
+  Postgres): **28 passed, 0 failed.** First pass showed 3 failures
+  (`automations.spec.ts`'s dashboard-visibility assertion, two
+  `geocore-ai-and-settings.spec.ts` responsive/theme-toggle timeouts) that were
+  *not* dismissed as pre-existing/unrelated flakiness without checking — the
+  browser console showed a real `RecentActivityPanel` crash ("Element type is
+  invalid... got undefined") on every one of them. Root cause: this blocker's new
+  backend `ActivityType.EMAIL_VERIFICATION_REQUESTED`/`EMAIL_VERIFIED` values (now
+  emitted on every real signup) had no matching entries in the frontend's separately
+  -maintained `apps/web/types/activity.ts` union or `apps/web/lib/activity.ts`'s
+  icon/tone lookup maps — the exact same class of bug Sprint 025 already fixed once
+  for a different set of missing values (see that file's own docstring), now
+  reintroduced by this blocker. Fixed by adding both new values to all three; full
+  E2E suite reran clean immediately after (also confirmed via the real GitHub
+  Actions CI run on this PR, not only locally).
 - New E2E coverage added: `e2e/email-verification.spec.ts` — signup → real unverified
   state visible in Settings → resend → confirm via a minted token → real verified
   state visible; and a second spec proving `POST /invitations` is genuinely blocked
@@ -758,10 +767,9 @@ verification foundation`), linear, round-tripped (`alembic upgrade head` /
   merely UI copy).
 
 **Known limitations, honestly stated:**
-- The 3 unrelated E2E failures above were not root-caused against an unmodified
-  `origin/main` baseline in this pass — flagged, not fixed, not hidden.
-- This branch has not yet been pushed, opened as a PR, run through real CI, or
-  deployed to staging — that is the next step, not yet claimed as done.
+- This branch is pushed and open as PR #28 (`sprint-039-gate-a-email-verification`),
+  with a real green GitHub Actions CI run (backend/frontend/e2e all passing) — but
+  not yet merged, and not yet deployed to staging.
 - `require_verified_email` is deliberately scoped to `POST /invitations` only in this
   phase — it is not yet applied to any billing or security-settings route, since
   those don't exist as gated concepts until their own blocker phases land.

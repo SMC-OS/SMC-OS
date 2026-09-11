@@ -38,6 +38,9 @@ export const ACTIVITY_ICON: Record<ActivityType, typeof BotIcon> = {
   // Sprint 036
   automation_created: ZapIcon,
   task_completed: CheckCircleIcon,
+  // Sprint 039 Production Readiness Defect Gate, Blocker 1
+  email_verification_requested: InfoIcon,
+  email_verified: CheckCircleIcon,
 };
 
 export const ACTIVITY_TONE: Record<ActivityType, string> = {
@@ -63,4 +66,7 @@ export const ACTIVITY_TONE: Record<ActivityType, string> = {
   // Sprint 036
   automation_created: "bg-champagne-subtle text-champagne",
   task_completed: "bg-success/10 text-success",
+  // Sprint 039 Production Readiness Defect Gate, Blocker 1
+  email_verification_requested: "bg-info/10 text-info",
+  email_verified: "bg-success/10 text-success",
 };
