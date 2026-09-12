@@ -1,6 +1,6 @@
 # GeoCore
 
-The AI operating system for stone and construction businesses — quoting, projects, scheduling and client communication in one multi-tenant workspace.
+The AI operating system for construction and renovation businesses — quoting, projects, scheduling and client communication in one multi-tenant workspace.
 
 GeoCore is the **platform**. Each business that uses it is a **tenant**, with its own data, team and company identity on every customer-facing document. Simo Marble & Construction Ltd is one such tenant, not the platform itself (see `docs/DECISIONS.md` ADR-036).
 

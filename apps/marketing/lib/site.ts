@@ -28,8 +28,14 @@ export const APP_URL = origin(process.env.NEXT_PUBLIC_APP_URL, "https://app.geoc
 
 export const SITE_NAME = "GeoCore";
 export const SITE_TAGLINE = "Build smarter together";
+// Sprint 039 Production Readiness Defect Gate, Blocker 7 — the locked
+// top-level positioning is construction and renovation businesses in
+// general; stone and worktops are a specialist vertical GeoCore supports
+// (see app/quotes/new/stone), never the platform's assumed identity. This
+// description feeds the marketing meta description, Open Graph and
+// structured data below, so a single correction here fixes all three.
 export const SITE_DESCRIPTION =
-  "GeoCore is the AI operating system for stone and construction businesses — quoting, projects, scheduling and client communication in one place.";
+  "GeoCore is the AI operating system for construction and renovation businesses — quoting, projects, scheduling and client communication in one place.";
 
 /**
  * Whether this deployment should allow indexing. Only the production
