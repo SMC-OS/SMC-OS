@@ -26,7 +26,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_role
+from app.auth.dependencies import require_role, require_verified_email
 from app.auth.models import TokenResponse, UserRole
 from app.auth.security import create_access_token
 from app.auth.service import auth_service
@@ -76,7 +76,13 @@ def _with_delivery_status(db: Session, tenant_id: uuid.UUID, item: InvitationOut
     "",
     response_model=InvitationCreateOut,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_seat_available)],
+    # Sprint 039 Production Readiness Defect Gate, Blocker 1 — inviting a
+    # second user into a tenant is the concrete "user-management" boundary
+    # this gate's require_verified_email enforcement applies to first;
+    # other sensitive boundaries (billing, security settings) gain the
+    # same guard as their own gate phases land, rather than all being
+    # bolted on here at once.
+    dependencies=[Depends(require_seat_available), Depends(require_verified_email)],
 )
 def create_invitation(
     data: InvitationCreate,

@@ -20,13 +20,21 @@ import uuid
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.service import auth_service
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, NotificationRecord, Project, Tenant, User
+from app.database.models import (
+    ActivityLog,
+    Communication,
+    EmailVerificationToken,
+    NotificationRecord,
+    Project,
+    Tenant,
+    User,
+)
 from app.notifications.follow_up_service import STALE_ENQUIRY_THRESHOLD, follow_up_service
 
 RUN_ID = uuid.uuid4().hex[:8]
@@ -68,6 +76,13 @@ def _cleanup_tenant(tenant_id: uuid.UUID) -> None:
         # schema) — same ordering lesson as tests/test_appointments.py.
         db.execute(delete(NotificationRecord).where(NotificationRecord.tenant_id == tenant_id))
         db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant_id))
+        # Sprint 039 Production Readiness Defect Gate, Blocker 1 — _signup()
+        # now also creates an EmailVerificationToken (user_id FK, no
+        # ondelete) and a Communication row (tenant_id FK) — same
+        # "children before parents" ordering as everything else here.
+        user_ids = select(User.id).where(User.tenant_id == tenant_id)
+        db.execute(delete(EmailVerificationToken).where(EmailVerificationToken.user_id.in_(user_ids)))
+        db.execute(delete(Communication).where(Communication.tenant_id == tenant_id))
         db.execute(delete(Project).where(Project.tenant_id == tenant_id))
         db.execute(delete(User).where(User.tenant_id == tenant_id))
         db.execute(delete(Tenant).where(Tenant.id == tenant_id))

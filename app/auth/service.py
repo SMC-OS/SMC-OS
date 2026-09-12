@@ -16,6 +16,7 @@ still no path that creates a Staff user (Sprint 011's invitations).
 """
 
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -49,7 +50,18 @@ class AuthService:
         email: str,
         password: str,
         role: str | None = None,
+        email_verified: bool = True,
     ) -> User:
+        """`email_verified` defaults to True: every existing caller of this
+        low-level method (test fixtures, app/auth/seed.py, and
+        InvitationService.accept_invitation — see its own call site for
+        why an invited user is already effectively proven, having clicked
+        a real emailed link with a token) is asserting "this is a real,
+        already-established user," not running the public self-signup
+        flow. Only signup() below explicitly opts out, since that is the
+        one path where nothing has yet confirmed the caller controls the
+        email address they typed in (Sprint 039 Production Readiness
+        Defect Gate, Blocker 1)."""
         return crud.create_user(
             db,
             id=uuid.uuid4(),
@@ -58,6 +70,7 @@ class AuthService:
             email=email,
             password_hash=hash_password(password),
             role=role,
+            email_verified_at=datetime.now(timezone.utc) if email_verified else None,
         )
 
     def signup(self, db: Session, data: SignupRequest) -> tuple[Tenant, User]:
@@ -78,6 +91,7 @@ class AuthService:
             email=data.email,
             password=data.password,
             role=UserRole.OWNER.value,
+            email_verified=False,
         )
         return tenant, user
 
@@ -97,6 +111,7 @@ class AuthService:
             role=user.role,
             tenant_id=user.tenant_id,
             tenant_name=tenant.name if tenant is not None else "",
+            email_verified_at=user.email_verified_at,
         )
 
 

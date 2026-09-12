@@ -68,11 +68,17 @@ export function TeamCard() {
       setEmail("");
       load();
     } catch (err) {
-      setCreateError(
-        err instanceof ApiError && err.status === 409
-          ? "There is already an account or a pending invitation for that email."
-          : "Could not create the invitation."
-      );
+      if (err instanceof ApiError && err.status === 409) {
+        setCreateError("There is already an account or a pending invitation for that email.");
+      } else if (err instanceof ApiError && err.status === 403) {
+        // Sprint 039 Production Readiness Defect Gate, Blocker 1 —
+        // require_verified_email on this route (app/invitations/router.py).
+        // Surfaces the server's real reason rather than a generic failure,
+        // matching this component's existing 409 treatment.
+        setCreateError("Please verify your email address (Settings → Security) before inviting a teammate.");
+      } else {
+        setCreateError("Could not create the invitation.");
+      }
     } finally {
       setSubmitting(false);
     }

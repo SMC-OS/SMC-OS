@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
@@ -48,9 +49,28 @@ class UserOut(BaseModel):
     # (tenant_name isn't a column on `users`, it's resolved from `tenants`).
     tenant_id: uuid.UUID
     tenant_name: str
+    # Sprint 039 Production Readiness Defect Gate, Blocker 1 — lets the
+    # frontend show a clear verified/unverified state without a second
+    # request. None means unverified (including every legacy user this
+    # migration didn't backfill); a datetime is when verification
+    # happened. Whether an unverified user is currently *blocked* by it
+    # is a separate question the frontend doesn't need to compute itself
+    # (see app/auth/dependencies.py's require_verified_email).
+    email_verified_at: datetime | None = None
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class MessageResponse(BaseModel):
+    """Generic {"message": "..."} body for endpoints that intentionally
+    reveal nothing more specific than a human-readable status line."""
+
+    message: str
+
+
+class VerifyEmailConfirmRequest(BaseModel):
+    token: str

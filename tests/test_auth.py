@@ -7,7 +7,7 @@ from sqlalchemy import delete
 from app.auth.service import auth_service
 from app.core.config import settings
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Tenant, User
+from app.database.models import ActivityLog, Communication, EmailVerificationToken, Tenant, User
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -26,12 +26,21 @@ def _delete_tenant_and_its_activity(db, *, name: str) -> None:
     tenant = db.query(Tenant).filter(Tenant.name == name).first()
     if tenant is not None:
         db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+        # Sprint 039 Production Readiness Defect Gate, Blocker 1 — signup
+        # now also attempts a verification-email send, which writes a
+        # Communication row (tenant_id NOT NULL, no ondelete) — same
+        # "delete before the Tenant row" requirement Sprint 038 already
+        # established for every other test file's tenant cleanup.
+        db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
         db.execute(delete(Tenant).where(Tenant.id == tenant.id))
 
 
 def _cleanup_signup():
     db = SessionLocal()
     try:
+        user_ids = [u.id for u in db.query(User).filter(User.email == SIGNUP_EMAIL).all()]
+        if user_ids:
+            db.execute(delete(EmailVerificationToken).where(EmailVerificationToken.user_id.in_(user_ids)))
         db.execute(delete(User).where(User.email == SIGNUP_EMAIL))
         _delete_tenant_and_its_activity(db, name=SIGNUP_COMPANY)
         db.commit()

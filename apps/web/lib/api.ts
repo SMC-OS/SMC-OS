@@ -197,6 +197,16 @@ export const api = {
 
   getMe: () => request<AuthUser>("/auth/me"),
 
+  // Sprint 039 Production Readiness Defect Gate, Blocker 1.
+  resendVerificationEmail: () =>
+    request<{ message: string }>("/auth/email/verify/resend", { method: "POST" }),
+
+  confirmEmailVerification: (token: string) =>
+    request<{ message: string }>("/auth/email/verify/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
   // Sprint 011 — Owner-only (require_role(OWNER) server-side; a Staff
   // caller gets a 403 handled by the caller, same as any other ApiError).
   createInvitation: (email: string) =>

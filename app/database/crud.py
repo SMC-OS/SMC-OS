@@ -37,6 +37,7 @@ from app.database.models import (
     Customer,
     Document,
     EmailSuppression,
+    EmailVerificationToken,
     Invitation,
     Material,
     Message,
@@ -194,9 +195,16 @@ def create_user(
     email: str,
     password_hash: str,
     role: str | None = None,
+    email_verified_at: datetime | None = None,
 ) -> User:
     row = User(
-        id=id, tenant_id=tenant_id, name=name, email=email, password_hash=password_hash, role=role
+        id=id,
+        tenant_id=tenant_id,
+        name=name,
+        email=email,
+        password_hash=password_hash,
+        role=role,
+        email_verified_at=email_verified_at,
     )
     db.add(row)
     db.commit()
@@ -227,6 +235,50 @@ def update_user_active(db: Session, user_id: uuid.UUID, is_active: bool) -> User
     if row is None:
         return None
     row.is_active = is_active
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def set_user_email_verified_at(db: Session, user_id: uuid.UUID, verified_at: datetime) -> User | None:
+    row = db.get(User, user_id)
+    if row is None:
+        return None
+    row.email_verified_at = verified_at
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_email_verification_token(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    user_id: uuid.UUID,
+    token_hash: str,
+    expires_at: datetime,
+) -> EmailVerificationToken:
+    row = EmailVerificationToken(
+        id=id, user_id=user_id, token_hash=token_hash, expires_at=expires_at
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_email_verification_token_by_hash(db: Session, token_hash: str) -> EmailVerificationToken | None:
+    stmt = select(EmailVerificationToken).where(EmailVerificationToken.token_hash == token_hash)
+    return db.scalars(stmt).first()
+
+
+def mark_email_verification_token_used(
+    db: Session, token_id: uuid.UUID, used_at: datetime
+) -> EmailVerificationToken | None:
+    row = db.get(EmailVerificationToken, token_id)
+    if row is None:
+        return None
+    row.used_at = used_at
     db.commit()
     db.refresh(row)
     return row

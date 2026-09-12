@@ -28,7 +28,10 @@ export type ActivityType =
   | "project_status_changed"
   // Sprint 036
   | "automation_created"
-  | "task_completed";
+  | "task_completed"
+  // Sprint 039 Production Readiness Defect Gate, Blocker 1
+  | "email_verification_requested"
+  | "email_verified";
 
 export interface ActivityEvent {
   id: string;

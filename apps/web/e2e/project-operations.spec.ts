@@ -1,6 +1,48 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+
+const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
+
+// Sprint 039 Production Readiness Defect Gate, Blocker 1 — inviting a
+// teammate now requires a verified email (require_verified_email on
+// app/invitations/router.py's create_invitation). A fresh signup is
+// unverified by design (see app/auth/service.py's signup()), so this
+// setup step mints and confirms a real token the same way
+// EmailVerificationService.send_verification_email() does — see
+// e2e/email-verification.spec.ts's identical helper for the full
+// rationale — rather than mocking or bypassing the check this spec
+// isn't testing.
+async function verifyOwnerEmail(api: import("@playwright/test").APIRequestContext, email: string) {
+  const script = `
+import hashlib, secrets, uuid
+from datetime import datetime, timedelta, timezone
+from app.database import crud
+from app.database.database import SessionLocal
+
+db = SessionLocal()
+user = crud.get_user_by_email(db, ${JSON.stringify(email)})
+raw_token = secrets.token_urlsafe(32)
+token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+crud.create_email_verification_token(
+    db, id=uuid.uuid4(), user_id=user.id, token_hash=token_hash,
+    expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+)
+db.close()
+print(raw_token)
+`.trim();
+  const rawToken = execFileSync("python", ["-c", script], { cwd: REPO_ROOT, encoding: "utf-8" })
+    .trim()
+    .split("\n")
+    .pop() as string;
+  const confirm = await api.post("/api/v1/auth/email/verify/confirm", {
+    data: { token: rawToken },
+  });
+  expect(confirm.ok()).toBeTruthy();
+}
 
 /**
  * Sprint 023 — true browser E2E for project operations (staff assignment +
@@ -39,6 +81,7 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   expect(signup.ok()).toBeTruthy();
   const { access_token: ownerToken } = await signup.json();
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
+  await verifyOwnerEmail(api, OWNER_EMAIL);
 
   // Real Staff user via a real invitation accept — same mechanism the
   // product actually uses to create Staff accounts (Sprint 011), not a

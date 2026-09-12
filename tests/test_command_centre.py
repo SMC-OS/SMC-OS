@@ -21,7 +21,9 @@ from app.database.database import SessionLocal
 from app.database.models import (
     ActivityLog,
     Appointment,
+    Communication,
     Customer,
+    EmailVerificationToken,
     NotificationRecord,
     Project,
     Quote,
@@ -70,6 +72,16 @@ def _cleanup_tenant(tenant_id: uuid.UUID) -> None:
         )
         db.execute(delete(Quote).where(Quote.tenant_id == tenant_id))
         db.execute(delete(Customer).where(Customer.tenant_id == tenant_id))
+        # Sprint 039 Production Readiness Defect Gate, Blocker 1 — _signup()
+        # now also creates an EmailVerificationToken (user_id FK, no
+        # ondelete) and a Communication row (tenant_id FK) — same
+        # "children before parents" ordering as everything else here.
+        db.execute(
+            delete(EmailVerificationToken).where(
+                EmailVerificationToken.user_id.in_(select(User.id).where(User.tenant_id == tenant_id))
+            )
+        )
+        db.execute(delete(Communication).where(Communication.tenant_id == tenant_id))
         db.execute(delete(User).where(User.tenant_id == tenant_id))
         db.execute(delete(Tenant).where(Tenant.id == tenant_id))
         db.commit()

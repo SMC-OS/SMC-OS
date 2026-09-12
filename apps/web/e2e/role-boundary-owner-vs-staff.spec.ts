@@ -1,6 +1,42 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+
+const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
+
+// Sprint 039 Production Readiness Defect Gate, Blocker 1 — see
+// e2e/project-operations.spec.ts's identical helper for the full
+// rationale (inviting a teammate now requires a verified email).
+async function verifyOwnerEmail(api: import("@playwright/test").APIRequestContext, email: string) {
+  const script = `
+import hashlib, secrets, uuid
+from datetime import datetime, timedelta, timezone
+from app.database import crud
+from app.database.database import SessionLocal
+
+db = SessionLocal()
+user = crud.get_user_by_email(db, ${JSON.stringify(email)})
+raw_token = secrets.token_urlsafe(32)
+token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+crud.create_email_verification_token(
+    db, id=uuid.uuid4(), user_id=user.id, token_hash=token_hash,
+    expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+)
+db.close()
+print(raw_token)
+`.trim();
+  const rawToken = execFileSync("python", ["-c", script], { cwd: REPO_ROOT, encoding: "utf-8" })
+    .trim()
+    .split("\n")
+    .pop() as string;
+  const confirm = await api.post("/api/v1/auth/email/verify/confirm", {
+    data: { token: rawToken },
+  });
+  expect(confirm.ok()).toBeTruthy();
+}
 
 /**
  * Sprint 027 (docs/SPRINTS/sprint-027.md §6.12/§8) — Owner-only controls
@@ -35,6 +71,7 @@ test("a_staff_session_sees_owner_only_controls_absent_not_merely_rejected", asyn
   expect(signup.ok()).toBeTruthy();
   const { access_token: ownerToken } = await signup.json();
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
+  await verifyOwnerEmail(api, OWNER_EMAIL);
 
   // Real Staff user via a real invitation accept (same mechanism as
   // e2e/project-operations.spec.ts), not a direct DB insert.

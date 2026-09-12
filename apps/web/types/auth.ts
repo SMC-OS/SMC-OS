@@ -6,6 +6,10 @@ export interface AuthUser {
   // Sprint 009 — every user now belongs to exactly one tenant.
   tenant_id: string;
   tenant_name: string;
+  // Sprint 039 Production Readiness Defect Gate, Blocker 1 — null means
+  // unverified (including every legacy user); an ISO timestamp string is
+  // when verification happened.
+  email_verified_at: string | null;
 }
 
 export interface LoginResponse {

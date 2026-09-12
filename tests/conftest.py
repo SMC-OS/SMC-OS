@@ -15,6 +15,7 @@ from app.database.models import (
     Customer,
     Document,
     EmailSuppression,
+    EmailVerificationToken,
     Invitation,
     Message,
     NotificationRecord,
@@ -86,6 +87,11 @@ def _cleanup_other_tenant():
         user = db.query(User).filter(User.email == OTHER_TENANT_EMAIL).first()
         if user is not None:
             tenant_id = user.tenant_id
+            # Sprint 039 Production Readiness Defect Gate, Blocker 1 —
+            # every real signup now creates an EmailVerificationToken row
+            # (user_id FK, no ondelete) — must go before the User delete
+            # below, same reasoning as every other child table here.
+            db.execute(delete(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id))
             # Sprint 012: TenantService.create() now logs a real ActivityLog
             # row against the new tenant's own id (ADR-029), so it must be
             # deleted before the Tenant row or the FK constraint added in

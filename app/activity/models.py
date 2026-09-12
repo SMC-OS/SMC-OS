@@ -34,6 +34,9 @@ class ActivityType(str, Enum):
     # Sprint 036
     AUTOMATION_CREATED = "automation_created"
     TASK_COMPLETED = "task_completed"
+    # Sprint 039 Production Readiness Defect Gate, Blocker 1
+    EMAIL_VERIFICATION_REQUESTED = "email_verification_requested"
+    EMAIL_VERIFIED = "email_verified"
 
 
 class ActivityEventCreate(BaseModel):

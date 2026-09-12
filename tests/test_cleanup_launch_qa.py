@@ -60,12 +60,28 @@ def _wipe_named_tenants(names: tuple[str, ...]) -> None:
         from app.database.models import (
             ActivityLog,
             Appointment,
+            Communication,
             Document,
+            EmailVerificationToken,
             Invitation,
             Message,
             NotificationRecord,
             PortalLink,
         )
+
+        # Sprint 039 Production Readiness Defect Gate, Blocker 1 — every
+        # real signup now creates an EmailVerificationToken (user_id FK,
+        # no ondelete) and a Communication row (tenant_id FK) — must go
+        # before the User/Tenant deletes below, same as every other child
+        # table here.
+        db.execute(
+            delete(EmailVerificationToken).where(
+                EmailVerificationToken.user_id.in_(
+                    select(User.id).where(User.tenant_id.in_(tenant_ids))
+                )
+            )
+        )
+        db.execute(delete(Communication).where(Communication.tenant_id.in_(tenant_ids)))
 
         # Mirrors resolve_plan/execute_plan's own orphan-quote handling —
         # a leftover anonymous quote (tenant_id IS NULL) from an earlier
@@ -225,8 +241,12 @@ def unrelated_tenant(client):
     try:
         user = db.query(User).filter(User.email == UNRELATED_TENANT_EMAIL).first()
         if user is not None:
-            from app.database.models import ActivityLog
+            from app.database.models import ActivityLog, Communication, EmailVerificationToken
 
+            db.execute(
+                delete(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id)
+            )
+            db.execute(delete(Communication).where(Communication.tenant_id == user.tenant_id))
             customer_ids = db.scalars(
                 select(Customer.id).where(Customer.tenant_id == user.tenant_id)
             ).all()
@@ -312,12 +332,23 @@ class TestExactMatchOnly:
         finally:
             db2 = SessionLocal()
             try:
-                from app.database.models import ActivityLog
+                from app.database.models import ActivityLog, Communication, EmailVerificationToken
 
                 # Same FK ordering constraint cleanup_launch_qa.py itself
                 # handles — signup logs a real ActivityLog row (Sprint
-                # 012, ADR-029), so it must go before User/Tenant here too.
+                # 012, ADR-029) and, since Sprint 039's Blocker 1, also an
+                # EmailVerificationToken (user_id FK) and a Communication
+                # row (tenant_id FK) for its verification-email attempt —
+                # all must go before User/Tenant here too.
                 db2.execute(delete(ActivityLog).where(ActivityLog.tenant_id == lookalike_tenant_id))
+                db2.execute(
+                    delete(EmailVerificationToken).where(
+                        EmailVerificationToken.user_id.in_(
+                            select(User.id).where(User.tenant_id == lookalike_tenant_id)
+                        )
+                    )
+                )
+                db2.execute(delete(Communication).where(Communication.tenant_id == lookalike_tenant_id))
                 db2.execute(delete(User).where(User.tenant_id == lookalike_tenant_id))
                 db2.execute(delete(Tenant).where(Tenant.id == lookalike_tenant_id))
                 db2.commit()
