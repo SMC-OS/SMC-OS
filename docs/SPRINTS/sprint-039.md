@@ -655,7 +655,7 @@ phase-per-PR precedent):
 | 3 | Stripe pricing/billing | Correct checkout/webhook/seat architecture on solid rails, but still the old 2-tier £79/£149 catalogue; no trial. | `sprint-039-gate-c-billing-pricing` — **done, see below.** |
 | 4 | GeoCore AI | Combination: `OPENAI_API_KEY` genuinely unset (owner gate) + tool-calling genuinely never built (v1 scope limit); frontend copy is accurate, not stale. | `sprint-039-gate-d-geocore-ai` — **done, see below.** |
 | 5 | Quote editing | Stone quotes have no edit endpoint at all; general quotes have a tested backend `PATCH` that the frontend never calls (dead code) and no edit UI. No revision concept exists. | `sprint-039-gate-e-quote-editing` — **done, see below.** |
-| 6 | Blurry logo | Real: `next/image` requests the 590×143px source at a display size that exceeds it at 2×/3× DPR; separately, the correct 1200×630 OG image already exists on disk but was never copied into `apps/marketing/public/brand/`. | Not started. |
+| 6 | Blurry logo | Real, but not the initial sizing hypothesis: display sizing is ample (~4x downscale from source). The actual cause is pixel-level — every brand asset is a raster crop from one flattened AI-generated board, no vector master exists anywhere in the repo. | `sprint-039-gate-f-logo-mitigation` — **partially mitigated, see below.** |
 | 7 | Stale stone positioning | Real: marketing homepage hero/copy/OG/JSON-LD still lead with "stone and construction"; `apps/web/app/signup/page.tsx` was already fixed to trade-neutral copy in Sprint 036 — only the marketing site regressed/was left behind. | Not started. |
 
 None of these seven overlap this sprint's own diff (verified via `git diff`/`git log`
@@ -1308,3 +1308,70 @@ path, so no human-review-gate question arises.
 - This branch is pushed and open as PR #32 (`sprint-039-gate-e-quote-editing`), with a
   real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet
   merged, not yet deployed to staging.
+
+### 14.6 Blocker 6 — Blurry logo on the marketing site: evidence
+
+**Branch:** `sprint-039-gate-f-logo-mitigation` (off `origin/main` @ `8e40039`, same
+base as the sibling gate branches). No migration.
+
+**Reproduction, before any change — the CSS/sizing hypothesis was tested and ruled
+out first:** the marketing header renders `/brand/horizontal-logo.png` (590×143
+source) via `next/image` at `width={200} height={49}`, and `.wordmark img { height:
+2.25rem; width: auto; }` displays it at roughly 147×36 CSS pixels. That is a ~4x
+downscale from the source — ample resolution even at 2–3x device pixel ratios.
+Confirmed directly rather than assumed: sizing and CSS are **not** the cause.
+
+**Actual root cause, confirmed at the pixel level:** the source PNG was cropped and
+zoomed 3x with nearest-neighbour scaling (no interpolation added) to inspect the raw
+source pixels directly. The letterforms show soft, feathered edges baked into the
+file itself — not a display, scaling, or Next.js compression artefact. This traces to
+the brand asset pack's own documentation
+(`.brand-assets-extracted/GeoCore-Official-Brand-Asset-Pack/README.txt`, present in
+the repo working tree but untracked):
+
+> "The board is a single flattened raster image, so these files are exact region
+> exports from that board... these are raster exports rather than original
+> vector/SVG source artwork... Do not redesign or reinterpret the G geometry."
+
+Every logo asset currently in use (`apps/marketing/public/brand/*.png`,
+`apps/web/public/brand/*.png`) is a crop from one flattened, AI-generated raster
+board (`00-geocore-official-brand-board.png`, 1536×1024 — a typical image-generation
+canvas size, not a design-tool export). **There is no vector (SVG/AI/EPS) master
+anywhere in the repository.** The softness is inherent to the source artwork, not
+something any code, CSS, or Next.js Image configuration change can fix.
+
+**What was deliberately NOT done:** no redrawing, sharpening, upscaling, AI
+enhancement, re-cropping, or geometry reinterpretation of the logo. The brand pack
+explicitly forbids reinterpreting the "G" geometry, and fabricating a "fixed" asset
+without owner approval would ship an unapproved brand asset — the same discipline
+applied to Blockers 3 and 4's owner-gated external dependencies.
+
+**What shipped — a safe, source-preserving mitigation only:**
+- `apps/marketing/app/page.tsx`: added `quality={100}` to the header logo's
+  `next/image`. Next.js's optimizer re-encodes at quality 75 by default; on an
+  already-soft source, that compounds the softness with avoidable extra lossy
+  compression for no benefit. This stops making a soft source *worse* — it does not
+  sharpen, upscale, or alter it in any way.
+- New regression test `apps/marketing/logo-quality.test.mjs` (static source-text
+  assertion, same pattern as the existing `indexability.test.mjs`): fails if
+  `quality={100}` is ever silently dropped from the header logo. Wired into CI as a
+  new step ("Test marketing logo quality mitigation") in the same required `frontend`
+  job as the existing indexability and sales-CTA contract checks
+  (`.github/workflows/ci.yml`), immediately after "Test marketing indexability
+  contract".
+
+**Verification run:**
+- `pnpm run test:logo-quality` (marketing) — **1 passed**.
+- `pnpm run test:indexability` (marketing) — **9 passed**, unaffected.
+- `pnpm run check-types`, `pnpm run lint`, `pnpm run build` (marketing) — all clean.
+
+**Status: PARTIALLY MITIGATED — owner vector/high-fidelity asset required.** The
+mitigation is real and shipped, but it does not resolve the underlying complaint on
+its own. Full resolution requires one of: (a) a genuine vector (SVG/AI/EPS) redraw of
+the approved "G" geometry from whoever controls the brand source, or (b) a
+higher-fidelity raster master supplied by the owner to re-export the crops from. This
+blocker is **not** being marked closed.
+
+This branch is pushed and open as PR #33 (`sprint-039-gate-f-logo-mitigation`), with a
+real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet merged,
+not yet deployed to staging.

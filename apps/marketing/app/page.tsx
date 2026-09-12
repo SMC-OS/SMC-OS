@@ -93,6 +93,15 @@ export default function HomePage() {
               width={200}
               height={49}
               priority
+              // Sprint 039 Production Readiness Defect Gate, Blocker 6 — the
+              // source asset is already soft (a raster crop from a
+              // flattened brand board, no vector master exists; see
+              // docs/SPRINTS/sprint-039.md Sec 14.6). Next.js's optimizer
+              // re-encodes at quality 75 by default, compounding that
+              // softness with extra lossy compression for no reason. This
+              // is a safe mitigation only — it stops making a soft source
+              // worse, it does not sharpen, upscale or redraw it.
+              quality={100}
             />
           </Link>
         </div>
