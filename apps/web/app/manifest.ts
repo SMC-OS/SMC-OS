@@ -7,7 +7,10 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "GeoCore",
     short_name: "GeoCore",
-    description: "AI operating system for stone and construction businesses",
+    // Sprint 039 Production Readiness Defect Gate, Blocker 7 — this had
+    // drifted from apps/web/app/layout.tsx's own metadata.description,
+    // which was already corrected. Matched to it exactly.
+    description: "The AI operating system for construction and renovation businesses",
     start_url: "/",
     display: "standalone",
     background_color: "#0F2E23",

@@ -27,7 +27,10 @@ export const metadata: Metadata = {
 const CAPABILITIES = [
   {
     title: "Quoting and estimating",
-    body: "Multi-item quotes with real material and slab calculations, priced consistently every time.",
+    // Sprint 039 Production Readiness Defect Gate, Blocker 7 — labour and
+    // materials lead; specialist slab calculations are named as one input
+    // among several, not the headline mechanism for every trade.
+    body: "Multi-item quotes — labour, materials and specialist slab calculations — priced consistently every time.",
   },
   {
     title: "Projects and scheduling",
@@ -111,7 +114,13 @@ export default function HomePage() {
         <section className="hero">
           <div className="shell">
             <p className="eyebrow">People · Projects · Intelligence</p>
-            <h1>The operating system for stone and construction businesses.</h1>
+            {/* Sprint 039 Production Readiness Defect Gate, Blocker 7 — the
+                locked top-level positioning: an AI operating system for
+                construction and renovation businesses in general. Stone
+                and worktops are a specialist vertical GeoCore supports
+                (see the "Quoting stone or worktops?" template), never the
+                assumed default. */}
+            <h1>The AI operating system for construction and renovation businesses.</h1>
             <hr className="rule" />
             <p>
               GeoCore brings quoting, projects, scheduling and client
@@ -133,8 +142,9 @@ export default function HomePage() {
           <div className="shell">
             <h2>What GeoCore does</h2>
             <p className="section__lead">
-              Built around the way a stone and construction business actually
-              runs: enquiry, quote, approval, project, installation, invoice.
+              Built around the way a construction or renovation business
+              actually runs: enquiry, quote, approval, project, installation,
+              invoice.
             </p>
             <ul className="grid">
               {CAPABILITIES.map((capability) => (

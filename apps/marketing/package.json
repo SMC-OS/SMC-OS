@@ -9,7 +9,8 @@
     "lint": "eslint",
     "check-types": "tsc --noEmit",
     "test:indexability": "node --test indexability.test.mjs",
-    "test:logo-quality": "node --test logo-quality.test.mjs"
+    "test:logo-quality": "node --test logo-quality.test.mjs",
+    "test:positioning": "node --test positioning.test.mjs"
   },
   "dependencies": {
     "next": "16.2.12",

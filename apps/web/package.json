@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:robots": "node --test app/robots.test.mjs",
-    "test:sales-cta": "node --test app/pricing/sales-cta.test.mjs"
+    "test:sales-cta": "node --test app/pricing/sales-cta.test.mjs",
+    "test:positioning": "node --test app/positioning.test.mjs"
   },
   "dependencies": {
     "next": "16.2.12",

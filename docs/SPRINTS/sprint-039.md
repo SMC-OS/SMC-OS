@@ -656,7 +656,7 @@ phase-per-PR precedent):
 | 4 | GeoCore AI | Combination: `OPENAI_API_KEY` genuinely unset (owner gate) + tool-calling genuinely never built (v1 scope limit); frontend copy is accurate, not stale. | `sprint-039-gate-d-geocore-ai` — **done, see below.** |
 | 5 | Quote editing | Stone quotes have no edit endpoint at all; general quotes have a tested backend `PATCH` that the frontend never calls (dead code) and no edit UI. No revision concept exists. | `sprint-039-gate-e-quote-editing` — **done, see below.** |
 | 6 | Blurry logo | Real, but not the initial sizing hypothesis: display sizing is ample (~4x downscale from source). The actual cause is pixel-level — every brand asset is a raster crop from one flattened AI-generated board, no vector master exists anywhere in the repo. | `sprint-039-gate-f-logo-mitigation` — **partially mitigated, see below.** |
-| 7 | Stale stone positioning | Real: marketing homepage hero/copy/OG/JSON-LD still lead with "stone and construction"; `apps/web/app/signup/page.tsx` was already fixed to trade-neutral copy in Sprint 036 — only the marketing site regressed/was left behind. | Not started. |
+| 7 | Stale stone positioning | Real: marketing homepage hero/copy/OG/JSON-LD still lead with "stone and construction"; `apps/web/app/signup/page.tsx` was already fixed to trade-neutral copy in Sprint 036 — only the marketing site regressed/was left behind. | `sprint-039-gate-g-trade-neutral-positioning` — **done, see below.** |
 
 None of these seven overlap this sprint's own diff (verified via `git diff`/`git log`
 against every relevant file, not assumed), so each is being closed independently and
@@ -1375,3 +1375,116 @@ blocker is **not** being marked closed.
 This branch is pushed and open as PR #33 (`sprint-039-gate-f-logo-mitigation`), with a
 real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet merged,
 not yet deployed to staging.
+
+### 14.7 Blocker 7 — Stale stone-specific positioning: evidence
+
+**Branch:** `sprint-039-gate-g-trade-neutral-positioning` (off `origin/main` @
+`8e40039`, same base as the sibling gate branches). No migration. Note: this branch
+and Blocker 6's (`sprint-039-gate-f-logo-mitigation`) both touch
+`apps/marketing/app/page.tsx` — Blocker 6 only the header `<Image>`'s `quality` prop,
+this one only the hero/feature copy further down the same file. Different hunks, no
+line-level overlap; whichever merges second should merge cleanly, same as the
+Alembic `down_revision` friction already documented for the other sibling branches.
+
+**Audit performed, read-only, before any change** — every surface named in the
+blocker:
+- Homepage hero, supporting sections, feature cards (`apps/marketing/app/page.tsx`)
+- Marketing meta description / Open Graph / structured data (all three driven by one
+  `SITE_DESCRIPTION` constant in `apps/marketing/lib/site.ts`)
+- `apps/web`'s own app metadata (`apps/web/app/layout.tsx`) and PWA manifest
+  (`apps/web/app/manifest.ts`)
+- Pricing copy (`apps/web/app/pricing/page.tsx`) — clean, no stone-specific top-level
+  language found
+- Signup/onboarding copy (`apps/web/app/signup/page.tsx`, `apps/web/app/onboarding/`)
+  — already trade-neutral, fixed in Sprint 036 per that file's own comment ("The
+  previous placeholders... told every plumber, roofer and decorator signing up that
+  this product was not for them") — confirmed current placeholders are
+  "Hartley Building Ltd" / "Sam Hartley", not stone-specific
+- AI-facing copy (`app/ai/service.py`'s `_SYSTEM_PROMPT`) — already trade-neutral
+  ("Stone and worktops are one specialism among many, never the assumed default"),
+  confirmed unchanged and correct
+- Root `README.md`
+
+**Found — four genuine top-level positioning defects, plus one drift bug:**
+1. `apps/marketing/lib/site.ts`'s `SITE_DESCRIPTION` — "the AI operating system for
+   **stone and construction** businesses". This single constant feeds the marketing
+   meta description, Open Graph description, and all three `structuredData` entries
+   (`Organization`, `WebSite`, `SoftwareApplication`) in `page.tsx` — one fix here
+   corrects all of them at once.
+2. `apps/marketing/app/page.tsx`'s hero `<h1>` — "The operating system for stone and
+   construction businesses."
+3. `apps/marketing/app/page.tsx`'s feature-section lead — "Built around the way a
+   stone and construction business actually runs."
+4. `apps/marketing/app/page.tsx`'s first capability card — "Multi-item quotes with
+   real material **and slab calculations**, priced consistently every time" — the
+   very first feature a visitor reads named slab calculations as the headline
+   mechanism, for a product now positioned around construction and renovation in
+   general.
+5. **Drift, not a fresh defect:** `apps/web/app/layout.tsx`'s own metadata had
+   *already* been corrected to "The AI operating system for construction and
+   renovation businesses" (Sprint 034/036 work, confirmed by reading it directly) —
+   but `apps/web/app/manifest.ts`'s PWA manifest description still read "AI operating
+   system for stone and construction businesses", never updated to match. The two
+   had silently diverged.
+
+**What shipped:**
+- `apps/marketing/lib/site.ts`: `SITE_DESCRIPTION` corrected to "construction and
+  renovation businesses", fixing the meta description, Open Graph, and all
+  structured-data entries in one place.
+- `apps/marketing/app/page.tsx`: hero `<h1>` corrected to "The AI operating system
+  for construction and renovation businesses."; feature-section lead corrected to
+  "Built around the way a construction or renovation business actually runs"; first
+  capability card reworded to "Multi-item quotes — labour, materials and specialist
+  slab calculations — priced consistently every time" (labour and materials lead;
+  slab calculations named as one input among several, not the headline).
+- `apps/web/app/manifest.ts`: description corrected to match `layout.tsx` exactly
+  ("The AI operating system for construction and renovation businesses").
+- `README.md`: same correction to the one-line project description.
+- Stone/worktops remain fully supported and unchanged as a specialist
+  vertical/template throughout — `/quotes/new/stone`, the "Quoting stone or
+  worktops?" callout on `/quotes/new`, the stone-kind quote badge, and every backend
+  stone-pricing code path are untouched. This blocker corrects positioning claims
+  about what GeoCore *is*, not the stone functionality itself.
+
+**New regression tests (TDD: written to assert the corrected copy and confirmed
+failing against the pre-fix source before landing the fix, then passing after):**
+- `apps/marketing/positioning.test.mjs` (3 tests) — asserts `SITE_DESCRIPTION` and
+  the homepage `<h1>` both say "construction and renovation businesses" and neither
+  the site's `lib/site.ts` nor `page.tsx` contains "stone and construction" or
+  "operating system for stone" anywhere.
+- `apps/web/app/positioning.test.mjs` (2 tests) — asserts `layout.tsx` and
+  `manifest.ts` both say "construction and renovation businesses" and neither
+  contains "stone and construction", closing the drift gap between them for good.
+- Both wired into `.github/workflows/ci.yml` as new required steps ("Test app
+  trade-neutral positioning", "Test marketing trade-neutral positioning") in the same
+  job as the existing indexability/sales-CTA/logo-quality contract checks.
+
+**Verification run:**
+- `pnpm --filter marketing test:positioning` — **3 passed**.
+- `pnpm --filter marketing test:indexability` — **9 passed**, unaffected.
+- `pnpm --filter web test:positioning` — **2 passed**.
+- `git diff --check` — clean, no whitespace errors.
+- `pnpm run check-types` (repo-wide, via turbo) — **3/3 packages successful**
+  (`web`, `marketing`, `@repo/ui`).
+- `pnpm run lint` (repo-wide) — clean.
+- `pnpm run build` (repo-wide): the combined turbo run hit one transient failure —
+  `next/font` could not reach `fonts.googleapis.com` during the marketing build, a
+  network-connectivity fault in this sandbox, not a code defect. Confirmed by
+  re-running each app's build standalone immediately after: `apps/marketing` —
+  clean; `apps/web` — clean. Not treated as a real failure without this
+  confirmation, per this gate's established discipline of never dismissing a
+  failure without verifying its cause first.
+- Final sweep for any remaining stale reference: `grep -ri "stone and construction"`
+  across the entire repository returns matches only inside the two new test files'
+  own negative assertions — zero remaining occurrences in source, copy, or docs.
+
+**Known limitations, honestly stated:**
+- E2E: no new E2E coverage was added. This blocker is a copy/metadata correction with
+  no new interactive behaviour to exercise, and the existing E2E suite does not
+  assert marketing homepage copy (the marketing app has no E2E specs of its own —
+  its own indexability/positioning contracts are covered by the static
+  `node --test` files instead, matching how `indexability.test.mjs` already covers
+  that app without Playwright).
+- This branch is pushed and open as PR #34 (`sprint-039-gate-g-trade-neutral-positioning`),
+  with a real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet
+  merged, not yet deployed to staging.

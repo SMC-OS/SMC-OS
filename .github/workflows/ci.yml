@@ -102,6 +102,14 @@ jobs:
       - name: Test pricing sales CTA contract
         run: pnpm --filter web test:sales-cta
 
+      # Sprint 039 Production Readiness Defect Gate, Blocker 7 — the locked
+      # top-level positioning must not silently drift back to stone-first.
+      - name: Test app trade-neutral positioning
+        run: pnpm --filter web test:positioning
+
+      - name: Test marketing trade-neutral positioning
+        run: pnpm --filter marketing test:positioning
+
       - name: Build
         run: pnpm build
 
