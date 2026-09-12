@@ -26,6 +26,7 @@ from app.database.database import SessionLocal
 from app.database.models import (
     ActivityLog,
     Communication,
+    EmailVerificationToken,
     Invitation,
     ProcessedStripeEvent,
     Subscription,
@@ -668,6 +669,13 @@ def _cleanup_trial_signup():
             db.execute(delete(Subscription).where(Subscription.tenant_id == user.tenant_id))
             db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == user.tenant_id))
             db.execute(delete(Communication).where(Communication.tenant_id == user.tenant_id))
+            # Sprint 039 Blocker 1 merged after this test was first written —
+            # a real signup now also creates an EmailVerificationToken
+            # (user_id FK, no ondelete), same "children before parents"
+            # ordering as everything else here.
+            db.execute(
+                delete(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id)
+            )
         db.execute(delete(User).where(User.email == TRIAL_SIGNUP_EMAIL))
         db.execute(delete(Tenant).where(Tenant.name == TRIAL_SIGNUP_COMPANY))
         db.commit()

@@ -24,6 +24,7 @@ from app.database.models import (
     Communication,
     EmailVerificationToken,
     Invitation,
+    Subscription,
     Tenant,
     User,
 )
@@ -59,6 +60,11 @@ def _cleanup():
                 # ondelete) — same "delete before the Tenant row"
                 # requirement every other test file's cleanup follows.
                 db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
+                # Sprint 039 Blocker 3 merged after this test was first
+                # written — a real signup now also starts a real trial
+                # Subscription row (tenant_id FK, no ondelete), same
+                # "delete before the Tenant row" requirement.
+                db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
         db.execute(delete(Tenant).where(Tenant.name.in_([TENANT_NAME, SIGNUP_COMPANY])))
         db.commit()
     finally:
