@@ -1485,6 +1485,74 @@ failing against the pre-fix source before landing the fix, then passing after):*
   its own indexability/positioning contracts are covered by the static
   `node --test` files instead, matching how `indexability.test.mjs` already covers
   that app without Playwright).
-- This branch is pushed and open as PR #34 (`sprint-039-gate-g-trade-neutral-positioning`),
-  with a real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet
-  merged, not yet deployed to staging.
+- This branch was PR #34 (`sprint-039-gate-g-trade-neutral-positioning`) — merged into
+  `main` (see §14.8 for the final merged state).
+
+### 14.8 All seven blockers merged into `main`
+
+All seven Production Readiness Defect Gate blockers are now code-complete and merged
+into `main`, in the order below. Each PR was rebased onto the previous one's merge
+commit immediately before merging (not merged from its original, now-stale base), so
+`main`'s history is linear and every PR's own CI run reflects the code as it actually
+landed:
+
+| # | Blocker | PR | Merge commit |
+|---|---|---|---|
+| 1 | Email verification | [#28](https://github.com/SMC-OS/SMC-OS/pull/28) | `21744b0` |
+| 2 | Forgot/reset password | [#29](https://github.com/SMC-OS/SMC-OS/pull/29) | `f0da114` |
+| 3 | Pricing/Stripe billing | [#30](https://github.com/SMC-OS/SMC-OS/pull/30) | `14e229a` |
+| 4 | GeoCore AI capability | [#31](https://github.com/SMC-OS/SMC-OS/pull/31) | `c075e67` |
+| 5 | Quote editing | [#32](https://github.com/SMC-OS/SMC-OS/pull/32) | `efa8a55` |
+| 6 | Blurry logo (mitigation) | [#33](https://github.com/SMC-OS/SMC-OS/pull/33) | `fcf1559` |
+| 7 | Trade-neutral positioning | [#34](https://github.com/SMC-OS/SMC-OS/pull/34) | `479843f` |
+
+**Final `main` SHA:** `479843f0737d9fa6f5fea6e6c827e05a7524c133`.
+**Final Alembic head:** `a3b4c5d6e7f8` — a single, strictly linear head (verified via
+`alembic heads` after every merge, not assumed), extending
+`b2c3d4e5f6a7` (Sprint 038's own head) → `e1f2a3b4c5d6` (Blocker 1) →
+`f2a3b4c5d6e7` (Blocker 2) → `a3b4c5d6e7f8` (Blocker 3). Blockers 4-7 needed no schema
+changes.
+
+**Merge-order complications, all resolved, none papered over:**
+- PRs #30, #31 and #32 were all cut from the same original head (`b2c3d4e5f6a7`) in
+  parallel. Each was rebased onto the then-current `main` immediately before its own
+  merge, with its migration's `down_revision` updated to point at the real new head
+  (never a synthetic Alembic merge migration — a clean linear rebase was possible
+  every time). After each rebase, the target database was dropped and recreated from
+  scratch and `alembic upgrade head` was run start-to-finish, specifically to catch
+  the case where a migration's declared parent changes after a stale local database
+  had already recorded an old "current revision" — a real failure mode this gate hit
+  and fixed, not a hypothetical one (see below).
+- Rebasing surfaced real conflicts in shared files (`app/activity/models.py`,
+  `app/auth/rate_limit.py`, `app/database/crud.py`, `app/database/models.py`, several
+  test files' manual tenant-cleanup helpers, and `docs/SPRINTS/sprint-039.md` itself)
+  — every one an *additive* collision (two blockers each adding their own enum value,
+  their own cleanup line, their own doc section) resolved by keeping both sides, never
+  by discarding either blocker's work.
+- Rebasing onto merged `main` exposed a real, previously-latent bug class, found by
+  actually running the full suite after each rebase rather than assuming a clean
+  rebase implies clean tests: `test_billing.py`'s trial-signup cleanup didn't know
+  about `EmailVerificationToken` (Blocker 1 postdated it), and
+  `test_email_verification.py` / `test_password_reset.py`'s cleanups didn't know about
+  `Subscription` (Blocker 3 postdated them). Fixed in a dedicated follow-up commit on
+  PR #30, verified with a full clean-database test run before pushing.
+- PRs #33 and #34 both edit `apps/marketing/app/page.tsx` and
+  `apps/marketing/package.json` — non-overlapping hunks each time (Blocker 6 only the
+  header `<Image>`'s `quality` prop; Blocker 7 only the hero/feature copy and its own
+  new `test:positioning` script), so both merged cleanly with no functional conflict.
+  Confirmed after rebasing #34: both `test:logo-quality` and `test:positioning` pass
+  together, proving the auto-merged `page.tsx` genuinely carries both blockers' changes
+  intact.
+
+**Merged-`main` CI:** GitHub Actions ran automatically on the push produced by merging
+PR #34 (the final merge), against the exact final SHA `479843f` —
+[run 34693763136](https://github.com/SMC-OS/SMC-OS/actions/runs/34693763136):
+**backend ✓, frontend ✓, e2e ✓.** This is the authoritative, real-CI confirmation that
+all seven blockers coexist correctly on `main`, not an inference from each PR's own
+(now-superseded) individual run.
+
+**Status: all seven blockers are code-complete on `main`.** Three remain owner-gated
+before the underlying user-facing problems are fully resolved end-to-end (Stripe
+Price IDs for Blocker 3, `OPENAI_API_KEY` for Blocker 4, a vector/high-fidelity logo
+source for Blocker 6) — see each blocker's own evidence section above for the exact
+action required. `main` has not been deployed to staging or production yet.
