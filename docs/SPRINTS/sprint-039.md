@@ -653,7 +653,7 @@ phase-per-PR precedent):
 | 1 | Email verification | Genuinely missing — signup never verified an email anywhere. | `sprint-039-gate-a-email-verification` — **done, see below.** |
 | 2 | Forgot/reset password | Genuinely missing — no route, no token table, no UI link. | `sprint-039-gate-b-password-reset` — **done, see below.** |
 | 3 | Stripe pricing/billing | Correct checkout/webhook/seat architecture on solid rails, but still the old 2-tier £79/£149 catalogue; no trial. | `sprint-039-gate-c-billing-pricing` — **done, see below.** |
-| 4 | GeoCore AI | Combination: `OPENAI_API_KEY` genuinely unset (owner gate) + tool-calling genuinely never built (v1 scope limit); frontend copy is accurate, not stale. | Not started. |
+| 4 | GeoCore AI | Combination: `OPENAI_API_KEY` genuinely unset (owner gate) + tool-calling genuinely never built (v1 scope limit); frontend copy is accurate, not stale. | `sprint-039-gate-d-geocore-ai` — **done, see below.** |
 | 5 | Quote editing | Stone quotes have no edit endpoint at all; general quotes have a tested backend `PATCH` that the frontend never calls (dead code) and no edit UI. No revision concept exists. | Not started. |
 | 6 | Blurry logo | Real: `next/image` requests the 590×143px source at a display size that exceeds it at 2×/3× DPR; separately, the correct 1200×630 OG image already exists on disk but was never copied into `apps/marketing/public/brand/`. | Not started. |
 | 7 | Stale stone positioning | Real: marketing homepage hero/copy/OG/JSON-LD still lead with "stone and construction"; `apps/web/app/signup/page.tsx` was already fixed to trade-neutral copy in Sprint 036 — only the marketing site regressed/was left behind. | Not started. |
@@ -1078,4 +1078,133 @@ ever, for self-service.
   objects above to exist first, and is the next step before any staging sign-off.
 - This branch is pushed and open as PR #30 (`sprint-039-gate-c-billing-pricing`), with
   a real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet
+  merged, not yet deployed to staging.
+
+### 14.4 Blocker 4 — GeoCore AI capability: evidence
+
+**Branch:** `sprint-039-gate-d-geocore-ai` (off `origin/main` @ `8e40039`, same base as
+the sibling gate branches). No migration — this blocker needed no schema change.
+
+**Reproduction, read-only, before any change:**
+- **origin/main / current Sprint 039 branch (`sprint-039-communications-ai-pipeline`,
+  not yet merged):** `app/ai/service.py` on both is architecturally identical for the
+  symptom in question — a real LLM is used only when `OPENAI_API_KEY` is configured;
+  otherwise the service falls back to `app/brain/BrainManager`, a keyword router over
+  the material catalogue, and labels every reply `engine: "builtin"`. The unmerged
+  Sprint 039 branch does *not* fix Blocker 4's root cause — it only corrects a
+  different, narrower wording bug (below) and adds a real message-drafting feature
+  (Phase 4+5, human-review-gated) that does not exist on `main`. Deliberately **not**
+  pulled into this branch: merging an entire 5-phase, not-yet-independently-verified
+  feature branch into a narrow defect-gate fix would blow this blocker's scope and its
+  isolation from PR #30-style review. Flagged here as a separate decision for whoever
+  owns merging `sprint-039-communications-ai-pipeline` itself.
+- **staging (`simo-api-staging`) and production (`simo-api-production`), Railway
+  project `simo-os`:** `describe-service` was used for both — it lists variable
+  *names* only, never values, so no secret was read, printed or logged at any point in
+  this investigation. Neither service's variable list contains `OPENAI_API_KEY` or any
+  other `OPENAI_*` name. Full staging variable list: `APP_ENV, CORS_ALLOWED_ORIGINS,
+  DATABASE_URL, JWT_ALGORITHM, JWT_EXPIRE_MINUTES, JWT_SECRET_KEY, PORT,
+  READINESS_TIMEOUT_SECONDS, RESEND_API_KEY, RESEND_WEBHOOK_SECRET, SEED_ADMIN_EMAIL,
+  SEED_ADMIN_PASSWORD, SEED_DATA_ENABLED, UPLOAD_DIR`. Production's list is the same
+  shape minus `READINESS_TIMEOUT_SECONDS`, plus `RAILWAY_RUN_UID`. This is the
+  authoritative, direct confirmation the key is absent in both environments — not an
+  inference from behaviour.
+- **Live staging behaviour**, confirmed directly (one throwaway signup against
+  `simo-api-staging-staging.up.railway.app`, cleaned up as ordinary test data — no
+  production writes were made, since the Railway config check above already
+  conclusively answers the same question for production without needing to create any
+  data in the live commercial database): `GET /api/v1/ai/capabilities` →
+  `llm_configured: false`, `workspace_context: false`, `quote_drafting: false`,
+  `material_search: true`, with the honest note "No AI provider is connected to this
+  workspace...". `POST /api/v1/ai/chat` → `engine: "builtin"`, reply is the plain,
+  accurate "I'm GeoCore's built-in assistant..." fallback copy. This is the running
+  process itself reporting its real state, not a guess.
+- **Frontend (`apps/web/app/ai/page.tsx`):** entirely capability-driven — reads
+  `capabilities.llm_configured` to choose between `SUGGESTIONS_WITH_LLM` and
+  `SUGGESTIONS_BUILTIN`, to pick the header subtitle, and to show the "No AI provider
+  is connected..." banner. No hardcoded or stale copy found. **Verdict: not a frontend
+  bug** — the UI is accurately reflecting exactly what the backend reports.
+- **Workspace context (`app/ai/context.py`):** already a genuine, tenant-scoped,
+  bounded, PII-free summary of quotes/projects/tasks — a real "full business-context"
+  payload, not just materials. Gated behind the same missing key, not separately
+  broken.
+
+**Genuine code defect found and fixed (independent of the owner gate):** the system
+prompt (`app/ai/service.py`, `_SYSTEM_PROMPT`) told the model "GeoCore cannot send
+email, SMS or messages to customers" — false since Sprint 038 shipped real quote
+delivery and follow-up automation on `main` itself. The assistant was instructed to
+tell users their own product couldn't do something it does every day, whenever an LLM
+*is* configured. Corrected to state GeoCore itself can email a customer (e.g.
+delivering a quote), always as a person's action in GeoCore, never the AI's own.
+Deliberately worded without any reference to AI-driven "drafting", since that
+capability does not exist on this branch's base (`main`) — only on the unmerged
+communications-ai-pipeline branch. New regression test
+`test_the_prompt_does_not_claim_geocore_cannot_email_customers` locks this down via
+the existing stub-client pattern already used by this test file.
+
+**Invariants preserved:** tenant isolation and bounded/PII-free context were already
+enforced by `app/ai/context.py` and untouched; no invented figures (the system prompt
+still explicitly forbids this); no silent sends and no destructive actions (the
+service has no tools and still cannot write); the human-review gate for outbound
+AI-assisted communication does not exist on this branch and was not added, so there is
+nothing to bypass. This fix only removes a false claim from the model's own
+instructions — it grants the model no new capability.
+
+**A separate, unrelated pre-existing defect found incidentally, not fixed here (out of
+this blocker's scope):** while running the full backend suite,
+`tests/test_automations.py::test_project_starting_scan_notifies_once` and
+`tests/test_dashboard.py::test_dashboard_reflects_real_data` both failed. Root-caused,
+not dismissed: both rely on comparing a Python-local `date.today()` (used in
+`app/database/crud.py`'s `count_quotes_today` and in the automation scanner's
+"starting tomorrow" query) against a date derived from a `timestamptz` column inside
+Postgres, whose session timezone need not match the application host's local
+timezone — a real, latent day-boundary bug, not test flakiness. Confirmed
+pre-existing and unrelated to this change by stashing this branch's entire diff and
+re-running the same two tests against unmodified `origin/main`: identical failures.
+Not fixed here because it is unrelated to GeoCore AI and is not one of the seven named
+blockers — flagged for a separate, dedicated fix.
+
+**Owner gate — the blocking item for this blocker's main symptom:**
+
+| Field | Answer |
+| --- | --- |
+| Exact variable name(s) | `OPENAI_API_KEY` (required). `OPENAI_MODEL` (optional — defaults to `gpt-4o-mini` in code; only needed to use a different model). |
+| Exact Railway service(s) | `simo-api-staging` (environment `staging`) and `simo-api-production` (environment `production`), project `simo-os`. |
+| Separate keys for staging vs. production? | Recommended: yes, two separate OpenAI API keys, one per environment — mirrors the existing pattern for every other provider in this codebase (Resend, Stripe) and means a staging key can be rotated or rate-limited without touching production traffic. Not a hard requirement of the code (it reads one `OPENAI_API_KEY` value per environment either way). |
+| Model/config variable also required? | No. `OPENAI_MODEL` has a working default (`gpt-4o-mini`) baked into `app/core/config.py`. Only set it if a different model is wanted. |
+| Key alone sufficient, or is a redeploy/restart required? | Setting a Railway service variable triggers Railway's normal automatic redeploy of that service; no manual restart step beyond that. Because `AIService._get_client()` constructs the OpenAI client lazily on first real use (never at import or startup), the new key takes effect as soon as the new deployment is live — no additional app-level cache to bust. |
+| Exact post-configuration verification steps | 1) `GET /api/v1/ai/capabilities` (authenticated) on the environment just configured — expect `llm_configured: true`, `workspace_context: true`, `quote_drafting: true`. 2) `POST /api/v1/ai/chat` with a business question (e.g. "What needs my attention today?") — expect `engine: "llm"` and a reply grounded in that tenant's real quotes/projects/tasks, not a material lookup. 3) Confirm the frontend `/ai` page shows the `SUGGESTIONS_WITH_LLM` prompts and no "No AI provider is connected" banner. 4) Ask a question with no real answer in the workspace summary and confirm the model says so rather than inventing a figure (per the system prompt's explicit instruction). Repeat all four for the other environment once its own key is set — the two are configured independently. |
+
+**Verification run:**
+- Backend: `python -m pytest tests/test_geocore_ai.py` — **12 passed** (11 pre-existing
+  + 1 new regression test for the corrected prompt wording). Full suite:
+  **957 passed, 1 skipped, 3 failed** — one failure is the same pre-existing,
+  this-machine-specific `test_runtime_config.py` flake already documented in
+  Blocker 2's evidence (§14.2); the other two
+  (`test_automations.py::test_project_starting_scan_notifies_once`,
+  `test_dashboard.py::test_dashboard_reflects_real_data`) are the pre-existing,
+  unrelated day-boundary defect described above, confirmed present on unmodified
+  `origin/main` with this branch's changes stashed out.
+- Frontend: no frontend changes were needed — `apps/web/app/ai/page.tsx` was already
+  fully capability-driven (confirmed by reading it directly, not assumed).
+- E2E: no new E2E coverage was needed for this fix. The corrected system-prompt
+  wording is only ever sent to a real LLM, which is not configured anywhere Playwright
+  runs (locally or in CI) — the existing backend unit test with a stub client
+  (`AIService(client=stub)`) is the correct and only way to verify prompt content
+  without a real provider. The existing E2E spec
+  (`geocore-ai-and-settings.spec.ts::geocore_ai_holds_a_conversation_and_never_shows_developer_internals`)
+  continues to exercise the unaffected builtin path and is untouched.
+
+**Known limitations, honestly stated:**
+- The dominant symptom ("presents as a material lookup bot") is **not yet resolved in
+  either staging or production** — it is owner-gated on `OPENAI_API_KEY`, per the table
+  above. No code change can fix this; the implementation is already correct and
+  waiting on the credential.
+- The "AI drafting with a human review gate" feature (Phase 4+5 of
+  `sprint-039-communications-ai-pipeline`) is real, already built, and not yet merged
+  anywhere — a further, separate scope/merge decision, not part of this fix.
+- The pre-existing day-boundary bug in `count_quotes_today`/the automation scanner
+  (above) remains unfixed — out of scope for Blocker 4, flagged for separate work.
+- This branch is pushed and open as PR #31 (`sprint-039-gate-d-geocore-ai`), with a
+  real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet
   merged, not yet deployed to staging.

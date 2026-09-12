@@ -163,6 +163,23 @@ def test_the_prompt_is_grounded_and_carries_no_contact_details(db, auth_headers,
     assert "1 Secret Lane" not in prompt
 
 
+def test_the_prompt_does_not_claim_geocore_cannot_email_customers(db, auth_headers, client):
+    # Sprint 039 Production Readiness Defect Gate, Blocker 4: the prompt
+    # used to say "GeoCore cannot send email, SMS or messages to
+    # customers", which stopped being true once Sprint 038 shipped quote
+    # delivery and follow-up automation. It must never tell a user their
+    # own product can't do something it does every day.
+    stub = _StubClient()
+    service = AIService(client=stub)
+    tenant_id = uuid.UUID(client.get("/api/v1/auth/me", headers=auth_headers).json()["tenant_id"])
+
+    service.chat(db, tenant_id, [ChatMessage(content="Can GeoCore email my customer?")])
+    system_prompt = stub.sent[0]["content"]
+
+    assert "cannot send email" not in system_prompt.lower()
+    assert "geocore itself can email a customer" in system_prompt.lower()
+
+
 def test_context_is_bounded_and_tenant_scoped(db, auth_headers, client):
     tenant_id = uuid.UUID(client.get("/api/v1/auth/me", headers=auth_headers).json()["tenant_id"])
     summary = ai_context.build(db, tenant_id)
