@@ -248,7 +248,7 @@ test("a_draft_general_quote_can_be_edited_and_the_change_is_saved", async ({ pag
 
   await page.getByRole("link", { name: /back to the quote/i }).click();
   await page.waitForURL(`**/quotes/${created.id}`);
-  await expect(page.getByText("£1,080.00")).toBeVisible();
+  await expect(page.getByText("£1,080.00").first()).toBeVisible();
 
   // Once sent, the same quote is a document the customer already has —
   // editing it is no longer offered.
