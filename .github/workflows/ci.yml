@@ -92,6 +92,11 @@ jobs:
       - name: Test marketing indexability contract
         run: pnpm --filter marketing test:indexability
 
+      # Sprint 039 Production Readiness Defect Gate, Blocker 6 — the header
+      # logo's quality={100} mitigation must not be silently dropped.
+      - name: Test marketing logo quality mitigation
+        run: pnpm --filter marketing test:logo-quality
+
       # Sprint 034 (Phase 3) — no hardcoded sales mailbox may ship on the
       # public pricing page; a bouncing address loses the enquiry silently.
       - name: Test pricing sales CTA contract
