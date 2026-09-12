@@ -223,12 +223,15 @@ test("a_draft_general_quote_can_be_edited_and_the_change_is_saved", async ({ pag
   await page.goto(`/quotes/${created.id}`);
   await page.waitForLoadState("networkidle");
 
-  await page.getByRole("link", { name: "Edit" }).click();
+  // exact: true — the customer's own link on this page ("Pytest E2E 036
+  // Customer edit-...", from this test's own unique run id) otherwise
+  // substring-matches "Edit" too, a strict-mode violation.
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page.waitForURL(`**/quotes/${created.id}/edit`);
 
   // The existing line is pre-filled, not started from a blank form.
   await expect(page.getByLabel("Description")).toHaveValue("Strip out existing kitchen");
-  await expect(page.getByLabel("Quantity")).toHaveValue(2);
+  await expect(page.getByLabel("Quantity")).toHaveValue("2");
 
   await page.getByLabel("Quantity").fill("3");
 
@@ -251,7 +254,7 @@ test("a_draft_general_quote_can_be_edited_and_the_change_is_saved", async ({ pag
   // editing it is no longer offered.
   await page.getByRole("button", { name: "Mark as sent" }).click();
   await expect(page.getByText("Sent", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Edit" })).not.toBeVisible();
+  await expect(page.getByRole("link", { name: "Edit", exact: true })).not.toBeVisible();
 
   await api.dispose();
 });
