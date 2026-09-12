@@ -1393,6 +1393,8 @@ def upsert_subscription(
     stripe_price_id: str | None = None,
     current_period_end=None,
     cancel_at_period_end: bool = False,
+    trial_start=None,
+    trial_end=None,
 ) -> Subscription:
     row = get_subscription_by_tenant_id(db, tenant_id)
     if row is None:
@@ -1410,6 +1412,16 @@ def upsert_subscription(
         row.stripe_price_id = stripe_price_id
     row.current_period_end = current_period_end
     row.cancel_at_period_end = cancel_at_period_end
+    # Sprint 039 Blocker 3 — trial_start/trial_end are set exactly once,
+    # by app/billing/trial.py's start_trial_if_eligible(); every later
+    # upsert (a real checkout, a webhook sync) must never overwrite an
+    # already-recorded trial window with None, so — unlike the Stripe id
+    # fields above, which are genuinely optional per call — these only
+    # apply when the caller actually passes a value.
+    if trial_start is not None:
+        row.trial_start = trial_start
+    if trial_end is not None:
+        row.trial_end = trial_end
 
     db.commit()
     db.refresh(row)

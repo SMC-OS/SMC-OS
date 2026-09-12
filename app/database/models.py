@@ -952,6 +952,17 @@ class Subscription(Base):
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Sprint 039 Production Readiness Defect Gate, Blocker 3 (migration
+    # a3b4c5d6e7f8). Both NULL for a subscription that was never a trial
+    # (e.g. one created directly by a checkout with no prior trial).
+    # Populated only by app/billing/trial.py's start_trial_if_eligible(),
+    # which creates this row with no Stripe ids at all — see that
+    # module's own docstring for why: no Stripe object is created until
+    # a real checkout happens, so there is no possibility of charging a
+    # trialing tenant who never added a payment method.
+    trial_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trial_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

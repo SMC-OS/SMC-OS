@@ -33,7 +33,14 @@ from app.auth.service import auth_service
 from app.core.config import settings
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Communication, PasswordResetToken, Tenant, User
+from app.database.models import (
+    ActivityLog,
+    Communication,
+    PasswordResetToken,
+    Subscription,
+    Tenant,
+    User,
+)
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -57,6 +64,11 @@ def _cleanup(email: str, tenant_name: str) -> None:
         if tenant is not None:
             db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
             db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
+            # Sprint 039 Blocker 3 merged after this test was first
+            # written — a real signup now also starts a real trial
+            # Subscription row (tenant_id FK, no ondelete), same
+            # "delete before the Tenant row" requirement.
+            db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
         db.execute(delete(Tenant).where(Tenant.name == tenant_name))
         db.commit()
     finally:

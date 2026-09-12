@@ -63,6 +63,7 @@ from app.database.models import (
     Project,
     Quote,
     QuoteItem,
+    Subscription,
     Tenant,
     User,
 )
@@ -97,6 +98,12 @@ _ENVIRONMENT_HOST_MARKERS: dict[str, tuple[str, ...]] = {
 # NULL" (see Communication's own docstring), so their position in this
 # list relative to Invitation/Project/Quote below doesn't matter — only
 # that both come before the Tenant delete.
+#
+# Subscription (Sprint 032) was never added here when that sprint shipped
+# — a real gap, not exercised until Sprint 039 Blocker 3's own
+# every-signup-starts-a-trial change started leaving a real Subscription
+# row behind for every QA-fixture signup in this file's own tests, which
+# then failed to delete a QA tenant with a real FK violation.
 _TENANT_SCOPED_TABLES_IN_ORDER: tuple[type, ...] = (
     Appointment,
     Document,
@@ -107,6 +114,7 @@ _TENANT_SCOPED_TABLES_IN_ORDER: tuple[type, ...] = (
     EmailSuppression,
     Communication,
     Invitation,
+    Subscription,
     Project,
     Quote,
     Customer,

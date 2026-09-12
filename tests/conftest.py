@@ -23,6 +23,7 @@ from app.database.models import (
     Project,
     Quote,
     QuoteItem,
+    Subscription,
     Task,
     Tenant,
     User,
@@ -118,6 +119,11 @@ def _cleanup_other_tenant():
             # those deletes below — but tenant_id on both has no such
             # override, so they still need to go before the Tenant delete
             # at the bottom, same as every other table here.
+            # Sprint 039 Production Readiness Defect Gate, Blocker 3 —
+            # signup now also starts a real trial Subscription row
+            # (tenant_id FK, no ondelete) — same "delete before the
+            # Tenant row" requirement as everything else here.
+            db.execute(delete(Subscription).where(Subscription.tenant_id == tenant_id))
             db.execute(delete(EmailSuppression).where(EmailSuppression.tenant_id == tenant_id))
             db.execute(delete(Communication).where(Communication.tenant_id == tenant_id))
             db.execute(delete(AutomationRun).where(AutomationRun.tenant_id == tenant_id))

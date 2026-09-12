@@ -7,7 +7,14 @@ from sqlalchemy import delete
 from app.auth.service import auth_service
 from app.core.config import settings
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Communication, EmailVerificationToken, Tenant, User
+from app.database.models import (
+    ActivityLog,
+    Communication,
+    EmailVerificationToken,
+    Subscription,
+    Tenant,
+    User,
+)
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -32,6 +39,10 @@ def _delete_tenant_and_its_activity(db, *, name: str) -> None:
         # "delete before the Tenant row" requirement Sprint 038 already
         # established for every other test file's tenant cleanup.
         db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
+        # Sprint 039 Production Readiness Defect Gate, Blocker 3 — signup
+        # now also starts a real trial Subscription row (tenant_id FK, no
+        # ondelete) — same "delete before the Tenant row" requirement.
+        db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
         db.execute(delete(Tenant).where(Tenant.id == tenant.id))
 
 

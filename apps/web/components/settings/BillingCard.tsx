@@ -10,6 +10,10 @@ import { ApiError, api } from "@/lib/api";
 import { cn, formatDate } from "@/lib/utils";
 import type { BillingPeriod, Plan, Subscription } from "@/types/billing";
 
+function daysRemaining(trialEnd: string): number {
+  return Math.max(0, Math.ceil((new Date(trialEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+}
+
 const STATUS_TONE: Record<string, "info" | "success" | "neutral" | "warning" | "danger"> = {
   active: "success",
   trialing: "info",
@@ -115,6 +119,14 @@ export function BillingCard() {
                   {subscription.status.replace("_", " ")}
                 </Badge>
               </div>
+
+              {subscription.status === "trialing" && subscription.trial_end && (
+                <p className="rounded-lg bg-info/10 px-3 py-2 text-sm text-info">
+                  {daysRemaining(subscription.trial_end)} days left in your free trial. Choose a
+                  plan below any time to keep full access afterwards — no card is on file, so
+                  nothing is charged automatically.
+                </p>
+              )}
 
               {currentPlan?.entitlements && (
                 <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface-raised p-4 text-sm sm:grid-cols-4">
@@ -235,7 +247,7 @@ export function BillingCard() {
           </CardHeader>
 
           <CardContent className="pt-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {plans.map((plan) => {
                 const price =
                   period === "annual" ? plan.annual_price_gbp : plan.monthly_price_gbp;

@@ -22,7 +22,7 @@ from app.customers.models import CustomerCreate
 from app.customers.service import customer_service
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import Customer, Material, Project, Quote, QuoteItem, Tenant, User
+from app.database.models import Customer, Material, Project, Quote, QuoteItem, Subscription, Tenant, User
 from app.projects.models import ProjectCreate
 from app.projects.service import project_service
 
@@ -102,6 +102,10 @@ def _wipe_named_tenants(names: tuple[str, ...]) -> None:
                 QuoteItem.quote_id.in_(select(Quote.id).where(Quote.tenant_id.in_(tenant_ids)))
             )
         )
+        # Sprint 039 Production Readiness Defect Gate, Blocker 3 — every
+        # real signup now starts a real trial Subscription row (tenant_id
+        # FK, no ondelete) — must go before the User/Tenant deletes below.
+        db.execute(delete(Subscription).where(Subscription.tenant_id.in_(tenant_ids)))
         for model in (
             Appointment,
             Document,
@@ -241,12 +245,19 @@ def unrelated_tenant(client):
     try:
         user = db.query(User).filter(User.email == UNRELATED_TENANT_EMAIL).first()
         if user is not None:
-            from app.database.models import ActivityLog, Communication, EmailVerificationToken
+            from app.database.models import (
+                ActivityLog,
+                Communication,
+                EmailVerificationToken,
+                Subscription,
+            )
 
             db.execute(
                 delete(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id)
             )
             db.execute(delete(Communication).where(Communication.tenant_id == user.tenant_id))
+            # Sprint 039 Blocker 3 — see identical note in _wipe_named_tenants above.
+            db.execute(delete(Subscription).where(Subscription.tenant_id == user.tenant_id))
             customer_ids = db.scalars(
                 select(Customer.id).where(Customer.tenant_id == user.tenant_id)
             ).all()
@@ -332,14 +343,21 @@ class TestExactMatchOnly:
         finally:
             db2 = SessionLocal()
             try:
-                from app.database.models import ActivityLog, Communication, EmailVerificationToken
+                from app.database.models import (
+                    ActivityLog,
+                    Communication,
+                    EmailVerificationToken,
+                    Subscription,
+                )
 
                 # Same FK ordering constraint cleanup_launch_qa.py itself
                 # handles — signup logs a real ActivityLog row (Sprint
                 # 012, ADR-029) and, since Sprint 039's Blocker 1, also an
                 # EmailVerificationToken (user_id FK) and a Communication
-                # row (tenant_id FK) for its verification-email attempt —
-                # all must go before User/Tenant here too.
+                # row (tenant_id FK) for its verification-email attempt,
+                # and since Sprint 039 Blocker 3, also a real trial
+                # Subscription row — all must go before User/Tenant here
+                # too.
                 db2.execute(delete(ActivityLog).where(ActivityLog.tenant_id == lookalike_tenant_id))
                 db2.execute(
                     delete(EmailVerificationToken).where(
@@ -349,6 +367,7 @@ class TestExactMatchOnly:
                     )
                 )
                 db2.execute(delete(Communication).where(Communication.tenant_id == lookalike_tenant_id))
+                db2.execute(delete(Subscription).where(Subscription.tenant_id == lookalike_tenant_id))
                 db2.execute(delete(User).where(User.tenant_id == lookalike_tenant_id))
                 db2.execute(delete(Tenant).where(Tenant.id == lookalike_tenant_id))
                 db2.commit()
