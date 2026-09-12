@@ -73,6 +73,13 @@ export default function LoginPage() {
               />
             </Field>
 
+            <Link
+              href="/forgot-password"
+              className="-mt-2 self-end text-sm text-accent hover:underline"
+            >
+              Forgot password?
+            </Link>
+
             {error && (
               <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
                 {error}

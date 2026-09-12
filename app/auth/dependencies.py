@@ -74,6 +74,22 @@ def get_current_user(
     user = crud.get_user_by_id(db, user_uuid)
     if user is None or not user.is_active:
         raise credentials_error
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2 — a password
+    # reset increments token_version; any token whose own claim doesn't
+    # match the user's current value is rejected here even if it hasn't
+    # otherwise expired (see app/auth/security.py's create_access_token
+    # and User.token_version's migration docstring for why this is an
+    # exact integer check, not a timestamp comparison against `iat` — a
+    # real CI run proved the timestamp version could falsely reject a
+    # genuinely fresh login issued within the same wall-clock second as
+    # the reset, since `iat` is second-precision by spec). A token with
+    # no `token_version` claim at all (issued before this feature
+    # existed) is treated as claiming version 0, matching every existing
+    # user's starting value — so no existing production session is
+    # affected by this migration deploying; only a user's own future
+    # reset ever changes what their tokens must claim.
+    if payload.get("token_version", 0) != user.token_version:
+        raise credentials_error
     return user
 
 

@@ -207,6 +207,19 @@ export const api = {
       body: JSON.stringify({ token }),
     }),
 
+  // Sprint 039 Production Readiness Defect Gate, Blocker 2.
+  forgotPassword: (email: string) =>
+    request<{ message: string }>("/auth/password/forgot", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ message: string }>("/auth/password/reset", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    }),
+
   // Sprint 011 — Owner-only (require_role(OWNER) server-side; a Staff
   // caller gets a 403 handled by the caller, same as any other ApiError).
   createInvitation: (email: string) =>

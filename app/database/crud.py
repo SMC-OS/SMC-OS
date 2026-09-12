@@ -42,6 +42,7 @@ from app.database.models import (
     Material,
     Message,
     NotificationRecord,
+    PasswordResetToken,
     PortalLink,
     ProcessedEmailEvent,
     ProcessedStripeEvent,
@@ -250,6 +251,19 @@ def set_user_email_verified_at(db: Session, user_id: uuid.UUID, verified_at: dat
     return row
 
 
+def set_user_password(db: Session, user_id: uuid.UUID, *, password_hash: str) -> User | None:
+    row = db.get(User, user_id)
+    if row is None:
+        return None
+    row.password_hash = password_hash
+    # Revokes every existing session — see User.token_version's own
+    # docstring for why this is an integer counter, not a timestamp.
+    row.token_version += 1
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def create_email_verification_token(
     db: Session,
     *,
@@ -267,6 +281,21 @@ def create_email_verification_token(
     return row
 
 
+def create_password_reset_token(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    user_id: uuid.UUID,
+    token_hash: str,
+    expires_at: datetime,
+) -> PasswordResetToken:
+    row = PasswordResetToken(id=id, user_id=user_id, token_hash=token_hash, expires_at=expires_at)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def get_email_verification_token_by_hash(db: Session, token_hash: str) -> EmailVerificationToken | None:
     stmt = select(EmailVerificationToken).where(EmailVerificationToken.token_hash == token_hash)
     return db.scalars(stmt).first()
@@ -276,6 +305,23 @@ def mark_email_verification_token_used(
     db: Session, token_id: uuid.UUID, used_at: datetime
 ) -> EmailVerificationToken | None:
     row = db.get(EmailVerificationToken, token_id)
+    if row is None:
+        return None
+    row.used_at = used_at
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_password_reset_token_by_hash(db: Session, token_hash: str) -> PasswordResetToken | None:
+    stmt = select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+    return db.scalars(stmt).first()
+
+
+def mark_password_reset_token_used(
+    db: Session, token_id: uuid.UUID, used_at: datetime
+) -> PasswordResetToken | None:
+    row = db.get(PasswordResetToken, token_id)
     if row is None:
         return None
     row.used_at = used_at

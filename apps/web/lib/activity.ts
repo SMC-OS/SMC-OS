@@ -41,6 +41,9 @@ export const ACTIVITY_ICON: Record<ActivityType, typeof BotIcon> = {
   // Sprint 039 Production Readiness Defect Gate, Blocker 1
   email_verification_requested: InfoIcon,
   email_verified: CheckCircleIcon,
+  // Sprint 039 Production Readiness Defect Gate, Blocker 2
+  password_reset_requested: InfoIcon,
+  password_changed: CheckCircleIcon,
 };
 
 export const ACTIVITY_TONE: Record<ActivityType, string> = {
@@ -69,4 +72,7 @@ export const ACTIVITY_TONE: Record<ActivityType, string> = {
   // Sprint 039 Production Readiness Defect Gate, Blocker 1
   email_verification_requested: "bg-info/10 text-info",
   email_verified: "bg-success/10 text-success",
+  // Sprint 039 Production Readiness Defect Gate, Blocker 2
+  password_reset_requested: "bg-info/10 text-info",
+  password_changed: "bg-success/10 text-success",
 };

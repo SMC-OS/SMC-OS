@@ -448,15 +448,17 @@ class TestRetryPending:
         sweep_delivery = DeliveryService(provider=succeeding_provider)
         result = sweep_delivery.retry_pending(db)
 
-        # Sprint 039 Production Readiness Defect Gate, Blocker 1 —
+        # Sprint 039 Production Readiness Defect Gate, Blockers 1 and 2 —
         # retry_pending() sweeps *every* tenant by design (its own
-        # docstring), so ">=" rather than "==": a real signup elsewhere in
-        # the same run (any test, or an E2E spec against this same dev
-        # database) now also leaves an "unavailable"-failed Communication
-        # row behind for its verification-email attempt (Resend is
-        # unconfigured in dev/test), which is just as retryable and just
-        # as real as this test's own two rows. The specific-row assertions
-        # below are what actually verifies this test's own behavior.
+        # docstring), so ">=" rather than "==": a real signup or
+        # password-reset request elsewhere in the same run (any test, or
+        # an E2E spec against this same dev database) now also leaves an
+        # "unavailable"-failed Communication row behind for its own send
+        # attempt (Resend is unconfigured in dev/test), which is just as
+        # retryable and just as real as this test's own two rows. The
+        # specific-row assertions below are what actually verifies this
+        # test's own behavior. (Fixed independently and identically on
+        # both sibling branches for the same underlying reason.)
         assert result["retried"] >= 1
         assert result["succeeded"] >= 1
 

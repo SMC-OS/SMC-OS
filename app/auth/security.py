@@ -29,17 +29,36 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
-def create_access_token(subject: str, tenant_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    payload = {"sub": subject, "tenant_id": tenant_id, "exp": expire}
+def create_access_token(subject: str, tenant_id: str, token_version: int = 0) -> str:
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.jwt_expire_minutes)
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2 —
+    # `token_version` lets get_current_user reject a token minted before
+    # a password reset even if it hasn't otherwise expired (see
+    # User.token_version and that dependency's docstring). An exact
+    # integer equality check, not a timestamp comparison against `iat` —
+    # `iat` is still included below for general JWT hygiene/debugging,
+    # but is not load-bearing for revocation: a real GitHub Actions CI
+    # run proved iat's second-precision truncation makes it unsuitable
+    # for that (see User.token_version's migration docstring for the
+    # full story of that first, wrong design).
+    payload = {
+        "sub": subject,
+        "tenant_id": tenant_id,
+        "token_version": token_version,
+        "iat": now,
+        "exp": expire,
+    }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> dict:
-    """Returns the full decoded payload (`sub`, `tenant_id`, `exp`).
+    """Returns the full decoded payload (`sub`, `tenant_id`, `token_version`,
+    `iat`, `exp`).
 
     Raises jwt.PyJWTError if invalid/expired. Sprint 009 — previously
     returned just the `sub` string; now returns the whole payload since
-    app/auth/dependencies.py needs `tenant_id` too.
+    app/auth/dependencies.py needs `tenant_id` too (and, since Sprint 039
+    Blocker 2, `token_version`).
     """
     return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])

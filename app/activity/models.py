@@ -37,6 +37,9 @@ class ActivityType(str, Enum):
     # Sprint 039 Production Readiness Defect Gate, Blocker 1
     EMAIL_VERIFICATION_REQUESTED = "email_verification_requested"
     EMAIL_VERIFIED = "email_verified"
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2
+    PASSWORD_RESET_REQUESTED = "password_reset_requested"
+    PASSWORD_CHANGED = "password_changed"
 
 
 class ActivityEventCreate(BaseModel):

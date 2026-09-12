@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserRole(str, Enum):
@@ -67,10 +67,26 @@ class TokenResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     """Generic {"message": "..."} body for endpoints that intentionally
-    reveal nothing more specific than a human-readable status line."""
+    reveal nothing more specific than a human-readable status line — see
+    ForgotPasswordRequest's endpoint, where the whole point is a response
+    that is identical whether or not the account exists (Sprint 039
+    Production Readiness Defect Gate, Blocker 2)."""
 
     message: str
 
 
 class VerifyEmailConfirmRequest(BaseModel):
     token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    # Sprint 039 Blocker 2's password policy: a minimum length only — no
+    # character-class rules (no invented "must contain a symbol" beyond
+    # what this product has ever asked of a password, including at
+    # signup, which enforces nothing at all beyond "non-empty").
+    new_password: str = Field(min_length=8)

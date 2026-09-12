@@ -79,7 +79,11 @@ class CooldownLimiter:
     and the same accepted single-instance limitation as LoginRateLimiter
     (see its docstring). Deliberately not a shared instance with
     LoginRateLimiter — a key-namespace collision between "wrong password"
-    and "resend spam" would be a real, if unlikely, bug."""
+    and "resend spam" would be a real, if unlikely, bug. Password-reset
+    requests are deliberately keyed on the submitted email regardless of
+    whether an account exists for it — hitting this limit behaves
+    identically either way, so it introduces no enumeration signal beyond
+    what the endpoint's own response already doesn't leak."""
 
     def __init__(self, *, clock=time.monotonic):
         self._clock = clock
@@ -109,3 +113,4 @@ class CooldownLimiter:
 
 
 email_verification_resend_limiter = CooldownLimiter()
+password_reset_request_limiter = CooldownLimiter()
