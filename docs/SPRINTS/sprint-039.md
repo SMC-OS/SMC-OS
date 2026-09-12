@@ -1284,7 +1284,18 @@ path, so no human-review-gate question arises.
   this gate's evidence (backend started cleanly; the frontend dev server did not
   become reachable inside the harness's timeout on this specific machine) — deferred
   to real GitHub Actions CI, the same authoritative signal every prior blocker in this
-  gate has relied on.
+  gate has relied on. CI then caught three genuine bugs in the new spec itself, all
+  root-caused and fixed rather than dismissed: `toHaveValue(2)` doesn't type-check
+  against Playwright's `string | RegExp` signature (unlike jest-dom's own
+  `toHaveValue`, which does accept a number); `getByRole("link", { name: "Edit" })`
+  was a strict-mode violation because this test's own unique run id
+  (`edit-<timestamp>-<random>`) appears inside the seeded customer's own name, whose
+  link on the same page substring-matches "Edit" too; and `£1,080.00` legitimately
+  appears twice on the quote detail page (the header badge and the itemised total
+  row), the same pattern the file's own pre-existing test already handles with
+  `.first()`. CI run
+  [34663587582](https://github.com/SMC-OS/SMC-OS/actions/runs/34663587582) on commit
+  `23f4dc4` is fully green: **backend ✓, frontend ✓, e2e ✓** (all 27 specs).
 
 **Known limitations, honestly stated:**
 - Only general quotes can be edited through this new UI, matching the backend's own
