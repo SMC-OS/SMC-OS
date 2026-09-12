@@ -254,6 +254,18 @@ export default function QuoteDetailPage() {
                   </Button>
                 )}
 
+                {/* Sprint 039 Production Readiness Defect Gate, Blocker 5 —
+                    only a draft general quote can be edited: a stone quote is
+                    priced by a different code path, and a sent/approved
+                    quote is a document someone else already has (matches
+                    app/quotes/service.py's QuoteService.update_general
+                    refusals exactly). */}
+                {quote.status === "draft" && quote.quote_kind === "general" && canAct && (
+                  <Link href={`/quotes/${quote.id}/edit`}>
+                    <Button variant="outline">Edit</Button>
+                  </Link>
+                )}
+
                 <Button
                   variant="outline"
                   disabled={downloading}

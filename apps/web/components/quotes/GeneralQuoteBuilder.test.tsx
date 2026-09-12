@@ -12,6 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createGeneralQuoteMock = vi.fn();
+const updateGeneralQuoteMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -43,6 +44,7 @@ vi.mock("@/lib/api", async () => {
           { key: "day", label: "day" },
         ]),
       createGeneralQuote: (...args: unknown[]) => createGeneralQuoteMock(...args),
+      updateGeneralQuote: (...args: unknown[]) => updateGeneralQuoteMock(...args),
     },
   };
 });
@@ -60,6 +62,7 @@ import { GeneralQuoteBuilder } from "./GeneralQuoteBuilder";
 
 beforeEach(() => {
   createGeneralQuoteMock.mockReset();
+  updateGeneralQuoteMock.mockReset();
 });
 
 afterEach(() => {
@@ -196,5 +199,131 @@ describe("GeneralQuoteBuilder — Sprint 036", () => {
     });
     // 1000 - 100 = 900, +20% = 1080.
     expect(screen.getAllByText("£1,080.00").length).toBeGreaterThan(0);
+  });
+});
+
+// Sprint 039 Production Readiness Defect Gate, Blocker 5 — the builder
+// already priced work correctly; it just had no way to open an existing
+// draft back up and change it. `updateGeneralQuote` existed in the API
+// client and the backend's PATCH /quotes/{id} was already fully built and
+// tested — nothing in the UI ever called it.
+function makeExistingQuote(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "quote-42",
+    customer_id: "customer-1",
+    quote_kind: "general",
+    title: "Bathroom refit, 14 Elm Road",
+    trade: "bathroom",
+    site_address_line1: "14 Elm Road",
+    site_address_line2: null,
+    site_city: "Manchester",
+    site_postcode: "M1 4BT",
+    scope_of_works: "Strip out and refit.",
+    notes: "Customer wants tiles supplied separately.",
+    exclusions: "Decoration excluded.",
+    terms: "50% up front.",
+    valid_until: "2026-12-01",
+    currency: "GBP",
+    vat_rate: 0.2,
+    subtotal: 800,
+    discount_amount: 50,
+    sent_at: null,
+    material: null,
+    thickness: null,
+    kitchen_length: null,
+    island: false,
+    waterfall: 0,
+    splashback: false,
+    upstands: false,
+    postcode: "M1 4BT",
+    price_per_slab: 0,
+    price_before_vat: 750,
+    vat: 150,
+    total: 900,
+    items: [
+      {
+        id: "item-1",
+        position: 0,
+        item_type: "other",
+        line_kind: "labour",
+        description: "Strip out existing bathroom",
+        unit: "day",
+        unit_price: 320,
+        material: null,
+        thickness: null,
+        quantity: 2.5,
+        length_mm: null,
+        width_mm: null,
+        thickness_mm: null,
+        unit_input: "mm",
+        notes: null,
+        price_per_slab: null,
+        slabs: null,
+        line_total: 800,
+      },
+    ],
+    status: "draft",
+    approved_at: null,
+    approved_by_user_id: null,
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+describe("GeneralQuoteBuilder — editing an existing draft (Sprint 039 Blocker 5)", () => {
+  it("prefills every field from the quote being edited", async () => {
+    // @ts-expect-error — the fixture is a plain object shaped like Quote,
+    // not imported as the type, to keep this test file's own mocked
+    // shapes self-contained.
+    render(<GeneralQuoteBuilder existingQuote={makeExistingQuote()} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Quote title")).toHaveValue(
+        "Bathroom refit, 14 Elm Road"
+      );
+    });
+    expect(screen.getByLabelText("Address line 1")).toHaveValue("14 Elm Road");
+    expect(screen.getByLabelText("Town or city")).toHaveValue("Manchester");
+    expect(screen.getByLabelText("Postcode")).toHaveValue("M1 4BT");
+    expect(screen.getByLabelText("Description")).toHaveValue(
+      "Strip out existing bathroom"
+    );
+    expect(screen.getByLabelText("Quantity")).toHaveValue(2.5);
+    expect(screen.getByLabelText("Rate (£)")).toHaveValue(320);
+    expect(screen.getByLabelText("Discount (£)")).toHaveValue(50);
+    expect(screen.getByLabelText("Exclusions")).toHaveValue("Decoration excluded.");
+  });
+
+  it("saves changes to the existing quote instead of creating a new one", async () => {
+    const user = userEvent.setup();
+    updateGeneralQuoteMock.mockResolvedValue({
+      ...makeExistingQuote(),
+      title: "Bathroom refit, updated",
+    });
+
+    // @ts-expect-error — see note above.
+    render(<GeneralQuoteBuilder existingQuote={makeExistingQuote()} />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Quote title")).toHaveValue(
+        "Bathroom refit, 14 Elm Road"
+      );
+    });
+
+    const titleField = screen.getByLabelText("Quote title");
+    await user.clear(titleField);
+    await user.type(titleField, "Bathroom refit, updated");
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(updateGeneralQuoteMock).toHaveBeenCalled();
+    });
+    expect(createGeneralQuoteMock).not.toHaveBeenCalled();
+
+    const [id, payload] = updateGeneralQuoteMock.mock.calls[0];
+    expect(id).toBe("quote-42");
+    expect(payload.title).toBe("Bathroom refit, updated");
+
+    expect(await screen.findByText(/quote updated/i)).toBeInTheDocument();
   });
 });

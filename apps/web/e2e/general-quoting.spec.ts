@@ -195,3 +195,63 @@ test("both_kinds_of_quote_appear_in_one_list", async ({ page }) => {
 
   await api.dispose();
 });
+
+// Sprint 039 Production Readiness Defect Gate, Blocker 5 — the backend's
+// PATCH /quotes/{id} and the frontend's updateGeneralQuote API client both
+// already existed and were already fully tested; nothing in the UI ever
+// called either. This proves the missing entry point end to end, and that
+// it disappears exactly where the backend would refuse it anyway.
+test("a_draft_general_quote_can_be_edited_and_the_change_is_saved", async ({ page }) => {
+  const runId = uniqueRunId("edit");
+  const { api, authHeaders, customer } = await signUpAndLogIn(page, runId);
+
+  const created = await (
+    await api.post("/api/v1/quotes", {
+      headers: authHeaders,
+      data: {
+        title: `Kitchen refit ${runId}`,
+        trade: "kitchen",
+        customer_id: customer.id,
+        lines: [
+          { description: "Strip out existing kitchen", quantity: 2, unit: "day", unit_price: 300 },
+        ],
+      },
+    })
+  ).json();
+  expect(created.total).toBe(720); // 2 x 300 = 600, +20% VAT = 720.
+
+  await page.goto(`/quotes/${created.id}`);
+  await page.waitForLoadState("networkidle");
+
+  await page.getByRole("link", { name: "Edit" }).click();
+  await page.waitForURL(`**/quotes/${created.id}/edit`);
+
+  // The existing line is pre-filled, not started from a blank form.
+  await expect(page.getByLabel("Description")).toHaveValue("Strip out existing kitchen");
+  await expect(page.getByLabel("Quantity")).toHaveValue(2);
+
+  await page.getByLabel("Quantity").fill("3");
+
+  const quoteUpdated = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/quotes/${created.id}`) &&
+      response.request().method() === "PATCH"
+  );
+  await page.getByRole("button", { name: /save changes/i }).click();
+  const updated = await (await quoteUpdated).json();
+
+  // 3 x 300 = 900, +20% VAT = 1080 — the server re-priced it, not the form.
+  expect(updated.total).toBe(1080);
+
+  await page.getByRole("link", { name: /back to the quote/i }).click();
+  await page.waitForURL(`**/quotes/${created.id}`);
+  await expect(page.getByText("£1,080.00")).toBeVisible();
+
+  // Once sent, the same quote is a document the customer already has —
+  // editing it is no longer offered.
+  await page.getByRole("button", { name: "Mark as sent" }).click();
+  await expect(page.getByText("Sent", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Edit" })).not.toBeVisible();
+
+  await api.dispose();
+});
