@@ -51,6 +51,7 @@ function makeQuote(overrides: Record<string, unknown> = {}) {
   return {
     id: QUOTE_ID,
     customer_id: null,
+    quote_kind: "stone",
     material: "Calacatta Gold",
     thickness: "20mm",
     kitchen_length: 3,
@@ -229,5 +230,54 @@ describe("QuoteDetailPage — approval (Sprint 020)", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /create the project/i })).toBeEnabled();
     });
+  });
+});
+
+describe("QuoteDetailPage — edit entry point (Sprint 039 Blocker 5)", () => {
+  it("links to the edit page for a draft general quote", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith(`/quotes/${QUOTE_ID}`)) {
+        return jsonResponse(makeQuote({ quote_kind: "general", status: "draft" }));
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`);
+    });
+
+    render(<QuoteDetailPage />);
+
+    const editLink = await screen.findByRole("link", { name: /edit/i });
+    expect(editLink).toHaveAttribute("href", `/quotes/${QUOTE_ID}/edit`);
+  });
+
+  it("does not offer editing for a stone quote — a different code path prices it", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith(`/quotes/${QUOTE_ID}`)) {
+        return jsonResponse(makeQuote({ quote_kind: "stone", status: "draft" }));
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`);
+    });
+
+    render(<QuoteDetailPage />);
+
+    await screen.findByText(/calacatta gold/i);
+    expect(screen.queryByRole("link", { name: /edit/i })).not.toBeInTheDocument();
+  });
+
+  it("does not offer editing once a quote has been sent — it belongs to the customer now", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith(`/quotes/${QUOTE_ID}`)) {
+        return jsonResponse(makeQuote({ quote_kind: "general", status: "sent" }));
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`);
+    });
+
+    render(<QuoteDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/sent/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("link", { name: /edit/i })).not.toBeInTheDocument();
   });
 });

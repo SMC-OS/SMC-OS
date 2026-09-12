@@ -40,6 +40,23 @@ function blankLine(overrides: Partial<LineRow> = {}): LineRow {
   };
 }
 
+// Sprint 039 Production Readiness Defect Gate, Blocker 5 — a quote being
+// edited is always a general quote in draft (the backend refuses
+// anything else), so every item is a plain labour/material/other line;
+// none of the stone-only columns are ever populated here.
+function linesFromQuote(quote: Quote): LineRow[] {
+  return quote.items.map((item) =>
+    blankLine({
+      line_kind: item.line_kind === "stone" ? "other" : item.line_kind,
+      description: item.description ?? "",
+      quantity: item.quantity,
+      unit: item.unit ?? "item",
+      unit_price: item.unit_price ?? 0,
+      notes: item.notes,
+    })
+  );
+}
+
 /**
  * The general construction quote builder — Sprint 036, Workstream E.
  *
@@ -58,8 +75,15 @@ function blankLine(overrides: Partial<LineRow> = {}): LineRow {
  */
 export function GeneralQuoteBuilder({
   initialCustomerId,
+  existingQuote,
 }: {
   initialCustomerId?: string;
+  /** Sprint 039 Production Readiness Defect Gate, Blocker 5 — when set,
+   * the builder opens pre-filled from this quote and PATCHes it on
+   * submit instead of creating a new one. Only ever passed a draft
+   * general quote; the /quotes/[id]/edit page enforces that before this
+   * component is ever rendered. */
+  existingQuote?: Quote;
 }) {
   const { currency } = useWorkspace();
   const symbol = currencySymbol(currency);
@@ -68,21 +92,35 @@ export function GeneralQuoteBuilder({
   const [trades, setTrades] = useState<Trade[]>([]);
   const [units, setUnits] = useState<QuoteUnit[]>([]);
 
-  const [customerId, setCustomerId] = useState(initialCustomerId ?? "");
-  const [title, setTitle] = useState("");
-  const [trade, setTrade] = useState("");
-  const [addressLine1, setAddressLine1] = useState("");
-  const [addressLine2, setAddressLine2] = useState("");
-  const [city, setCity] = useState("");
-  const [postcode, setPostcode] = useState("");
-  const [scope, setScope] = useState("");
-  const [exclusions, setExclusions] = useState("");
-  const [terms, setTerms] = useState("");
-  const [notes, setNotes] = useState("");
-  const [validUntil, setValidUntil] = useState(daysFromTodayISO(30));
-  const [vatRate, setVatRate] = useState("20");
-  const [discount, setDiscount] = useState("");
-  const [lines, setLines] = useState<LineRow[]>([blankLine()]);
+  const [customerId, setCustomerId] = useState(
+    existingQuote?.customer_id ?? initialCustomerId ?? ""
+  );
+  const [title, setTitle] = useState(existingQuote?.title ?? "");
+  const [trade, setTrade] = useState(existingQuote?.trade ?? "");
+  const [addressLine1, setAddressLine1] = useState(
+    existingQuote?.site_address_line1 ?? ""
+  );
+  const [addressLine2, setAddressLine2] = useState(
+    existingQuote?.site_address_line2 ?? ""
+  );
+  const [city, setCity] = useState(existingQuote?.site_city ?? "");
+  const [postcode, setPostcode] = useState(existingQuote?.site_postcode ?? "");
+  const [scope, setScope] = useState(existingQuote?.scope_of_works ?? "");
+  const [exclusions, setExclusions] = useState(existingQuote?.exclusions ?? "");
+  const [terms, setTerms] = useState(existingQuote?.terms ?? "");
+  const [notes, setNotes] = useState(existingQuote?.notes ?? "");
+  const [validUntil, setValidUntil] = useState(
+    existingQuote?.valid_until ?? daysFromTodayISO(30)
+  );
+  const [vatRate, setVatRate] = useState(
+    existingQuote ? String(Math.round(existingQuote.vat_rate * 100)) : "20"
+  );
+  const [discount, setDiscount] = useState(
+    existingQuote?.discount_amount ? String(existingQuote.discount_amount) : ""
+  );
+  const [lines, setLines] = useState<LineRow[]>(() =>
+    existingQuote ? linesFromQuote(existingQuote) : [blankLine()]
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,7 +208,11 @@ export function GeneralQuoteBuilder({
     };
 
     try {
-      setCreated(await api.createGeneralQuote(payload));
+      setCreated(
+        existingQuote
+          ? await api.updateGeneralQuote(existingQuote.id, payload)
+          : await api.createGeneralQuote(payload)
+      );
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -188,7 +230,7 @@ export function GeneralQuoteBuilder({
     return (
       <Card>
         <CardContent className="text-center">
-          <Badge tone="success">Quote created</Badge>
+          <Badge tone="success">{existingQuote ? "Quote updated" : "Quote created"}</Badge>
           <p className="mt-3 text-2xl font-semibold text-foreground">
             {formatMoney(created.total ?? 0, created.currency)}
           </p>
@@ -197,7 +239,7 @@ export function GeneralQuoteBuilder({
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <Link href={`/quotes/${created.id}`}>
-              <Button>Open the quote</Button>
+              <Button>{existingQuote ? "Back to the quote" : "Open the quote"}</Button>
             </Link>
             <Link href="/quotes">
               <Button variant="outline">All quotes</Button>
@@ -542,7 +584,7 @@ export function GeneralQuoteBuilder({
 
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" size="lg" disabled={submitting}>
-          {submitting ? "Saving…" : "Create quote"}
+          {submitting ? "Saving…" : existingQuote ? "Save changes" : "Create quote"}
         </Button>
         <span className="text-sm text-muted">
           Total {formatMoney(totals.total, currency)}

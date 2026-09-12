@@ -654,7 +654,7 @@ phase-per-PR precedent):
 | 2 | Forgot/reset password | Genuinely missing — no route, no token table, no UI link. | `sprint-039-gate-b-password-reset` — **done, see below.** |
 | 3 | Stripe pricing/billing | Correct checkout/webhook/seat architecture on solid rails, but still the old 2-tier £79/£149 catalogue; no trial. | `sprint-039-gate-c-billing-pricing` — **done, see below.** |
 | 4 | GeoCore AI | Combination: `OPENAI_API_KEY` genuinely unset (owner gate) + tool-calling genuinely never built (v1 scope limit); frontend copy is accurate, not stale. | `sprint-039-gate-d-geocore-ai` — **done, see below.** |
-| 5 | Quote editing | Stone quotes have no edit endpoint at all; general quotes have a tested backend `PATCH` that the frontend never calls (dead code) and no edit UI. No revision concept exists. | Not started. |
+| 5 | Quote editing | Stone quotes have no edit endpoint at all; general quotes have a tested backend `PATCH` that the frontend never calls (dead code) and no edit UI. No revision concept exists. | `sprint-039-gate-e-quote-editing` — **done, see below.** |
 | 6 | Blurry logo | Real: `next/image` requests the 590×143px source at a display size that exceeds it at 2×/3× DPR; separately, the correct 1200×630 OG image already exists on disk but was never copied into `apps/marketing/public/brand/`. | Not started. |
 | 7 | Stale stone positioning | Real: marketing homepage hero/copy/OG/JSON-LD still lead with "stone and construction"; `apps/web/app/signup/page.tsx` was already fixed to trade-neutral copy in Sprint 036 — only the marketing site regressed/was left behind. | Not started. |
 
@@ -1206,5 +1206,105 @@ blockers — flagged for a separate, dedicated fix.
 - The pre-existing day-boundary bug in `count_quotes_today`/the automation scanner
   (above) remains unfixed — out of scope for Blocker 4, flagged for separate work.
 - This branch is pushed and open as PR #31 (`sprint-039-gate-d-geocore-ai`), with a
+  real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet
+  merged, not yet deployed to staging.
+
+### 14.5 Blocker 5 — Quote editing: evidence
+
+**Branch:** `sprint-039-gate-e-quote-editing` (off `origin/main` @ `8e40039`, same base
+as the sibling gate branches). No migration — no schema change was needed.
+
+**Reproduction, before any change:** the backend's `PATCH /api/v1/quotes/{id}`
+(`app/quotes/router.py::update_general_quote` → `QuoteService.update_general`) was
+already fully built, already correctly re-prices from either replaced lines or an
+unchanged set, already refuses a stone-kind quote (409) and a non-draft quote (409),
+and was already comprehensively tested (`tests/test_general_quotes.py`'s `# ---
+Editing ---` section — reprice-with-new-lines, reprice-without-lines,
+refuse-an-approved-quote, refuse-a-stone-quote, 404-cross-tenant — all present and all
+passing before this branch touched anything). The frontend API client already wrapped
+it (`apps/web/lib/api.ts`'s `updateGeneralQuote`). Confirmed by reading the code
+directly, not assumed: **nothing in the frontend ever called it.**
+`grep -rn "updateGeneralQuote" apps/web --include="*.tsx" --include="*.ts"` outside
+`lib/api.ts` returned no matches. `apps/web/app/quotes/[id]/page.tsx` had no Edit
+button, no edit route, and no edit form anywhere — a user could view a draft general
+quote and mark it sent, approve it, or download its PDF, but never change it. This is
+"incomplete", precisely as the blocker describes it, not "broken": the one piece that
+was missing was the entry point, not the underlying logic.
+
+**What shipped:**
+- `apps/web/components/quotes/GeneralQuoteBuilder.tsx` gained an optional
+  `existingQuote?: Quote` prop. When present, every field initialises from the quote
+  (including its line items, mapped from `QuoteItem[]` back into the same `LineRow`
+  shape the create flow already uses), the submit button reads "Save changes", submit
+  calls `api.updateGeneralQuote(existingQuote.id, payload)` instead of
+  `createGeneralQuote`, and the success card reads "Quote updated" / "Back to the
+  quote" instead of "Quote created" / "Open the quote". The pricing arithmetic itself
+  — the sprint's central claim for this component — is untouched; edit mode reuses it
+  exactly.
+- New page `apps/web/app/quotes/[id]/edit/page.tsx`: fetches the quote, then refuses
+  plainly (no half-rendered form) for the same three reasons the backend already
+  enforces — not found, a stone quote ("stone quotes use their own template"), or a
+  quote that is not a draft ("already been sent or approved") — before rendering
+  `GeneralQuoteBuilder` in edit mode.
+- `apps/web/app/quotes/[id]/page.tsx` gained an "Edit" link, visible exactly when
+  `quote.status === "draft" && quote.quote_kind === "general" && canAct` — mirroring
+  the backend's own refusal conditions so the button never offers something the API
+  would then reject.
+
+**Invariants preserved:** tenant isolation and the draft/general-only edit rule are
+enforced server-side exactly as before (untouched); no invented figures (the total
+shown is always the server's re-priced answer, confirmed by the E2E assertion below);
+no silent mutation of a document the customer already holds (a sent or approved quote
+has no Edit entry point, and the backend still refuses it as a second, authoritative
+line of defence even if a client bypassed the UI); nothing here adds a send/delivery
+path, so no human-review-gate question arises.
+
+**Verification run:**
+- Backend: unaffected (no backend files changed). Re-ran
+  `python -m pytest tests/test_general_quotes.py` to confirm the baseline this
+  frontend feature depends on is still exactly as solid as it looked: **30 passed**.
+- Frontend: `pnpm run check-types`, `pnpm run lint`, `pnpm run build` all clean (the
+  build's route list shows the new `ƒ /quotes/[id]/edit` page). New/updated unit
+  tests, run individually rather than via the full `vitest run` (the full run hit the
+  same "Timeout terminating forks worker" cascade already documented as a
+  this-machine-specific resource issue in earlier blockers' evidence — dozens of
+  entirely unrelated test files, e.g. `MobileNav.test.tsx`, `AuthProvider.test.tsx`,
+  `usePolling.test.ts`, failed to even start a worker, which is a process-pool
+  exhaustion signature, not a test assertion failure): `GeneralQuoteBuilder.test.tsx`
+  — **8 passed** (6 pre-existing + 2 new edit-mode tests);
+  `app/quotes/[id]/page.test.tsx` + `app/quotes/[id]/edit/page.test.tsx` together —
+  **10 passed** (7 pre-existing + 3 new edit-entry-point tests across both files).
+- E2E: new test `a_draft_general_quote_can_be_edited_and_the_change_is_saved`
+  (`e2e/general-quoting.spec.ts`) — creates a draft general quote via the API, opens
+  it, clicks Edit, confirms the existing line is pre-filled (not a blank form),
+  changes the quantity, saves, asserts the **server's** re-priced total (900 → 1080
+  after 20% VAT, not a value computed by the test), confirms the detail page reflects
+  it, then marks the quote sent and confirms the Edit link disappears. Local
+  Playwright hit the same webServer startup timeout already documented repeatedly in
+  this gate's evidence (backend started cleanly; the frontend dev server did not
+  become reachable inside the harness's timeout on this specific machine) — deferred
+  to real GitHub Actions CI, the same authoritative signal every prior blocker in this
+  gate has relied on. CI then caught three genuine bugs in the new spec itself, all
+  root-caused and fixed rather than dismissed: `toHaveValue(2)` doesn't type-check
+  against Playwright's `string | RegExp` signature (unlike jest-dom's own
+  `toHaveValue`, which does accept a number); `getByRole("link", { name: "Edit" })`
+  was a strict-mode violation because this test's own unique run id
+  (`edit-<timestamp>-<random>`) appears inside the seeded customer's own name, whose
+  link on the same page substring-matches "Edit" too; and `£1,080.00` legitimately
+  appears twice on the quote detail page (the header badge and the itemised total
+  row), the same pattern the file's own pre-existing test already handles with
+  `.first()`. CI run
+  [34663587582](https://github.com/SMC-OS/SMC-OS/actions/runs/34663587582) on commit
+  `23f4dc4` is fully green: **backend ✓, frontend ✓, e2e ✓** (all 27 specs).
+
+**Known limitations, honestly stated:**
+- Only general quotes can be edited through this new UI, matching the backend's own
+  restriction exactly — a stone quote still has no edit path (it never did; it is
+  priced by a completely different, slab-based code path, and building an edit flow
+  for it is a separate, larger piece of work, not attempted here).
+- Editing is whole-form: there is no per-field "quick edit" (e.g. changing just the
+  valid-until date without opening the full builder). Consistent with how the create
+  flow already works, and not something the blocker asked for.
+- This branch is pushed and open as PR #32 (`sprint-039-gate-e-quote-editing`), with a
   real green GitHub Actions CI run (backend/frontend/e2e all passing) — not yet
   merged, not yet deployed to staging.
