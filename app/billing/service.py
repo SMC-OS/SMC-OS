@@ -162,7 +162,11 @@ class BillingService:
 
         handler = self._EVENT_HANDLERS.get(event["type"])
         if handler is not None:
-            handler(self, db, event["data"]["object"])
+            event_object = event["data"]["object"]
+            to_dict = getattr(event_object, "to_dict", None)
+            if callable(to_dict):
+                event_object = to_dict()
+            handler(self, db, event_object)
 
     def _handle_checkout_completed(self, db: Session, session_obj: dict) -> None:
         tenant_id_raw = (session_obj.get("metadata") or {}).get("tenant_id") or session_obj.get(
