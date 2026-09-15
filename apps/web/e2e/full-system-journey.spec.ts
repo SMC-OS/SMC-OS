@@ -97,7 +97,7 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.getByLabel("Company name").fill(COMPANY_NAME);
   await page.getByLabel("Your name").fill("Pytest E2E Journey Owner");
   await page.getByLabel("Email").fill(OWNER_EMAIL);
-  await page.getByLabel("Password").fill(OWNER_PASSWORD);
+  await page.getByLabel("Password", { exact: true }).fill(OWNER_PASSWORD);
   await page.getByLabel("Confirm password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: /create workspace/i }).click();
 

@@ -8,12 +8,12 @@ test("Create Workspace password confirmation and independent visibility", async 
   await page.getByLabel("Company name").fill(`Password UX ${runId}`);
   await page.getByLabel("Your name").fill("Acceptance Owner");
   await page.getByLabel("Email").fill(`password-ux-${runId}@example.invalid`);
-  await page.getByLabel("Password").fill(password);
+  await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByLabel("Confirm password").fill("different-password");
 
-  await expect(page.getByLabel("Password")).toHaveAttribute("type", "password");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await page.getByRole("button", { name: "Show password" }).first().click();
-  await expect(page.getByLabel("Password")).toHaveAttribute("type", "text");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute("type", "text");
   await expect(page.getByLabel("Confirm password")).toHaveAttribute("type", "password");
   await page.getByRole("button", { name: "Hide password" }).click();
 
