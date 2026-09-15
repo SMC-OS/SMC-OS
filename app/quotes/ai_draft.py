@@ -23,21 +23,22 @@ any item: a missing, ambiguous, or unrecognised value always comes back
 as an explicit per-item warning (or a "multiple"/"not_found" match
 status), never a guess.
 
-Three validation layers, unchanged from v1: (1) OpenAI's structured
+Three validation layers, unchanged from v1: (1) provider's structured
 outputs enforce JSON shape; (2) refusal/error handling never lets a bad
 call crash or leak; (3) this service re-resolves every extracted value
 against the real catalogue/deterministic parser server-side — the layer
 that actually enforces truth, not just shape.
 
-The OpenAI client is constructed lazily, only on first real use, and only
-if settings.openai_api_key is set — the app runs fully normally with zero
-AI configuration; nothing at import/startup time touches OpenAI.
+The provider client is constructed lazily, only on first real use, and
+only if the active provider is configured — the app runs fully normally
+with zero AI configuration; nothing at import/startup time touches any
+provider SDK.
 """
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.ai.providers import get_active_provider, LLMProvider, LLMProviderError
 from app.materials.search import material_search_service
 from app.quotes.ai_models import AIQuoteDraft, AIQuoteItemDraft
 from app.quotes.dimension_parser import parse_dimension_text
@@ -85,50 +86,42 @@ class _AIExtraction(BaseModel):
 
 
 class AIDraftUnavailable(Exception):
-    """Raised when no OPENAI_API_KEY is configured. Caught by the router
+    """Raised when no AI provider is configured. Caught by the router
     and turned into a 503 — the app runs fully normally without one."""
 
 
 class AIDraftError(Exception):
-    """Raised on any OpenAI call failure (network, timeout, rate-limit,
+    """Raised on any provider call failure (network, timeout, rate-limit,
     refusal). Caught by the router and turned into a 502."""
 
 
 class AIDraftService:
-    def __init__(self, client=None) -> None:
-        self._client = client
+    def __init__(self, provider: LLMProvider | None = None) -> None:
+        self._provider = provider
 
-    def _get_client(self):
-        if self._client is not None:
-            return self._client
-        if not settings.openai_api_key:
-            raise AIDraftUnavailable("AI quotation drafting is not configured.")
-
-        from openai import OpenAI  # imported lazily — never touches the SDK at startup
-
-        self._client = OpenAI(api_key=settings.openai_api_key)
-        return self._client
+    @property
+    def _active_provider(self) -> LLMProvider | None:
+        if self._provider is not None:
+            return self._provider
+        return get_active_provider()
 
     def generate(self, db: Session, text: str) -> AIQuoteDraft:
-        client = self._get_client()
+        provider = self._active_provider
+        if provider is None or not provider.is_configured:
+            raise AIDraftUnavailable("AI quotation drafting is not configured.")
 
         try:
-            completion = client.chat.completions.parse(
-                model=settings.openai_model,
-                response_format=_AIExtraction,
+            response = provider.chat_structured(
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": text},
                 ],
+                response_format=_AIExtraction,
             )
-        except Exception as exc:  # network/timeout/API errors of any shape
+            extraction = response.parsed
+        except Exception as exc:  # noqa: BLE001 — provider errors of any shape
             raise AIDraftError(str(exc)) from exc
 
-        choice = completion.choices[0]
-        if getattr(choice.message, "refusal", None):
-            raise AIDraftError("The model declined to process this request.")
-
-        extraction = choice.message.parsed
         if extraction is None:
             raise AIDraftError("The model did not return a parseable response.")
 

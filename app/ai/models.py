@@ -54,3 +54,6 @@ class AICapabilities(BaseModel):
     quote_drafting: bool
     material_search: bool
     notes: list[str]
+    # Active provider information (when llm_configured is true)
+    active_provider: str | None = None
+    active_model: str | None = None

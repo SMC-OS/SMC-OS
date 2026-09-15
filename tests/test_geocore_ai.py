@@ -17,31 +17,40 @@ import pytest
 from app.ai import context as ai_context
 from app.ai.models import ChatMessage
 from app.ai.service import AIService
+from app.ai.providers import LLMProvider, LLMResponse, LLMProviderError
 from app.core.config import settings
 
 RUN_ID = uuid.uuid4().hex[:8]
 
 
-class _StubCompletion:
-    def __init__(self, content):
-        self.choices = [type("C", (), {"message": type("M", (), {"content": content})()})()]
-
-
-class _StubClient:
-    """Stands in for the OpenAI client. Records what it was sent, so a
-    test can assert on the prompt rather than on the answer."""
+class _StubProvider(LLMProvider):
+    """Stub LLM provider for testing."""
 
     def __init__(self, content="Two quotes need chasing.", fail=False):
         self.content = content
         self.fail = fail
         self.sent = None
-        self.chat = type("Chat", (), {"completions": self})()
 
-    def create(self, model, messages):
+    @property
+    def name(self) -> str:
+        return "stub"
+
+    @property
+    def is_configured(self) -> bool:
+        return True
+
+    @property
+    def model(self) -> str:
+        return "stub-model"
+
+    def chat(self, messages: list[dict[str, str]]) -> LLMResponse:
         if self.fail:
-            raise RuntimeError("provider unreachable")
+            raise LLMProviderError("provider unreachable", self.name)
         self.sent = messages
-        return _StubCompletion(self.content)
+        return LLMResponse(content=self.content)
+
+    def chat_structured(self, messages: list[dict[str, str]], response_format: type):
+        raise NotImplementedError("Structured output not needed for chat tests")
 
 
 def test_capabilities_are_honest_when_no_provider_is_configured(client, auth_headers):
@@ -109,8 +118,8 @@ def test_requires_authentication(client):
 
 
 def test_uses_the_llm_when_one_is_available(db, auth_headers, client):
-    stub = _StubClient(content="Three quotes are waiting on the customer.")
-    service = AIService(client=stub)
+    stub = _StubProvider(content="Three quotes are waiting on the customer.")
+    service = AIService(provider=stub)
     tenant_id = uuid.UUID(client.get("/api/v1/auth/me", headers=auth_headers).json()["tenant_id"])
 
     response = service.chat(db, tenant_id, [ChatMessage(content="What needs my attention?")])
@@ -121,7 +130,7 @@ def test_uses_the_llm_when_one_is_available(db, auth_headers, client):
 
 
 def test_falls_back_honestly_when_the_provider_is_unreachable(db, auth_headers, client):
-    service = AIService(client=_StubClient(fail=True))
+    service = AIService(provider=_StubProvider(fail=True))
     tenant_id = uuid.UUID(client.get("/api/v1/auth/me", headers=auth_headers).json()["tenant_id"])
 
     response = service.chat(db, tenant_id, [ChatMessage(content="What needs my attention?")])
@@ -134,8 +143,8 @@ def test_falls_back_honestly_when_the_provider_is_unreachable(db, auth_headers, 
 
 
 def test_the_prompt_is_grounded_and_carries_no_contact_details(db, auth_headers, client):
-    stub = _StubClient()
-    service = AIService(client=stub)
+    stub = _StubProvider()
+    service = AIService(provider=stub)
     me = client.get("/api/v1/auth/me", headers=auth_headers).json()
     tenant_id = uuid.UUID(me["tenant_id"])
 
@@ -169,8 +178,8 @@ def test_the_prompt_does_not_claim_geocore_cannot_email_customers(db, auth_heade
     # customers", which stopped being true once Sprint 038 shipped quote
     # delivery and follow-up automation. It must never tell a user their
     # own product can't do something it does every day.
-    stub = _StubClient()
-    service = AIService(client=stub)
+    stub = _StubProvider()
+    service = AIService(provider=stub)
     tenant_id = uuid.UUID(client.get("/api/v1/auth/me", headers=auth_headers).json()["tenant_id"])
 
     service.chat(db, tenant_id, [ChatMessage(content="Can GeoCore email my customer?")])

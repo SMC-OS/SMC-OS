@@ -1,6 +1,6 @@
-"""AI Quotation Generator tests — fully mocked, zero real OpenAI calls or
-API key required. ai_draft_service._client is injected directly with a
-MagicMock per test, bypassing the lazy real-client construction entirely.
+"""AI Quotation Generator tests — fully mocked, zero real API calls or
+API key required. ai_draft_service._provider is injected directly with a
+stub per test, bypassing the lazy real-provider construction entirely.
 
 Sprint 033 (Workstream C): the LLM mock only ever supplies entities and
 per-item text spans (never numbers) — every dimension and every material
@@ -8,11 +8,10 @@ resolution comes from real, deterministic code running against the real
 seeded catalogue, so these tests exercise that code for real, not a mock.
 """
 
-from unittest.mock import MagicMock
-
 import pytest
 from sqlalchemy import delete
 
+from app.ai.providers import LLMProvider, LLMStructuredResponse, LLMProviderError
 from app.database.database import SessionLocal
 from app.database.models import ActivityLog
 from app.quotes.ai_draft import _AIExtraction, _AIItemExtraction, ai_draft_service
@@ -20,31 +19,73 @@ from app.quotes.ai_draft import _AIExtraction, _AIItemExtraction, ai_draft_servi
 TEST_TEXT = "3.5m kitchen in calacatta gold with an island, customer is Pytest AI Customer"
 
 
-def _fake_completion(extraction, refusal=None):
-    message = MagicMock()
-    message.parsed = extraction
-    message.refusal = refusal
-    choice = MagicMock()
-    choice.message = message
-    completion = MagicMock()
-    completion.choices = [choice]
-    return completion
+class _StubProvider(LLMProvider):
+    """Stub LLM provider for testing structured output."""
+
+    def __init__(self, extraction=None, refusal=None, fail=False, fail_with=None):
+        self.extraction = extraction
+        self.refusal = refusal
+        self.fail = fail
+        self.fail_with = fail_with or RuntimeError("simulated network failure")
+        self.sent_messages = None
+
+    @property
+    def name(self) -> str:
+        return "stub"
+
+    @property
+    def is_configured(self) -> bool:
+        return True
+
+    @property
+    def model(self) -> str:
+        return "stub-model"
+
+    def chat(self, messages: list[dict[str, str]]):
+        raise NotImplementedError("chat not used for drafting tests")
+
+    def chat_structured(self, messages: list[dict[str, str]], response_format: type):
+        self.sent_messages = messages
+        if self.fail:
+            raise self.fail_with
+        if self.refusal:
+            raise LLMProviderError("The model declined to process this request.", self.name)
+        if self.extraction is None:
+            raise LLMProviderError("The model did not return a parseable response.", self.name)
+        return LLMStructuredResponse(parsed=self.extraction)
 
 
 def _mock_draft(extraction):
-    mock_client = MagicMock()
-    mock_client.chat.completions.parse.return_value = _fake_completion(extraction)
-    ai_draft_service._client = mock_client
+    stub = _StubProvider(extraction=extraction)
+    ai_draft_service._provider = stub
+    return stub
+
+
+def _mock_draft_failure(exc: Exception = None):
+    from app.ai.providers import LLMProviderError
+    if exc is None:
+        exc = RuntimeError("simulated network failure")
+    if not isinstance(exc, LLMProviderError):
+        exc = LLMProviderError(str(exc), "stub", exc)
+    stub = _StubProvider(fail=True, fail_with=exc)
+    ai_draft_service._provider = stub
+    return stub
+
+
+def _mock_draft_refusal():
+    stub = _StubProvider(refusal="policy")
+    ai_draft_service._provider = stub
+    return stub
 
 
 @pytest.fixture(autouse=True)
-def _reset_ai_client():
-    """Every test starts and ends with no client injected, so the 'no key
+def _reset_ai_provider():
+    """Every test starts and ends with no provider injected, so the 'no key
     configured' test is never accidentally affected by a previous test's
     mock, regardless of execution order."""
-    ai_draft_service._client = None
+    ai_draft_service._provider = None
     yield
-    ai_draft_service._client = None
+    ai_draft_service._provider = None
 
 
 def _cleanup_activity(text=TEST_TEXT):
@@ -178,9 +219,7 @@ def test_ai_draft_missing_fields_produce_warnings(client, auth_headers):
 
 
 def test_ai_draft_client_exception_returns_502(client, auth_headers):
-    mock_client = MagicMock()
-    mock_client.chat.completions.parse.side_effect = RuntimeError("simulated network failure")
-    ai_draft_service._client = mock_client
+    _mock_draft_failure(RuntimeError("simulated network failure"))
 
     r = client.post(
         "/api/v1/quotes/ai-draft", json={"text": TEST_TEXT}, headers=auth_headers
@@ -189,9 +228,7 @@ def test_ai_draft_client_exception_returns_502(client, auth_headers):
 
 
 def test_ai_draft_refusal_returns_502(client, auth_headers):
-    mock_client = MagicMock()
-    mock_client.chat.completions.parse.return_value = _fake_completion(None, refusal="policy")
-    ai_draft_service._client = mock_client
+    _mock_draft_refusal()
 
     r = client.post(
         "/api/v1/quotes/ai-draft", json={"text": TEST_TEXT}, headers=auth_headers
