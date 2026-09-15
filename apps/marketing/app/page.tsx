@@ -134,6 +134,9 @@ export default function HomePage() {
               <a className="button button--secondary" href={`${APP_URL}/login`}>
                 Sign in
               </a>
+              <a className="button button--secondary" href={`${APP_URL}/demo`}>
+                Try the demo — no account needed
+              </a>
             </div>
           </div>
         </section>

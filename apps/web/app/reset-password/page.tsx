@@ -6,7 +6,7 @@ import { Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
-import { Field, Input } from "@/components/ui/Field";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { ApiError, api } from "@/lib/api";
 
 /**
@@ -107,25 +107,23 @@ function ResetPasswordContent() {
 
           {state === "form" && (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <Field label="New password" htmlFor="password">
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  autoFocus
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </Field>
-              <Field label="Confirm new password" htmlFor="confirmPassword">
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
-              </Field>
+              <PasswordField
+                id="password"
+                label="New password"
+                autoComplete="new-password"
+                required
+                autoFocus
+                value={password}
+                onChange={setPassword}
+              />
+              <PasswordField
+                id="confirmPassword"
+                label="Confirm new password"
+                autoComplete="new-password"
+                required
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+              />
 
               {error && (
                 <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">

@@ -45,6 +45,20 @@ function fillForm(password: string, confirmPassword: string) {
 }
 
 describe("ResetPasswordPage", () => {
+  it("uses_independently_toggleable_new_password_fields", () => {
+    render(<ResetPasswordPage />);
+    const password = screen.getByLabelText("New password");
+    const confirmation = screen.getByLabelText("Confirm new password");
+    expect(password).toHaveAttribute("type", "password");
+    expect(confirmation).toHaveAttribute("type", "password");
+    expect(password).toHaveAttribute("autocomplete", "new-password");
+    expect(confirmation).toHaveAttribute("autocomplete", "new-password");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Show password" })[1]);
+    expect(password).toHaveAttribute("type", "password");
+    expect(confirmation).toHaveAttribute("type", "text");
+  });
+
   it("submits_the_token_and_new_password_and_shows_success", async () => {
     resetPasswordMock.mockResolvedValue({ message: "ok" });
 

@@ -40,9 +40,49 @@ function fillForm() {
     target: { value: "jane@acmestoneworks.invalid" },
   });
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a-real-password" } });
+  fireEvent.change(screen.getByLabelText("Confirm password"), {
+    target: { value: "a-real-password" },
+  });
 }
 
 describe("SignupPage — Sprint 027 full-system journey entry point", () => {
+  it("masks_both_passwords_and_toggles_each_field_independently", () => {
+    render(<SignupPage />);
+
+    const password = screen.getByLabelText("Password");
+    const confirmation = screen.getByLabelText("Confirm password");
+    expect(password).toHaveAttribute("type", "password");
+    expect(confirmation).toHaveAttribute("type", "password");
+    expect(password).toHaveAttribute("autocomplete", "new-password");
+    expect(confirmation).toHaveAttribute("autocomplete", "new-password");
+
+    fireEvent.change(password, { target: { value: "kept-secret" } });
+    fireEvent.change(confirmation, { target: { value: "other-secret" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Show password" })[0]);
+    expect(password).toHaveAttribute("type", "text");
+    expect(confirmation).toHaveAttribute("type", "password");
+    expect(password).toHaveValue("kept-secret");
+    expect(confirmation).toHaveValue("other-secret");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(password).toHaveAttribute("type", "password");
+  });
+
+  it("blocks_empty_or_mismatched_confirmation_without_sending_credentials", async () => {
+    render(<SignupPage />);
+    fillForm();
+    fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "" } });
+    fireEvent.submit(screen.getByRole("button", { name: /create workspace/i }).closest("form")!);
+    expect(await screen.findByText("Passwords do not match.")).toBeInTheDocument();
+    expect(signupMock).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "a-different-password" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: /create workspace/i }).closest("form")!);
+    expect(signupMock).not.toHaveBeenCalled();
+  });
+
   it("submits_the_full_signup_payload_and_redirects_on_success", async () => {
     signupMock.mockResolvedValue(undefined);
 
