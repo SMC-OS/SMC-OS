@@ -89,12 +89,23 @@ class Settings(BaseSettings):
     # one running instance. See ADR-032.
     upload_dir: str = "./uploads"
 
-    # AI Quotation Generator v1 — optional. The app runs fully normally with
-    # both unset; app/quotes/ai_draft.py's AIDraftService only ever
-    # constructs an OpenAI client lazily, on first real use, and only if
-    # openai_api_key is set. Never required, never a startup dependency.
+    # AI Provider selection — optional. The app runs fully normally with
+    # no provider configured; all AI features report themselves unavailable
+    # honestly rather than falling back to a limited builtin. Valid values:
+    # "openai", "gemini". Default: "openai" (preserves existing behaviour
+    # when OPENAI_API_KEY is set).
+    ai_provider: str = "openai"
+
+    # OpenAI — optional. Used when AI_PROVIDER=openai.
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+
+    # Google Gemini — optional. Used when AI_PROVIDER=gemini. Model is
+    # configurable via GEMINI_MODEL; default is a verified current Flash
+    # model, but staging/production must set the exact verified model
+    # explicitly rather than relying on this default.
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
 
     # Sprint 032 (Workstream A) — Stripe billing. All optional; the app
     # runs fully normally with none configured (app/billing/router.py

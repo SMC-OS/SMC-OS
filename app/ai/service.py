@@ -6,14 +6,15 @@ GeoCore has two genuinely different things that have both been called
 "AI", and Sprint 036's contract is not to blur them:
 
   * A real LLM, used by app/quotes/ai_draft.py, available only when
-    OPENAI_API_KEY is configured. When it is configured, this service uses
-    it, grounded in a bounded, tenant-scoped summary of the workspace.
+    an AI provider (OpenAI or Gemini) is configured. When it is configured,
+    this service uses it, grounded in a bounded, tenant-scoped summary of
+    the workspace.
 
   * app/brain/BrainManager — a *keyword* router over the material
     catalogue and a pricing reply. Not a language model. Useful, fast, and
     deterministic; not an assistant.
 
-When no key is configured, this service falls back to BrainManager and
+When no provider is configured, this service falls back to BrainManager and
 says so: the response carries `engine: "builtin"`, and the UI renders that
 as the built-in assistant rather than as AI. It does not pretend, and it
 does not fail — a workspace with no LLM configured still gets a working
@@ -33,8 +34,8 @@ from sqlalchemy.orm import Session
 
 from app.ai import context as ai_context
 from app.ai.models import AICapabilities, ChatMessage, ChatResponse
+from app.ai.providers import get_active_provider, LLMProvider
 from app.brain.manager import BrainManager
-from app.core.config import settings
 
 _SYSTEM_PROMPT = (
     "You are GeoCore AI, the assistant inside GeoCore — an operating "
@@ -66,18 +67,26 @@ _SYSTEM_PROMPT = (
 
 
 class AIService:
-    def __init__(self, client=None) -> None:
-        # Injectable for tests, exactly like AIDraftService. Nothing here
-        # touches the OpenAI SDK at import or startup time.
-        self._client = client
+    def __init__(self, provider: LLMProvider | None = None) -> None:
+        # Injectable for tests. Nothing here touches any provider SDK
+        # at import or startup time.
+        self._provider = provider
         self._brain = BrainManager()
 
     @property
+    def _active_provider(self) -> LLMProvider | None:
+        if self._provider is not None:
+            return self._provider
+        return get_active_provider()
+
+    @property
     def llm_configured(self) -> bool:
-        return bool(self._client is not None or settings.openai_api_key)
+        provider = self._active_provider
+        return provider is not None and provider.is_configured
 
     def capabilities(self) -> AICapabilities:
         configured = self.llm_configured
+        provider = self._active_provider
         notes = [
             "GeoCore AI answers questions. It cannot create, edit or send "
             "anything on your behalf.",
@@ -88,6 +97,8 @@ class AIService:
                 "is answering with its built-in catalogue assistant. Ask about "
                 "a material or a price to see what it can do."
             )
+        else:
+            notes.append(f"Active provider: {provider.name} ({provider.model})")
         return AICapabilities(
             conversational=True,
             llm_configured=configured,
@@ -95,21 +106,18 @@ class AIService:
             quote_drafting=configured,
             material_search=True,
             notes=notes,
+            active_provider=provider.name if (configured and provider is not None) else None,
+            active_model=provider.model if (configured and provider is not None) else None,
         )
-
-    def _get_client(self):
-        if self._client is not None:
-            return self._client
-        from openai import OpenAI  # imported lazily — never at startup
-
-        self._client = OpenAI(api_key=settings.openai_api_key)
-        return self._client
 
     def chat(
         self, db: Session, tenant_id: uuid.UUID, messages: list[ChatMessage]
     ) -> ChatResponse:
         if not self.llm_configured:
             return self._builtin_reply(db, messages)
+
+        provider = self._active_provider
+        assert provider is not None
 
         summary = ai_context.build(db, tenant_id)
         payload = [
@@ -125,16 +133,16 @@ class AIService:
         ]
 
         try:
-            completion = self._get_client().chat.completions.create(
-                model=settings.openai_model,
-                messages=payload,
-            )
-            reply = (completion.choices[0].message.content or "").strip()
-        except Exception:  # noqa: BLE001 — network/timeout/API errors of any shape
+            response = provider.chat(payload)
+            reply = response.content
+        except Exception:  # noqa: BLE001 — provider errors of any shape
             # A provider outage must not leave the user with nothing. Fall
             # back to the deterministic assistant and label the answer
             # honestly, rather than returning a 502 for a question the
-            # built-in path could have answered.
+            # built-in path could have answered. Deliberately broader than
+            # LLMProviderError: this is the router's "never returns a
+            # provider error to the user" guarantee, so it must hold for a
+            # bug in an adapter too, not just for wrapped provider failures.
             return self._builtin_reply(db, messages, degraded=True)
 
         if not reply:
