@@ -73,6 +73,27 @@ class TokenResponse(BaseModel):
     user: UserOut
 
 
+class VerificationResendResponse(BaseModel):
+    """Sprint 039 Production Readiness Defect Gate, Blocker 2 follow-up
+    (verification resend/token hotfix) — a dedicated response for
+    POST /auth/email/verify/resend, distinct from the shared
+    MessageResponse every other endpoint below uses.
+
+    The bug this fixes: resend_verification_email() returns 200
+    whether it actually queued a new email or silently no-op'd because
+    the caller was already verified — before this field existed, the
+    frontend had no way to tell those apart, so a resend after
+    verification looked exactly like a truthful "check your inbox"
+    with no second email ever coming (confirmed live on staging,
+    2026-09-16, against a real Resend-backed environment — not a
+    hypothetical). `already_verified=True` lets the caller render an
+    honest "you're already verified" instead.
+    """
+
+    message: str
+    already_verified: bool
+
+
 class MessageResponse(BaseModel):
     """Generic {"message": "..."} body for endpoints that intentionally
     reveal nothing more specific than a human-readable status line — see

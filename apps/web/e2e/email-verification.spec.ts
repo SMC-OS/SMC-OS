@@ -195,3 +195,60 @@ test("an_unverified_owner_cannot_reach_team_settings_or_invite_a_teammate_and_a_
 
   await api.dispose();
 });
+
+test("replaying_an_already_used_link_shows_already_verified_not_invalid_and_resend_is_honest_about_sending_nothing", async ({
+  page,
+}) => {
+  // Sprint 039 Production Readiness Defect Gate, Blocker 2 follow-up
+  // (verification resend/token hotfix) — reproduces the owner's exact
+  // live-staging observation: a second view of the same, already-
+  // successfully-used link, plus a resend after verification. Real
+  // Chromium, real FastAPI, real Postgres — not a unit-level fake.
+  const email = `pytest-e2e-sprint039-verify-resend-hotfix-${RUN_ID}@example.invalid`;
+  const api = await request.newContext({ baseURL: BACKEND_URL });
+  const signup = await api.post("/api/v1/auth/signup", {
+    data: {
+      company_name: `Pytest E2E Sprint 039 Resend Hotfix Co ${RUN_ID}`,
+      name: OWNER_NAME,
+      email,
+      password: OWNER_PASSWORD,
+    },
+  });
+  expect(signup.ok()).toBeTruthy();
+
+  await page.goto("/login");
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(OWNER_PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/verify-email/);
+
+  const rawToken = mintVerificationToken(email);
+  await page.goto(`/verify-email?token=${rawToken}`);
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText("Your email address has been verified.")).toBeVisible();
+
+  // ---- The owner's exact symptom: view the SAME link again (a mail
+  // client reopening it, a double-tap, a link-prescanning proxy). The
+  // token replay is still correctly rejected server-side (400) — what
+  // changes is that this browser's own live, freshly-fetched auth state
+  // now knows the account is verified, so it says so instead of "invalid
+  // or expired". ----
+  await page.goto(`/verify-email?token=${rawToken}`);
+  await page.waitForLoadState("networkidle");
+  await expect(
+    page.getByText("Your email address is already verified — you're all set.")
+  ).toBeVisible();
+  await expect(page.getByText(/invalid or has expired/i)).toHaveCount(0);
+
+  // ---- Resend after verification: honest about sending nothing ----
+  await page.goto("/verify-email");
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: "Resend verification email" }).click();
+  await expect(
+    page.getByText("Your email is already verified — you're all set.")
+  ).toBeVisible();
+  await expect(page.getByText("Verification email sent — check your inbox.")).toHaveCount(0);
+
+  await api.dispose();
+});

@@ -23,32 +23,63 @@ import { ApiError, api } from "@/lib/api";
  * authenticated-but-unverified user here for any route this narrow
  * allowlist doesn't cover, so this state must be fully self-sufficient —
  * resend, sign out, nothing else needed to get unstuck.
+ *
+ * Sprint 039 Blocker 2 follow-up (verification resend/token hotfix) —
+ * confirmed live on staging: a SECOND view of the same, already-
+ * successfully-used link (a mail client re-opening it, a double-tap, a
+ * link-prescanning security proxy) gets the identical 400 a genuinely
+ * bad/expired token would, by design — replay-rejection is a security
+ * invariant this file does not relax (app/auth/verification_service.py's
+ * verify() is unchanged). What was wrong is presentation: a bare
+ * "invalid or expired" left an actually-already-verified owner thinking
+ * verification had failed. The fix reads this browser's own live auth
+ * state (refreshed via /auth/me on mount, so it is never stale) rather
+ * than trusting confirm()'s specific failure reason, which this page was
+ * never told and must not need.
  */
-type ConfirmState = "verifying" | "success" | "invalid" | "no-token";
-type ResendState = "idle" | "sending" | "sent" | "cooldown" | "error";
+type ConfirmOutcome = "pending" | "success" | "failed";
+type ConfirmState = "verifying" | "success" | "already-verified" | "invalid" | "no-token";
+type ResendState = "idle" | "sending" | "sent" | "already-verified" | "cooldown" | "error";
 
 function VerifyEmailContent() {
   const params = useSearchParams();
   const router = useRouter();
   const token = params.get("token");
-  const { isAuthenticated, email, logout } = useAuth();
+  const { isReady, isAuthenticated, verificationRequired, email, logout } = useAuth();
 
-  const [state, setState] = useState<ConfirmState>(token ? "verifying" : "no-token");
+  const [confirmOutcome, setConfirmOutcome] = useState<ConfirmOutcome>(
+    token ? "pending" : "success"
+  );
   const [resendState, setResendState] = useState<ResendState>("idle");
 
   useEffect(() => {
     if (!token) return;
     api
       .confirmEmailVerification(token)
-      .then(() => setState("success"))
-      .catch(() => setState("invalid"));
+      .then(() => setConfirmOutcome("success"))
+      .catch(() => setConfirmOutcome("failed"));
   }, [token]);
+
+  // Derived, not stored: a failed confirm is ambiguous on its own (see
+  // this file's docstring above) — waiting for isReady before committing
+  // to "invalid" avoids a flash of the wrong, scarier state.
+  const state: ConfirmState = !token
+    ? "no-token"
+    : confirmOutcome === "pending"
+      ? "verifying"
+      : confirmOutcome === "success"
+        ? "success"
+        : !isReady
+          ? "verifying"
+          : isAuthenticated && !verificationRequired
+            ? "already-verified"
+            : "invalid";
 
   async function handleResend() {
     setResendState("sending");
     try {
-      await api.resendVerificationEmail();
-      setResendState("sent");
+      const result = await api.resendVerificationEmail();
+      setResendState(result.already_verified ? "already-verified" : "sent");
     } catch (err) {
       // Sprint 039 Blocker 2 hotfix — the resend cooldown (app.auth.
       // rate_limit's CooldownLimiter) returns 429; every other failure
@@ -86,6 +117,15 @@ function VerifyEmailContent() {
               <Button onClick={() => router.push(isAuthenticated ? "/customers" : "/login")}>
                 {isAuthenticated ? "Continue to GeoCore" : "Sign in"}
               </Button>
+            </>
+          )}
+
+          {state === "already-verified" && (
+            <>
+              <p className="text-sm text-foreground">
+                Your email address is already verified — you&apos;re all set.
+              </p>
+              <Button onClick={() => router.push("/customers")}>Continue to GeoCore</Button>
             </>
           )}
 
@@ -166,6 +206,9 @@ function ResendControl({
       </Button>
       {resendState === "sent" && (
         <p className="text-sm text-success">Verification email sent — check your inbox.</p>
+      )}
+      {resendState === "already-verified" && (
+        <p className="text-sm text-success">Your email is already verified — you&apos;re all set.</p>
       )}
       {resendState === "cooldown" && (
         <p className="text-sm text-muted">
