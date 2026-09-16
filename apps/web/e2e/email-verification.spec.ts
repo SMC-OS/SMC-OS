@@ -27,7 +27,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 039 Verify Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint039-verify-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint039-verify-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint039-Verify-Password-${RUN_ID}!`;
 const OWNER_NAME = "Pytest E2E Verify Owner";
 
 function mintVerificationToken(email: string): string {

@@ -46,7 +46,13 @@ from app.tenants.service import tenant_service
 
 RUN_ID = uuid.uuid4().hex[:8]
 PASSWORD = "correct-horse-battery-staple"
-NEW_PASSWORD = "a-brand-new-password-123"
+# Sprint 039 Production Readiness Defect Gate, final auth gate — the
+# reset endpoint's new_password now goes through the same
+# app.auth.password_policy as signup, so every literal actually
+# submitted to POST /auth/password/reset (unlike PASSWORD above, which
+# is only ever used with auth_service.create_user()/login, neither of
+# which validates policy) must satisfy it.
+NEW_PASSWORD = "A-Brand-New-Password-123!"
 
 
 def _unique_email(label: str) -> str:
@@ -309,7 +315,7 @@ def test_reset_is_single_use(client, user_and_headers):
     assert first.status_code == 200
     second = client.post(
         "/api/v1/auth/password/reset",
-        json={"token": raw_token, "new_password": "yet-another-password-456"},
+        json={"token": raw_token, "new_password": "Yet-Another-Password-456!"},
     )
     assert second.status_code == 400
 

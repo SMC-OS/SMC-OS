@@ -45,7 +45,7 @@ def _signup(client, suffix: str) -> tuple[dict[str, str], uuid.UUID]:
             "company_name": f"{TEST_PREFIX} Co {suffix}",
             "name": "Pytest Owner",
             "email": email,
-            "password": f"pytest-sprint025-{suffix}-password",
+            "password": f"Pytest-Sprint025-{suffix}-Password-1!",
         },
     )
     assert response.status_code == 201

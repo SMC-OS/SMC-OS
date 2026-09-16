@@ -61,10 +61,10 @@ print(raw_token)
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 023 Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint023-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint023-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint023-Password-${RUN_ID}!`;
 const STAFF_EMAIL = `pytest-e2e-sprint023-staff-${RUN_ID}@example.invalid`;
 const STAFF_NAME = `Pytest E2E Staff ${RUN_ID}`;
-const STAFF_PASSWORD = `pytest-e2e-sprint023-staff-password-${RUN_ID}`;
+const STAFF_PASSWORD = `Pytest-E2e-Sprint023-Staff-Password-${RUN_ID}!`;
 const PROJECT_NAME = `Pytest E2E Sprint 023 Project ${RUN_ID}`;
 
 test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async ({ page }) => {

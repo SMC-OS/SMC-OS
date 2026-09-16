@@ -26,7 +26,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 024 Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint024-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint024-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint024-Password-${RUN_ID}!`;
 const PROJECT_NAME = `Pytest E2E Sprint 024 Project ${RUN_ID}`;
 
 function runFollowUpAutomation(now: string): { examined: number; created: number } {

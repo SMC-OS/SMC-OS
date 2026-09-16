@@ -15,11 +15,11 @@ from sqlalchemy.orm import Session
 
 from app.ai.models import AICapabilities, ChatRequest, ChatResponse
 from app.ai.service import ai_service
-from app.auth.dependencies import require_verified_email
+from app.auth.dependencies import require_billing_access
 from app.database.database import get_db
 from app.database.models import User
 
-router = APIRouter(prefix="/ai", tags=["ai"], dependencies=[Depends(require_verified_email)])
+router = APIRouter(prefix="/ai", tags=["ai"], dependencies=[Depends(require_billing_access)])
 
 
 @router.get("/capabilities", response_model=AICapabilities)
@@ -37,7 +37,7 @@ def capabilities():
 @router.post("/chat", response_model=ChatResponse)
 def chat(
     data: ChatRequest,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     """One conversational turn, grounded in a bounded, tenant-scoped

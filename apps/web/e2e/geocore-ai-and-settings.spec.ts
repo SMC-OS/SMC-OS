@@ -1,6 +1,7 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess, startRealTrial } from "./billing-helper";
 import { markVerified } from "./verify-helper";
 
 /**
@@ -21,7 +22,7 @@ function uniqueRunId(label: string): string {
 
 async function signUpAndLogIn(page: import("@playwright/test").Page, runId: string) {
   const ownerEmail = `pytest-e2e-shell-${runId}@example.invalid`;
-  const ownerPassword = `pytest-e2e-shell-password-${runId}`;
+  const ownerPassword = `Pytest-E2e-Shell-Password-${runId}!`;
 
   const api = await request.newContext({ baseURL: BACKEND_URL });
   const signup = await api.post("/api/v1/auth/signup", {
@@ -34,6 +35,10 @@ async function signUpAndLogIn(page: import("@playwright/test").Page, runId: stri
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(ownerEmail);
+  // This file's subject is GeoCore AI / Settings navigation, not billing
+  // activation itself (that's billing-pricing.spec.ts) — grant it the
+  // same way any other "not this test's subject" fixture does.
+  grantBillingAccess(ownerEmail);
 
   await page.goto("/login");
   await page.waitForLoadState("networkidle");
@@ -85,7 +90,32 @@ test("geocore_ai_holds_a_conversation_and_never_shows_developer_internals", asyn
 });
 
 test("settings_sections_are_navigable_and_billing_has_its_own_place", async ({ page }) => {
-  const { api } = await signUpAndLogIn(page, uniqueRunId("settings"));
+  const ownerEmail = `pytest-e2e-shell-settings-${uniqueRunId("settings")}@example.invalid`;
+  const ownerPassword = `Pytest-E2e-Shell-Settings-Password-${uniqueRunId("pw")}!`;
+
+  const api = await request.newContext({ baseURL: BACKEND_URL });
+  const signup = await api.post("/api/v1/auth/signup", {
+    data: {
+      company_name: `Pytest E2E Shell Settings Co ${uniqueRunId("co")}`,
+      name: "Pytest Shell Owner",
+      email: ownerEmail,
+      password: ownerPassword,
+    },
+  });
+  expect(signup.ok()).toBeTruthy();
+  markVerified(ownerEmail);
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES: this test's own subject
+  // IS the trial UI, so it needs a genuine trialing subscription (real
+  // trial_start/trial_end), not just the generic grantBillingAccess()
+  // exemption every other test in this file uses.
+  startRealTrial(ownerEmail);
+
+  await page.goto("/login");
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Email").fill(ownerEmail);
+  await page.getByLabel("Password").fill(ownerPassword);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
 
   await page.goto("/settings");
   await page.waitForLoadState("networkidle");

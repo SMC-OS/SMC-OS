@@ -30,8 +30,17 @@ export default function LoginPage() {
       // an existing-but-unverified account must not bypass verification
       // by logging in again; route it to the verification screen just
       // like a fresh signup.
-      const verificationRequired = await login(email, password);
-      router.push(verificationRequired ? "/verify-email" : "/customers");
+      //
+      // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — a verified account
+      // with no active billing/trial must not bypass activation either.
+      const required = await login(email, password);
+      router.push(
+        required.verificationRequired
+          ? "/verify-email"
+          : required.billingAccessRequired
+            ? "/pricing"
+            : "/customers"
+      );
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 401

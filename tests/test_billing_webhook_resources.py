@@ -21,7 +21,13 @@ from app.database.models import Subscription
 @pytest.mark.parametrize(
     "event_type,object_type,expected_status",
     [
-        ("checkout.session.completed", "checkout.session", "active"),
+        # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES: checkout.completed
+        # no longer sets `status` itself (a Checkout with trial_period_days
+        # set starts "trialing", not "active" — that authoritative value
+        # arrives via customer.subscription.created/updated instead). It
+        # now preserves whatever status already existed for the tenant —
+        # here, the fixture's "past_due" — rather than overwriting it.
+        ("checkout.session.completed", "checkout.session", "past_due"),
         ("customer.subscription.updated", "subscription", "active"),
         ("customer.subscription.deleted", "subscription", "cancelled"),
         ("invoice.payment_failed", "invoice", "past_due"),
@@ -74,6 +80,11 @@ def test_webhook_resource_dispatch(monkeypatch, representation, event_type, obje
     save = MagicMock()
     monkeypatch.setattr(crud, "mark_stripe_event_processed", mark)
     monkeypatch.setattr(crud, "get_subscription_by_stripe_subscription_id", lambda db, sub_id: existing)
+    # checkout.session.completed resolves "what status already exists" by
+    # tenant_id, not stripe_subscription_id (see
+    # BillingService._handle_checkout_completed's docstring) — irrelevant
+    # to every other event type here, which never call this.
+    monkeypatch.setattr(crud, "get_subscription_by_tenant_id", lambda db, t_id: existing)
     monkeypatch.setattr(crud, "upsert_subscription", save)
     db = MagicMock()
     service.handle_webhook(db, payload, signature)

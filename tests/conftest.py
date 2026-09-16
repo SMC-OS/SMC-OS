@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, select, update
 
 from app.core.config import settings
+from app.database import crud
 from app.database.database import SessionLocal
 from app.database.models import (
     ActivityLog,
@@ -80,7 +81,12 @@ def auth_headers(client):
 _CONFTEST_RUN_ID = uuid.uuid4().hex[:10]
 OTHER_TENANT_EMAIL = f"pytest-other-tenant-owner-{_CONFTEST_RUN_ID}@example.invalid"
 OTHER_TENANT_COMPANY = f"Pytest Other Tenant Co {_CONFTEST_RUN_ID}"
-OTHER_TENANT_PASSWORD = "pytest-other-tenant-password-1"
+# Sprint 039 Production Readiness Defect Gate, final auth gate — this
+# literal goes through the real HTTP signup endpoint below, which now
+# validates app.auth.password_policy (min 10 chars, upper/lower/digit/
+# special), unlike every other tenant/user fixture in this suite that
+# creates its users via auth_service.create_user() directly.
+OTHER_TENANT_PASSWORD = "Pytest-Other-Tenant-Password-1!"
 
 
 def _cleanup_other_tenant():
@@ -163,6 +169,13 @@ def other_tenant_auth_headers(client):
     directly-created test user in this suite gets via
     auth_service.create_user()'s own default, just reached through the
     real HTTP signup endpoint instead.
+
+    GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — same reasoning again,
+    one gate further in: a real signup now also gets no Subscription at
+    all (AuthService.signup() explicitly opts out of the
+    grant_legacy_billing_access default every other directly-created
+    user gets), so this fixture grants it explicitly too, the same way
+    it already does for verification above.
     """
     _cleanup_other_tenant()
     r = client.post(
@@ -175,12 +188,21 @@ def other_tenant_auth_headers(client):
         },
     )
     token = r.json()["access_token"]
+    tenant_id = uuid.UUID(r.json()["user"]["tenant_id"])
     db = SessionLocal()
     try:
         db.execute(
             update(User)
             .where(User.email == OTHER_TENANT_EMAIL)
             .values(email_verified_at=datetime.now(timezone.utc))
+        )
+        crud.upsert_subscription(
+            db,
+            tenant_id=tenant_id,
+            plan="pro",
+            billing_period="monthly",
+            status="active",
+            legacy_grandfathered=True,
         )
         db.commit()
     finally:

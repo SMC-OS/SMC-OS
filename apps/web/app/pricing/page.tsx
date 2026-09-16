@@ -97,7 +97,8 @@ export default function PricingPage() {
         </h1>
         <p className="mt-2 text-sm text-muted">
           Simple plans that scale with your team. Every plan starts with a 14-day
-          free trial — no card required. Cancel any time.
+          free trial — a card is required to start, and you won&apos;t be charged
+          until the trial ends. Cancel any time.
         </p>
 
         {isTrialing && subscription?.trial_end && (

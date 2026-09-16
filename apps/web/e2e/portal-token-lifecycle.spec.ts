@@ -26,7 +26,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 027 Portal Lifecycle Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint027-portal-owner-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint027-portal-owner-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint027-Portal-Owner-Password-${RUN_ID}!`;
 const CUSTOMER_NAME = `Pytest E2E Sprint 027 Portal Lifecycle Customer ${RUN_ID}`;
 
 function backdatePortalLinkExpiry(portalLinkId: string): void {

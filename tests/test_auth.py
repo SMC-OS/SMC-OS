@@ -174,7 +174,7 @@ def test_signup_creates_tenant_and_user(client):
                 "company_name": SIGNUP_COMPANY,
                 "name": "Pytest Owner",
                 "email": SIGNUP_EMAIL,
-                "password": "another-strong-password",
+                "password": "Another-Strong-Password-1!",
             },
         )
         assert r.status_code == 201
@@ -204,7 +204,7 @@ def test_signup_duplicate_email_returns_409(client, test_user):
             "company_name": "Another Co",
             "name": "Dupe",
             "email": TEST_EMAIL,
-            "password": "whatever-123",
+            "password": "Whatever-Password-123!",
         },
     )
     assert r.status_code == 409

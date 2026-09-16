@@ -16,14 +16,14 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_verified_email
+from app.auth.dependencies import require_billing_access
 from app.calendar.models import CalendarResponse
 from app.calendar.service import calendar_service
 from app.database.database import get_db
 from app.database.models import User
 
 router = APIRouter(
-    prefix="/calendar", tags=["calendar"], dependencies=[Depends(require_verified_email)]
+    prefix="/calendar", tags=["calendar"], dependencies=[Depends(require_billing_access)]
 )
 
 
@@ -31,7 +31,7 @@ router = APIRouter(
 def get_calendar(
     start: date | None = None,
     end: date | None = None,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     """Dated items in a window. An over-long or reversed window is clamped

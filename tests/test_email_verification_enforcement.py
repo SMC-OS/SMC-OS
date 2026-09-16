@@ -37,7 +37,7 @@ from app.database.models import (
 RUN_ID = uuid.uuid4().hex[:10]
 TENANT_NAME = f"Pytest Verification Enforcement Tenant {RUN_ID}"
 EMAIL = f"pytest-verification-enforcement-{RUN_ID}@example.invalid"
-PASSWORD = "pytest-verification-enforcement-password-1"
+PASSWORD = "Pytest-Verification-Enforcement-1!"
 
 
 def _cleanup():

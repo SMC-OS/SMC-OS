@@ -66,19 +66,37 @@ describe("AcceptInvitePage — Sprint 027 team-invitation entry point", () => {
 
     fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "New Hire" } });
     fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "a-real-password" },
+      target: { value: "A-Real-Password-1!" },
     });
     fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
 
     await waitFor(() => {
       expect(acceptInviteMock).toHaveBeenCalledWith("invite-token-1", {
         name: "New Hire",
-        password: "a-real-password",
+        password: "A-Real-Password-1!",
       });
     });
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith("/customers");
     });
+  });
+
+  it("blocks_a_weak_password_that_fails_policy_without_calling_the_api", async () => {
+    getInvitationByTokenMock.mockResolvedValue(invite());
+
+    render(<AcceptInvitePage />);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("newhire@example.invalid")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "New Hire" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "123" } });
+    fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
+
+    expect(
+      await screen.findByText("Password must include: at least 10 characters.")
+    ).toBeInTheDocument();
+    expect(acceptInviteMock).not.toHaveBeenCalled();
   });
 
   it("shows_an_expired_state_and_renders_no_form", async () => {

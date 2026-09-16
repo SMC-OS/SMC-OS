@@ -29,8 +29,8 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 039 Reset Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint039-reset-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint039-reset-password-${RUN_ID}`;
-const NEW_PASSWORD = `pytest-e2e-sprint039-reset-new-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint039-Reset-Password-${RUN_ID}!`;
+const NEW_PASSWORD = `Pytest-E2e-Sprint039-Reset-New-Password-${RUN_ID}!`;
 const OWNER_NAME = "Pytest E2E Reset Owner";
 
 function mintResetToken(email: string): string {

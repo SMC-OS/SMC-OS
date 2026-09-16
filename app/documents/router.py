@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_verified_email
+from app.auth.dependencies import require_billing_access
 from app.database.database import get_db
 from app.database.models import User
 from app.documents.models import DocumentOut
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 def upload_document(
     customer_id: uuid.UUID,
     file: UploadFile = File(...),
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     try:
@@ -57,7 +57,7 @@ def upload_document(
 @router.get("", response_model=list[DocumentOut])
 def list_documents(
     customer_id: uuid.UUID | None = None,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     return document_service.list_documents(db, current_user.tenant_id, customer_id=customer_id)
@@ -66,7 +66,7 @@ def list_documents(
 @router.get("/{document_id}/download")
 def download_document(
     document_id: uuid.UUID,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     try:

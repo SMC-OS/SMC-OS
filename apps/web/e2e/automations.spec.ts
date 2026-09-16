@@ -19,7 +19,7 @@ function uniqueRunId(label: string): string {
 
 async function signUpAndLogIn(page: import("@playwright/test").Page, runId: string) {
   const ownerEmail = `pytest-e2e-auto-${runId}@example.invalid`;
-  const ownerPassword = `pytest-e2e-auto-password-${runId}`;
+  const ownerPassword = `Pytest-E2e-Auto-Password-${runId}!`;
 
   const api = await request.newContext({ baseURL: BACKEND_URL });
   const signup = await api.post("/api/v1/auth/signup", {

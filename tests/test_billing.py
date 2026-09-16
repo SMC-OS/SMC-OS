@@ -162,7 +162,20 @@ def test_get_subscription_requires_auth(client):
     assert client.get("/api/v1/billing/subscription").status_code == 401
 
 
-def test_get_subscription_returns_null_when_none_exists(client, owner_headers):
+def test_get_subscription_returns_null_when_none_exists(client, owner_headers, owner_and_staff):
+    # Sprint 039 final auth + trial gate — auth_service.create_user() now
+    # auto-grants every directly-created (test fixture) tenant a
+    # legacy_grandfathered Subscription, so this endpoint's true "none at
+    # all" case has to be created explicitly rather than relied on as the
+    # fixture's default state.
+    tenant, _owner, _staff = owner_and_staff
+    db = SessionLocal()
+    try:
+        db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
+        db.commit()
+    finally:
+        db.close()
+
     r = client.get("/api/v1/billing/subscription", headers=owner_headers)
     assert r.status_code == 200
     assert r.json() is None
@@ -399,29 +412,37 @@ def test_webhook_checkout_completed_creates_active_subscription(
         db.close()
 
 
-def test_checkout_completed_converts_a_trial_to_paid_and_preserves_trial_history(
+def test_subscription_updated_converts_a_trial_to_paid_and_preserves_trial_history(
     client, owner_and_staff, monkeypatch
 ):
-    """Sprint 039 Blocker 3 — a real checkout completing for a tenant
-    already on a trial (see app/billing/trial.py) must flip it to a paid,
-    active subscription while keeping trial_start/trial_end as historical
-    record, not clearing them."""
+    """GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. Under the card-
+    required trial contract, a tenant's trial and its eventual paid
+    subscription are the SAME Stripe Subscription object throughout — it
+    starts "trialing" (Checkout's trial_period_days) and Stripe itself
+    flips it to "active" at trial end once the first invoice succeeds,
+    delivered as customer.subscription.updated (not a second checkout).
+    This must preserve trial_start/trial_end as historical record, not
+    clear them, and BillingService._handle_subscription_upsert is the
+    single handler shared by created/updated — see its own docstring."""
     tenant, _, _ = owner_and_staff
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_fake")
     monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_fake")
+    monkeypatch.setattr(settings, "stripe_price_business_annual", "price_business_annual")
 
-    trial_start = datetime.now(timezone.utc) - timedelta(days=3)
-    trial_end = trial_start + timedelta(days=14)
+    trial_start = datetime.now(timezone.utc) - timedelta(days=14)
+    trial_end = datetime.now(timezone.utc) - timedelta(seconds=1)
     db = SessionLocal()
     try:
         crud.upsert_subscription(
             db,
             tenant_id=tenant.id,
-            plan="pro",
-            billing_period="monthly",
+            plan="business",
+            billing_period="annual",
             status="trialing",
+            stripe_customer_id="cus_converted",
+            stripe_subscription_id="sub_converted",
             trial_start=trial_start,
             trial_end=trial_end,
         )
@@ -430,12 +451,15 @@ def test_checkout_completed_converts_a_trial_to_paid_and_preserves_trial_history
 
     event = {
         "id": "evt_test_trial_conversion_1",
-        "type": "checkout.session.completed",
+        "type": "customer.subscription.updated",
         "data": {
             "object": {
+                "id": "sub_converted",
                 "customer": "cus_converted",
-                "subscription": "sub_converted",
-                "client_reference_id": str(tenant.id),
+                "status": "active",
+                "items": {
+                    "data": [{"price": {"id": "price_business_annual"}}],
+                },
                 "metadata": {"tenant_id": str(tenant.id), "plan": "business", "billing_period": "annual"},
             }
         },
@@ -460,7 +484,7 @@ def test_checkout_completed_converts_a_trial_to_paid_and_preserves_trial_history
         assert row.status == "active"
         assert row.plan == "business"
         assert row.stripe_customer_id == "cus_converted"
-        # Trial history is preserved, not wiped by the upgrade.
+        # Trial history is preserved, not wiped by the conversion.
         assert row.trial_start is not None
         assert row.trial_end is not None
     finally:
@@ -683,12 +707,16 @@ def _cleanup_trial_signup():
         db.close()
 
 
-def test_signup_starts_a_real_trial_with_no_stripe_object(client):
-    """No card required, and — critically — no Stripe customer/subscription
-    id at all: Stripe is never contacted during the trial (see
-    app/billing/trial.py's own docstring for why this, rather than
-    Stripe's own trial-on-Checkout mechanism, makes an accidental charge
-    of a card-less tenant structurally impossible)."""
+def test_signup_starts_no_subscription_and_blocks_workspace_access(client):
+    """GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. The owner's decision
+    superseded the old no-card 14-day trial this test used to assert
+    (see git history for that prior contract): a brand-new signup now
+    gets NO Subscription row at all, and a verified-but-not-yet-activated
+    user is blocked from normal workspace APIs (402) until a real Stripe
+    Checkout completes — see app/auth/dependencies.py::require_billing_access.
+    Plan selection and Checkout initiation themselves
+    (app/billing/router.py) stay reachable throughout, which is exactly
+    why GET /billing/subscription below still returns 200 (null), not 402."""
     _cleanup_trial_signup()
     try:
         r = client.post(
@@ -697,17 +725,17 @@ def test_signup_starts_a_real_trial_with_no_stripe_object(client):
                 "company_name": TRIAL_SIGNUP_COMPANY,
                 "name": "Pytest Trial Owner",
                 "email": TRIAL_SIGNUP_EMAIL,
-                "password": "a-real-password-123",
+                "password": "A-Real-Password-123!",
             },
         )
         assert r.status_code == 201
         headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
 
-        # Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix —
-        # GET /billing/subscription now requires a verified session; this
-        # test is about trial creation, not verification, so it marks
-        # itself verified immediately (same reasoning as conftest.py's
-        # other_tenant_auth_headers).
+        # This test's subject is billing/access state, not email
+        # verification — mark verified immediately (same reasoning as
+        # conftest.py's other_tenant_auth_headers) so a 403 from
+        # require_verified_email can never be mistaken for the 402 this
+        # test actually asserts.
         db = SessionLocal()
         try:
             db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).update(
@@ -717,59 +745,61 @@ def test_signup_starts_a_real_trial_with_no_stripe_object(client):
         finally:
             db.close()
 
-        sub = client.get("/api/v1/billing/subscription", headers=headers).json()
-        assert sub is not None
-        assert sub["status"] == "trialing"
-        assert sub["plan"] == "pro"
-        assert sub["trial_start"] is not None
-        assert sub["trial_end"] is not None
+        # No Subscription row exists — Stripe was never contacted.
+        sub_response = client.get("/api/v1/billing/subscription", headers=headers)
+        assert sub_response.status_code == 200
+        assert sub_response.json() is None
 
         db = SessionLocal()
         try:
             user = db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).first()
-            row = crud.get_subscription_by_tenant_id(db, user.tenant_id)
-            assert row.stripe_customer_id is None
-            assert row.stripe_subscription_id is None
-            trial_length = row.trial_end - row.trial_start
-            assert trial_length == timedelta(days=14)
+            assert crud.get_subscription_by_tenant_id(db, user.tenant_id) is None
         finally:
             db.close()
+
+        # The actual access boundary: a normal workspace route is blocked,
+        # while account/session management and billing/plan-selection
+        # stay reachable throughout (confirmed above and by /auth/me).
+        assert client.get("/api/v1/customers", headers=headers).status_code == 402
+        assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
     finally:
         _cleanup_trial_signup()
 
 
-def test_a_tenant_never_gets_a_second_trial(client):
+def test_a_tenant_never_gets_a_second_trial():
+    """app/billing/trial.py's start_trial_if_eligible() is no longer
+    called from signup (see the test above), but stays real, callable
+    machinery — this proves its own idempotency directly: a tenant
+    calling it twice never gets its trial window reset or extended."""
+    from app.billing.trial import start_trial_if_eligible
+
     _cleanup_trial_signup()
     try:
-        r = client.post(
-            "/api/v1/auth/signup",
-            json={
-                "company_name": TRIAL_SIGNUP_COMPANY,
-                "name": "Pytest Trial Owner",
-                "email": TRIAL_SIGNUP_EMAIL,
-                "password": "a-real-password-123",
-            },
-        )
         db = SessionLocal()
         try:
-            user = db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).first()
-            tenant_id = user.tenant_id
-            first_trial_end = crud.get_subscription_by_tenant_id(db, tenant_id).trial_end
+            tenant = tenant_service.create(db, TenantCreate(name=TRIAL_SIGNUP_COMPANY))
+            tenant_id = tenant.id
+            first = start_trial_if_eligible(db, tenant_id)
+            assert first is not None
+            first_trial_end = first.trial_end
         finally:
             db.close()
 
-        # Calling it again (e.g. a retried signup handler) must not reset
-        # or extend the trial window.
-        from app.billing.trial import start_trial_if_eligible
-
         db = SessionLocal()
         try:
-            start_trial_if_eligible(db, tenant_id)
-            second_trial_end = crud.get_subscription_by_tenant_id(db, tenant_id).trial_end
+            second = start_trial_if_eligible(db, tenant_id)
+            second_trial_end = second.trial_end
         finally:
             db.close()
         assert second_trial_end == first_trial_end
     finally:
+        db = SessionLocal()
+        try:
+            db.execute(delete(Subscription).where(Subscription.tenant_id == tenant_id))
+            db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant_id))
+            db.commit()
+        finally:
+            db.close()
         _cleanup_trial_signup()
 
 

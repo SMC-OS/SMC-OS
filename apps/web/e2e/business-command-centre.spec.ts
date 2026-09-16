@@ -23,11 +23,11 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 025 Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint025-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint025-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint025-Password-${RUN_ID}!`;
 
 const OTHER_COMPANY_NAME = `Pytest E2E Sprint 025 Other Co ${RUN_ID}`;
 const OTHER_OWNER_EMAIL = `pytest-e2e-sprint025-other-${RUN_ID}@example.invalid`;
-const OTHER_OWNER_PASSWORD = `pytest-e2e-sprint025-other-password-${RUN_ID}`;
+const OTHER_OWNER_PASSWORD = `Pytest-E2e-Sprint025-Other-Password-${RUN_ID}!`;
 
 function formatCurrencyGBP(value: number): string {
   return new Intl.NumberFormat("en-GB", {

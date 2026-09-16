@@ -963,6 +963,17 @@ class Subscription(Base):
     trial_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     trial_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Sprint 039 Production Readiness Defect Gate, final auth + trial gate
+    # (migration b5c6d7e8f9a0). True for every subscription that predates
+    # the card-required-trial contract (backfilled once, at migration
+    # time) or that app/auth/service.py::AuthService.create_user() created
+    # as a same-reasoning-as-email_verified convenience default for a
+    # directly-created ("already established") user — never for a row a
+    # real Stripe webhook created or updated. See
+    # app/auth/dependencies.py::has_active_billing_access, the only place
+    # that reads this column.
+    legacy_grandfathered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

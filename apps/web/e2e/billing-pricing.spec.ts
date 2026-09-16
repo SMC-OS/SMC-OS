@@ -4,25 +4,31 @@ import { BACKEND_URL } from "../playwright.config";
 import { markVerified } from "./verify-helper";
 
 /**
- * Sprint 039 Production Readiness Defect Gate, Blocker 3 — true browser
- * E2E for the locked 4-tier pricing catalogue and the automatic 14-day
- * trial. Setup (tenant/Owner) goes through the real API directly; the
- * pricing page, trial state, and checkout's honest "not configured yet"
- * fallback all run through the real Chromium browser against the real
- * Next.js app and real FastAPI server. No real Stripe checkout is
- * exercised here — Stripe is genuinely unconfigured in this environment
- * (no test-mode keys are available), so this spec proves the product is
- * honest about that rather than faking success (see
- * app/billing/service.py's "ships dark until configured" contract).
+ * GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. True browser E2E for the
+ * locked 4-tier pricing catalogue and the card-required-trial access
+ * boundary. Setup (tenant/Owner) goes through the real API directly;
+ * the pricing page, the access gate, and checkout's honest "not
+ * configured yet" fallback all run through the real Chromium browser
+ * against the real Next.js app and real FastAPI server.
+ *
+ * No real Stripe Checkout is exercised here — Stripe is genuinely
+ * unconfigured in this sandbox (no TEST-mode keys available), so this
+ * spec proves the product is honest about that rather than faking
+ * success (see app/billing/service.py's "ships dark until configured"
+ * contract) and proves the access boundary itself holds for a real
+ * browser session. A real Stripe TEST Checkout completing end-to-end
+ * (card collection, webhook-driven activation) needs to be exercised
+ * once on staging, with real Stripe TEST keys configured, by the owner —
+ * see the release report's own disclosed limitation.
  */
 
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 039 Billing Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint039-billing-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint039-billing-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint039-Billing-Password-${RUN_ID}!`;
 const OWNER_NAME = "Pytest E2E Billing Owner";
 
-test("pricing_page_shows_the_locked_four_tier_catalogue_and_new_owner_is_on_a_trial", async ({
+test("a_verified_new_owner_with_no_subscription_lands_on_pricing_and_cannot_bypass_it", async ({
   page,
 }) => {
   const api = await request.newContext({ baseURL: BACKEND_URL });
@@ -43,14 +49,19 @@ test("pricing_page_shows_the_locked_four_tier_catalogue_and_new_owner_is_on_a_tr
   await page.getByLabel("Email").fill(OWNER_EMAIL);
   await page.getByLabel("Password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/(customers|onboarding)/);
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES: a verified account with
+  // no Subscription at all lands on /pricing, not the workspace.
+  await expect(page).toHaveURL(/\/pricing$/, { timeout: 15_000 });
+
+  // ---- Direct navigation to a protected route redirects back here too
+  // (the gate is not just "don't show a link to it") ----
+  await page.goto("/customers");
+  await page.waitForLoadState("networkidle");
+  await expect(page).toHaveURL(/\/pricing$/);
 
   // ---- The real pricing page, real API-served catalogue ----
-  await page.goto("/pricing");
-  await page.waitForLoadState("networkidle");
-
-  // By heading: each plan name also appears inside its own "Upgrade to
-  // ..." / "Choose ..." button, so a plain text match is ambiguous.
+  // By heading: each plan name also appears inside its own "Choose ..."
+  // button, so a plain text match is ambiguous.
   await expect(page.getByRole("heading", { name: "GeoCore Starter" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "GeoCore Team" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "GeoCore Pro" })).toBeVisible();
@@ -69,12 +80,11 @@ test("pricing_page_shows_the_locked_four_tier_catalogue_and_new_owner_is_on_a_tr
   await expect(page.getByText("£99").first()).toBeVisible();
   await expect(page.getByText("£199").first()).toBeVisible();
 
-  // ---- The new owner is automatically on a trial of the Pro plan ----
-  // exact: true — the countdown banner's own text ("...left in your
-  // trial") case-insensitively contains "Your trial" too, which would
-  // otherwise make this a strict-mode violation against the badge.
-  await expect(page.getByText(/days left in your trial/i)).toBeVisible();
-  await expect(page.getByText("Your trial", { exact: true })).toBeVisible();
+  // ---- No automatic trial — the owner's decision superseded the old
+  // no-card trial. No plan is pre-selected, nothing claims "Your trial". ----
+  await expect(page.getByText(/days left in your trial/i)).toHaveCount(0);
+  await expect(page.getByText("Your trial", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /choose geocore pro/i })).toBeVisible();
 
   await api.dispose();
 });
@@ -98,20 +108,20 @@ test("checkout_is_honest_about_stripe_not_being_configured_yet", async ({ page }
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/(customers|onboarding)/);
+  await expect(page).toHaveURL(/\/pricing$/, { timeout: 15_000 });
 
-  await page.goto("/pricing");
-  await page.waitForLoadState("networkidle");
-
-  // The trialing Owner is offered an upgrade (not a fresh "Choose" CTA)
-  // on the plan they're already trialing.
-  await page.getByRole("button", { name: /upgrade to geocore business/i }).click();
+  // No subscription exists yet, so every plan offers a fresh "Choose",
+  // not an "Upgrade" (that only applies once already on a plan).
+  await page.getByRole("button", { name: /choose geocore business/i }).click();
 
   // Stripe genuinely isn't configured in this environment — the product
-  // must say so honestly, never fake a successful checkout redirect.
+  // must say so honestly, never fake a successful checkout redirect, and
+  // the owner stays exactly where they were (still gated, not
+  // accidentally let through).
   await expect(
     page.getByText(/billing isn't fully configured yet/i)
   ).toBeVisible();
+  await expect(page).toHaveURL(/\/pricing$/);
 
   await api.dispose();
 });

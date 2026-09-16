@@ -27,7 +27,7 @@ from app.communications.templates import render_invitation
 from app.core.config import settings
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Communication, EmailSuppression, Tenant
+from app.database.models import ActivityLog, Communication, EmailSuppression, Subscription, Tenant
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -44,6 +44,7 @@ def _cleanup():
                 db.execute(delete(EmailSuppression).where(EmailSuppression.tenant_id == tenant.id))
                 db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
                 db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+                db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
                 db.execute(delete(Tenant).where(Tenant.id == tenant.id))
         db.commit()
     finally:

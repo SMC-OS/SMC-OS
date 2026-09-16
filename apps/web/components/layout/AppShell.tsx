@@ -59,6 +59,27 @@ const VERIFICATION_EXEMPT_ROUTES = [
   "/demo",
 ];
 
+// GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. Routes a verified-but-
+// not-yet-billing-activated user must still be able to reach: signing
+// in or out and the public auth-lifecycle pages (same reasoning as
+// VERIFICATION_EXEMPT_ROUTES above), plus /pricing itself — which is
+// both where plan selection happens AND where Stripe redirects back to
+// after Checkout (app/billing/service.py's success_url/cancel_url).
+// This is UX routing only; the backend is the real boundary (see
+// app/auth/dependencies.py's require_billing_access) — a user who
+// bypasses this redirect still gets a 402 from every protected route.
+const BILLING_EXEMPT_ROUTES = [
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+  "/invite",
+  "/portal",
+  "/pricing",
+  "/demo",
+];
+
 function matchesRoute(pathname: string | null, routes: string[]): boolean {
   if (!pathname) return false;
   return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
@@ -71,13 +92,23 @@ function isStandaloneRoute(pathname: string | null): boolean {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isReady, isAuthenticated, verificationRequired } = useAuth();
+  const { isReady, isAuthenticated, verificationRequired, billingAccessRequired } = useAuth();
 
   useEffect(() => {
     if (!isReady || !isAuthenticated || !verificationRequired) return;
     if (matchesRoute(pathname, VERIFICATION_EXEMPT_ROUTES)) return;
     router.replace("/verify-email");
   }, [isReady, isAuthenticated, verificationRequired, pathname, router]);
+
+  useEffect(() => {
+    // Verification is the narrower, earlier gate — an unverified user is
+    // already being sent to /verify-email by the effect above, so this
+    // one only has an opinion once that's resolved (never race the two
+    // redirects against each other).
+    if (!isReady || !isAuthenticated || verificationRequired || !billingAccessRequired) return;
+    if (matchesRoute(pathname, BILLING_EXEMPT_ROUTES)) return;
+    router.replace("/pricing");
+  }, [isReady, isAuthenticated, verificationRequired, billingAccessRequired, pathname, router]);
 
   if (isStandaloneRoute(pathname)) {
     return <div className="min-h-screen overflow-y-auto bg-background">{children}</div>;

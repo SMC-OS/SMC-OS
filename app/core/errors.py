@@ -20,6 +20,23 @@ from app.quotes.validator import DimensionError
 
 logger = logging.getLogger("simo_os")
 
+# Sprint 039 Production Readiness Defect Gate, final auth gate — Pydantic's
+# default validation-error shape echoes the rejected value back verbatim
+# under "input". Harmless for most fields (and useful for debugging), but
+# never acceptable for a password: app.auth.password_policy's rejection
+# messages already say exactly what's missing, so the raw candidate
+# password never needs to appear in a response body a browser, proxy, or
+# log aggregator might capture.
+_SENSITIVE_FIELD_NAMES = {"password", "new_password"}
+
+
+def _redact_sensitive_inputs(errors: list[dict]) -> list[dict]:
+    for error in errors:
+        loc = error.get("loc") or []
+        if any(str(part) in _SENSITIVE_FIELD_NAMES for part in loc):
+            error.pop("input", None)
+    return errors
+
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
@@ -28,9 +45,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         # raises ValueError (e.g. app/appointments/models.py's
         # scheduled_at check) puts the live exception object in each
         # error's ctx["error"], which plain json.dumps can't serialize.
+        errors = _redact_sensitive_inputs(jsonable_encoder(exc.errors()))
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": "Invalid request", "errors": jsonable_encoder(exc.errors())},
+            content={"detail": "Invalid request", "errors": errors},
         )
 
     @app.exception_handler(KeyError)

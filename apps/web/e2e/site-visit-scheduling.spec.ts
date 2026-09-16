@@ -17,7 +17,7 @@ import { markVerified } from "./verify-helper";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 022 Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint022-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint022-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint022-Password-${RUN_ID}!`;
 const PROJECT_NAME = `Pytest E2E Sprint 022 Project ${RUN_ID}`;
 const NOTES = `Pytest E2E Sprint 022 Notes ${RUN_ID}`;
 

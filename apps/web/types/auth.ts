@@ -17,6 +17,13 @@ export interface AuthUser {
   // verification_required=false, and only the backend
   // (app.auth.dependencies.is_verification_required) knows that.
   verification_required: boolean;
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. Whether this user is
+  // CURRENTLY blocked from normal workspace access pending billing/trial
+  // activation (a real Stripe Checkout, card required). Route on this,
+  // not on any locally-derived subscription state: only the backend
+  // (app.auth.dependencies.has_active_billing_access) knows about the
+  // legacy_grandfathered exemption.
+  billing_access_required: boolean;
 }
 
 export interface LoginResponse {

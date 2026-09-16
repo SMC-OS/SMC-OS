@@ -7,7 +7,9 @@ import { Suspense, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { PasswordField } from "@/components/ui/PasswordField";
+import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 import { ApiError, api } from "@/lib/api";
+import { passwordPolicyError } from "@/lib/passwordPolicy";
 
 /**
  * Sprint 039 Production Readiness Defect Gate, Blocker 2.
@@ -38,8 +40,9 @@ function ResetPasswordContent() {
       setError("Passwords don't match.");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const policyError = passwordPolicyError(password);
+    if (policyError) {
+      setError(policyError);
       return;
     }
 
@@ -51,7 +54,7 @@ function ResetPasswordContent() {
       if (err instanceof ApiError && err.status === 400) {
         setState("invalid");
       } else if (err instanceof ApiError && err.status === 422) {
-        setError("Password must be at least 8 characters.");
+        setError(policyError ?? "Password does not meet the requirements below.");
       } else {
         setError("Something went wrong.");
       }
@@ -116,6 +119,7 @@ function ResetPasswordContent() {
                 value={password}
                 onChange={setPassword}
               />
+              <PasswordRequirements password={password} />
               <PasswordField
                 id="confirmPassword"
                 label="Confirm new password"

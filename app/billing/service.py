@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.billing.plans import plan_and_period_for_price_id, price_id_for
+from app.billing.plans import TRIAL_LENGTH_DAYS, plan_and_period_for_price_id, price_id_for
 from app.core.config import settings
 from app.database import crud
 from app.database.models import Subscription, Tenant
@@ -84,14 +84,31 @@ class BillingService:
                     "billing_period": billing_period,
                 },
                 subscription_data={
+                    # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES: the
+                    # owner's decision superseded the old no-card trial
+                    # (app/billing/trial.py, no longer called from signup).
+                    # Stripe's own trial-on-Checkout mechanism collects a
+                    # payment method by default in subscription mode
+                    # (payment_method_collection is "always" unless
+                    # explicitly relaxed, which this never does) — the
+                    # resulting Subscription starts "trialing", not
+                    # "active", and the trial's own card-verification
+                    # authorization is never a subscription charge.
+                    "trial_period_days": TRIAL_LENGTH_DAYS,
                     "metadata": {
                         "tenant_id": str(tenant.id),
                         "plan": plan,
                         "billing_period": billing_period,
-                    }
+                    },
                 },
-                success_url=f"{settings.frontend_base_url}/settings?billing=success",
-                cancel_url=f"{settings.frontend_base_url}/settings?billing=cancelled",
+                # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES: /settings
+                # is a normal workspace route, gated by require_billing_access
+                # — a not-yet-activated tenant returning from Checkout could
+                # never reach it. /pricing is exempt from that gate (it's
+                # how a tenant reaches Checkout in the first place) and
+                # already re-fetches subscription state on load.
+                success_url=f"{settings.frontend_base_url}/pricing?billing=success",
+                cancel_url=f"{settings.frontend_base_url}/pricing?billing=cancelled",
             )
         except Exception as exc:
             raise BillingError(str(exc)) from exc
@@ -169,6 +186,20 @@ class BillingService:
             handler(self, db, event_object)
 
     def _handle_checkout_completed(self, db: Session, session_obj: dict) -> None:
+        """Wires up tenant<->Stripe linkage (customer/subscription ids,
+        plan/billing_period) from the Checkout Session — the only event
+        that carries `client_reference_id`/session-level metadata at all.
+        Deliberately does NOT set `status`: with `trial_period_days` set
+        (see create_checkout_session), the real Subscription this Checkout
+        creates starts "trialing", not "active" — that authoritative
+        status (plus trial_start/trial_end) arrives via
+        `customer.subscription.created`, handled by
+        _handle_subscription_upsert below, which may even land before this
+        event does. Preserves whatever status/trial dates already exist
+        (None here is a genuine "don't touch" per crud.upsert_subscription,
+        not a per-field default) so neither ordering can clobber the
+        other's write.
+        """
         tenant_id_raw = (session_obj.get("metadata") or {}).get("tenant_id") or session_obj.get(
             "client_reference_id"
         )
@@ -182,44 +213,81 @@ class BillingService:
         if not plan or not billing_period:
             return
 
+        existing = crud.get_subscription_by_tenant_id(db, tenant_id)
         crud.upsert_subscription(
             db,
             tenant_id=tenant_id,
             plan=plan,
             billing_period=billing_period,
-            status="active",
+            status=existing.status if existing is not None else "incomplete",
             stripe_customer_id=session_obj.get("customer"),
             stripe_subscription_id=session_obj.get("subscription"),
-            cancel_at_period_end=False,
+            cancel_at_period_end=existing.cancel_at_period_end if existing is not None else False,
         )
 
-    def _handle_subscription_updated(self, db: Session, subscription_obj: dict) -> None:
+    def _handle_subscription_upsert(self, db: Session, subscription_obj: dict) -> None:
+        """Shared by `customer.subscription.created` and `.updated` — both
+        deliver an identically-shaped Subscription object, and this is the
+        one authoritative source for `status` (so "trialing" -> "active"
+        at trial end, or a payment failure's "incomplete"/"past_due", are
+        always reflected) and for `trial_start`/`trial_end`.
+
+        Unlike the old _handle_subscription_updated this replaces, this
+        must tolerate NO existing row yet keyed by stripe_subscription_id
+        — `customer.subscription.created` can arrive before (or without;
+        Stripe's ordering isn't guaranteed) `checkout.session.completed`'s
+        own linkage write above, so it falls back to the tenant_id Stripe
+        also carries in the Subscription's own metadata (set by
+        create_checkout_session's `subscription_data.metadata`).
+        """
         stripe_subscription_id = subscription_obj.get("id")
         existing = crud.get_subscription_by_stripe_subscription_id(db, stripe_subscription_id)
         if existing is None:
-            return
+            tenant_id_raw = (subscription_obj.get("metadata") or {}).get("tenant_id")
+            if not tenant_id_raw:
+                return
+            tenant_id = uuid.UUID(tenant_id_raw)
+            existing = crud.get_subscription_by_tenant_id(db, tenant_id)
+        else:
+            tenant_id = existing.tenant_id
 
         items = (subscription_obj.get("items") or {}).get("data") or []
-        price_id = items[0]["price"]["id"] if items else existing.stripe_price_id
+        price_id = items[0]["price"]["id"] if items else (existing.stripe_price_id if existing else None)
         resolved = plan_and_period_for_price_id(price_id) if price_id else None
-        plan, billing_period = resolved if resolved else (existing.plan, existing.billing_period)
+        if resolved:
+            plan, billing_period = resolved
+        elif existing is not None:
+            plan, billing_period = existing.plan, existing.billing_period
+        else:
+            metadata = subscription_obj.get("metadata") or {}
+            plan = metadata.get("plan")
+            billing_period = metadata.get("billing_period")
+            if not plan or not billing_period:
+                return
 
         period_end_ts = subscription_obj.get("current_period_end")
         current_period_end = (
             datetime.fromtimestamp(period_end_ts, tz=timezone.utc) if period_end_ts else None
         )
+        trial_start_ts = subscription_obj.get("trial_start")
+        trial_end_ts = subscription_obj.get("trial_end")
 
         crud.upsert_subscription(
             db,
-            tenant_id=existing.tenant_id,
+            tenant_id=tenant_id,
             plan=plan,
             billing_period=billing_period,
-            status=subscription_obj.get("status", existing.status),
-            stripe_customer_id=subscription_obj.get("customer") or existing.stripe_customer_id,
+            status=subscription_obj.get("status", existing.status if existing else "incomplete"),
+            stripe_customer_id=subscription_obj.get("customer")
+            or (existing.stripe_customer_id if existing else None),
             stripe_subscription_id=stripe_subscription_id,
             stripe_price_id=price_id,
             current_period_end=current_period_end,
             cancel_at_period_end=bool(subscription_obj.get("cancel_at_period_end")),
+            trial_start=datetime.fromtimestamp(trial_start_ts, tz=timezone.utc)
+            if trial_start_ts
+            else None,
+            trial_end=datetime.fromtimestamp(trial_end_ts, tz=timezone.utc) if trial_end_ts else None,
         )
 
     def _handle_subscription_deleted(self, db: Session, subscription_obj: dict) -> None:
@@ -284,7 +352,8 @@ class BillingService:
 
     _EVENT_HANDLERS = {
         "checkout.session.completed": _handle_checkout_completed,
-        "customer.subscription.updated": _handle_subscription_updated,
+        "customer.subscription.created": _handle_subscription_upsert,
+        "customer.subscription.updated": _handle_subscription_upsert,
         "customer.subscription.deleted": _handle_subscription_deleted,
         "invoice.payment_failed": _handle_invoice_payment_failed,
         "invoice.paid": _handle_invoice_paid,

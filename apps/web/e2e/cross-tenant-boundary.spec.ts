@@ -15,11 +15,11 @@ import { markVerified } from "./verify-helper";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const TENANT_A_EMAIL = `pytest-e2e-sprint027-xtenant-a-${RUN_ID}@example.invalid`;
-const TENANT_A_PASSWORD = `pytest-e2e-sprint027-xtenant-a-password-${RUN_ID}`;
+const TENANT_A_PASSWORD = `Pytest-E2e-Sprint027-Xtenant-A-Password-${RUN_ID}!`;
 const TENANT_A_COMPANY = `Pytest E2E Sprint 027 Tenant A ${RUN_ID}`;
 
 const TENANT_B_EMAIL = `pytest-e2e-sprint027-xtenant-b-${RUN_ID}@example.invalid`;
-const TENANT_B_PASSWORD = `pytest-e2e-sprint027-xtenant-b-password-${RUN_ID}`;
+const TENANT_B_PASSWORD = `Pytest-E2e-Sprint027-Xtenant-B-Password-${RUN_ID}!`;
 const TENANT_B_COMPANY = `Pytest E2E Sprint 027 Tenant B ${RUN_ID}`;
 
 test("tenant_b_sees_a_clean_not_found_state_for_tenant_a_resources_through_the_ui", async ({

@@ -39,9 +39,9 @@ function fillForm() {
   fireEvent.change(screen.getByLabelText("Email"), {
     target: { value: "jane@acmestoneworks.invalid" },
   });
-  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a-real-password" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "A-Real-Password-1!" } });
   fireEvent.change(screen.getByLabelText("Confirm password"), {
-    target: { value: "a-real-password" },
+    target: { value: "A-Real-Password-1!" },
   });
 }
 
@@ -83,6 +83,23 @@ describe("SignupPage — Sprint 027 full-system journey entry point", () => {
     expect(signupMock).not.toHaveBeenCalled();
   });
 
+  // Sprint 039 Production Readiness Defect Gate, final auth gate — the
+  // frontend policy check (apps/web/lib/passwordPolicy.ts) must reject
+  // the same passwords the backend does (app/auth/password_policy.py),
+  // before ever calling the API.
+  it("blocks_a_weak_password_that_fails_policy_without_sending_credentials", async () => {
+    render(<SignupPage />);
+    fillForm();
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "123" } });
+    fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "123" } });
+    fireEvent.submit(screen.getByRole("button", { name: /create workspace/i }).closest("form")!);
+
+    expect(
+      await screen.findByText("Password must include: at least 10 characters.")
+    ).toBeInTheDocument();
+    expect(signupMock).not.toHaveBeenCalled();
+  });
+
   it("submits_the_full_signup_payload_and_redirects_to_onboarding_when_already_verified", async () => {
     // e.g. a legacy-grace-exempt account, or verification disabled in a
     // given environment — signup() resolving false means normal access.
@@ -97,7 +114,7 @@ describe("SignupPage — Sprint 027 full-system journey entry point", () => {
         company_name: "Acme Stoneworks",
         name: "Jane Doe",
         email: "jane@acmestoneworks.invalid",
-        password: "a-real-password",
+        password: "A-Real-Password-1!",
       });
     });
     // Sprint 036 (Workstream J) — a brand-new workspace lands on setup

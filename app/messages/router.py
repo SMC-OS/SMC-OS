@@ -11,7 +11,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_verified_email
+from app.auth.dependencies import require_billing_access
 from app.database.database import get_db
 from app.database.models import User
 from app.messages.models import MessageCreate, MessageOut
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/messages", tags=["messages"])
 def post_message(
     customer_id: uuid.UUID,
     data: MessageCreate,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     try:
@@ -42,7 +42,7 @@ def post_message(
 @router.get("", response_model=list[MessageOut])
 def list_messages(
     customer_id: uuid.UUID,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     try:

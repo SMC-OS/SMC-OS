@@ -15,7 +15,7 @@ import { markVerified } from "./verify-helper";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 028 Logout Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint028-logout-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint028-logout-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint028-Logout-Password-${RUN_ID}!`;
 const OWNER_NAME = "Pytest E2E Logout Owner";
 
 test("logging_out_terminates_the_session_and_protected_routes_redirect_to_login", async ({

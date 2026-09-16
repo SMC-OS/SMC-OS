@@ -28,7 +28,7 @@ from sqlalchemy import delete, select
 
 from app.auth.service import auth_service
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, Quote, QuoteItem, Tenant, User
+from app.database.models import ActivityLog, Customer, Quote, QuoteItem, Subscription, Tenant, User
 from app.quotes.pdf import PDFGenerator
 from app.tenants.identity import CompanyIdentity, resolve
 from app.tenants.models import TenantCreate, TenantProfileUpdate
@@ -361,6 +361,7 @@ def _cleanup_other_tenant():
         tenant = db.query(Tenant).filter(Tenant.name == OTHER_TENANT_NAME).first()
         if tenant is not None:
             db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+            db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
         db.execute(delete(User).where(User.email == OTHER_OWNER_EMAIL))
         db.execute(delete(Tenant).where(Tenant.name == OTHER_TENANT_NAME))
         db.commit()

@@ -36,7 +36,7 @@ USER_EMAIL = "pytest-email-verification-user@example.invalid"
 SIGNUP_EMAIL = "pytest-email-verification-signup@example.invalid"
 SIGNUP_COMPANY = "Pytest Email Verification Signup Co"
 INVITEE_EMAIL = "pytest-invitee-blocked@example.invalid"
-PASSWORD = "correct-horse-battery-staple"
+PASSWORD = "Correct-Horse-Battery-1!"
 
 
 def _cleanup():

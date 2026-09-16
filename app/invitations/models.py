@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from app.auth.password_policy import validate_password_strength
 
 
 class InvitationCreate(BaseModel):
@@ -55,4 +57,12 @@ class InvitationPublicOut(BaseModel):
 
 class AcceptInvitationRequest(BaseModel):
     name: str
+    # Sprint 039 Production Readiness Defect Gate, final auth gate — same
+    # policy as SignupRequest.password and ResetPasswordRequest.new_password
+    # (app.auth.password_policy); previously unvalidated.
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def _password_policy(cls, value: str) -> str:
+        return validate_password_strength(value)
