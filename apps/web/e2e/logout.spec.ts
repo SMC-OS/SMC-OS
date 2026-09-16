@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 028 UAT acceptance matrix AT-04 — logout was never exercised by
  * any existing spec (every prior spec signs up/logs in but none signs
@@ -34,7 +34,7 @@ test("logging_out_terminates_the_session_and_protected_routes_redirect_to_login"
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
-
+  grantBillingAccess(OWNER_EMAIL);
   // ---- Authenticate through the real login UI ----
   await page.goto("/login");
   await page.waitForLoadState("networkidle");

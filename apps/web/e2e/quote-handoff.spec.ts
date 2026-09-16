@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 020 — first true browser E2E test. Setup (tenant/customer/quote)
  * goes through the real API directly (same payload shapes as
@@ -33,6 +33,7 @@ test("customer_quote_approval_handoff_persists_project", async ({ page }) => {
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: token } = await signup.json();
   const authHeaders = { Authorization: `Bearer ${token}` };
 

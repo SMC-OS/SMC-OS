@@ -4,8 +4,8 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
 // Sprint 039 Production Readiness Defect Gate, Blocker 1 — see
@@ -71,6 +71,7 @@ test("a_staff_session_sees_owner_only_controls_absent_not_merely_rejected", asyn
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: ownerToken } = await signup.json();
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
   await verifyOwnerEmail(api, OWNER_EMAIL);

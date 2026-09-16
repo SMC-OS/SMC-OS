@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 036 (Workstream E) — universal quoting, through the real
  * browser against the real Next.js app and real FastAPI server.
@@ -38,6 +38,7 @@ async function signUpAndLogIn(page: import("@playwright/test").Page, runId: stri
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(ownerEmail);
+  grantBillingAccess(ownerEmail);
   const { access_token: token } = await signup.json();
   const authHeaders = { Authorization: `Bearer ${token}` };
 

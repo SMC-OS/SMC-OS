@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 test("Create Workspace password confirmation and independent visibility", async ({ page }) => {
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const password = `Demo-safe-password-${runId}`;
@@ -34,6 +34,7 @@ test("Create Workspace password confirmation and independent visibility", async 
   // unlocks /onboarding, not marking verified before the click.
   await expect(page).toHaveURL(/\/verify-email$/);
   markVerified(email);
+  grantBillingAccess(email);
   await page.goto("/onboarding");
   await expect(page).toHaveURL(/\/onboarding$/);
 });
@@ -47,7 +48,7 @@ test("Login password can be shown and hidden before Enter submits", async ({ pag
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(email);
-
+  grantBillingAccess(email);
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);

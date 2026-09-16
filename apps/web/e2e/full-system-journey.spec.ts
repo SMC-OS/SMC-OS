@@ -6,6 +6,7 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 
 /**
  * Sprint 027 (docs/SPRINTS/sprint-027.md §6.14/§7) — the centrepiece of
@@ -110,6 +111,12 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   // longer needs its own separate verification call.
   await expect(page).toHaveURL(/\/verify-email$/, { timeout: 15_000 });
   await verifyOwnerEmail(api, OWNER_EMAIL);
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — this journey's subject
+  // is module hand-off end to end, not billing activation itself (that's
+  // billing-pricing.spec.ts), so it grants billing access the same way
+  // it already grants verification above, rather than routing through a
+  // real (unconfigured-in-this-sandbox) Stripe Checkout.
+  grantBillingAccess(OWNER_EMAIL);
   await page.goto("/onboarding");
 
   // Sprint 036 (Workstream J) — a brand-new workspace now lands on

@@ -4,8 +4,8 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 039 Production Readiness Defect Gate, Blocker 2 — true browser
  * E2E for password recovery. Structural twin of
@@ -72,7 +72,7 @@ test("forgot_password_link_reset_flow_and_old_session_revoked", async ({ page, b
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
-
+  grantBillingAccess(OWNER_EMAIL);
   // ---- Sign in through the real login UI, keep this session open in its
   // own browser context so we can prove it's revoked after the reset ----
   const oldSessionContext = await browser.newContext();

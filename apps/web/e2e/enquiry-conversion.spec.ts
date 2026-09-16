@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 021 — true browser E2E for enquiry-to-customer conversion.
  * Structural twin of e2e/quote-handoff.spec.ts (Sprint 020). Setup (tenant +
@@ -39,6 +39,7 @@ test("unlinked_enquiry_can_be_converted_to_customer_and_persists", async ({ page
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: token } = await signup.json();
   const authHeaders = { Authorization: `Bearer ${token}` };
 

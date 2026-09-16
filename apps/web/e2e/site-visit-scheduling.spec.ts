@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 022 — true browser E2E for site visit scheduling. Structural twin
  * of e2e/enquiry-conversion.spec.ts (Sprint 021). Setup (tenant + Project)
@@ -37,6 +37,7 @@ test("a_site_visit_can_be_scheduled_and_completed_through_the_ui_and_persists", 
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: token } = await signup.json();
   const authHeaders = { Authorization: `Bearer ${token}` };
 
