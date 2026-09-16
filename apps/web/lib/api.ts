@@ -197,9 +197,15 @@ export const api = {
 
   getMe: () => request<AuthUser>("/auth/me"),
 
-  // Sprint 039 Production Readiness Defect Gate, Blocker 1.
+  // Sprint 039 Production Readiness Defect Gate, Blocker 1. `already_verified`
+  // (Blocker 2 follow-up, verification resend/token hotfix) is the only way
+  // the caller can tell "a new email was actually queued" apart from a
+  // silent no-op for an account that's already verified — both return 200.
   resendVerificationEmail: () =>
-    request<{ message: string }>("/auth/email/verify/resend", { method: "POST" }),
+    request<{ message: string; already_verified: boolean }>(
+      "/auth/email/verify/resend",
+      { method: "POST" }
+    ),
 
   confirmEmailVerification: (token: string) =>
     request<{ message: string }>("/auth/email/verify/confirm", {

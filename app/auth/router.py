@@ -14,6 +14,7 @@ from app.auth.models import (
     SignupRequest,
     TokenResponse,
     UserOut,
+    VerificationResendResponse,
     VerifyEmailConfirmRequest,
 )
 from app.auth.password_reset_service import ResetTokenInvalidError, password_reset_service
@@ -64,12 +65,21 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token, user=auth_service.build_user_out(db, user))
 
 
-@router.post("/email/verify/resend", response_model=MessageResponse)
+@router.post("/email/verify/resend", response_model=VerificationResendResponse)
 def resend_verification_email(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2 follow-up
+    # (verification resend/token hotfix) — already_verified=True here is
+    # not merely informational: it is the caller's only way to know that
+    # nothing was actually queued, since this early return skips the
+    # cooldown check and send_verification_email() entirely (there is
+    # nothing to cool down or send for an account that no longer needs
+    # verifying).
     if current_user.email_verified_at is not None:
-        return MessageResponse(message="Your email is already verified.")
+        return VerificationResendResponse(
+            message="Your email is already verified.", already_verified=True
+        )
     email_verification_resend_limiter.check_and_record(
         str(current_user.id),
         cooldown_seconds=settings.email_verification_resend_cooldown_seconds,
@@ -83,7 +93,7 @@ def resend_verification_email(
         ),
         tenant_id=current_user.tenant_id,
     )
-    return MessageResponse(message="Verification email sent.")
+    return VerificationResendResponse(message="Verification email sent.", already_verified=False)
 
 
 @router.post("/email/verify/confirm", response_model=MessageResponse)
