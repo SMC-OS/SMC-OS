@@ -129,8 +129,8 @@ test("forgot_password_link_reset_flow_and_old_session_revoked", async ({ page, b
 test("reset_with_an_invalid_token_shows_the_invalid_state", async ({ page }) => {
   await page.goto("/reset-password?token=not-a-real-token");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("New password", { exact: true }).fill("some-new-password-1");
-  await page.getByLabel("Confirm new password").fill("some-new-password-1");
+  await page.getByLabel("New password", { exact: true }).fill("Some-New-Password-1!");
+  await page.getByLabel("Confirm new password").fill("Some-New-Password-1!");
   await page.getByRole("button", { name: "Reset password" }).click();
   await expect(page.getByText(/invalid or has expired/i)).toBeVisible();
 });

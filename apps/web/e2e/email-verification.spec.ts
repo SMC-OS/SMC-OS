@@ -109,12 +109,13 @@ test("signup_lands_on_verify_email_and_confirming_the_emailed_link_unlocks_the_w
   // billing-pricing.spec.ts), so it grants billing access explicitly
   // here, the same "not this test's subject" reasoning applied
   // throughout this suite, rather than routing through a real
-  // (unconfigured-in-this-sandbox) Stripe Checkout.
-  // The billing grant above happened server-side, after this browser's
-  // AuthProvider already cached its pre-grant state — same "needs a
-  // fresh navigation to re-fetch /auth/me" requirement Sprint 039
-  // Blocker 2's own fixture fixes established, so a direct goto is used
-  // here instead of the in-app client-side "Continue to GeoCore" click.
+  // (unconfigured-in-this-sandbox) Stripe Checkout. That grant happens
+  // server-side, after this browser's AuthProvider already cached its
+  // pre-grant state — same "needs a fresh navigation to re-fetch
+  // /auth/me" requirement Sprint 039 Blocker 2's own fixture fixes
+  // established, so a direct goto is used below instead of the in-app
+  // client-side "Continue to GeoCore" click.
+  grantBillingAccess(OWNER_EMAIL);
   await page.goto("/customers");
   await page.waitForLoadState("networkidle");
   await expect(page).toHaveURL(/\/customers/);
