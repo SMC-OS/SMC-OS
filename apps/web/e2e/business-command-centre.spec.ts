@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { markVerified } from "./verify-helper";
 
 /**
  * Sprint 025 — true browser E2E for the Business Command Centre. Structural
@@ -59,6 +60,7 @@ test("business_command_centre_shows_exact_controlled_metrics_and_excludes_other_
     },
   });
   expect(signup.ok()).toBeTruthy();
+  markVerified(OWNER_EMAIL);
   const { access_token: token } = await signup.json();
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -73,6 +75,7 @@ test("business_command_centre_shows_exact_controlled_metrics_and_excludes_other_
     },
   });
   expect(otherSignup.ok()).toBeTruthy();
+  markVerified(OTHER_OWNER_EMAIL);
   const { access_token: otherToken } = await otherSignup.json();
   const otherHeaders = { Authorization: `Bearer ${otherToken}` };
   const otherProject = await api.post("/api/v1/projects", {

@@ -1,6 +1,9 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+import { useAuth } from "@/components/auth/AuthProvider";
 
 import { MobileNav } from "./MobileNav";
 import { SidebarProvider } from "./SidebarContext";
@@ -34,15 +37,47 @@ import { Topbar } from "./Topbar";
  */
 const STANDALONE_ROUTES = ["/demo"];
 
-function isStandaloneRoute(pathname: string | null): boolean {
+// Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix — routes an
+// unverified-but-authenticated user must still be able to reach: signing in
+// or out, the public auth-lifecycle pages, and the verification screen
+// itself (redirecting away from /verify-email TO /verify-email would loop).
+// Deliberately the same allowlist app/auth/router.py enforces server-side
+// (plus /pricing and /portal, which need no verification at all — /pricing
+// is publicly browsable and /portal is customer-facing, not this tenant's
+// own session). This is UX routing only; the backend is the real boundary
+// (see app/auth/dependencies.py's require_verified_email) — a user who
+// bypasses this redirect still gets a 403 from every protected route.
+const VERIFICATION_EXEMPT_ROUTES = [
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+  "/invite",
+  "/portal",
+  "/pricing",
+  "/demo",
+];
+
+function matchesRoute(pathname: string | null, routes: string[]): boolean {
   if (!pathname) return false;
-  return STANDALONE_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`)
-  );
+  return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
+
+function isStandaloneRoute(pathname: string | null): boolean {
+  return matchesRoute(pathname, STANDALONE_ROUTES);
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { isReady, isAuthenticated, verificationRequired } = useAuth();
+
+  useEffect(() => {
+    if (!isReady || !isAuthenticated || !verificationRequired) return;
+    if (matchesRoute(pathname, VERIFICATION_EXEMPT_ROUTES)) return;
+    router.replace("/verify-email");
+  }, [isReady, isAuthenticated, verificationRequired, pathname, router]);
 
   if (isStandaloneRoute(pathname)) {
     return <div className="min-h-screen overflow-y-auto bg-background">{children}</div>;

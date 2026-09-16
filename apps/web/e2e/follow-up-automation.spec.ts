@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { markVerified } from "./verify-helper";
 
 /**
  * Sprint 024 — true browser E2E for stale-enquiry follow-up automation.
@@ -51,6 +52,7 @@ test("a_stale_enquiry_notification_is_created_shown_navigable_and_deduplicated",
     },
   });
   expect(signup.ok()).toBeTruthy();
+  markVerified(OWNER_EMAIL);
   const { access_token: token } = await signup.json();
   const authHeaders = { Authorization: `Bearer ${token}` };
 

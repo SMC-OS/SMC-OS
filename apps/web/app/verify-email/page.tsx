@@ -7,7 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 
 /**
  * Sprint 039 Production Readiness Defect Gate, Blocker 1.
@@ -18,19 +18,23 @@ import { api } from "@/lib/api";
  * a person opening this on a different device/browser than the one they
  * signed up on must still be able to verify.
  *
- * Loaded with no `?token` at all, this instead shows the "we've sent you
- * a link, go check your inbox" state — reachable from Settings after
- * hitting "Resend verification email".
+ * Loaded with no `?token` at all, this is the "verification required"
+ * holding screen: AppShell (Sprint 039 Blocker 2 hotfix) redirects every
+ * authenticated-but-unverified user here for any route this narrow
+ * allowlist doesn't cover, so this state must be fully self-sufficient —
+ * resend, sign out, nothing else needed to get unstuck.
  */
 type ConfirmState = "verifying" | "success" | "invalid" | "no-token";
+type ResendState = "idle" | "sending" | "sent" | "cooldown" | "error";
 
 function VerifyEmailContent() {
   const params = useSearchParams();
   const router = useRouter();
   const token = params.get("token");
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, email, logout } = useAuth();
 
   const [state, setState] = useState<ConfirmState>(token ? "verifying" : "no-token");
+  const [resendState, setResendState] = useState<ResendState>("idle");
 
   useEffect(() => {
     if (!token) return;
@@ -39,6 +43,26 @@ function VerifyEmailContent() {
       .then(() => setState("success"))
       .catch(() => setState("invalid"));
   }, [token]);
+
+  async function handleResend() {
+    setResendState("sending");
+    try {
+      await api.resendVerificationEmail();
+      setResendState("sent");
+    } catch (err) {
+      // Sprint 039 Blocker 2 hotfix — the resend cooldown (app.auth.
+      // rate_limit's CooldownLimiter) returns 429; every other failure
+      // (network, 5xx) gets the generic message. Neither ever reveals
+      // whether a *different* address has an account — this button only
+      // ever acts on the signed-in user's own session.
+      setResendState(err instanceof ApiError && err.status === 429 ? "cooldown" : "error");
+    }
+  }
+
+  function handleLogout() {
+    logout();
+    router.push("/login");
+  }
 
   return (
     <div className="mx-auto max-w-sm">
@@ -72,10 +96,10 @@ function VerifyEmailContent() {
               </p>
               <p className="text-sm text-muted">
                 {isAuthenticated ? (
-                  <>You can request a new one from Settings &rarr; Security.</>
+                  <>Request a new link below.</>
                 ) : (
                   <>
-                    Sign in and request a new one from Settings &rarr; Security, or{" "}
+                    Sign in and request a new one, or{" "}
                     <Link href="/login" className="text-accent hover:underline">
                       sign in
                     </Link>
@@ -83,17 +107,74 @@ function VerifyEmailContent() {
                   </>
                 )}
               </p>
+              {isAuthenticated && (
+                <ResendControl resendState={resendState} onResend={handleResend} />
+              )}
             </>
           )}
 
           {state === "no-token" && (
-            <p className="text-sm text-muted">
-              We&apos;ve sent a verification link to your email address. Click it to
-              verify your account.
-            </p>
+            <>
+              <p className="text-sm text-foreground">
+                We&apos;ve sent a verification link to{" "}
+                {email ? <span className="font-medium">{email}</span> : "your email address"}.
+                Verify your email to continue to GeoCore.
+              </p>
+              {isAuthenticated ? (
+                <>
+                  <ResendControl resendState={resendState} onResend={handleResend} />
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="text-sm text-muted hover:text-foreground hover:underline"
+                  >
+                    Sign out
+                  </button>
+                </>
+              ) : (
+                <p className="text-sm text-muted">
+                  Already verified?{" "}
+                  <Link href="/login" className="text-accent hover:underline">
+                    Sign in
+                  </Link>
+                  .
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function ResendControl({
+  resendState,
+  onResend,
+}: {
+  resendState: ResendState;
+  onResend: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Button
+        variant="outline"
+        onClick={onResend}
+        disabled={resendState === "sending"}
+      >
+        {resendState === "sending" ? "Sending…" : "Resend verification email"}
+      </Button>
+      {resendState === "sent" && (
+        <p className="text-sm text-success">Verification email sent — check your inbox.</p>
+      )}
+      {resendState === "cooldown" && (
+        <p className="text-sm text-muted">
+          Please wait a little before requesting another one.
+        </p>
+      )}
+      {resendState === "error" && (
+        <p className="text-sm text-danger">Something went wrong. Try again shortly.</p>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { markVerified } from "./verify-helper";
 
 /**
  * Sprint 028 UAT acceptance matrix AT-04 — logout was never exercised by
@@ -32,6 +33,7 @@ test("logging_out_terminates_the_session_and_protected_routes_redirect_to_login"
     },
   });
   expect(signup.ok()).toBeTruthy();
+  markVerified(OWNER_EMAIL);
 
   // ---- Authenticate through the real login UI ----
   await page.goto("/login");

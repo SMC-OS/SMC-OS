@@ -10,7 +10,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import require_verified_email
 from app.database.database import get_db
 from app.database.models import User
 from app.tasks.models import TaskCreate, TaskOut, TaskStatusUpdate
@@ -20,7 +20,7 @@ from app.tasks.service import (
     task_service,
 )
 
-router = APIRouter(prefix="/tasks", tags=["tasks"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/tasks", tags=["tasks"], dependencies=[Depends(require_verified_email)])
 
 
 @router.get("", response_model=list[TaskOut])
@@ -31,7 +31,7 @@ def list_tasks(
     # public name clean without the shadowing.
     status_filter: str | None = Query(default=None, alias="status"),
     limit: int = 50,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
     return task_service.list_all(
@@ -42,7 +42,7 @@ def list_tasks(
 @router.post("", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
 def create_task(
     data: TaskCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
     try:
@@ -57,7 +57,7 @@ def create_task(
 def update_task_status(
     task_id: uuid.UUID,
     data: TaskStatusUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
     try:

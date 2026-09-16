@@ -26,8 +26,12 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      await login(email, password);
-      router.push("/customers");
+      // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix —
+      // an existing-but-unverified account must not bypass verification
+      // by logging in again; route it to the verification screen just
+      // like a fresh signup.
+      const verificationRequired = await login(email, password);
+      router.push(verificationRequired ? "/verify-email" : "/customers");
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 401

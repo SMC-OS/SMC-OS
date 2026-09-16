@@ -1,6 +1,7 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { markVerified } from "./verify-helper";
 
 /**
  * Sprint 033 (Workstream C) — true multi-line-item quotes, through the
@@ -40,6 +41,7 @@ async function signUpAndLogIn(page: import("@playwright/test").Page, runId: stri
     },
   });
   expect(signup.ok()).toBeTruthy();
+  markVerified(ownerEmail);
   await api.dispose();
 
   await page.goto("/login");

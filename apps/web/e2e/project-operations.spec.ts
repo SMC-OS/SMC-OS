@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { markVerified } from "./verify-helper";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
@@ -79,6 +80,7 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
     },
   });
   expect(signup.ok()).toBeTruthy();
+  markVerified(OWNER_EMAIL);
   const { access_token: ownerToken } = await signup.json();
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
   await verifyOwnerEmail(api, OWNER_EMAIL);

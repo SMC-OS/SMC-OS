@@ -1,6 +1,7 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { markVerified } from "./verify-helper";
 
 /**
  * Sprint 036 (Workstreams B/H/I/M) — GeoCore AI, Settings navigation,
@@ -32,6 +33,7 @@ async function signUpAndLogIn(page: import("@playwright/test").Page, runId: stri
     },
   });
   expect(signup.ok()).toBeTruthy();
+  markVerified(ownerEmail);
 
   await page.goto("/login");
   await page.waitForLoadState("networkidle");

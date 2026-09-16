@@ -1,6 +1,7 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { markVerified } from "./verify-helper";
 
 /**
  * Sprint 039 Production Readiness Defect Gate, Blocker 3 — true browser
@@ -35,6 +36,7 @@ test("pricing_page_shows_the_locked_four_tier_catalogue_and_new_owner_is_on_a_tr
     },
   });
   expect(signup.ok()).toBeTruthy();
+  markVerified(OWNER_EMAIL);
 
   await page.goto("/login");
   await page.waitForLoadState("networkidle");
@@ -89,6 +91,7 @@ test("checkout_is_honest_about_stripe_not_being_configured_yet", async ({ page }
     },
   });
   expect(signup.ok()).toBeTruthy();
+  markVerified(email);
 
   await page.goto("/login");
   await page.waitForLoadState("networkidle");

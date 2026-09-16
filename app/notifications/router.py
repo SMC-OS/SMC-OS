@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import require_verified_email
 from app.database.models import User
 from app.notifications.models import Notification, NotificationCreate
 from app.notifications.service import notification_service
@@ -12,19 +12,19 @@ from app.notifications.service import notification_service
 # user id (docs/SPRINTS/sprint-024.md §6) — tenant-wide broadcasts (the
 # only kind that existed before Sprint 024) are unaffected.
 router = APIRouter(
-    prefix="/notifications", tags=["notifications"], dependencies=[Depends(get_current_user)]
+    prefix="/notifications", tags=["notifications"], dependencies=[Depends(require_verified_email)]
 )
 
 
 @router.get("", response_model=list[Notification])
-def list_notifications(limit: int = 50, current_user: User = Depends(get_current_user)):
+def list_notifications(limit: int = 50, current_user: User = Depends(require_verified_email)):
     return notification_service.list_all(
         tenant_id=current_user.tenant_id, user_id=current_user.id, limit=limit
     )
 
 
 @router.get("/unread-count")
-def unread_count(current_user: User = Depends(get_current_user)):
+def unread_count(current_user: User = Depends(require_verified_email)):
     return {
         "unread": notification_service.unread_count(
             tenant_id=current_user.tenant_id, user_id=current_user.id
@@ -34,13 +34,13 @@ def unread_count(current_user: User = Depends(get_current_user)):
 
 @router.post("", response_model=Notification)
 def create_notification(
-    notification: NotificationCreate, current_user: User = Depends(get_current_user)
+    notification: NotificationCreate, current_user: User = Depends(require_verified_email)
 ):
     return notification_service.create(notification, tenant_id=current_user.tenant_id)
 
 
 @router.patch("/{notification_id}/read", response_model=Notification)
-def mark_read(notification_id: str, current_user: User = Depends(get_current_user)):
+def mark_read(notification_id: str, current_user: User = Depends(require_verified_email)):
     updated = notification_service.mark_read(
         notification_id, tenant_id=current_user.tenant_id, user_id=current_user.id
     )

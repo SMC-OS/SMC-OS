@@ -101,6 +101,17 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.getByLabel("Confirm password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: /create workspace/i }).click();
 
+  // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix — a
+  // brand-new signup now lands on /verify-email, not /onboarding. The
+  // redirect decision was already made client-side from the (necessarily
+  // unverified) signup response, so verifying now and doing a fresh
+  // navigation (re-fetching /auth/me on mount) is what actually unlocks
+  // onboarding — moved up from this journey's later invite step, which no
+  // longer needs its own separate verification call.
+  await expect(page).toHaveURL(/\/verify-email$/, { timeout: 15_000 });
+  await verifyOwnerEmail(api, OWNER_EMAIL);
+  await page.goto("/onboarding");
+
   // Sprint 036 (Workstream J) — a brand-new workspace now lands on
   // onboarding rather than an empty customer list. The setup flow is
   // entirely skippable, which is what this journey does: it is here to
@@ -125,7 +136,6 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   });
   expect(ownerLogin.ok()).toBeTruthy();
   const ownerHeaders = { Authorization: `Bearer ${(await ownerLogin.json()).access_token}` };
-  await verifyOwnerEmail(api, OWNER_EMAIL);
 
   // A real Staff user, via a real invitation accept — needed for step 8.
   const invitation = await api.post("/api/v1/invitations", {

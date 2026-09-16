@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import require_verified_email
 from app.customers.service import customer_service
 from app.database.database import get_db
 from app.database.models import User
@@ -48,7 +48,7 @@ router = APIRouter(prefix="/portal-links", tags=["portal"])
 @router.post("", response_model=PortalLinkCreateOut, status_code=status.HTTP_201_CREATED)
 def create_portal_link(
     data: PortalLinkCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
     try:
@@ -66,7 +66,7 @@ def create_portal_link(
 @router.get("", response_model=list[PortalLinkOut])
 def list_portal_links(
     customer_id: uuid.UUID | None = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
     rows = portal_service.list_links(db, current_user.tenant_id, customer_id=customer_id)
@@ -81,7 +81,7 @@ def list_portal_links(
 @router.delete("/{portal_link_id}", response_model=PortalLinkOut)
 def revoke_portal_link(
     portal_link_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
     try:

@@ -51,7 +51,7 @@ describe("LoginPage — Sprint 027 full-system journey entry point", () => {
   });
 
   it("submits_credentials_and_redirects_to_customers_on_success", async () => {
-    loginMock.mockResolvedValue(undefined);
+    loginMock.mockResolvedValue(false);
 
     render(<LoginPage />);
 
@@ -68,6 +68,27 @@ describe("LoginPage — Sprint 027 full-system journey entry point", () => {
     });
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith("/customers");
+    });
+  });
+
+  // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix — an
+  // existing-but-unverified account must not bypass verification just by
+  // logging in again.
+  it("redirects_to_verify_email_when_the_account_is_still_unverified", async () => {
+    loginMock.mockResolvedValue(true);
+
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "unverified@example.invalid" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith("/verify-email");
     });
   });
 
