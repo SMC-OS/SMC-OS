@@ -1,6 +1,7 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { markVerified } from "./verify-helper";
 
 /**
  * Sprint 027 (docs/SPRINTS/sprint-027.md §6.11/§8) — ADR-029's tenant
@@ -36,6 +37,7 @@ test("tenant_b_sees_a_clean_not_found_state_for_tenant_a_resources_through_the_u
     },
   });
   expect(signupA.ok()).toBeTruthy();
+  markVerified(TENANT_A_EMAIL);
   const { access_token: tenantAToken } = await signupA.json();
   const tenantAHeaders = { Authorization: `Bearer ${tenantAToken}` };
 
@@ -76,6 +78,7 @@ test("tenant_b_sees_a_clean_not_found_state_for_tenant_a_resources_through_the_u
     },
   });
   expect(signupB.ok()).toBeTruthy();
+  markVerified(TENANT_B_EMAIL);
 
   // ---- Authenticate as Tenant B through the real login UI ----
   await page.goto("/login");

@@ -28,11 +28,23 @@ interface AuthContextValue {
   // button) — the server enforces the real rule (CannotDeactivateSelfError)
   // regardless of what the UI shows.
   userId: string | null;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (data: SignupRequest) => Promise<void>;
+  // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix — the
+  // signed-in user's own email, shown on the "verify your email" holding
+  // screen ("We've sent a link to <email>") without a second request.
+  email: string | null;
+  // Whether the signed-in user is CURRENTLY blocked from normal
+  // application access (mirrors AuthUser.verification_required). AppShell
+  // reads this to redirect to /verify-email; consumers must not derive
+  // this from email_verified_at themselves (see that field's own note).
+  verificationRequired: boolean;
+  // login/signup/acceptInvite resolve to the fresh verification_required
+  // value so the calling page can route synchronously on success, rather
+  // than reading this same value back off (necessarily-async) state.
+  login: (email: string, password: string) => Promise<boolean>;
+  signup: (data: SignupRequest) => Promise<boolean>;
   // Sprint 011 — accepting a Staff invitation signs the new user straight
   // in, same shape as login()/signup().
-  acceptInvite: (token: string, data: AcceptInvitationRequest) => Promise<void>;
+  acceptInvite: (token: string, data: AcceptInvitationRequest) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -45,6 +57,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+  const [verificationRequired, setVerificationRequired] = useState(false);
 
   useEffect(() => {
     // One-time sync from a browser-only API (localStorage isn't available
@@ -68,6 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRole(me.role);
         setUserId(me.id);
         setName(me.name);
+        setEmail(me.email);
+        setVerificationRequired(me.verification_required);
       })
       .catch(() => setIsAuthenticated(false))
       .finally(() => setIsReady(true));
@@ -85,12 +101,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setRole(null);
       setUserId(null);
       setName(null);
+      setEmail(null);
+      setVerificationRequired(false);
     }
     window.addEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
     return () => window.removeEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
   }, []);
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string): Promise<boolean> {
     const response = await api.login(email, password);
     setToken(response.access_token);
     setIsAuthenticated(true);
@@ -98,9 +116,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole(response.user.role);
     setUserId(response.user.id);
     setName(response.user.name);
+    setEmail(response.user.email);
+    setVerificationRequired(response.user.verification_required);
+    return response.user.verification_required;
   }
 
-  async function signup(data: SignupRequest) {
+  async function signup(data: SignupRequest): Promise<boolean> {
     const response = await api.signup(data);
     setToken(response.access_token);
     setIsAuthenticated(true);
@@ -108,9 +129,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole(response.user.role);
     setUserId(response.user.id);
     setName(response.user.name);
+    setEmail(response.user.email);
+    setVerificationRequired(response.user.verification_required);
+    return response.user.verification_required;
   }
 
-  async function acceptInvite(token: string, data: AcceptInvitationRequest) {
+  async function acceptInvite(token: string, data: AcceptInvitationRequest): Promise<boolean> {
     const response = await api.acceptInvitation(token, data);
     setToken(response.access_token);
     setIsAuthenticated(true);
@@ -118,6 +142,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole(response.user.role);
     setUserId(response.user.id);
     setName(response.user.name);
+    setEmail(response.user.email);
+    setVerificationRequired(response.user.verification_required);
+    return response.user.verification_required;
   }
 
   function logout() {
@@ -127,6 +154,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole(null);
     setUserId(null);
     setName(null);
+    setEmail(null);
+    setVerificationRequired(false);
   }
 
   return (
@@ -138,6 +167,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role,
         userId,
         name,
+        email,
+        verificationRequired,
         login,
         signup,
         acceptInvite,

@@ -164,6 +164,19 @@ def qa_fixture(client):
         body = r.json()
         tokens.append(body["access_token"])
         tenant_ids.append(uuid.UUID(body["user"]["tenant_id"]))
+        # Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix —
+        # this fixture builds sample QA business data via the real
+        # authenticated API, not the verification flow itself, so each
+        # signed-up owner is marked verified immediately (same reasoning
+        # as conftest.py's other_tenant_auth_headers).
+        db = SessionLocal()
+        try:
+            db.query(User).filter(User.id == uuid.UUID(body["user"]["id"])).update(
+                {"email_verified_at": datetime.now(timezone.utc)}
+            )
+            db.commit()
+        finally:
+            db.close()
 
     headers_a = {"Authorization": f"Bearer {tokens[0]}"}
     customer_resp = client.post(
@@ -232,6 +245,16 @@ def unrelated_tenant(client):
     assert r.status_code == 201, r.text
     body = r.json()
     headers = {"Authorization": f"Bearer {body['access_token']}"}
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix — see
+    # qa_fixture's identical comment above.
+    db = SessionLocal()
+    try:
+        db.query(User).filter(User.id == uuid.UUID(body["user"]["id"])).update(
+            {"email_verified_at": datetime.now(timezone.utc)}
+        )
+        db.commit()
+    finally:
+        db.close()
     customer_resp = client.post(
         "/api/v1/customers",
         json={"name": "Unrelated Customer", "email": f"unrelated-{RUN_ID}@example.invalid"},

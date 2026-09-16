@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from app.core.config import settings
 from app.database.database import SessionLocal
@@ -151,7 +152,18 @@ def _cleanup_other_tenant():
 def other_tenant_auth_headers(client):
     """Bearer header for a second, fully separate tenant + Owner — signs up
     fresh each test run and is torn down after, same shape as the
-    created_tenant/created_customer fixtures elsewhere in this suite."""
+    created_tenant/created_customer fixtures elsewhere in this suite.
+
+    Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix — a real
+    signup is now genuinely unverified and blocked from every business-data
+    route this fixture's many callers exercise. This fixture represents a
+    second real, established tenant (the thing under test is cross-tenant
+    isolation, not verification), so it marks itself verified immediately
+    after signing up — the same "already proven" status every other
+    directly-created test user in this suite gets via
+    auth_service.create_user()'s own default, just reached through the
+    real HTTP signup endpoint instead.
+    """
     _cleanup_other_tenant()
     r = client.post(
         "/api/v1/auth/signup",
@@ -163,5 +175,15 @@ def other_tenant_auth_headers(client):
         },
     )
     token = r.json()["access_token"]
+    db = SessionLocal()
+    try:
+        db.execute(
+            update(User)
+            .where(User.email == OTHER_TENANT_EMAIL)
+            .values(email_verified_at=datetime.now(timezone.utc))
+        )
+        db.commit()
+    finally:
+        db.close()
     yield {"Authorization": f"Bearer {token}"}
     _cleanup_other_tenant()

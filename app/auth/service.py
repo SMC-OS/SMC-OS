@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import is_verification_required
 from app.auth.models import SignupRequest, UserOut, UserRole
 from app.auth.security import hash_password, verify_password
 from app.billing.trial import start_trial_if_eligible
@@ -118,6 +119,7 @@ class AuthService:
             tenant_id=user.tenant_id,
             tenant_name=tenant.name if tenant is not None else "",
             email_verified_at=user.email_verified_at,
+            verification_required=is_verification_required(user),
         )
 
 

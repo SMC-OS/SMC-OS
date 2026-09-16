@@ -83,8 +83,10 @@ describe("SignupPage — Sprint 027 full-system journey entry point", () => {
     expect(signupMock).not.toHaveBeenCalled();
   });
 
-  it("submits_the_full_signup_payload_and_redirects_on_success", async () => {
-    signupMock.mockResolvedValue(undefined);
+  it("submits_the_full_signup_payload_and_redirects_to_onboarding_when_already_verified", async () => {
+    // e.g. a legacy-grace-exempt account, or verification disabled in a
+    // given environment — signup() resolving false means normal access.
+    signupMock.mockResolvedValue(false);
 
     render(<SignupPage />);
     fillForm();
@@ -104,6 +106,21 @@ describe("SignupPage — Sprint 027 full-system journey entry point", () => {
     // already working is sent back to a wizard.
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith("/onboarding");
+    });
+  });
+
+  // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix — the
+  // real, normal case: a brand-new signup is unverified and must land on
+  // the verification screen, not straight into the workspace.
+  it("redirects_to_verify_email_when_the_new_account_is_unverified", async () => {
+    signupMock.mockResolvedValue(true);
+
+    render(<SignupPage />);
+    fillForm();
+    fireEvent.click(screen.getByRole("button", { name: /create workspace/i }));
+
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith("/verify-email");
     });
   });
 

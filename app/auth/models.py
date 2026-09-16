@@ -53,10 +53,18 @@ class UserOut(BaseModel):
     # frontend show a clear verified/unverified state without a second
     # request. None means unverified (including every legacy user this
     # migration didn't backfill); a datetime is when verification
-    # happened. Whether an unverified user is currently *blocked* by it
-    # is a separate question the frontend doesn't need to compute itself
-    # (see app/auth/dependencies.py's require_verified_email).
+    # happened.
     email_verified_at: datetime | None = None
+    # Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix —
+    # whether this user is CURRENTLY blocked from normal application
+    # access (app.auth.dependencies.is_verification_required's exact
+    # predicate). Deliberately separate from email_verified_at: a legacy
+    # user within their grace period has email_verified_at=None but
+    # verification_required=False, and the frontend must route on this
+    # field, not on email_verified_at directly, to match the backend's
+    # own enforcement exactly rather than re-deriving the legacy-grace
+    # math itself.
+    verification_required: bool = False
 
 
 class TokenResponse(BaseModel):

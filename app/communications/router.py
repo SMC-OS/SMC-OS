@@ -18,7 +18,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import require_verified_email
 from app.communications.models import CommunicationOut
 from app.communications.service import delivery_service
 from app.communications.webhooks import WebhookSignatureError, verify_svix_signature
@@ -37,7 +37,7 @@ def list_communications(
     project_id: uuid.UUID | None = Query(default=None),
     invitation_id: uuid.UUID | None = Query(default=None),
     limit: int = 50,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
     return delivery_service.list_history(

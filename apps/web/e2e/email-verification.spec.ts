@@ -55,7 +55,7 @@ print(raw_token)
   return output.trim().split("\n").pop() as string;
 }
 
-test("signup_shows_unverified_then_confirming_the_emailed_link_verifies_the_account", async ({
+test("signup_lands_on_verify_email_and_confirming_the_emailed_link_unlocks_the_workspace", async ({
   page,
 }) => {
   const api = await request.newContext({ baseURL: BACKEND_URL });
@@ -72,17 +72,25 @@ test("signup_shows_unverified_then_confirming_the_emailed_link_verifies_the_acco
   expect(signup.ok()).toBeTruthy();
 
   // ---- Sign in through the real login UI ----
+  // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix — an
+  // unverified account no longer lands in the workspace at all; it's
+  // redirected to the verification-required screen before it ever sees
+  // Dashboard/Customers/Onboarding.
   await page.goto("/login");
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Email").fill(OWNER_EMAIL);
   await page.getByLabel("Password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/(customers|onboarding)/);
+  await expect(page).toHaveURL(/\/verify-email/);
+  await expect(page.getByText(OWNER_EMAIL)).toBeVisible();
 
-  // ---- Settings → Security shows the real unverified state ----
-  await page.goto("/settings?section=security");
+  // ---- Directly navigating to a protected page redirects back here too
+  // (the gate is not just "don't show a link to it") ----
+  await page.goto("/customers");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText("Unverified")).toBeVisible();
+  await expect(page).toHaveURL(/\/verify-email/);
+
+  // ---- Resend, from the verification screen itself ----
   const resendButton = page.getByRole("button", { name: "Resend verification email" });
   await expect(resendButton).toBeVisible();
   await resendButton.click();
@@ -95,17 +103,57 @@ test("signup_shows_unverified_then_confirming_the_emailed_link_verifies_the_acco
   await page.goto(`/verify-email?token=${rawToken}`);
   await page.waitForLoadState("networkidle");
   await expect(page.getByText("Your email address has been verified.")).toBeVisible();
+  await page.getByRole("button", { name: "Continue to GeoCore" }).click();
+  await expect(page).toHaveURL(/\/customers/);
 
-  // ---- Settings → Security now reflects the real verified state ----
+  // ---- Settings → Security now reflects the real verified state, and
+  // normal workspace navigation is no longer redirected ----
   await page.goto("/settings?section=security");
   await page.waitForLoadState("networkidle");
+  await expect(page).toHaveURL(/\/settings/);
   await expect(page.getByText("Verified")).toBeVisible();
   await expect(page.getByRole("button", { name: "Resend verification email" })).toHaveCount(0);
 
   await api.dispose();
 });
 
-test("an_unverified_owner_cannot_invite_a_teammate_and_a_verified_one_can", async ({ page }) => {
+test("login_for_an_existing_unverified_account_cannot_bypass_verification", async ({ page }) => {
+  const email = `pytest-e2e-sprint039-verify-relogin-${RUN_ID}@example.invalid`;
+  const api = await request.newContext({ baseURL: BACKEND_URL });
+  const signup = await api.post("/api/v1/auth/signup", {
+    data: {
+      company_name: `Pytest E2E Sprint 039 Relogin Co ${RUN_ID}`,
+      name: OWNER_NAME,
+      email,
+      password: OWNER_PASSWORD,
+    },
+  });
+  expect(signup.ok()).toBeTruthy();
+
+  // First sign-in already redirects to /verify-email (previous test).
+  // This test's own subject is the SECOND sign-in of an account that is
+  // still unverified — logging out and back in must not be a bypass.
+  await page.goto("/login");
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(OWNER_PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/verify-email/);
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/login/);
+
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(OWNER_PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/verify-email/);
+
+  await api.dispose();
+});
+
+test("an_unverified_owner_cannot_reach_team_settings_or_invite_a_teammate_and_a_verified_one_can", async ({
+  page,
+}) => {
   const email = `pytest-e2e-sprint039-verify-invite-${RUN_ID}@example.invalid`;
   const api = await request.newContext({ baseURL: BACKEND_URL });
   const signup = await api.post("/api/v1/auth/signup", {
@@ -123,16 +171,16 @@ test("an_unverified_owner_cannot_invite_a_teammate_and_a_verified_one_can", asyn
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(OWNER_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/(customers|onboarding)/);
+  await expect(page).toHaveURL(/\/verify-email/);
 
-  // ---- Blocked while unverified (server-side, not merely UI copy) ----
+  // ---- Blocked at the door, not just at the invite button (server-side
+  // boundary, not merely UI copy — Sprint 039 Blocker 2 hotfix widens
+  // this from "invite a teammate" specifically to every normal route) ----
   await page.goto("/settings?section=team");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("Email").fill(`pytest-invitee-${RUN_ID}@example.invalid`);
-  await page.getByRole("button", { name: "Create invite" }).click();
-  await expect(page.getByText(/verify your email address/i)).toBeVisible();
+  await expect(page).toHaveURL(/\/verify-email/);
 
-  // ---- Verify, then the same action succeeds ----
+  // ---- Verify, then the same page and action succeed ----
   const rawToken = mintVerificationToken(email);
   await page.goto(`/verify-email?token=${rawToken}`);
   await page.waitForLoadState("networkidle");
@@ -140,6 +188,7 @@ test("an_unverified_owner_cannot_invite_a_teammate_and_a_verified_one_can", asyn
 
   await page.goto("/settings?section=team");
   await page.waitForLoadState("networkidle");
+  await expect(page).toHaveURL(/\/settings/);
   await page.getByLabel("Email").fill(`pytest-invitee-${RUN_ID}@example.invalid`);
   await page.getByRole("button", { name: "Create invite" }).click();
   await expect(page.getByText("Joining link for")).toBeVisible();

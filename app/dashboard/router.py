@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import require_role, require_verified_email
 from app.auth.models import UserRole
 from app.dashboard.models import CommandCentreResponse
 from app.dashboard.service import build_command_centre
@@ -9,7 +9,7 @@ from app.database.database import get_db
 from app.database.models import User
 
 router = APIRouter(
-    prefix="/dashboard", tags=["dashboard"], dependencies=[Depends(get_current_user)]
+    prefix="/dashboard", tags=["dashboard"], dependencies=[Depends(require_verified_email)]
 )
 
 

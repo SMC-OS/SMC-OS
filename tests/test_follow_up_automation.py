@@ -17,7 +17,7 @@ pre-existing Projects has nothing else for a global scan to pick up.
 """
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete, select
@@ -65,7 +65,15 @@ def _signup(client, suffix: str) -> tuple[dict[str, str], uuid.UUID]:
     body = response.json()
     headers = {"Authorization": f"Bearer {body['access_token']}"}
     with SessionLocal() as db:
-        tenant_id = db.get(User, uuid.UUID(body["user"]["id"])).tenant_id
+        user_row = db.get(User, uuid.UUID(body["user"]["id"]))
+        tenant_id = user_row.tenant_id
+        # Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix —
+        # this helper stands up an established tenant under test (follow-
+        # up automation), not the verification flow itself, so it marks
+        # itself verified immediately — same reasoning as conftest.py's
+        # other_tenant_auth_headers.
+        user_row.email_verified_at = datetime.now(timezone.utc)
+        db.commit()
     return headers, tenant_id
 
 

@@ -117,13 +117,18 @@ def require_role(*allowed_roles: UserRole):
     """Dependency factory — returns a FastAPI dependency that only lets a
     request through if the current user's role is one of `allowed_roles`.
 
-    Not wired into any route in Sprint 010 (see this module's docstring).
-    Rejects with 403, not 401: reaching this check means the token was
-    already valid (get_current_user succeeded), so the failure is "not
-    authorized for this action," not "not authenticated."
+    Built on require_verified_email, not bare get_current_user (Sprint 039
+    Production Readiness Defect Gate, Blocker 2 hotfix): every route that
+    cares about role also implicitly needs a verified session — role
+    gating is strictly a narrower subset of "normal application access,"
+    never a way to reach it while unverified. Rejects with 403 either way
+    (unverified, or verified but wrong role): reaching this check means
+    the token itself was valid (get_current_user succeeded), so any
+    failure here is "not authorized for this action," not "not
+    authenticated."
     """
 
-    def checker(current_user: User = Depends(get_current_user)) -> User:
+    def checker(current_user: User = Depends(require_verified_email)) -> User:
         if current_user.role not in {role.value for role in allowed_roles}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -134,10 +139,44 @@ def require_role(*allowed_roles: UserRole):
     return checker
 
 
+def is_verification_required(user: User) -> bool:
+    """The exact predicate require_verified_email enforces, extracted so
+    UserOut can expose it (as `verification_required`) without the
+    frontend re-implementing the legacy-grace-period math itself.
+
+    True means this user is currently blocked from normal application
+    access until they verify. False covers both "already verified" and
+    "exempt under the legacy grace period" — the frontend does not need,
+    and is not told, which.
+    """
+    if user.email_verified_at is not None:
+        return False
+
+    cutover = settings.identity_security_cutover_at
+    grace_ends_at = cutover + timedelta(days=settings.legacy_verification_grace_days)
+    is_legacy = user.created_at < cutover
+    if is_legacy and datetime.now(timezone.utc) < grace_ends_at:
+        return False
+
+    return True
+
+
 def require_verified_email(current_user: User = Depends(get_current_user)) -> User:
-    """Sprint 039 Production Readiness Defect Gate, Blocker 1 — blocks a
-    sensitive action for a user whose email is unverified, unless the
-    legacy grace period covers them.
+    """Sprint 039 Production Readiness Defect Gate, Blocker 1 introduced
+    this dependency but attached it to exactly one route (creating an
+    invitation). Blocker 2's hotfix is wiring it as the standard
+    dependency for essentially every normal application route — see
+    app/auth/dependencies.py's require_role() above, which every
+    Owner/Staff-gated route already goes through, and every other
+    business-data router's own get_current_user -> require_verified_email
+    swap.
+
+    Deliberately NOT attached to the narrow auth/verification-lifecycle
+    allowlist a still-unverified user must keep working: `GET /auth/me`
+    (inspect verification state), `POST /auth/email/verify/resend`,
+    `POST /auth/email/verify/confirm` (no auth at all), and logout (a
+    client-side token discard, not a route). Those stay on bare
+    get_current_user — see app/auth/router.py.
 
     A user is exempt (never blocked) when EITHER:
     - `email_verified_at` is set (they verified), OR
@@ -148,18 +187,8 @@ def require_verified_email(current_user: User = Depends(get_current_user)) -> Us
 
     A user created *after* the cutover gets no grace at all — they were
     always required to verify, from day one of this feature's existence.
-    Only ever attached to specific routes considered sensitive today
-    (see app/invitations/router.py); it deliberately does not gate every
-    route in the app, to avoid locking out an entire existing tenant the
-    moment this migration deploys.
     """
-    if current_user.email_verified_at is not None:
-        return current_user
-
-    cutover = settings.identity_security_cutover_at
-    grace_ends_at = cutover + timedelta(days=settings.legacy_verification_grace_days)
-    is_legacy = current_user.created_at < cutover
-    if is_legacy and datetime.now(timezone.utc) < grace_ends_at:
+    if not is_verification_required(current_user):
         return current_user
 
     raise HTTPException(

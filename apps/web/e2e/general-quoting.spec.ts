@@ -1,6 +1,7 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { markVerified } from "./verify-helper";
 
 /**
  * Sprint 036 (Workstream E) — universal quoting, through the real
@@ -36,6 +37,7 @@ async function signUpAndLogIn(page: import("@playwright/test").Page, runId: stri
     },
   });
   expect(signup.ok()).toBeTruthy();
+  markVerified(ownerEmail);
   const { access_token: token } = await signup.json();
   const authHeaders = { Authorization: `Bearer ${token}` };
 

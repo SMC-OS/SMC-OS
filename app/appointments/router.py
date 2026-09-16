@@ -9,7 +9,7 @@ from app.appointments.service import (
     ProjectNotFoundError,
     appointment_service,
 )
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import require_role, require_verified_email
 from app.auth.models import UserRole
 from app.database.database import get_db
 from app.database.models import User
@@ -17,9 +17,9 @@ from app.database.models import User
 # No single path prefix — routes live under both /projects/{id}/appointments
 # and /appointments/{id}/status, so each route below declares its own full
 # path instead of sharing one prefix, the way every other module's router
-# does. dependencies=[Depends(get_current_user)] still applies auth to
+# does. dependencies=[Depends(require_verified_email)] still applies auth to
 # every route here, same convention as app/customers/router.py etc.
-router = APIRouter(tags=["appointments"], dependencies=[Depends(get_current_user)])
+router = APIRouter(tags=["appointments"], dependencies=[Depends(require_verified_email)])
 
 
 @router.post(

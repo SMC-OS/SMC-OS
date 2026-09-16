@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import require_role, require_verified_email
 from app.auth.models import UserRole
 from app.quotes.general import GeneralQuoteRequest, GeneralQuoteUpdate
 from app.quotes.service import (
@@ -31,7 +31,7 @@ from app.tenants import identity as tenant_identity
 from app.tenants.service import tenant_service
 
 router = APIRouter(
-    prefix="/quotes", tags=["quotes"], dependencies=[Depends(get_current_user)]
+    prefix="/quotes", tags=["quotes"], dependencies=[Depends(require_verified_email)]
 )
 
 
@@ -118,7 +118,7 @@ def _serialize(quote) -> dict:
 # Sprint 036 — declared before /{quote_id} so these literal segments win
 # over the uuid path parameter (same ordering rule app/tenants/router.py
 # documents). Both are static vocabularies with no tenant data in them,
-# so they need no role gate beyond the router-level get_current_user.
+# so they need no role gate beyond the router-level require_verified_email.
 @router.get("/meta/trades")
 def list_trades():
     """The trades a quote or project can be for. Served from the backend
@@ -144,7 +144,7 @@ def list_units():
 
 @router.get("")
 def list_quotes(
-    limit: int = 20, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    limit: int = 20, current_user: User = Depends(require_verified_email), db: Session = Depends(get_db)
 ):
     return [_serialize(q) for q in crud.list_quotes(db, current_user.tenant_id, limit=limit)]
 
@@ -152,7 +152,7 @@ def list_quotes(
 @router.get("/{quote_id}")
 def get_quote(
     quote_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
     quote = crud.get_quote_by_id(db, quote_id, current_user.tenant_id)
@@ -350,7 +350,7 @@ def handoff_quote(
 @router.get("/{quote_id}/invoice")
 def download_invoice(
     quote_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
     quote = crud.get_quote_by_id(db, quote_id, current_user.tenant_id)
@@ -400,7 +400,7 @@ def download_invoice(
 @router.post("/ai-draft", response_model=AIQuoteDraft)
 def generate_ai_draft(
     data: AIDraftRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_email),
     db: Session = Depends(get_db),
 ):
 

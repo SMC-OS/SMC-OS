@@ -35,12 +35,17 @@ export default function SignupPage() {
     setSubmitting(true);
 
     try {
-      await signup({ company_name: companyName, name, email, password });
-      // Sprint 036 (Workstream J) — a brand-new workspace goes to
-      // setup, not to an empty customer list. /onboarding sends an
-      // established workspace straight on, so this is safe for
-      // anyone who somehow reaches it with data already in place.
-      router.push("/onboarding");
+      const verificationRequired = await signup({ company_name: companyName, name, email, password });
+      // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix —
+      // a brand-new signup is unverified and must land on the
+      // verification screen, not straight into the workspace.
+      //
+      // Sprint 036 (Workstream J) — once verified, a brand-new
+      // workspace goes to setup, not to an empty customer list.
+      // /onboarding sends an already-established workspace straight
+      // on, so this is safe for anyone who somehow reaches it with
+      // data already in place.
+      router.push(verificationRequired ? "/verify-email" : "/onboarding");
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 409

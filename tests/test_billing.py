@@ -703,6 +703,20 @@ def test_signup_starts_a_real_trial_with_no_stripe_object(client):
         assert r.status_code == 201
         headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
 
+        # Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix —
+        # GET /billing/subscription now requires a verified session; this
+        # test is about trial creation, not verification, so it marks
+        # itself verified immediately (same reasoning as conftest.py's
+        # other_tenant_auth_headers).
+        db = SessionLocal()
+        try:
+            db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).update(
+                {"email_verified_at": datetime.now(timezone.utc)}
+            )
+            db.commit()
+        finally:
+            db.close()
+
         sub = client.get("/api/v1/billing/subscription", headers=headers).json()
         assert sub is not None
         assert sub["status"] == "trialing"
