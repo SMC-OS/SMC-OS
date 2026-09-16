@@ -1,3 +1,7 @@
+"use client";
+
+import { usePathname } from "next/navigation";
+
 import { MobileNav } from "./MobileNav";
 import { SidebarProvider } from "./SidebarContext";
 import { Sidebar } from "./Sidebar";
@@ -19,8 +23,31 @@ import { Topbar } from "./Topbar";
  *     of a form are never sitting underneath it.
  *   - `pb-[env(safe-area-inset-bottom)]` handles the iOS home indicator
  *     on top of that.
+ *
+ * Sprint 039 V1 — the Demo Workspace is reached from marketing and the
+ * login page with "no account needed". The real Sidebar/Topbar link to
+ * authenticated routes (Dashboard, Customers, an actual "Account" menu)
+ * that a demo visitor has no session for — clicking any of them silently
+ * bounces to /login, which is a dead end for exactly the audience this
+ * entry point targets. It renders standalone instead, with no chrome
+ * pointing anywhere but itself.
  */
+const STANDALONE_ROUTES = ["/demo"];
+
+function isStandaloneRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return STANDALONE_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
+  if (isStandaloneRoute(pathname)) {
+    return <div className="min-h-screen overflow-y-auto bg-background">{children}</div>;
+  }
+
   return (
     <SidebarProvider>
       <div className="flex h-screen overflow-hidden bg-background">
