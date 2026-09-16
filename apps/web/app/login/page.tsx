@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input } from "@/components/ui/Field";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { ApiError } from "@/lib/api";
 
 export default function LoginPage() {
@@ -63,15 +64,14 @@ export default function LoginPage() {
                 placeholder="owner@geocore.one"
               />
             </Field>
-            <Field label="Password" htmlFor="password">
-              <Input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
+            <PasswordField
+              id="password"
+              label="Password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={setPassword}
+            />
 
             <Link
               href="/forgot-password"
@@ -97,6 +97,12 @@ export default function LoginPage() {
         Don&apos;t have a company workspace yet?{" "}
         <Link href="/signup" className="text-accent hover:underline">
           Create one
+        </Link>
+      </p>
+      <p className="mt-2 text-center text-sm text-muted">
+        Not ready to sign up?{" "}
+        <Link href="/demo" className="text-accent hover:underline">
+          Try the demo
         </Link>
       </p>
     </div>

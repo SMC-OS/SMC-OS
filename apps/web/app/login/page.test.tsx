@@ -33,6 +33,23 @@ afterEach(() => {
 });
 
 describe("LoginPage — Sprint 027 full-system journey entry point", () => {
+  it("masks_then_reveals_and_hides_the_password_without_submitting_or_losing_it", () => {
+    render(<LoginPage />);
+    const password = screen.getByLabelText("Password");
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveAttribute("autocomplete", "current-password");
+    fireEvent.change(password, { target: { value: "correct-password" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(password).toHaveAttribute("type", "text");
+    expect(password).toHaveValue("correct-password");
+    expect(loginMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveValue("correct-password");
+  });
+
   it("submits_credentials_and_redirects_to_customers_on_success", async () => {
     loginMock.mockResolvedValue(undefined);
 

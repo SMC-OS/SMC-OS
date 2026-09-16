@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input } from "@/components/ui/Field";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { ApiError } from "@/lib/api";
 
 export default function SignupPage() {
@@ -18,13 +19,20 @@ export default function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
     setError(null);
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setSubmitting(true);
 
     try {
       await signup({ company_name: companyName, name, email, password });
@@ -94,15 +102,22 @@ export default function SignupPage() {
                 placeholder="you@yourcompany.co.uk"
               />
             </Field>
-            <Field label="Password" htmlFor="password">
-              <Input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
+            <PasswordField
+              id="password"
+              label="Password"
+              autoComplete="new-password"
+              required
+              value={password}
+              onChange={setPassword}
+            />
+            <PasswordField
+              id="confirmPassword"
+              label="Confirm password"
+              autoComplete="new-password"
+              required
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+            />
 
             {error && (
               <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
