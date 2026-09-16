@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_role, require_verified_email
+from app.auth.dependencies import require_billing_access, require_role
 from app.auth.models import UserRole
 from app.database.database import get_db
 from app.database.models import User
@@ -18,7 +18,7 @@ from app.tenants.models import (
 )
 from app.tenants.service import tenant_service
 
-# Sprint 008: requires the existing seeded-owner token (require_verified_email),
+# Sprint 008: requires the existing seeded-owner token (now require_billing_access),
 # same posture as app/customers/router.py — NOT tenant-scoped auth (that's
 # Sprint 009). This just avoids an unauthenticated public write endpoint by
 # reusing the one auth gate that already exists. These routes are internal
@@ -35,14 +35,14 @@ from app.tenants.service import tenant_service
 # the real way to create a workspace?) explicitly out of scope for a
 # tenant-*isolation* sprint.
 router = APIRouter(
-    prefix="/tenants", tags=["tenants"], dependencies=[Depends(require_verified_email)]
+    prefix="/tenants", tags=["tenants"], dependencies=[Depends(require_billing_access)]
 )
 
 
 @router.get("", response_model=list[TenantOut])
 def get_my_tenant(
     limit: int = 20,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     # `limit` is accepted (unused) only to avoid a 422 for existing callers
@@ -62,7 +62,7 @@ def get_my_tenant(
 # construction rather than by a check).
 @router.get("/me/profile", response_model=TenantProfileOut)
 def get_my_company_profile(
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     tenant = tenant_service.get(db, current_user.tenant_id)
@@ -92,7 +92,7 @@ def update_my_company_profile(
 
 @router.get("/me/onboarding", response_model=OnboardingStateOut)
 def get_onboarding_state(
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     """Whether this workspace still needs setting up, and what it has so
@@ -124,7 +124,7 @@ def update_onboarding(
 
 @router.get("/me/logo")
 def get_my_logo(
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     """Serve this tenant's uploaded logo.
@@ -215,7 +215,7 @@ def delete_my_logo(
 @router.get("/{tenant_id}", response_model=TenantOut)
 def get_tenant(
     tenant_id: uuid.UUID,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     # Cross-tenant lookups 404, never 403 (ADR-028's precedent) — confirming

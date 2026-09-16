@@ -6,6 +6,7 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 
 /**
  * Sprint 027 (docs/SPRINTS/sprint-027.md §6.14/§7) — the centrepiece of
@@ -35,10 +36,10 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 027 Journey Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint027-journey-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint027-journey-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint027-Journey-Password-${RUN_ID}!`;
 const STAFF_EMAIL = `pytest-e2e-sprint027-journey-staff-${RUN_ID}@example.invalid`;
 const STAFF_NAME = `Pytest E2E Sprint 027 Journey Staff ${RUN_ID}`;
-const STAFF_PASSWORD = `pytest-e2e-sprint027-journey-staff-password-${RUN_ID}`;
+const STAFF_PASSWORD = `Pytest-E2e-Sprint027-Journey-Staff-Password-${RUN_ID}!`;
 const CUSTOMER_NAME = `Pytest E2E Sprint 027 Journey Customer ${RUN_ID}`;
 const CUSTOMER_EMAIL = `pytest-e2e-sprint027-journey-customer-${RUN_ID}@example.invalid`;
 const PROJECT_NAME = `Pytest E2E Sprint 027 Journey Project ${RUN_ID}`;
@@ -110,6 +111,12 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   // longer needs its own separate verification call.
   await expect(page).toHaveURL(/\/verify-email$/, { timeout: 15_000 });
   await verifyOwnerEmail(api, OWNER_EMAIL);
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — this journey's subject
+  // is module hand-off end to end, not billing activation itself (that's
+  // billing-pricing.spec.ts), so it grants billing access the same way
+  // it already grants verification above, rather than routing through a
+  // real (unconfigured-in-this-sandbox) Stripe Checkout.
+  grantBillingAccess(OWNER_EMAIL);
   await page.goto("/onboarding");
 
   // Sprint 036 (Workstream J) — a brand-new workspace now lands on

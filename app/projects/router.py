@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_role, require_verified_email
+from app.auth.dependencies import require_billing_access, require_role
 from app.auth.models import UserRole
 from app.customers.models import CustomerCreate, CustomerOut
 from app.projects.models import (
@@ -24,13 +24,13 @@ from app.database.database import get_db
 from app.database.models import User
 
 router = APIRouter(
-    prefix="/projects", tags=["projects"], dependencies=[Depends(require_verified_email)]
+    prefix="/projects", tags=["projects"], dependencies=[Depends(require_billing_access)]
 )
 
 
 @router.get("", response_model=list[ProjectOut])
 def list_projects(
-    limit: int = 20, current_user: User = Depends(require_verified_email), db: Session = Depends(get_db)
+    limit: int = 20, current_user: User = Depends(require_billing_access), db: Session = Depends(get_db)
 ):
     return project_service.list_all(db, tenant_id=current_user.tenant_id, limit=limit)
 
@@ -38,7 +38,7 @@ def list_projects(
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project(
     project_id: uuid.UUID,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     project = project_service.get(db, project_id, tenant_id=current_user.tenant_id)
@@ -50,7 +50,7 @@ def get_project(
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
 def create_project(
     data: ProjectCreate,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     try:
@@ -63,7 +63,7 @@ def create_project(
 def update_project(
     project_id: uuid.UUID,
     data: ProjectUpdate,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     """Sprint 036 (Workstream F) — edit a project's own details. No

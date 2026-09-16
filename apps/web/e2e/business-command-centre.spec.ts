@@ -4,8 +4,8 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 025 — true browser E2E for the Business Command Centre. Structural
  * twin of e2e/follow-up-automation.spec.ts (Sprint 024). Setup goes through
@@ -23,11 +23,11 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 025 Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint025-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint025-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint025-Password-${RUN_ID}!`;
 
 const OTHER_COMPANY_NAME = `Pytest E2E Sprint 025 Other Co ${RUN_ID}`;
 const OTHER_OWNER_EMAIL = `pytest-e2e-sprint025-other-${RUN_ID}@example.invalid`;
-const OTHER_OWNER_PASSWORD = `pytest-e2e-sprint025-other-password-${RUN_ID}`;
+const OTHER_OWNER_PASSWORD = `Pytest-E2e-Sprint025-Other-Password-${RUN_ID}!`;
 
 function formatCurrencyGBP(value: number): string {
   return new Intl.NumberFormat("en-GB", {
@@ -61,6 +61,7 @@ test("business_command_centre_shows_exact_controlled_metrics_and_excludes_other_
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: token } = await signup.json();
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -76,6 +77,7 @@ test("business_command_centre_shows_exact_controlled_metrics_and_excludes_other_
   });
   expect(otherSignup.ok()).toBeTruthy();
   markVerified(OTHER_OWNER_EMAIL);
+  grantBillingAccess(OTHER_OWNER_EMAIL);
   const { access_token: otherToken } = await otherSignup.json();
   const otherHeaders = { Authorization: `Bearer ${otherToken}` };
   const otherProject = await api.post("/api/v1/projects", {

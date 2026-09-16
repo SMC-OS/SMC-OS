@@ -20,10 +20,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import is_verification_required
+from app.auth.dependencies import has_active_billing_access, is_verification_required
 from app.auth.models import SignupRequest, UserOut, UserRole
 from app.auth.security import hash_password, verify_password
-from app.billing.trial import start_trial_if_eligible
 from app.database import crud
 from app.database.models import Tenant, User
 from app.tenants.models import TenantCreate
@@ -53,6 +52,7 @@ class AuthService:
         password: str,
         role: str | None = None,
         email_verified: bool = True,
+        grant_legacy_billing_access: bool = True,
     ) -> User:
         """`email_verified` defaults to True: every existing caller of this
         low-level method (test fixtures, app/auth/seed.py, and
@@ -63,8 +63,18 @@ class AuthService:
         flow. Only signup() below explicitly opts out, since that is the
         one path where nothing has yet confirmed the caller controls the
         email address they typed in (Sprint 039 Production Readiness
-        Defect Gate, Blocker 1)."""
-        return crud.create_user(
+        Defect Gate, Blocker 1).
+
+        `grant_legacy_billing_access` is the exact same reasoning applied
+        to Sprint 039's final auth + trial gate: every one of those same
+        callers represents a tenant that already exists, not a fresh
+        public signup subject to the new card-required-trial contract, so
+        it defaults to giving the tenant an already-active, grandfathered
+        Subscription (idempotent — a no-op if one already exists) rather
+        than leaving it to fail the new require_billing_access dependency.
+        Only signup() opts out, for the same reason.
+        """
+        user = crud.create_user(
             db,
             id=uuid.uuid4(),
             tenant_id=tenant_id,
@@ -74,6 +84,24 @@ class AuthService:
             role=role,
             email_verified_at=datetime.now(timezone.utc) if email_verified else None,
         )
+        if grant_legacy_billing_access and crud.get_subscription_by_tenant_id(db, tenant_id) is None:
+            crud.upsert_subscription(
+                db,
+                tenant_id=tenant_id,
+                plan="pro",
+                billing_period="monthly",
+                status="active",
+                legacy_grandfathered=True,
+            )
+            # crud.upsert_subscription()'s own commit (expire_on_commit,
+            # SQLAlchemy's default) expires every object already loaded on
+            # this session, including `user` above — already fresh from
+            # crud.create_user()'s own commit+refresh. Without this, a
+            # caller that later accesses `user`'s attributes after this
+            # method returns (e.g. once its own `db` session has closed)
+            # hits a DetachedInstanceError trying to lazily reload them.
+            db.refresh(user)
+        return user
 
     def signup(self, db: Session, data: SignupRequest) -> tuple[Tenant, User]:
         """Creates a new company workspace and its first (Owner) user.
@@ -94,12 +122,16 @@ class AuthService:
             password=data.password,
             role=UserRole.OWNER.value,
             email_verified=False,
+            # Sprint 039 Production Readiness Defect Gate, final auth +
+            # trial gate — the owner's decision superseded the old
+            # no-card 14-day trial (app/billing/trial.py, now unused by
+            # this path): a brand-new workspace gets no Subscription row
+            # at all, and therefore no workspace access
+            # (require_billing_access), until a real Stripe Checkout
+            # completes with a card on file. See
+            # app/auth/dependencies.py::has_active_billing_access.
+            grant_legacy_billing_access=False,
         )
-        # Sprint 039 Production Readiness Defect Gate, Blocker 3 — every
-        # new workspace starts a 14-day trial automatically, no card
-        # required (see app/billing/trial.py's own docstring for why no
-        # Stripe object is created at this point).
-        start_trial_if_eligible(db, tenant.id)
         return tenant, user
 
     def build_user_out(self, db: Session, user: User) -> UserOut:
@@ -111,6 +143,7 @@ class AuthService:
         here rather than introducing one just for this.
         """
         tenant = crud.get_tenant_by_id(db, user.tenant_id)
+        subscription = crud.get_subscription_by_tenant_id(db, user.tenant_id)
         return UserOut(
             id=user.id,
             name=user.name,
@@ -120,6 +153,7 @@ class AuthService:
             tenant_name=tenant.name if tenant is not None else "",
             email_verified_at=user.email_verified_at,
             verification_required=is_verification_required(user),
+            billing_access_required=not has_active_billing_access(subscription),
         )
 
 

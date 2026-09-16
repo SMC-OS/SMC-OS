@@ -51,7 +51,7 @@ describe("LoginPage — Sprint 027 full-system journey entry point", () => {
   });
 
   it("submits_credentials_and_redirects_to_customers_on_success", async () => {
-    loginMock.mockResolvedValue(false);
+    loginMock.mockResolvedValue({ verificationRequired: false, billingAccessRequired: false });
 
     render(<LoginPage />);
 
@@ -75,7 +75,7 @@ describe("LoginPage — Sprint 027 full-system journey entry point", () => {
   // existing-but-unverified account must not bypass verification just by
   // logging in again.
   it("redirects_to_verify_email_when_the_account_is_still_unverified", async () => {
-    loginMock.mockResolvedValue(true);
+    loginMock.mockResolvedValue({ verificationRequired: true, billingAccessRequired: true });
 
     render(<LoginPage />);
 
@@ -89,6 +89,27 @@ describe("LoginPage — Sprint 027 full-system journey entry point", () => {
 
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith("/verify-email");
+    });
+  });
+
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — a verified account
+  // with no active billing/trial must not bypass activation by logging
+  // in again either.
+  it("redirects_to_pricing_when_verified_but_not_yet_billing_activated", async () => {
+    loginMock.mockResolvedValue({ verificationRequired: false, billingAccessRequired: true });
+
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "not-activated@example.invalid" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith("/pricing");
     });
   });
 

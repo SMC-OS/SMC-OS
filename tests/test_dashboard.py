@@ -5,7 +5,16 @@ from sqlalchemy import delete, select
 
 from app.auth.service import auth_service
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, Project, Quote, QuoteItem, Tenant, User
+from app.database.models import (
+    ActivityLog,
+    Customer,
+    Project,
+    Quote,
+    QuoteItem,
+    Subscription,
+    Tenant,
+    User,
+)
 
 TEST_CUSTOMER_NAME = "Pytest Dashboard Customer"
 TEST_PROJECT_NAME = "Pytest Dashboard Project"
@@ -156,6 +165,7 @@ def _cleanup_rbac_tenant(tenant_id):
     db = SessionLocal()
     try:
         db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant_id))
+        db.execute(delete(Subscription).where(Subscription.tenant_id == tenant_id))
         db.execute(delete(User).where(User.tenant_id == tenant_id))
         db.execute(delete(Tenant).where(Tenant.id == tenant_id))
         db.commit()

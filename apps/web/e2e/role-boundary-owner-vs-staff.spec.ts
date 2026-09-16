@@ -4,8 +4,8 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
 // Sprint 039 Production Readiness Defect Gate, Blocker 1 — see
@@ -51,10 +51,10 @@ print(raw_token)
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 027 Role Boundary Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint027-role-owner-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint027-role-owner-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint027-Role-Owner-Password-${RUN_ID}!`;
 const STAFF_EMAIL = `pytest-e2e-sprint027-role-staff-${RUN_ID}@example.invalid`;
 const STAFF_NAME = `Pytest E2E Sprint 027 Staff ${RUN_ID}`;
-const STAFF_PASSWORD = `pytest-e2e-sprint027-role-staff-password-${RUN_ID}`;
+const STAFF_PASSWORD = `Pytest-E2e-Sprint027-Role-Staff-Password-${RUN_ID}!`;
 const PROJECT_NAME = `Pytest E2E Sprint 027 Role Boundary Project ${RUN_ID}`;
 
 test("a_staff_session_sees_owner_only_controls_absent_not_merely_rejected", async ({ page }) => {
@@ -71,6 +71,7 @@ test("a_staff_session_sees_owner_only_controls_absent_not_merely_rejected", asyn
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: ownerToken } = await signup.json();
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
   await verifyOwnerEmail(api, OWNER_EMAIL);

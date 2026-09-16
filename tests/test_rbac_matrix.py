@@ -34,7 +34,7 @@ import pytest
 
 from app.auth.service import auth_service
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, Tenant, User
+from app.database.models import ActivityLog, Customer, Subscription, Tenant, User
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 from sqlalchemy import delete
@@ -216,6 +216,7 @@ def _cleanup():
         if tenant is not None:
             db.execute(delete(Customer).where(Customer.tenant_id == tenant.id))
             db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+            db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
         db.execute(
             delete(User).where(User.email.in_([OWNER_EMAIL, STAFF_EMAIL, NO_ROLE_EMAIL]))
         )

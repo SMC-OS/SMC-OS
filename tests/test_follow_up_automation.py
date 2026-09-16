@@ -58,7 +58,7 @@ def _signup(client, suffix: str) -> tuple[dict[str, str], uuid.UUID]:
             "company_name": f"{TEST_PREFIX} Co {suffix}",
             "name": "Pytest Owner",
             "email": email,
-            "password": f"pytest-sprint024-{suffix}-password",
+            "password": f"Pytest-Sprint024-{suffix}-Password-1!",
         },
     )
     assert response.status_code == 201
@@ -74,6 +74,17 @@ def _signup(client, suffix: str) -> tuple[dict[str, str], uuid.UUID]:
         # other_tenant_auth_headers.
         user_row.email_verified_at = datetime.now(timezone.utc)
         db.commit()
+        # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — same reasoning
+        # again, one gate further in: a real signup gets no Subscription
+        # at all, so this helper grants one explicitly too.
+        crud.upsert_subscription(
+            db,
+            tenant_id=tenant_id,
+            plan="pro",
+            billing_period="monthly",
+            status="active",
+            legacy_grandfathered=True,
+        )
     return headers, tenant_id
 
 

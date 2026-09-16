@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input } from "@/components/ui/Field";
 import { PasswordField } from "@/components/ui/PasswordField";
+import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 import { ApiError } from "@/lib/api";
+import { passwordPolicyError } from "@/lib/passwordPolicy";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -31,27 +33,44 @@ export default function SignupPage() {
       setError("Passwords do not match.");
       return;
     }
+    const policyError = passwordPolicyError(password);
+    if (policyError) {
+      setError(policyError);
+      return;
+    }
 
     setSubmitting(true);
 
     try {
-      const verificationRequired = await signup({ company_name: companyName, name, email, password });
+      const required = await signup({ company_name: companyName, name, email, password });
       // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix —
       // a brand-new signup is unverified and must land on the
       // verification screen, not straight into the workspace.
       //
-      // Sprint 036 (Workstream J) — once verified, a brand-new
+      // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — once verified, a
+      // brand-new workspace has no Subscription yet and must choose a
+      // plan before anything else, not go straight to onboarding.
+      //
+      // Sprint 036 (Workstream J) — once BOTH are satisfied, a brand-new
       // workspace goes to setup, not to an empty customer list.
       // /onboarding sends an already-established workspace straight
       // on, so this is safe for anyone who somehow reaches it with
       // data already in place.
-      router.push(verificationRequired ? "/verify-email" : "/onboarding");
-    } catch (err) {
-      setError(
-        err instanceof ApiError && err.status === 409
-          ? "An account with that email already exists."
-          : "Something went wrong."
+      router.push(
+        required.verificationRequired
+          ? "/verify-email"
+          : required.billingAccessRequired
+            ? "/pricing"
+            : "/onboarding"
       );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError("An account with that email already exists.");
+      } else if (err instanceof ApiError && err.status === 422) {
+        setError(policyError ?? "Password does not meet the requirements below.");
+      } else {
+        setError("Something went wrong.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -115,6 +134,7 @@ export default function SignupPage() {
               value={password}
               onChange={setPassword}
             />
+            <PasswordRequirements password={password} />
             <PasswordField
               id="confirmPassword"
               label="Confirm password"

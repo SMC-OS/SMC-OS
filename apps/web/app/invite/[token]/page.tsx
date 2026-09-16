@@ -7,7 +7,10 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input } from "@/components/ui/Field";
+import { PasswordField } from "@/components/ui/PasswordField";
+import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 import { ApiError, api } from "@/lib/api";
+import { passwordPolicyError } from "@/lib/passwordPolicy";
 import type { InvitationPublicOut } from "@/types/invitation";
 
 const UNUSABLE_MESSAGES: Record<string, string> = {
@@ -44,12 +47,23 @@ export default function AcceptInvitePage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
     setSubmitError(null);
 
+    const policyError = passwordPolicyError(password);
+    if (policyError) {
+      setSubmitError(policyError);
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      await acceptInvite(params.token, { name, password });
-      router.push("/customers");
+      const required = await acceptInvite(params.token, { name, password });
+      // An invited Staff user joins an EXISTING tenant — per GEOCORE V1's
+      // final auth + trial gate, that tenant may itself still be
+      // pre-activation (no Owner has completed Checkout yet), in which
+      // case a brand-new Staff member hits the same /pricing gate the
+      // Owner would.
+      router.push(required.billingAccessRequired ? "/pricing" : "/customers");
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setSubmitError("This invitation link isn't valid.");
@@ -57,6 +71,8 @@ export default function AcceptInvitePage() {
         setSubmitError(
           "This invitation can no longer be accepted — it may have just been used, revoked, or expired."
         );
+      } else if (err instanceof ApiError && err.status === 422) {
+        setSubmitError(policyError ?? "Password does not meet the requirements below.");
       } else {
         setSubmitError("Something went wrong.");
       }
@@ -113,15 +129,15 @@ export default function AcceptInvitePage() {
                   placeholder="Jane Doe"
                 />
               </Field>
-              <Field label="Password" htmlFor="inviteAcceptPassword">
-                <Input
-                  id="inviteAcceptPassword"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </Field>
+              <PasswordField
+                id="inviteAcceptPassword"
+                label="Password"
+                autoComplete="new-password"
+                required
+                value={password}
+                onChange={setPassword}
+              />
+              <PasswordRequirements password={password} />
 
               {submitError && (
                 <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">

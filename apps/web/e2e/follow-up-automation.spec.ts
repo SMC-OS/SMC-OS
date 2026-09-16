@@ -4,8 +4,8 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 024 — true browser E2E for stale-enquiry follow-up automation.
  * Structural twin of e2e/project-operations.spec.ts (Sprint 023). Setup
@@ -26,7 +26,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 024 Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint024-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint024-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint024-Password-${RUN_ID}!`;
 const PROJECT_NAME = `Pytest E2E Sprint 024 Project ${RUN_ID}`;
 
 function runFollowUpAutomation(now: string): { examined: number; created: number } {
@@ -53,6 +53,7 @@ test("a_stale_enquiry_notification_is_created_shown_navigable_and_deduplicated",
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: token } = await signup.json();
   const authHeaders = { Authorization: `Bearer ${token}` };
 

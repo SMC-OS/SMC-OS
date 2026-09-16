@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 033 (Workstream C) — true multi-line-item quotes, through the
  * real browser against the real Next.js app and real FastAPI server (see
@@ -29,7 +29,7 @@ function uniqueRunId(label: string): string {
 async function signUpAndLogIn(page: import("@playwright/test").Page, runId: string) {
   const companyName = `Pytest E2E Sprint 033 Co ${runId}`;
   const ownerEmail = `pytest-e2e-sprint033-${runId}@example.invalid`;
-  const ownerPassword = `pytest-e2e-sprint033-password-${runId}`;
+  const ownerPassword = `Pytest-E2e-Sprint033-Password-${runId}!`;
 
   const api = await request.newContext({ baseURL: BACKEND_URL });
   const signup = await api.post("/api/v1/auth/signup", {
@@ -42,6 +42,7 @@ async function signUpAndLogIn(page: import("@playwright/test").Page, runId: stri
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(ownerEmail);
+  grantBillingAccess(ownerEmail);
   await api.dispose();
 
   await page.goto("/login");

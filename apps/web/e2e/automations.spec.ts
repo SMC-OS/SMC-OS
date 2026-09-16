@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 036 (Workstream G) — the automation engine, end to end through
  * the real browser and the real server.
@@ -19,7 +19,7 @@ function uniqueRunId(label: string): string {
 
 async function signUpAndLogIn(page: import("@playwright/test").Page, runId: string) {
   const ownerEmail = `pytest-e2e-auto-${runId}@example.invalid`;
-  const ownerPassword = `pytest-e2e-auto-password-${runId}`;
+  const ownerPassword = `Pytest-E2e-Auto-Password-${runId}!`;
 
   const api = await request.newContext({ baseURL: BACKEND_URL });
   const signup = await api.post("/api/v1/auth/signup", {
@@ -32,6 +32,7 @@ async function signUpAndLogIn(page: import("@playwright/test").Page, runId: stri
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(ownerEmail);
+  grantBillingAccess(ownerEmail);
   const { access_token: token } = await signup.json();
 
   await page.goto("/login");

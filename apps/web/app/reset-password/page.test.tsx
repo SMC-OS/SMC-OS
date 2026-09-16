@@ -63,11 +63,11 @@ describe("ResetPasswordPage", () => {
     resetPasswordMock.mockResolvedValue({ message: "ok" });
 
     render(<ResetPasswordPage />);
-    fillForm("a-brand-new-password", "a-brand-new-password");
+    fillForm("A-Brand-New-Password-1!", "A-Brand-New-Password-1!");
     fireEvent.click(screen.getByRole("button", { name: /^reset password$/i }));
 
     await waitFor(() => {
-      expect(resetPasswordMock).toHaveBeenCalledWith("a-real-token", "a-brand-new-password");
+      expect(resetPasswordMock).toHaveBeenCalledWith("a-real-token", "A-Brand-New-Password-1!");
     });
     await waitFor(() => {
       expect(screen.getByText(/your password has been reset/i)).toBeInTheDocument();
@@ -89,12 +89,23 @@ describe("ResetPasswordPage", () => {
     resetPasswordMock.mockRejectedValue(new ApiError("Bad request", 400));
 
     render(<ResetPasswordPage />);
-    fillForm("a-brand-new-password", "a-brand-new-password");
+    fillForm("A-Brand-New-Password-1!", "A-Brand-New-Password-1!");
     fireEvent.click(screen.getByRole("button", { name: /^reset password$/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/invalid or has expired/i)).toBeInTheDocument();
     });
+  });
+
+  it("blocks_a_weak_password_that_fails_policy_without_calling_the_api", async () => {
+    render(<ResetPasswordPage />);
+    fillForm("short1!", "short1!");
+    fireEvent.click(screen.getByRole("button", { name: /^reset password$/i }));
+
+    expect(
+      await screen.findByText("Password must include: at least 10 characters.")
+    ).toBeInTheDocument();
+    expect(resetPasswordMock).not.toHaveBeenCalled();
   });
 
   it("shows_a_no_token_state_when_the_link_has_no_token", () => {

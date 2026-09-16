@@ -13,7 +13,7 @@ from sqlalchemy import delete
 from app.auth.rate_limit import LoginRateLimiter
 from app.auth.service import auth_service
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Tenant, User
+from app.database.models import ActivityLog, Subscription, Tenant, User
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -122,6 +122,7 @@ def _cleanup_tenant(tenant_id):
     db = SessionLocal()
     try:
         db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant_id))
+        db.execute(delete(Subscription).where(Subscription.tenant_id == tenant_id))
         db.execute(delete(User).where(User.tenant_id == tenant_id))
         db.execute(delete(Tenant).where(Tenant.id == tenant_id))
         db.commit()

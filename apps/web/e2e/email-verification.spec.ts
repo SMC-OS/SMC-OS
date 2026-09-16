@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 
 /**
  * Sprint 039 Production Readiness Defect Gate, Blocker 1 — true browser
@@ -27,7 +28,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 039 Verify Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint039-verify-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint039-verify-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint039-Verify-Password-${RUN_ID}!`;
 const OWNER_NAME = "Pytest E2E Verify Owner";
 
 function mintVerificationToken(email: string): string {
@@ -103,7 +104,20 @@ test("signup_lands_on_verify_email_and_confirming_the_emailed_link_unlocks_the_w
   await page.goto(`/verify-email?token=${rawToken}`);
   await page.waitForLoadState("networkidle");
   await expect(page.getByText("Your email address has been verified.")).toBeVisible();
-  await page.getByRole("button", { name: "Continue to GeoCore" }).click();
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — this spec's subject is
+  // email verification, not billing activation itself (that's
+  // billing-pricing.spec.ts), so it grants billing access explicitly
+  // here, the same "not this test's subject" reasoning applied
+  // throughout this suite, rather than routing through a real
+  // (unconfigured-in-this-sandbox) Stripe Checkout. That grant happens
+  // server-side, after this browser's AuthProvider already cached its
+  // pre-grant state — same "needs a fresh navigation to re-fetch
+  // /auth/me" requirement Sprint 039 Blocker 2's own fixture fixes
+  // established, so a direct goto is used below instead of the in-app
+  // client-side "Continue to GeoCore" click.
+  grantBillingAccess(OWNER_EMAIL);
+  await page.goto("/customers");
+  await page.waitForLoadState("networkidle");
   await expect(page).toHaveURL(/\/customers/);
 
   // ---- Settings → Security now reflects the real verified state, and
@@ -185,6 +199,11 @@ test("an_unverified_owner_cannot_reach_team_settings_or_invite_a_teammate_and_a_
   await page.goto(`/verify-email?token=${rawToken}`);
   await page.waitForLoadState("networkidle");
   await expect(page.getByText("Your email address has been verified.")).toBeVisible();
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — this spec's subject is
+  // email verification unlocking access, not billing activation itself.
+  // Safe to grant here, before the goto below: that's a hard navigation
+  // (unlike an in-app button click), so it picks up this fresh state.
+  grantBillingAccess(email);
 
   await page.goto("/settings?section=team");
   await page.waitForLoadState("networkidle");

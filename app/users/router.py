@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
-from app.auth.dependencies import require_role
+from app.auth.dependencies import require_role_and_billing
 from app.auth.models import UserRole
 from app.database.database import get_db
 from app.database.models import User
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("", response_model=list[TeamMemberOut])
 def list_users(
-    current_user: User = Depends(require_role(UserRole.OWNER)),
+    current_user: User = Depends(require_role_and_billing(UserRole.OWNER)),
     db: Session = Depends(get_db),
 ):
     return user_management_service.list_users(db, current_user.tenant_id)
@@ -34,7 +34,7 @@ def list_users(
 @router.post("/{user_id}/deactivate", response_model=TeamMemberOut)
 def deactivate_user(
     user_id: uuid.UUID,
-    current_user: User = Depends(require_role(UserRole.OWNER)),
+    current_user: User = Depends(require_role_and_billing(UserRole.OWNER)),
     db: Session = Depends(get_db),
 ):
     try:

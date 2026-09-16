@@ -17,7 +17,7 @@ from app.auth.service import auth_service
 from app.customers.models import CustomerCreate
 from app.customers.service import customer_service
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Customer, PortalLink, Tenant, User
+from app.database.models import ActivityLog, Customer, PortalLink, Subscription, Tenant, User
 from app.portal.service import portal_service
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
@@ -41,6 +41,7 @@ def _cleanup():
             db.execute(delete(PortalLink).where(PortalLink.tenant_id == tenant.id))
             db.execute(delete(Customer).where(Customer.tenant_id == tenant.id))
             db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+            db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
         db.execute(delete(User).where(User.email.in_([OWNER_EMAIL, STAFF_EMAIL])))
         db.execute(delete(Tenant).where(Tenant.name == TENANT_NAME))
         db.commit()

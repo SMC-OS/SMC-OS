@@ -2,7 +2,9 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from app.auth.password_policy import validate_password_strength
 
 
 class UserRole(str, Enum):
@@ -36,6 +38,11 @@ class SignupRequest(BaseModel):
     email: str
     password: str
 
+    @field_validator("password")
+    @classmethod
+    def _password_policy(cls, value: str) -> str:
+        return validate_password_strength(value)
+
 
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -65,6 +72,15 @@ class UserOut(BaseModel):
     # own enforcement exactly rather than re-deriving the legacy-grace
     # math itself.
     verification_required: bool = False
+    # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. Same reasoning as
+    # verification_required immediately above, one layer further in: the
+    # exact predicate app.auth.dependencies.require_billing_access
+    # enforces (via has_active_billing_access), so the frontend routes a
+    # verified-but-not-yet-activated user to plan selection/Checkout
+    # without re-deriving the legacy_grandfathered/trialing/active logic
+    # itself. False for both "already activated" and "exempt" (legacy
+    # grandfathered) — the frontend does not need, and is not told, which.
+    billing_access_required: bool = False
 
 
 class TokenResponse(BaseModel):
@@ -114,8 +130,14 @@ class ForgotPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     token: str
-    # Sprint 039 Blocker 2's password policy: a minimum length only — no
-    # character-class rules (no invented "must contain a symbol" beyond
-    # what this product has ever asked of a password, including at
-    # signup, which enforces nothing at all beyond "non-empty").
-    new_password: str = Field(min_length=8)
+    # Sprint 039 Production Readiness Defect Gate, final auth gate — the
+    # same policy as SignupRequest.password and
+    # AcceptInvitationRequest.password (app.auth.password_policy),
+    # rather than this flow's previous, weaker "8 characters, no
+    # character-class rules" minimum.
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _password_policy(cls, value: str) -> str:
+        return validate_password_strength(value)

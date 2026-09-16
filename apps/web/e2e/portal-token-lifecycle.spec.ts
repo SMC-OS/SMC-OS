@@ -4,8 +4,8 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 027 (docs/SPRINTS/sprint-027.md §6.13/§8) — tests/test_portal.py
  * proves revoked/expired portal-token behavior thoroughly at the API
@@ -26,7 +26,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 027 Portal Lifecycle Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint027-portal-owner-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint027-portal-owner-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint027-Portal-Owner-Password-${RUN_ID}!`;
 const CUSTOMER_NAME = `Pytest E2E Sprint 027 Portal Lifecycle Customer ${RUN_ID}`;
 
 function backdatePortalLinkExpiry(portalLinkId: string): void {
@@ -62,6 +62,7 @@ test("an_expired_portal_link_shows_a_clear_no_longer_valid_state", async ({ page
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(`expired-${OWNER_EMAIL}`);
+  grantBillingAccess(`expired-${OWNER_EMAIL}`);
   const { access_token: ownerToken } = await signup.json();
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
 
@@ -101,6 +102,7 @@ test("a_revoked_portal_link_shows_a_clear_no_longer_valid_state", async ({ page 
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(`revoked-${OWNER_EMAIL}`);
+  grantBillingAccess(`revoked-${OWNER_EMAIL}`);
   const { access_token: ownerToken } = await signup.json();
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
 

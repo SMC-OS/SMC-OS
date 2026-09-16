@@ -122,9 +122,9 @@ export function BillingCard() {
 
               {subscription.status === "trialing" && subscription.trial_end && (
                 <p className="rounded-lg bg-info/10 px-3 py-2 text-sm text-info">
-                  {daysRemaining(subscription.trial_end)} days left in your free trial. Choose a
-                  plan below any time to keep full access afterwards — no card is on file, so
-                  nothing is charged automatically.
+                  {daysRemaining(subscription.trial_end)} days left in your free trial. Your card
+                  won&apos;t be charged until the trial ends, and you can cancel any time before
+                  then from the billing portal below.
                 </p>
               )}
 

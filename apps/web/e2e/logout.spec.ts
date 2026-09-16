@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 028 UAT acceptance matrix AT-04 — logout was never exercised by
  * any existing spec (every prior spec signs up/logs in but none signs
@@ -15,7 +15,7 @@ import { markVerified } from "./verify-helper";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 028 Logout Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint028-logout-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint028-logout-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint028-Logout-Password-${RUN_ID}!`;
 const OWNER_NAME = "Pytest E2E Logout Owner";
 
 test("logging_out_terminates_the_session_and_protected_routes_redirect_to_login", async ({
@@ -34,7 +34,7 @@ test("logging_out_terminates_the_session_and_protected_routes_redirect_to_login"
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
-
+  grantBillingAccess(OWNER_EMAIL);
   // ---- Authenticate through the real login UI ----
   await page.goto("/login");
   await page.waitForLoadState("networkidle");

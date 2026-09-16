@@ -49,7 +49,7 @@ from app.auth.security import decode_access_token
 from app.core.config import settings
 from app.database import crud
 from app.database.database import get_db
-from app.database.models import User
+from app.database.models import Subscription, User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
@@ -195,3 +195,77 @@ def require_verified_email(current_user: User = Depends(get_current_user)) -> Us
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Please verify your email address to continue.",
     )
+
+
+def has_active_billing_access(subscription: Subscription | None) -> bool:
+    """GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. True when a tenant's
+    Subscription authorises normal workspace access:
+
+    - `legacy_grandfathered` (migration b5c6d7e8f9a0, or
+      AuthService.create_user()'s own default for a directly-created
+      "already established" user — see that method's docstring): always
+      True, regardless of `status`, by explicit, permanent grace policy.
+    - Otherwise: `status` must be "trialing" or "active" — both of which,
+      for a NEW tenant, only ever come from a real Stripe Checkout
+      (app/billing/service.py's webhook handlers). No Subscription row at
+      all (the state every new signup is now in until Checkout completes)
+      is `None` here and correctly returns False.
+    """
+    if subscription is None:
+        return False
+    if subscription.legacy_grandfathered:
+        return True
+    return subscription.status in {"trialing", "active"}
+
+
+def require_billing_access(
+    current_user: User = Depends(require_verified_email), db: Session = Depends(get_db)
+) -> User:
+    """GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. Swapped in for every
+    existing `Depends(require_verified_email)` across app/*/router.py
+    (router-level `dependencies=[...]` and per-route alike — same
+    "get_current_user -> require_verified_email" bulk swap Blocker 2 did
+    for verification), EXCEPT app/auth/router.py and app/billing/router.py:
+    both must stay reachable to a verified-but-not-yet-activated user
+    (inspect their own account, select a plan, start a Checkout, handle
+    its return, log out) — gating either of them here would make
+    activation itself impossible. A route using require_role(...) instead
+    gets the same upgrade via require_role_and_billing() below, on the
+    handful of routers with no router-level baseline of their own
+    (invitations, users) — every router that already applies
+    require_billing_access at construction time covers its own
+    require_role(...) routes for free, no separate edit needed.
+
+    Built on require_verified_email, the same "narrower subset of a
+    broader requirement" layering require_role() already uses for role
+    checks — reaching this dependency at all means the caller is both
+    authenticated and verified; a 402 here specifically means "verified,
+    but billing/trial activation is not yet complete."
+    """
+    subscription = crud.get_subscription_by_tenant_id(db, current_user.tenant_id)
+    if not has_active_billing_access(subscription):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Complete billing setup to access your workspace.",
+        )
+    return current_user
+
+
+def require_role_and_billing(*allowed_roles: UserRole):
+    """Like require_role(), plus billing/trial activation — for a
+    role-gated route on a router with no router-level require_billing_access
+    baseline of its own (app/invitations/router.py, app/users/router.py).
+
+    Never used by app/billing/router.py's own require_role(...) routes —
+    those are exactly the ones activation itself depends on, so gating
+    them on require_billing_access would make activation impossible.
+    """
+    role_checker = require_role(*allowed_roles)
+
+    def checker(
+        current_user: User = Depends(role_checker),
+        _billing_gate: User = Depends(require_billing_access),
+    ) -> User:
+        return current_user
+
+    return checker

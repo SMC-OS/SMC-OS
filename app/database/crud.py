@@ -1395,6 +1395,7 @@ def upsert_subscription(
     cancel_at_period_end: bool = False,
     trial_start=None,
     trial_end=None,
+    legacy_grandfathered: bool | None = None,
 ) -> Subscription:
     row = get_subscription_by_tenant_id(db, tenant_id)
     if row is None:
@@ -1422,6 +1423,13 @@ def upsert_subscription(
         row.trial_start = trial_start
     if trial_end is not None:
         row.trial_end = trial_end
+    # Sprint 039 final auth + trial gate — same "only apply when the
+    # caller actually passes a value" rule as trial_start/trial_end
+    # above: a routine Stripe webhook sync must never silently clear a
+    # grandfathered tenant's exemption, and a fresh row defaults to
+    # False via the Subscription column's own default, not here.
+    if legacy_grandfathered is not None:
+        row.legacy_grandfathered = legacy_grandfathered
 
     db.commit()
     db.refresh(row)

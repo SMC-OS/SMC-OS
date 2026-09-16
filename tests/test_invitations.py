@@ -18,7 +18,7 @@ from sqlalchemy import delete
 from app.auth.service import auth_service
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Communication, Invitation, Tenant, User
+from app.database.models import ActivityLog, Communication, Invitation, Subscription, Tenant, User
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -28,7 +28,13 @@ STAFF_EMAIL = "pytest-invitations-staff@example.invalid"
 INVITEE_EMAIL = "pytest-invitations-invitee@example.invalid"
 EXPIRED_INVITEE_EMAIL = "pytest-invitations-expired@example.invalid"
 ALREADY_USER_EMAIL = "pytest-invitations-already-user@example.invalid"
-PASSWORD = "correct-horse-battery-staple"
+# Sprint 039 Production Readiness Defect Gate, final auth gate — used for
+# both direct-created fixture users (auth_service.create_user(), which
+# never validates policy — see app.auth.password_policy's docstring) and
+# for every /invitations/token/{token}/accept call in this file, which
+# DOES now validate policy (AcceptInvitationRequest.password), so this
+# single literal must satisfy it.
+PASSWORD = "Correct-Horse-Battery-1!"
 
 
 def _cleanup():
@@ -49,6 +55,7 @@ def _cleanup():
             # docstring) — same "delete before the Tenant row" requirement
             # as ActivityLog above.
             db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
+            db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
         db.execute(delete(Tenant).where(Tenant.name == TENANT_NAME))
         db.commit()
     finally:

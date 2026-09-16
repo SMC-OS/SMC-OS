@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 022 — true browser E2E for site visit scheduling. Structural twin
  * of e2e/enquiry-conversion.spec.ts (Sprint 021). Setup (tenant + Project)
@@ -17,7 +17,7 @@ import { markVerified } from "./verify-helper";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 022 Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint022-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint022-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint022-Password-${RUN_ID}!`;
 const PROJECT_NAME = `Pytest E2E Sprint 022 Project ${RUN_ID}`;
 const NOTES = `Pytest E2E Sprint 022 Notes ${RUN_ID}`;
 
@@ -37,6 +37,7 @@ test("a_site_visit_can_be_scheduled_and_completed_through_the_ui_and_persists", 
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: token } = await signup.json();
   const authHeaders = { Authorization: `Bearer ${token}` };
 

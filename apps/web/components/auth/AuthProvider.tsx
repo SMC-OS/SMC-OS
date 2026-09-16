@@ -37,15 +37,26 @@ interface AuthContextValue {
   // reads this to redirect to /verify-email; consumers must not derive
   // this from email_verified_at themselves (see that field's own note).
   verificationRequired: boolean;
-  // login/signup/acceptInvite resolve to the fresh verification_required
-  // value so the calling page can route synchronously on success, rather
-  // than reading this same value back off (necessarily-async) state.
-  login: (email: string, password: string) => Promise<boolean>;
-  signup: (data: SignupRequest) => Promise<boolean>;
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — mirrors
+  // AuthUser.billing_access_required exactly the same way
+  // verificationRequired mirrors verification_required. AppShell checks
+  // this only once verificationRequired is false (verification is the
+  // narrower, earlier gate) to redirect to /pricing.
+  billingAccessRequired: boolean;
+  // login/signup/acceptInvite resolve to the fresh required-state so the
+  // calling page can route synchronously on success, rather than reading
+  // this same value back off (necessarily-async) state.
+  login: (email: string, password: string) => Promise<AuthRequiredState>;
+  signup: (data: SignupRequest) => Promise<AuthRequiredState>;
   // Sprint 011 — accepting a Staff invitation signs the new user straight
   // in, same shape as login()/signup().
-  acceptInvite: (token: string, data: AcceptInvitationRequest) => Promise<boolean>;
+  acceptInvite: (token: string, data: AcceptInvitationRequest) => Promise<AuthRequiredState>;
   logout: () => void;
+}
+
+interface AuthRequiredState {
+  verificationRequired: boolean;
+  billingAccessRequired: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -59,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [name, setName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [verificationRequired, setVerificationRequired] = useState(false);
+  const [billingAccessRequired, setBillingAccessRequired] = useState(false);
 
   useEffect(() => {
     // One-time sync from a browser-only API (localStorage isn't available
@@ -84,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setName(me.name);
         setEmail(me.email);
         setVerificationRequired(me.verification_required);
+        setBillingAccessRequired(me.billing_access_required);
       })
       .catch(() => setIsAuthenticated(false))
       .finally(() => setIsReady(true));
@@ -103,12 +116,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setName(null);
       setEmail(null);
       setVerificationRequired(false);
+      setBillingAccessRequired(false);
     }
     window.addEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
     return () => window.removeEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
   }, []);
 
-  async function login(email: string, password: string): Promise<boolean> {
+  async function login(email: string, password: string): Promise<AuthRequiredState> {
     const response = await api.login(email, password);
     setToken(response.access_token);
     setIsAuthenticated(true);
@@ -118,10 +132,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setName(response.user.name);
     setEmail(response.user.email);
     setVerificationRequired(response.user.verification_required);
-    return response.user.verification_required;
+    setBillingAccessRequired(response.user.billing_access_required);
+    return {
+      verificationRequired: response.user.verification_required,
+      billingAccessRequired: response.user.billing_access_required,
+    };
   }
 
-  async function signup(data: SignupRequest): Promise<boolean> {
+  async function signup(data: SignupRequest): Promise<AuthRequiredState> {
     const response = await api.signup(data);
     setToken(response.access_token);
     setIsAuthenticated(true);
@@ -131,10 +149,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setName(response.user.name);
     setEmail(response.user.email);
     setVerificationRequired(response.user.verification_required);
-    return response.user.verification_required;
+    setBillingAccessRequired(response.user.billing_access_required);
+    return {
+      verificationRequired: response.user.verification_required,
+      billingAccessRequired: response.user.billing_access_required,
+    };
   }
 
-  async function acceptInvite(token: string, data: AcceptInvitationRequest): Promise<boolean> {
+  async function acceptInvite(
+    token: string,
+    data: AcceptInvitationRequest
+  ): Promise<AuthRequiredState> {
     const response = await api.acceptInvitation(token, data);
     setToken(response.access_token);
     setIsAuthenticated(true);
@@ -144,7 +169,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setName(response.user.name);
     setEmail(response.user.email);
     setVerificationRequired(response.user.verification_required);
-    return response.user.verification_required;
+    setBillingAccessRequired(response.user.billing_access_required);
+    return {
+      verificationRequired: response.user.verification_required,
+      billingAccessRequired: response.user.billing_access_required,
+    };
   }
 
   function logout() {
@@ -156,6 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setName(null);
     setEmail(null);
     setVerificationRequired(false);
+    setBillingAccessRequired(false);
   }
 
   return (
@@ -169,6 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         name,
         email,
         verificationRequired,
+        billingAccessRequired,
         login,
         signup,
         acceptInvite,

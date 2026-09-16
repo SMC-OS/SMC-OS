@@ -1,8 +1,8 @@
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 /**
  * Sprint 021 — true browser E2E for enquiry-to-customer conversion.
  * Structural twin of e2e/quote-handoff.spec.ts (Sprint 020). Setup (tenant +
@@ -19,7 +19,7 @@ import { markVerified } from "./verify-helper";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 021 Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint021-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint021-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint021-Password-${RUN_ID}!`;
 const PROJECT_NAME = `Pytest E2E Sprint 021 Project ${RUN_ID}`;
 const CUSTOMER_NAME = `Pytest E2E Sprint 021 Customer ${RUN_ID}`;
 const CUSTOMER_EMAIL = `sprint021-e2e-${RUN_ID}@example.invalid`;
@@ -39,6 +39,7 @@ test("unlinked_enquiry_can_be_converted_to_customer_and_persists", async ({ page
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: token } = await signup.json();
   const authHeaders = { Authorization: `Bearer ${token}` };
 

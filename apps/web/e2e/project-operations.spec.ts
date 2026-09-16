@@ -4,8 +4,8 @@ import path from "node:path";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
-
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
 // Sprint 039 Production Readiness Defect Gate, Blocker 1 — inviting a
@@ -61,10 +61,10 @@ print(raw_token)
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const COMPANY_NAME = `Pytest E2E Sprint 023 Co ${RUN_ID}`;
 const OWNER_EMAIL = `pytest-e2e-sprint023-${RUN_ID}@example.invalid`;
-const OWNER_PASSWORD = `pytest-e2e-sprint023-password-${RUN_ID}`;
+const OWNER_PASSWORD = `Pytest-E2e-Sprint023-Password-${RUN_ID}!`;
 const STAFF_EMAIL = `pytest-e2e-sprint023-staff-${RUN_ID}@example.invalid`;
 const STAFF_NAME = `Pytest E2E Staff ${RUN_ID}`;
-const STAFF_PASSWORD = `pytest-e2e-sprint023-staff-password-${RUN_ID}`;
+const STAFF_PASSWORD = `Pytest-E2e-Sprint023-Staff-Password-${RUN_ID}!`;
 const PROJECT_NAME = `Pytest E2E Sprint 023 Project ${RUN_ID}`;
 
 test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async ({ page }) => {
@@ -81,6 +81,7 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   });
   expect(signup.ok()).toBeTruthy();
   markVerified(OWNER_EMAIL);
+  grantBillingAccess(OWNER_EMAIL);
   const { access_token: ownerToken } = await signup.json();
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
   await verifyOwnerEmail(api, OWNER_EMAIL);

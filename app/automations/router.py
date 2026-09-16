@@ -14,7 +14,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_role, require_verified_email
+from app.auth.dependencies import require_billing_access, require_role
 from app.auth.models import UserRole
 from app.automations import templates as template_catalogue
 from app.automations import triggers as trigger_catalogue
@@ -33,12 +33,12 @@ from app.database.database import get_db
 from app.database.models import User
 
 router = APIRouter(
-    prefix="/automations", tags=["automations"], dependencies=[Depends(require_verified_email)]
+    prefix="/automations", tags=["automations"], dependencies=[Depends(require_billing_access)]
 )
 
 
 # --- Vocabulary. Static, no tenant data, so no role gate beyond the
-# router-level require_verified_email. Served from the backend rather than
+# router-level require_billing_access. Served from the backend rather than
 # duplicated in the frontend so the builder UI cannot offer a trigger or
 # action the engine does not implement. ---
 
@@ -111,7 +111,7 @@ def list_templates():
 def list_runs(
     automation_id: uuid.UUID | None = None,
     limit: int = 50,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     """Execution history — successes, skips (with the reason) and failures
@@ -127,7 +127,7 @@ def list_runs(
 
 @router.get("", response_model=list[AutomationOut])
 def list_automations(
-    current_user: User = Depends(require_verified_email), db: Session = Depends(get_db)
+    current_user: User = Depends(require_billing_access), db: Session = Depends(get_db)
 ):
     return automation_service.list_all(db, current_user.tenant_id)
 
@@ -135,7 +135,7 @@ def list_automations(
 @router.get("/{automation_id}", response_model=AutomationOut)
 def get_automation(
     automation_id: uuid.UUID,
-    current_user: User = Depends(require_verified_email),
+    current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
     automation = automation_service.get(db, automation_id, current_user.tenant_id)

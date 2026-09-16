@@ -37,7 +37,7 @@ from app.database.models import (
 RUN_ID = uuid.uuid4().hex[:10]
 TENANT_NAME = f"Pytest Verification Enforcement Tenant {RUN_ID}"
 EMAIL = f"pytest-verification-enforcement-{RUN_ID}@example.invalid"
-PASSWORD = "pytest-verification-enforcement-password-1"
+PASSWORD = "Pytest-Verification-Enforcement-1!"
 
 
 def _cleanup():
@@ -187,6 +187,24 @@ class TestVerificationUnlocksNormalAccess:
         )
         confirm = client.post("/api/v1/auth/email/verify/confirm", json={"token": raw_token})
         assert confirm.status_code == 200
+
+        # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — verification is
+        # necessary but no longer sufficient on its own: a real signup
+        # also has no Subscription at all until a real Stripe Checkout.
+        # This test's subject is verification unlocking access, not
+        # billing activation, so it grants that explicitly here rather
+        # than in the shared unverified_headers fixture (which other
+        # tests in this file deliberately keep unverified AND
+        # billing-untouched).
+        with SessionLocal() as db:
+            crud.upsert_subscription(
+                db,
+                tenant_id=uuid.UUID(me["tenant_id"]),
+                plan="pro",
+                billing_period="monthly",
+                status="active",
+                legacy_grandfathered=True,
+            )
 
         # Same token, no new login — the existing session becomes usable
         # the instant the account is verified, matching require_verified_
