@@ -56,7 +56,7 @@ afterEach(() => {
 describe("AcceptInvitePage — Sprint 027 team-invitation entry point", () => {
   it("renders_the_accept_form_for_a_pending_invitation_and_submits", async () => {
     getInvitationByTokenMock.mockResolvedValue(invite());
-    acceptInviteMock.mockResolvedValue(undefined);
+    acceptInviteMock.mockResolvedValue({ verificationRequired: false, billingAccessRequired: false });
 
     render(<AcceptInvitePage />);
 
@@ -78,6 +78,29 @@ describe("AcceptInvitePage — Sprint 027 team-invitation entry point", () => {
     });
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith("/customers");
+    });
+  });
+
+  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — an invited Staff user
+  // joins an EXISTING tenant, which may itself still be pre-activation
+  // (no Owner has completed Checkout yet).
+  it("redirects_to_pricing_when_the_joined_tenant_is_not_yet_billing_activated", async () => {
+    getInvitationByTokenMock.mockResolvedValue(invite());
+    acceptInviteMock.mockResolvedValue({ verificationRequired: false, billingAccessRequired: true });
+
+    render(<AcceptInvitePage />);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("newhire@example.invalid")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "New Hire" } });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "A-Real-Password-1!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
+
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith("/pricing");
     });
   });
 

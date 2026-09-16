@@ -174,6 +174,17 @@ def qa_fixture(client):
             db.query(User).filter(User.id == uuid.UUID(body["user"]["id"])).update(
                 {"email_verified_at": datetime.now(timezone.utc)}
             )
+            # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — same reasoning
+            # again, one gate further in: a real signup gets no
+            # Subscription at all, so this fixture grants one explicitly.
+            crud.upsert_subscription(
+                db,
+                tenant_id=tenant_ids[-1],
+                plan="pro",
+                billing_period="monthly",
+                status="active",
+                legacy_grandfathered=True,
+            )
             db.commit()
         finally:
             db.close()
@@ -251,6 +262,16 @@ def unrelated_tenant(client):
     try:
         db.query(User).filter(User.id == uuid.UUID(body["user"]["id"])).update(
             {"email_verified_at": datetime.now(timezone.utc)}
+        )
+        # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES — see qa_fixture's
+        # identical comment above.
+        crud.upsert_subscription(
+            db,
+            tenant_id=uuid.UUID(body["user"]["tenant_id"]),
+            plan="pro",
+            billing_period="monthly",
+            status="active",
+            legacy_grandfathered=True,
         )
         db.commit()
     finally:
