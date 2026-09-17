@@ -213,6 +213,15 @@ def transition_project_workflow(
     else:
         new_previous_active_stage_id = project.workflow_previous_active_stage_id
 
+    # The mirror image of ProjectService.update_status's own legacy sync
+    # (Task 5): a legacy_v1 project's real (non-side) stage keys are, by
+    # construction, exactly the seven ProjectStatus values, so this one
+    # endpoint can drive a legacy-bound project too without leaving
+    # `status` stale for every other consumer (PipelineCounts, existing
+    # frontend) that still reads it. Hold/Cancel have no legacy status
+    # equivalent, so `status` is deliberately left untouched for those.
+    sync_legacy_status = is_legacy_binding(db, project) and not target.is_side_stage
+
     try:
         updated = crud.update_project_workflow(
             db,
@@ -222,6 +231,8 @@ def transition_project_workflow(
             workflow_previous_active_stage_id=new_previous_active_stage_id,
             commit=False,
         )
+        if sync_legacy_status:
+            updated = crud.update_project_status(db, project.id, tenant_id, target.key, commit=False)
         crud.create_project_workflow_history(
             db,
             id=uuid.uuid4(),

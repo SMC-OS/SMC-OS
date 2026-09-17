@@ -651,6 +651,42 @@ def test_legacy_bound_project_status_endpoint_keeps_workflow_in_sync(db):
     db.commit()
 
 
+def test_legacy_bound_project_workflow_transition_keeps_status_in_sync(db):
+    """The mirror of the test above: driving a legacy_v1-bound project
+    through the NEW POST /workflow/transition endpoint must also keep the
+    legacy `status` field correct - not just the other way round - so
+    Project 360 (Task 8) can use the one endpoint for every project's
+    advancement action, legacy-bound or not, without leaving `status`
+    stale for every other consumer (PipelineCounts, the pre-Task-8
+    frontend) that still reads it."""
+    from app.workflows.service import transition_project_workflow
+
+    tenant = _make_tenant(db, "Task5LegacyReverseSyncTenant")
+    legacy_template = crud.get_system_workflow_template_by_key(db, "legacy_v1")
+    enquiry_stage = crud.get_workflow_stage_by_key(db, legacy_template.id, "enquiry")
+
+    project = Project(
+        id=uuid.uuid4(), tenant_id=tenant.id, name="Legacy reverse sync job", status="enquiry",
+        workflow_template_id=legacy_template.id, workflow_stage_id=enquiry_stage.id,
+    )
+    db.add(project)
+    db.commit()
+
+    updated = transition_project_workflow(db, project, tenant.id, "quoted", None, None)
+    assert updated.status == "quoted"
+    assert updated.workflow_stage_id == crud.get_workflow_stage_by_key(db, legacy_template.id, "quoted").id
+
+    # Hold has no legacy status equivalent - `status` must stay untouched.
+    held = transition_project_workflow(db, updated, tenant.id, "on_hold", None, None)
+    assert held.status == "quoted"
+    assert get_project_workflow(db, held, tenant.id).role == WorkflowRole.ON_HOLD
+
+    db.execute(delete(ProjectWorkflowHistory).where(ProjectWorkflowHistory.project_id == project.id))
+    db.execute(delete(Project).where(Project.id == project.id))
+    db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+    db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Task 6 — workflow stage entry gates
 #
