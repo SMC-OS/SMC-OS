@@ -114,9 +114,7 @@ def get_project_workflow_detail(
             stage_key=option.key,
             stage_label=option.label,
             role=WorkflowRole(option.role),
-            blocked_requirements=[
-                blocker.code for blocker in evaluate_stage_gates(db, project, tenant_id, option)
-            ],
+            blocked_requirements=evaluate_stage_gates(db, project, tenant_id, option),
         )
         for option in _allowed_target_stages(db, project, stage)
     ]

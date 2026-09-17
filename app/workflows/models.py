@@ -13,6 +13,8 @@ from enum import Enum
 
 from pydantic import BaseModel
 
+from app.workflows.gates import GateBlocker
+
 
 class WorkflowRole(str, Enum):
     """The 13 semantic roles every workflow stage maps to. Two different
@@ -88,12 +90,15 @@ class WorkflowTransitionOption(BaseModel):
     """One stage a project could move to next. `blocked_requirements` is
     always empty as of Task 5 — Task 6 populates it by evaluating that
     target stage's own WorkflowStage.gate_definitions against the project's
-    real state, never fabricating a requirement that doesn't exist yet."""
+    real state, never fabricating a requirement that doesn't exist yet.
+    Full GateBlocker objects (code + message), not bare codes — Task 8's
+    Project 360 Workflow tab reads `message` directly rather than keeping
+    a second, driftable copy of gates.py's own wording."""
 
     stage_key: str
     stage_label: str
     role: WorkflowRole
-    blocked_requirements: list[str] = []
+    blocked_requirements: list[GateBlocker] = []
 
 
 class ProjectWorkflowDetail(ProjectWorkflowSummary):
