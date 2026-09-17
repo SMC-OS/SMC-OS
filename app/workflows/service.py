@@ -1,6 +1,7 @@
 """The workflow service — resolving which template/stage a new project
-binds to (Task 4), and evaluating/performing transitions, Hold, Resume and
-Cancel (Task 5).
+binds to (Task 4), evaluating/performing transitions, Hold, Resume and
+Cancel (Task 5), and enforcing each target stage's own entry gates
+(Task 6).
 """
 
 import uuid
@@ -11,6 +12,7 @@ from app.automations.dispatcher import automation_dispatcher
 from app.database import crud
 from app.database.models import Project, WorkflowStage
 from app.workflows.catalogue import template_for_trade
+from app.workflows.gates import GateBlocker, evaluate_stage_gates
 from app.workflows.models import (
     ProjectWorkflowDetail,
     ProjectWorkflowSummary,
@@ -96,10 +98,11 @@ def _allowed_target_stages(db: Session, project: Project, current: WorkflowStage
 def get_project_workflow_detail(
     db: Session, project: Project, tenant_id: uuid.UUID
 ) -> ProjectWorkflowDetail | None:
-    """GET /projects/{id}/workflow (Task 5) — the current stage plus every
-    stage the project could legally move to next. `blocked_requirements`
-    is always [] here; Task 6 populates it from that target stage's own
-    gate_definitions without changing this function's shape."""
+    """GET /projects/{id}/workflow (Task 5+6) — the current stage plus
+    every stage the project could legally move to next, each annotated
+    with its own unmet gate requirements (Task 6) so a caller can show
+    *why* a listed option isn't actually reachable yet without a second
+    round trip."""
     if project is None or project.tenant_id != tenant_id:
         return None
 
@@ -111,7 +114,9 @@ def get_project_workflow_detail(
             stage_key=option.key,
             stage_label=option.label,
             role=WorkflowRole(option.role),
-            blocked_requirements=[],
+            blocked_requirements=[
+                blocker.code for blocker in evaluate_stage_gates(db, project, tenant_id, option)
+            ],
         )
         for option in _allowed_target_stages(db, project, stage)
     ]
@@ -167,7 +172,11 @@ def transition_project_workflow(
 ) -> Project:
     """Move a project to `target_stage_key` — a normal forward move, Hold,
     Resume or Cancel are all the same operation here, distinguished only
-    by which stage the caller names (Task 5).
+    by which stage the caller names (Task 5). The target stage's own
+    entry gates (Task 6) are checked after the move itself is confirmed
+    legal but before anything is written — a graph edge (or Resume) that
+    exists is necessary but not sufficient; every listed GateBlocker must
+    also be clear.
 
     The stage write and its ProjectWorkflowHistory row are one atomic
     transaction (mirrors ProjectService.update_status); the automation
@@ -190,6 +199,10 @@ def transition_project_workflow(
         edge = crud.get_workflow_transition(db, project.workflow_template_id, current.id, target.id)
         if edge is None:
             raise WorkflowTransitionNotAllowedError(current.key, target_stage_key)
+
+    blockers = evaluate_stage_gates(db, project, tenant_id, target)
+    if blockers:
+        raise WorkflowGateBlockedError(target.key, blockers)
 
     if WorkflowRole(target.role) == WorkflowRole.ON_HOLD:
         # Entering Hold: remember where we were so Resume has somewhere
@@ -252,3 +265,17 @@ class WorkflowTerminalStateError(Exception):
     """Raised by transition_project_workflow when the project's current
     stage is terminal (Complete or Cancelled) — nothing may move a
     finished or cancelled project any further."""
+
+
+class WorkflowGateBlockedError(Exception):
+    """Raised by transition_project_workflow when the target stage is a
+    legal move (a real graph edge or Resume) but one or more of its own
+    entry gates (Task 6) aren't satisfied yet. Carries every unmet
+    GateBlocker, not just the first, so the router can return a single
+    structured 409 listing all of them at once — never a generic
+    unexplained conflict."""
+
+    def __init__(self, target_stage_key: str, blockers: list[GateBlocker]):
+        super().__init__(target_stage_key, blockers)
+        self.target_stage_key = target_stage_key
+        self.blockers = blockers

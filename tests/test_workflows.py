@@ -649,3 +649,213 @@ def test_legacy_bound_project_status_endpoint_keeps_workflow_in_sync(db):
     db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
     db.execute(delete(Tenant).where(Tenant.id == tenant.id))
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — workflow stage entry gates
+#
+# No system template seeds any gate_definitions yet (Task 3's migration
+# leaves every stage's column NULL) — there is no authoring UI for them in
+# this plan. These tests set a real stage's gate_definitions directly via
+# the ORM, exactly the way a future admin endpoint eventually would, and
+# always restore it to None afterwards so no other test in this shared
+# database sees an unexpected gate on a template it also uses.
+# ---------------------------------------------------------------------------
+
+from app.workflows.gates import (
+    ApprovedSourceQuoteGate,
+    AssignedUserGate,
+    CompletedSiteVisitGate,
+    CustomerLinkedGate,
+    GateBlocker,
+    SiteAddressPresentGate,
+    evaluate_stage_gates,
+    parse_gate_definitions,
+)
+
+
+def test_parse_gate_definitions_validates_the_closed_set_of_types():
+    parsed = parse_gate_definitions(
+        [
+            {"type": "customer_linked"},
+            {"type": "assigned_user"},
+            {"type": "site_address_present"},
+            {"type": "completed_site_visit"},
+            {"type": "approved_source_quote"},
+        ]
+    )
+    assert [type(gate) for gate in parsed] == [
+        CustomerLinkedGate, AssignedUserGate, SiteAddressPresentGate,
+        CompletedSiteVisitGate, ApprovedSourceQuoteGate,
+    ]
+    assert parse_gate_definitions(None) == []
+    assert parse_gate_definitions([]) == []
+
+
+def test_parse_gate_definitions_rejects_an_unknown_gate_type():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        parse_gate_definitions([{"type": "not_a_real_gate"}])
+
+
+def test_evaluate_stage_gates_reports_every_unmet_requirement_at_once(db):
+    tenant = _make_tenant(db, "Task6GatesTenant")
+    template = crud.get_system_workflow_template_by_key(db, "general_v1")
+    enquiry = crud.get_workflow_stage_by_key(db, template.id, "enquiry")
+    target = crud.get_workflow_stage_by_key(db, template.id, "quote")
+
+    project = Project(
+        id=uuid.uuid4(), tenant_id=tenant.id, name="Gated job", status="enquiry",
+        workflow_template_id=template.id, workflow_stage_id=enquiry.id,
+    )
+    db.add(project)
+    db.commit()
+
+    target.gate_definitions = [
+        {"type": "customer_linked"},
+        {"type": "assigned_user"},
+        {"type": "site_address_present"},
+        {"type": "completed_site_visit"},
+        {"type": "approved_source_quote"},
+    ]
+    db.add(target)
+    db.commit()
+
+    try:
+        blockers = evaluate_stage_gates(db, project, tenant.id, target)
+        assert {b.code for b in blockers} == {
+            "customer_linked", "assigned_user", "site_address_present",
+            "completed_site_visit", "approved_source_quote",
+        }
+        assert all(isinstance(b, GateBlocker) and b.message for b in blockers)
+    finally:
+        target.gate_definitions = None
+        db.add(target)
+        db.commit()
+        db.execute(delete(Project).where(Project.id == project.id))
+        db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+        db.commit()
+
+
+def test_evaluate_stage_gates_clears_once_every_requirement_is_met(db):
+    from app.auth.service import auth_service
+    from app.database.models import Appointment, Customer, Quote, Subscription, User
+
+    tenant = _make_tenant(db, "Task6GatesMetTenant")
+    template = crud.get_system_workflow_template_by_key(db, "general_v1")
+    enquiry = crud.get_workflow_stage_by_key(db, template.id, "enquiry")
+    target = crud.get_workflow_stage_by_key(db, template.id, "quote")
+
+    customer = crud.create_customer(
+        db, id=uuid.uuid4(), tenant_id=tenant.id, name="Gate Test Customer", email=None, phone=None
+    )
+    owner = auth_service.create_user(
+        db, tenant_id=tenant.id, name="Gate Test Owner",
+        email=f"gate-test-owner-{uuid.uuid4().hex[:8]}@example.invalid",
+        password="Gate-Test-Owner-Password-1!", role="Owner",
+    )
+
+    quote = Quote(
+        id=uuid.uuid4(), tenant_id=tenant.id, customer_id=customer.id,
+        quote_kind="stone", trade="stone", status="approved",
+    )
+    db.add(quote)
+    db.commit()
+
+    project = Project(
+        id=uuid.uuid4(), tenant_id=tenant.id, name="Gate Test job", status="enquiry",
+        customer_id=customer.id, assigned_user_id=owner.id, site_address_line1="1 Test Street",
+        quote_id=quote.id, workflow_template_id=template.id, workflow_stage_id=enquiry.id,
+    )
+    db.add(project)
+    db.commit()
+
+    appointment = Appointment(
+        id=uuid.uuid4(), tenant_id=tenant.id, project_id=project.id, created_by_user_id=owner.id,
+        scheduled_at=project.created_at, status="completed",
+    )
+    db.add(appointment)
+    db.commit()
+
+    target.gate_definitions = [
+        {"type": "customer_linked"},
+        {"type": "assigned_user"},
+        {"type": "site_address_present"},
+        {"type": "completed_site_visit"},
+        {"type": "approved_source_quote"},
+    ]
+    db.add(target)
+    db.commit()
+
+    try:
+        blockers = evaluate_stage_gates(db, project, tenant.id, target)
+        assert blockers == []
+    finally:
+        target.gate_definitions = None
+        db.add(target)
+        db.commit()
+        db.execute(delete(Appointment).where(Appointment.project_id == project.id))
+        db.execute(delete(Project).where(Project.id == project.id))
+        db.execute(delete(Quote).where(Quote.id == quote.id))
+        db.execute(delete(Customer).where(Customer.id == customer.id))
+        db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
+        db.execute(delete(User).where(User.id == owner.id))
+        db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+        db.commit()
+
+
+def test_transition_endpoint_returns_structured_409_until_the_gate_clears(client, auth_headers):
+    """End-to-end through the real HTTP transition endpoint: a stage
+    gated on `assigned_user` blocks with a structured 409 body naming the
+    unmet requirement, then succeeds once the project is assigned — never
+    a bare/generic 409."""
+    name = f"{TASK5_PREFIX} GateEndpoint"
+    session = SessionLocal()
+    template = crud.get_system_workflow_template_by_key(session, "electrical_v1")
+    target = crud.get_workflow_stage_by_key(session, template.id, "site_assessment")
+    target_id = target.id
+    original_gate_definitions = target.gate_definitions
+    target.gate_definitions = [{"type": "assigned_user"}]
+    session.add(target)
+    session.commit()
+    session.close()
+
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        blocked = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "site_assessment"},
+            headers=auth_headers,
+        )
+        assert blocked.status_code == 409
+        detail = blocked.json()["detail"]
+        assert detail["blocked_requirements"] == [
+            {"code": "assigned_user", "message": "This project has no assigned team member yet"}
+        ]
+
+        me = client.get("/api/v1/auth/me", headers=auth_headers)
+        assert me.status_code == 200
+        assigned = client.patch(
+            f"/api/v1/projects/{project_id}/assign",
+            json={"assigned_user_id": me.json()["id"]},
+            headers=auth_headers,
+        )
+        assert assigned.status_code == 200
+
+        allowed = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "site_assessment"},
+            headers=auth_headers,
+        )
+        assert allowed.status_code == 200
+        assert allowed.json()["workflow"]["stage_key"] == "site_assessment"
+    finally:
+        session = SessionLocal()
+        stage = crud.get_workflow_stage(session, target_id)
+        stage.gate_definitions = original_gate_definitions
+        session.add(stage)
+        session.commit()
+        session.close()
+        _cleanup_task5_project(name)

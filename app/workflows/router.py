@@ -21,6 +21,7 @@ from app.workflows.models import (
     WorkflowTransitionRequest,
 )
 from app.workflows.service import (
+    WorkflowGateBlockedError,
     WorkflowStageNotFoundError,
     WorkflowTerminalStateError,
     WorkflowTransitionNotAllowedError,
@@ -92,6 +93,14 @@ def transition_workflow(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot move this project to '{data.target_stage_key}' from its current stage",
+        )
+    except WorkflowGateBlockedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": f"'{exc.target_stage_key}' has unmet entry requirements",
+                "blocked_requirements": [blocker.model_dump() for blocker in exc.blockers],
+            },
         )
 
     return updated
