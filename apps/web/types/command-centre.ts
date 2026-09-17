@@ -8,6 +8,28 @@ export interface PipelineCounts {
   complete: number;
 }
 
+/** GeoCore Premium OS Plan 01 (Sprint 040, Task 7/9) — the semantic,
+ * trade-adaptive sibling of PipelineCounts above: one field per
+ * WorkflowRole, always all 13 present and 0 if none (mirrors
+ * app/dashboard/models.py's PipelineRoleCounts). Never replaces
+ * `pipeline` on CommandCentreStats below — an addition, same dual-field
+ * pattern as every other Plan 01 rollout surface. */
+export interface PipelineRoleCounts {
+  lead: number;
+  survey: number;
+  quoted: number;
+  approved: number;
+  procurement: number;
+  scheduled: number;
+  in_progress: number;
+  inspection: number;
+  snagging: number;
+  handover: number;
+  completed: number;
+  on_hold: number;
+  cancelled: number;
+}
+
 export interface QuoteFunnel {
   draft: number;
   approved: number;
@@ -32,6 +54,7 @@ export interface FollowUpAttention {
 export interface CommandCentreStats {
   customers: number;
   pipeline: PipelineCounts;
+  pipeline_by_role: PipelineRoleCounts;
   quotes: QuoteFunnel;
   value: QuotedValue;
   site_visits: SiteVisitCounts;

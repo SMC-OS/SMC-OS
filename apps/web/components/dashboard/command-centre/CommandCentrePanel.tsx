@@ -6,21 +6,17 @@ import { AlertCircleIcon } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useCommandCentre } from "@/hooks/useCommandCentre";
-import { PROJECT_STATUS_LABEL } from "@/lib/projects";
 import { formatCurrencyGBP } from "@/lib/utils";
-import type { ProjectStatus } from "@/types/project";
+import { WORKFLOW_ROLES, WORKFLOW_ROLE_LABELS } from "@/types/workflow";
 
-// The exact 7-value pipeline order this UI renders in — mirrors the
-// backend's PipelineCounts field order (docs/SPRINTS/sprint-025.md §3).
-const PIPELINE_ORDER: ProjectStatus[] = [
-  "enquiry",
-  "quoted",
-  "booked",
-  "templated",
-  "fabricated",
-  "installed",
-  "complete",
-];
+// GeoCore Premium OS Plan 01 (Sprint 040, Task 9) — the Pipeline card
+// aggregates by the 13 shared semantic roles (app/dashboard/models.py's
+// PipelineRoleCounts), not the old 7-value stone-shaped ProjectStatus
+// pipeline: a stone project on "Fabrication" and an electrical one on
+// "First Fix" now count together under one company-wide "In Progress"
+// row instead of needing a trade-specific row each. Every role always
+// renders, 0 if none — same never-sparse contract the backend itself
+// guarantees.
 
 function SectionSkeleton() {
   return (
@@ -104,11 +100,11 @@ export function CommandCentrePanel() {
             </Link>
           </CardHeader>
           <CardContent>
-            {PIPELINE_ORDER.map((statusKey) => (
+            {WORKFLOW_ROLES.map((role) => (
               <CountRow
-                key={statusKey}
-                label={PROJECT_STATUS_LABEL[statusKey]}
-                value={data.pipeline[statusKey]}
+                key={role}
+                label={WORKFLOW_ROLE_LABELS[role]}
+                value={data.pipeline_by_role[role]}
               />
             ))}
           </CardContent>
