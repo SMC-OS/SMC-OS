@@ -415,6 +415,24 @@ class Project(Base):
     # from must never be retro-edited to match.
     estimated_value: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # --- GeoCore Premium OS Plan 01 (Sprint 040) — trade-adaptive
+    # workflow binding. All three nullable at the column level so this
+    # migration can add them before backfilling every existing project;
+    # the migration itself makes the first two NOT NULL once every row
+    # has a value (every project always belongs to some workflow, even
+    # if that workflow is the immutable "legacy_v1" mapping). The third
+    # stays nullable forever — it is only ever set while a project is on
+    # hold (see app/workflows/service.py's hold/resume).
+    workflow_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_templates.id"), nullable=True, index=True
+    )
+    workflow_stage_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_stages.id"), nullable=True, index=True
+    )
+    workflow_previous_active_stage_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_stages.id"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -1152,3 +1170,140 @@ class ProcessedEmailEvent(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# --- GeoCore Premium OS Plan 01 (Sprint 040) — trade-adaptive workflow
+# engine. See app/workflows/catalogue.py for the system template library
+# these tables persist, and app/workflows/service.py for the transition
+# engine built on top of them. ---
+
+
+class WorkflowTemplate(Base):
+    """A versioned, named stage sequence for one trade. `tenant_id` is
+    NULL for every GeoCore-provided ("system") template and the caller's
+    tenant for a tenant's own cloned/customised template — system
+    templates are immutable (nothing in this codebase ever UPDATEs one),
+    so a tenant "editing" one always means: clone it into a new
+    tenant-owned WorkflowTemplate/version instead, never mutate the
+    shared row every other tenant's already-bound projects also read.
+
+    UNIQUE(tenant_id, key, version) is a defence against seeding the same
+    system template twice or a tenant creating two versions with the same
+    number, not a defence against two different tenants reusing the same
+    `key` — that's expected and fine, they're different rows scoped by
+    `tenant_id`.
+    """
+
+    __tablename__ = "workflow_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
+    )
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    trade_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "key", "version", name="uq_workflow_templates_tenant_key_version"),
+    )
+
+
+class WorkflowStage(Base):
+    """One stage within a specific WorkflowTemplate version. `key` is
+    stable within its template (not globally) — "enquiry" exists in every
+    template, scoped by `workflow_template_id`.
+
+    `gate_definitions` is a validated-at-the-API-boundary list (Task 6's
+    discriminated union of gate types), never arbitrary code — see
+    app/workflows/gates.py. NULL/empty means the stage has no entry
+    requirements.
+
+    `on_hold`/`cancelled` are synthetic stages seeded alongside every
+    template's real sequence (see this migration's seed step) so Hold and
+    Cancel have a real `workflow_stage_id` to point a project at, the same
+    as any other stage — they are simply never part of the ordered
+    forward sequence a project's Overview shows as "next".
+    """
+
+    __tablename__ = "workflow_stages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workflow_template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_templates.id"), nullable=False, index=True
+    )
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_terminal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_side_stage: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    gate_definitions: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("workflow_template_id", "key", name="uq_workflow_stages_template_key"),
+    )
+
+
+class WorkflowTransition(Base):
+    """An allowed edge in a WorkflowTemplate's stage graph. Seeded as the
+    template's linear forward sequence plus the universal side edges
+    (every non-terminal real stage -> on_hold, every non-terminal real
+    stage -> cancelled, on_hold -> cancelled) — Resume is deliberately
+    NOT one of these rows, since its target (the project's own previously
+    active stage) varies per project; app/workflows/service.py handles it
+    as a special case rather than a graph edge."""
+
+    __tablename__ = "workflow_transitions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workflow_template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_templates.id"), nullable=False, index=True
+    )
+    from_stage_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_stages.id"), nullable=False
+    )
+    to_stage_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_stages.id"), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_template_id", "from_stage_id", "to_stage_id", name="uq_workflow_transitions_edge"
+        ),
+    )
+
+
+class ProjectWorkflowHistory(Base):
+    """Append-only audit trail of every real workflow transition (forward
+    move, Hold, Resume, Cancel). Never updated or deleted once written —
+    this is the record a Project 360 Timeline tab reads, and later
+    AI-grounding relies on it staying a faithful, complete history."""
+
+    __tablename__ = "project_workflow_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+    )
+    from_stage_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_stages.id"), nullable=True
+    )
+    to_stage_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_stages.id"), nullable=False
+    )
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -47,12 +47,16 @@ from app.database.models import (
     ProcessedEmailEvent,
     ProcessedStripeEvent,
     Project,
+    ProjectWorkflowHistory,
     Quote,
     QuoteItem,
     Subscription,
     Task,
     Tenant,
     User,
+    WorkflowStage,
+    WorkflowTemplate,
+    WorkflowTransition,
 )
 
 
@@ -1930,3 +1934,157 @@ def list_retryable_communications(db: Session, *, limit: int = 100) -> list[Comm
         .limit(limit)
     )
     return list(db.scalars(stmt))
+
+
+# --- GeoCore Premium OS Plan 01 (Sprint 040) — trade-adaptive workflow
+# engine. Every lookup below that resolves a *tenant's own* workflow
+# (get_workflow_template with a non-None tenant_id) is tenant-scoped;
+# system templates (tenant_id IS NULL) are global reference data, the
+# same "globally readable, tenant data is not" split as `materials`. ---
+
+
+def get_workflow_template(db: Session, template_id: uuid.UUID) -> WorkflowTemplate | None:
+    """No tenant filter: a project's `workflow_template_id` may point at
+    either a system template (tenant_id NULL) or, in a later plan, a
+    tenant-owned clone — the *project* row is already tenant-scoped by
+    its own tenant_id, so re-checking here would only reject legitimate
+    system-template reads."""
+    return db.get(WorkflowTemplate, template_id)
+
+
+def get_system_workflow_template_by_key(db: Session, key: str) -> WorkflowTemplate | None:
+    stmt = select(WorkflowTemplate).where(
+        WorkflowTemplate.key == key, WorkflowTemplate.tenant_id.is_(None), WorkflowTemplate.is_system.is_(True)
+    )
+    return db.scalars(stmt).first()
+
+
+def get_workflow_stage(db: Session, stage_id: uuid.UUID) -> WorkflowStage | None:
+    return db.get(WorkflowStage, stage_id)
+
+
+def list_workflow_stages(db: Session, template_id: uuid.UUID) -> list[WorkflowStage]:
+    stmt = (
+        select(WorkflowStage)
+        .where(WorkflowStage.workflow_template_id == template_id)
+        .order_by(WorkflowStage.position)
+    )
+    return list(db.scalars(stmt))
+
+
+def get_workflow_stage_by_key(db: Session, template_id: uuid.UUID, key: str) -> WorkflowStage | None:
+    stmt = select(WorkflowStage).where(
+        WorkflowStage.workflow_template_id == template_id, WorkflowStage.key == key
+    )
+    return db.scalars(stmt).first()
+
+
+def list_allowed_transitions(db: Session, template_id: uuid.UUID, from_stage_id: uuid.UUID) -> list[WorkflowTransition]:
+    stmt = select(WorkflowTransition).where(
+        WorkflowTransition.workflow_template_id == template_id,
+        WorkflowTransition.from_stage_id == from_stage_id,
+    )
+    return list(db.scalars(stmt))
+
+
+def get_workflow_transition(
+    db: Session, template_id: uuid.UUID, from_stage_id: uuid.UUID, to_stage_id: uuid.UUID
+) -> WorkflowTransition | None:
+    stmt = select(WorkflowTransition).where(
+        WorkflowTransition.workflow_template_id == template_id,
+        WorkflowTransition.from_stage_id == from_stage_id,
+        WorkflowTransition.to_stage_id == to_stage_id,
+    )
+    return db.scalars(stmt).first()
+
+
+def create_project_workflow_history(
+    db: Session,
+    *,
+    id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    project_id: uuid.UUID,
+    from_stage_id: uuid.UUID | None,
+    to_stage_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
+    reason: str | None,
+    commit: bool = True,
+) -> ProjectWorkflowHistory:
+    row = ProjectWorkflowHistory(
+        id=id,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        from_stage_id=from_stage_id,
+        to_stage_id=to_stage_id,
+        actor_user_id=actor_user_id,
+        reason=reason,
+    )
+    db.add(row)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    db.refresh(row)
+    return row
+
+
+def list_project_workflow_history(
+    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID
+) -> list[ProjectWorkflowHistory]:
+    stmt = (
+        select(ProjectWorkflowHistory)
+        .where(
+            ProjectWorkflowHistory.project_id == project_id,
+            ProjectWorkflowHistory.tenant_id == tenant_id,
+        )
+        .order_by(ProjectWorkflowHistory.created_at)
+    )
+    return list(db.scalars(stmt))
+
+
+def update_project_workflow(
+    db: Session,
+    project_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    *,
+    workflow_stage_id: uuid.UUID,
+    workflow_previous_active_stage_id: uuid.UUID | None,
+    commit: bool = True,
+) -> Project | None:
+    project = get_project_by_id(db, project_id, tenant_id)
+    if project is None:
+        return None
+    project.workflow_stage_id = workflow_stage_id
+    project.workflow_previous_active_stage_id = workflow_previous_active_stage_id
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    db.refresh(project)
+    return project
+
+
+def update_project_workflow_binding(
+    db: Session,
+    project_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    *,
+    workflow_template_id: uuid.UUID,
+    workflow_stage_id: uuid.UUID,
+    commit: bool = True,
+) -> Project | None:
+    """Sets a project's *initial* workflow binding (template + stage) —
+    used only at project creation / quote handoff, never during a normal
+    transition (see update_project_workflow above, which only ever moves
+    the stage within the already-bound template)."""
+    project = get_project_by_id(db, project_id, tenant_id)
+    if project is None:
+        return None
+    project.workflow_template_id = workflow_template_id
+    project.workflow_stage_id = workflow_stage_id
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    db.refresh(project)
+    return project
