@@ -859,3 +859,66 @@ def test_transition_endpoint_returns_structured_409_until_the_gate_clears(client
         session.commit()
         session.close()
         _cleanup_task5_project(name)
+
+
+# ---------------------------------------------------------------------------
+# Task 7 — platform consumers (automations) use semantic roles
+#
+# The dashboard's own pipeline_by_role aggregate is exercised through the
+# real HTTP command-centre endpoint in tests/test_command_centre.py
+# (test_pipeline_by_role_aggregates_across_trades_and_is_tenant_scoped) and
+# the AI context's by_role/recent_projects in tests/test_geocore_ai.py
+# (test_context_groups_projects_by_semantic_role_with_trade_stage_labels) —
+# both alongside their own existing suites rather than duplicated here.
+# ---------------------------------------------------------------------------
+
+from app.automations.subjects import project_subject
+
+
+def test_project_subject_exposes_workflow_role_alongside_legacy_status(client, auth_headers):
+    name = f"{TASK5_PREFIX} SubjectFields"
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        session = SessionLocal()
+        project = session.get(Project, uuid.UUID(project_id))
+        subject = project_subject(project)
+        session.close()
+
+        assert subject["status"] == "enquiry"  # legacy field, unchanged
+        assert subject["workflow_stage_key"] == "enquiry"
+        assert subject["workflow_stage_label"] == "Enquiry"
+        assert subject["workflow_role"] == "lead"
+        assert subject["previous_workflow_role"] is None
+    finally:
+        _cleanup_task5_project(name)
+
+
+def test_project_subject_carries_previous_workflow_role_while_on_hold(client, auth_headers):
+    name = f"{TASK5_PREFIX} SubjectHold"
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        moved = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "site_assessment"},
+            headers=auth_headers,
+        )
+        assert moved.status_code == 200
+
+        held = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "on_hold"},
+            headers=auth_headers,
+        )
+        assert held.status_code == 200
+
+        session = SessionLocal()
+        project = session.get(Project, uuid.UUID(project_id))
+        subject = project_subject(project)
+        session.close()
+
+        assert subject["workflow_role"] == "on_hold"
+        assert subject["previous_workflow_role"] == "survey"
+    finally:
+        _cleanup_task5_project(name)

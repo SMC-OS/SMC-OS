@@ -61,6 +61,18 @@ def quote_subject(quote, *, customer_name: str | None = None) -> dict:
 def project_subject(
     project, *, customer_name: str | None = None, previous_status: str | None = None
 ) -> dict:
+    # GeoCore Premium OS Plan 01 (Sprint 040, Task 7) — the trade-adaptive
+    # workflow view alongside the legacy `status`/`previous_status` pair
+    # above, which stay exactly as they were: an existing rule built on
+    # `status`/`previous_status` keeps working unchanged, and a new rule
+    # can additionally read the semantic role a stone "Fabrication" and
+    # an electrical "First Fix" both share, without needing 27 separate
+    # trade-shaped conditions. `workflow` is None only if the project
+    # somehow has no binding yet (never true post-migration, but this
+    # dict must not raise either way); `previous_workflow_role` is None
+    # except while the project is on_hold.
+    workflow = project.workflow
+    previous_stage = project.workflow_previous_stage_ref
     return {
         "id": str(project.id),
         "name": project.name,
@@ -70,6 +82,10 @@ def project_subject(
         # treats as a match (see conditions._compare) — so such a rule
         # never fires rather than firing on everything.
         "previous_status": previous_status,
+        "workflow_stage_key": workflow["stage_key"] if workflow else None,
+        "workflow_stage_label": workflow["stage_label"] if workflow else None,
+        "workflow_role": workflow["role"] if workflow else None,
+        "previous_workflow_role": previous_stage.role if previous_stage else None,
         "project_type": project.project_type,
         "site_city": project.site_city,
         "site_postcode": project.site_postcode,

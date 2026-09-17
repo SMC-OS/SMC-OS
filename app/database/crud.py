@@ -1002,6 +1002,25 @@ def count_projects_by_status(db: Session, tenant_id: uuid.UUID) -> dict[str, int
     return {status: count for status, count in rows}
 
 
+def count_projects_by_role(db: Session, tenant_id: uuid.UUID) -> dict[str, int]:
+    """GeoCore Premium OS Plan 01 (Sprint 040, Task 7) — the semantic-role
+    sibling of count_projects_by_status above: one grouped aggregate query
+    (never a per-row Python loop, same O(1)-queries contract as every
+    other Command Centre count), joined against each project's own
+    workflow_stage_id so a stone project's "Fabrication" and an
+    electrical project's "First Fix" count under the one shared
+    IN_PROGRESS role instead of needing 27 separate trade-shaped buckets."""
+    rows = (
+        db.query(WorkflowStage.role, func.count())
+        .select_from(Project)
+        .join(WorkflowStage, WorkflowStage.id == Project.workflow_stage_id)
+        .filter(Project.tenant_id == tenant_id)
+        .group_by(WorkflowStage.role)
+        .all()
+    )
+    return {role: count for role, count in rows}
+
+
 def count_quotes_by_status(db: Session, tenant_id: uuid.UUID) -> dict[str, int]:
     rows = (
         db.query(Quote.status, func.count())

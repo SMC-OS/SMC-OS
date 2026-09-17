@@ -6,6 +6,7 @@ from app.dashboard.models import (
     CommandCentreResponse,
     FollowUpAttention,
     PipelineCounts,
+    PipelineRoleCounts,
     QuoteFunnel,
     QuotedValue,
     SiteVisitCounts,
@@ -13,6 +14,7 @@ from app.dashboard.models import (
 from app.database import crud
 from app.projects.models import ProjectStatus
 from app.appointments.models import AppointmentStatus
+from app.workflows.models import WorkflowRole
 
 
 def build_command_centre(db: Session, tenant_id: uuid.UUID) -> CommandCentreResponse:
@@ -21,6 +23,7 @@ def build_command_centre(db: Session, tenant_id: uuid.UUID) -> CommandCentreResp
     Python loop, so this stays O(1) queries regardless of how many
     Projects/Quotes/Appointments the tenant has."""
     project_counts = crud.count_projects_by_status(db, tenant_id)
+    project_role_counts = crud.count_projects_by_role(db, tenant_id)
     quote_counts = crud.count_quotes_by_status(db, tenant_id)
     appointment_counts = crud.count_appointments_by_status(db, tenant_id)
 
@@ -28,6 +31,9 @@ def build_command_centre(db: Session, tenant_id: uuid.UUID) -> CommandCentreResp
         customers=crud.count_customers(db, tenant_id),
         pipeline=PipelineCounts(
             **{status.value: project_counts.get(status.value, 0) for status in ProjectStatus}
+        ),
+        pipeline_by_role=PipelineRoleCounts(
+            **{role.value: project_role_counts.get(role.value, 0) for role in WorkflowRole}
         ),
         quotes=QuoteFunnel(
             draft=quote_counts.get("draft", 0),

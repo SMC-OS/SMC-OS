@@ -441,6 +441,13 @@ class Project(Base):
     workflow_stage_ref = relationship(
         "WorkflowStage", foreign_keys=[workflow_stage_id], lazy="joined", viewonly=True
     )
+    # Not `lazy="joined"` like the two above — this one is only ever read
+    # by app.automations.subjects.project_subject's `previous_workflow_role`
+    # (Task 7), a far rarer path than every ProjectOut serialization, so a
+    # plain select-on-access avoids a third join on the hot path.
+    workflow_previous_stage_ref = relationship(
+        "WorkflowStage", foreign_keys=[workflow_previous_active_stage_id], viewonly=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

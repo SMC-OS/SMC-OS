@@ -15,6 +15,33 @@ class PipelineCounts(BaseModel):
     complete: int
 
 
+class PipelineRoleCounts(BaseModel):
+    """GeoCore Premium OS Plan 01 (Sprint 040, Task 7) — the semantic,
+    trade-adaptive sibling of PipelineCounts above: one field per
+    WorkflowRole (app.workflows.models.WorkflowRole), always all 13
+    present and 0 if none, same never-sparse contract. A stone project on
+    "Fabrication" and an electrical project on "First Fix" both count
+    under `in_progress` here, which is what lets the Command Centre show
+    one company-wide pipeline across every trade instead of 27 trade-
+    shaped ones. `pipeline` on CommandCentreResponse stays exactly as
+    it was — this is an addition, not a replacement, during the Project
+    360 / Command Centre UI rollout (Tasks 8-9)."""
+
+    lead: int
+    survey: int
+    quoted: int
+    approved: int
+    procurement: int
+    scheduled: int
+    in_progress: int
+    inspection: int
+    snagging: int
+    handover: int
+    completed: int
+    on_hold: int
+    cancelled: int
+
+
 class QuoteFunnel(BaseModel):
     """`handed_off` is independently queried from Project.quote_id, not
     derived from `approved` — never assume handed_off <= approved in the
@@ -50,6 +77,7 @@ class FollowUpAttention(BaseModel):
 class CommandCentreResponse(BaseModel):
     customers: int
     pipeline: PipelineCounts
+    pipeline_by_role: PipelineRoleCounts
     quotes: QuoteFunnel
     value: QuotedValue
     site_visits: SiteVisitCounts
