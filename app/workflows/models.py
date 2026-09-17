@@ -56,3 +56,15 @@ class SystemWorkflowTemplate(BaseModel):
     name: str
     trade_key: str
     stages: tuple[SystemWorkflowStage, ...]
+
+
+class ProjectWorkflowSummary(BaseModel):
+    """The workflow-facing part of a ProjectOut response (Task 4). Nested
+    under `ProjectOut.workflow` alongside the legacy `status` field, which
+    stays present unchanged during this migration period."""
+
+    template_key: str
+    template_name: str
+    stage_key: str
+    stage_label: str
+    role: WorkflowRole

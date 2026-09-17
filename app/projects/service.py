@@ -16,6 +16,7 @@ from app.customers.models import CustomerCreate
 from app.projects.models import ProjectCreate, ProjectStatus, ProjectUpdate
 from app.database import crud
 from app.database.models import Customer, Project
+from app.workflows.service import resolve_initial_binding
 
 
 class CustomerNotFoundError(Exception):
@@ -68,6 +69,12 @@ class ProjectService:
         ) is None:
             raise CustomerNotFoundError(data.customer_id)
 
+        # GeoCore Premium OS Plan 01 (Sprint 040) — every new project binds
+        # to the system workflow for its own trade (never guessed as
+        # stone) at that workflow's first ("Enquiry") stage, in the same
+        # INSERT as project creation itself.
+        workflow_template_id, workflow_stage_id = resolve_initial_binding(db, data.project_type)
+
         project = crud.create_project(
             db,
             id=uuid.uuid4(),
@@ -85,6 +92,8 @@ class ProjectService:
             start_date=data.start_date,
             target_completion_date=data.target_completion_date,
             estimated_value=data.estimated_value,
+            workflow_template_id=workflow_template_id,
+            workflow_stage_id=workflow_stage_id,
         )
         # Sprint 004 established this pattern for customers — the backend
         # logs its own ActivityEvent, replacing a standalone frontend call.

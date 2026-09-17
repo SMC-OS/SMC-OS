@@ -468,6 +468,14 @@ def create_project(
     start_date=None,
     target_completion_date=None,
     estimated_value: float | None = None,
+    # GeoCore Premium OS Plan 01 (Sprint 040) — required (no default):
+    # projects.workflow_template_id/workflow_stage_id are NOT NULL, so
+    # every caller must resolve a real binding (see
+    # app.workflows.service.resolve_initial_binding) before calling this.
+    # Only two callers exist (ProjectService.create, QuoteService.handoff)
+    # and both do so.
+    workflow_template_id: uuid.UUID,
+    workflow_stage_id: uuid.UUID,
 ) -> Project:
     row = Project(
         id=id,
@@ -486,6 +494,8 @@ def create_project(
         start_date=start_date,
         target_completion_date=target_completion_date,
         estimated_value=estimated_value,
+        workflow_template_id=workflow_template_id,
+        workflow_stage_id=workflow_stage_id,
     )
     db.add(row)
     db.commit()
@@ -895,6 +905,13 @@ def create_quote(
         tenant_id=tenant_id,
         customer_id=customer_id,
         quote_kind="stone",
+        # GeoCore Premium OS Plan 01 (Sprint 040) — this function only
+        # ever creates a stone quote (quote_kind is hardcoded above), so
+        # `trade` is too; this was the one real pre-existing gap Task 4
+        # found: quote.trade was silently left None for every stone
+        # quote, which made ProjectService.handoff's `project_type=
+        # quote.trade` produce a tradeless project even for a stone job.
+        trade="stone",
         currency=currency,
         subtotal=subtotal,
         material=material,

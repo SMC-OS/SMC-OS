@@ -109,7 +109,7 @@ from sqlalchemy import delete
 
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import Project, ProjectWorkflowHistory, Tenant, WorkflowTemplate
+from app.database.models import ActivityLog, Project, ProjectWorkflowHistory, Tenant, WorkflowTemplate
 
 
 @pytest.fixture()
@@ -247,3 +247,123 @@ def test_workflow_history_is_append_only_and_tenant_scoped(db):
     db.execute(delete(Project).where(Project.id == project.id))
     db.execute(delete(Tenant).where(Tenant.id == tenant.id))
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — new project + quote handoff workflow binding
+# ---------------------------------------------------------------------------
+
+from app.projects.models import ProjectCreate
+from app.projects.service import project_service
+
+
+def test_a_new_stone_project_binds_to_the_stone_workflow_at_enquiry(db):
+    tenant = _make_tenant(db, "Task4StoneTenant")
+    project = project_service.create(
+        db, ProjectCreate(name="Kitchen worktop", project_type="stone"), tenant_id=tenant.id
+    )
+    assert project.workflow_template_id is not None
+    assert project.workflow_stage_id is not None
+
+    stage = crud.get_workflow_stage(db, project.workflow_stage_id)
+    template = crud.get_workflow_template(db, project.workflow_template_id)
+    assert template.key == "stone_v1"
+    assert stage.key == "enquiry"
+
+    db.execute(delete(Project).where(Project.id == project.id))
+    db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+    db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+    db.commit()
+
+
+def test_a_new_electrical_project_binds_to_the_electrical_workflow(db):
+    tenant = _make_tenant(db, "Task4ElectricalTenant")
+    project = project_service.create(
+        db, ProjectCreate(name="Rewire", project_type="electrical"), tenant_id=tenant.id
+    )
+    template = crud.get_workflow_template(db, project.workflow_template_id)
+    assert template.key == "electrical_v1"
+
+    db.execute(delete(Project).where(Project.id == project.id))
+    db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+    db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+    db.commit()
+
+
+def test_an_unknown_or_absent_trade_project_binds_to_the_general_workflow_not_stone(db):
+    tenant = _make_tenant(db, "Task4NoTradeTenant")
+    project = project_service.create(db, ProjectCreate(name="Misc job"), tenant_id=tenant.id)
+    template = crud.get_workflow_template(db, project.workflow_template_id)
+    assert template.key == "general_v1"
+    assert template.key != "stone_v1"
+
+    db.execute(delete(Project).where(Project.id == project.id))
+    db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+    db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+    db.commit()
+
+
+def test_project_out_exposes_a_workflow_summary_and_keeps_legacy_status():
+    from app.projects.models import ProjectOut
+
+    tenant_db = SessionLocal()
+    tenant = _make_tenant(tenant_db, "Task4SerializeTenant")
+    project = project_service.create(
+        tenant_db, ProjectCreate(name="Bathroom refit", project_type="bathroom"), tenant_id=tenant.id
+    )
+
+    out = ProjectOut.model_validate(project)
+    assert out.status == "enquiry"  # legacy field still present/correct
+    assert out.workflow.template_key == "bathroom_v1"
+    assert out.workflow.stage_key == "enquiry"
+    assert out.workflow.role == WorkflowRole.LEAD
+
+    tenant_db.execute(delete(Project).where(Project.id == project.id))
+    tenant_db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+    tenant_db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+    tenant_db.commit()
+    tenant_db.close()
+
+
+def test_quote_handoff_binds_the_projects_workflow_from_the_quotes_trade(client, auth_headers):
+    """Real HTTP: create a stone quote, approve it, hand it off, and
+    prove the resulting Project is bound to the stone workflow — the
+    same trade the quote itself was for, not a guess and not general."""
+    from app.database.models import Customer, QuoteItem, Quote as QuoteModel
+
+    customer = client.post(
+        "/api/v1/customers", json={"name": "Task4 Handoff Customer"}, headers=auth_headers
+    )
+    assert customer.status_code == 201
+    quote = client.post(
+        "/api/v1/quote",
+        json={
+            "customer": "Task4 Handoff Customer",
+            "customer_id": customer.json()["id"],
+            "material": "Calacatta Gold",
+            "thickness": "20mm",
+            "kitchen_length": 3.0,
+            "postcode": "TASK4-HANDOFF",
+        },
+        headers=auth_headers,
+    )
+    assert quote.status_code == 200
+    quote_id = quote.json()["id"]
+
+    approved = client.post(f"/api/v1/quotes/{quote_id}/approve", headers=auth_headers)
+    assert approved.status_code == 200
+
+    handed_off = client.post(f"/api/v1/quotes/{quote_id}/handoff", headers=auth_headers)
+    assert handed_off.status_code == 200
+    project_body = handed_off.json()
+    assert project_body["workflow"]["template_key"] == "stone_v1"
+    assert project_body["workflow"]["stage_key"] == "enquiry"
+
+    session = SessionLocal()
+    session.execute(delete(Project).where(Project.id == uuid.UUID(project_body["id"])))
+    session.execute(delete(QuoteItem).where(QuoteItem.quote_id == uuid.UUID(quote_id)))
+    session.execute(delete(QuoteModel).where(QuoteModel.id == uuid.UUID(quote_id)))
+    session.execute(delete(ActivityLog).where(ActivityLog.description.like(f"%{quote_id}%")))
+    session.execute(delete(Customer).where(Customer.id == uuid.UUID(customer.json()["id"])))
+    session.commit()
+    session.close()

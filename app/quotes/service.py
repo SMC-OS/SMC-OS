@@ -17,6 +17,7 @@ from app.automations.dispatcher import automation_dispatcher
 from app.database import crud
 from app.database.models import Project
 from app.projects.models import ProjectStatus
+from app.workflows.service import resolve_initial_binding
 from app.quotes.calculator import QuoteCalculator
 from app.quotes.general import (
     GeneralQuoteLineRequest,
@@ -143,6 +144,13 @@ class QuoteService:
         )
         name = customer.name if customer is not None else f"Quote {quote.id}"
 
+        # GeoCore Premium OS Plan 01 (Sprint 040) — the resulting project
+        # binds to the workflow for the *quote's own* trade, never a
+        # guess — the entire point of carrying `quote.trade` through to
+        # `project_type` two lines below, now also driving which workflow
+        # the project is born on.
+        workflow_template_id, workflow_stage_id = resolve_initial_binding(db, quote.trade)
+
         project = crud.create_project(
             db,
             id=uuid.uuid4(),
@@ -152,6 +160,8 @@ class QuoteService:
             notes=None,
             status=ProjectStatus.BOOKED.value,
             quote_id=quote.id,
+            workflow_template_id=workflow_template_id,
+            workflow_stage_id=workflow_stage_id,
             # Sprint 036 (Workstream F) — carry what the quote already
             # knows onto the project it becomes, rather than making
             # someone retype the site address and the value of a job they

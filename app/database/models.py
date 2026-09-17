@@ -432,8 +432,33 @@ class Project(Base):
     workflow_previous_active_stage_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workflow_stages.id"), nullable=True
     )
+    # `lazy="joined"` — ProjectOut reads `.workflow` on every single
+    # project list/get response, so this is never an N+1 in practice; a
+    # plain lazy load would be one extra query per relationship per row.
+    workflow_template_ref = relationship(
+        "WorkflowTemplate", foreign_keys=[workflow_template_id], lazy="joined", viewonly=True
+    )
+    workflow_stage_ref = relationship(
+        "WorkflowStage", foreign_keys=[workflow_stage_id], lazy="joined", viewonly=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def workflow(self):
+        """The nested read-model Pydantic's ProjectOut.workflow field
+        (app.workflows.models.ProjectWorkflowSummary) validates from —
+        combines both relationships above rather than being a column
+        itself, since no single row holds all five of these fields."""
+        if self.workflow_template_ref is None or self.workflow_stage_ref is None:
+            return None
+        return {
+            "template_key": self.workflow_template_ref.key,
+            "template_name": self.workflow_template_ref.name,
+            "stage_key": self.workflow_stage_ref.key,
+            "stage_label": self.workflow_stage_ref.label,
+            "role": self.workflow_stage_ref.role,
+        }
 
 
 class Task(Base):
