@@ -10,18 +10,20 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
-import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
 import { ProjectForm } from "@/components/projects/ProjectForm";
+import { ProjectOverview } from "@/components/projects/ProjectOverview";
 import { ProjectTasksPanel } from "@/components/projects/ProjectTasksPanel";
+import { Project360Shell } from "@/components/projects/Project360Shell";
+import type { Project360Tab } from "@/components/projects/Project360Shell";
+import { WorkflowHistory } from "@/components/projects/WorkflowHistory";
+import { WorkflowProgress } from "@/components/projects/WorkflowProgress";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
-import { EditIcon } from "@/components/ui/icons";
 import type { Trade } from "@/types/quote";
-import { formatDate, formatMoney, formatRelativeTime } from "@/lib/utils";
-import { PROJECT_STATUSES } from "@/types/project";
 import type { AppointmentOut, AppointmentTransitionTarget } from "@/types/appointment";
 import type { Customer } from "@/types/customer";
 import type { Project } from "@/types/project";
 import type { TeamMemberOut } from "@/types/user";
+import type { ProjectWorkflowDetail, WorkflowHistoryEntry, WorkflowTransitionOption } from "@/types/workflow";
 
 const APPOINTMENT_STATUS_TONE: Record<AppointmentOut["status"], "info" | "success" | "neutral"> = {
   scheduled: "info",
@@ -41,7 +43,6 @@ export default function ProjectDetailPage() {
   const { currency } = useWorkspace();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [advancing, setAdvancing] = useState(false);
 
   // Sprint 021 — enquiry-to-customer conversion (docs/SPRINTS/sprint-021.md).
   const [showConvertForm, setShowConvertForm] = useState(false);
@@ -63,6 +64,13 @@ export default function ProjectDetailPage() {
   const [teamMembers, setTeamMembers] = useState<TeamMemberOut[] | null>(null);
   const [operationsError, setOperationsError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
+
+  // GeoCore Premium OS Plan 01 (Sprint 040, Task 8) — the trade-adaptive
+  // workflow engine's own Project 360 tabs.
+  const [workflowDetail, setWorkflowDetail] = useState<ProjectWorkflowDetail | null>(null);
+  const [workflowHistory, setWorkflowHistory] = useState<WorkflowHistoryEntry[] | null>(null);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
+  const [transitioningStageKey, setTransitioningStageKey] = useState<string | null>(null);
 
   function load() {
     api
@@ -91,6 +99,19 @@ export default function ProjectDetailPage() {
       );
   }
 
+  function loadWorkflow() {
+    api
+      .getProjectWorkflow(params.id)
+      .then(setWorkflowDetail)
+      .catch((err) =>
+        setWorkflowError(err instanceof ApiError ? err.message : "Something went wrong.")
+      );
+    api
+      .getProjectWorkflowHistory(params.id)
+      .then(setWorkflowHistory)
+      .catch(() => {});
+  }
+
   const canManageAppointments = role === "Owner" || role === "Staff";
   const canAssign = role === "Owner";
 
@@ -101,6 +122,7 @@ export default function ProjectDetailPage() {
       return;
     }
     load();
+    loadWorkflow();
     // Appointments are Owner/Staff only server-side (require_role(OWNER,
     // STAFF)) — same RBAC gating as convert-to-customer, so a caller
     // without that role never even requests the list.
@@ -123,25 +145,6 @@ export default function ProjectDetailPage() {
 
   const tradeLabel =
     trades.find((trade) => trade.key === project?.project_type)?.label ?? null;
-
-  const currentIndex = project ? PROJECT_STATUSES.indexOf(project.status) : -1;
-  const nextStatus =
-    currentIndex >= 0 && currentIndex < PROJECT_STATUSES.length - 1
-      ? PROJECT_STATUSES[currentIndex + 1]
-      : null;
-
-  async function handleAdvance() {
-    if (!project || !nextStatus) return;
-    setAdvancing(true);
-    try {
-      const updated = await api.updateProjectStatus(project.id, nextStatus);
-      setProject(updated);
-    } catch (err) {
-      setOperationsError(err instanceof ApiError ? err.message : "Something went wrong.");
-    } finally {
-      setAdvancing(false);
-    }
-  }
 
   async function handleAssign(e: React.ChangeEvent<HTMLSelectElement>) {
     if (!project) return;
@@ -212,7 +215,7 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function handleTransition(id: string, target: AppointmentTransitionTarget) {
+  async function handleAppointmentTransition(id: string, target: AppointmentTransitionTarget) {
     setTransitioningId(id);
     try {
       const updated =
@@ -229,8 +232,263 @@ export default function ProjectDetailPage() {
     }
   }
 
+  async function handleWorkflowTransition(option: WorkflowTransitionOption) {
+    if (!project) return;
+    setWorkflowError(null);
+    setTransitioningStageKey(option.stage_key);
+    try {
+      const updated = await api.transitionProjectWorkflow(project.id, option.stage_key);
+      // The server's returned Project is authoritative — applied only
+      // after a successful response, never optimistically.
+      setProject(updated);
+      // Re-fetch rather than derive locally: the newly-current stage's own
+      // allowed_transitions/blocked_requirements are the backend's alone
+      // to compute (gates, the graph, Resume's per-project target).
+      loadWorkflow();
+    } catch (err) {
+      setWorkflowError(
+        err instanceof ApiError
+          ? err.status === 409
+            ? "This move isn't available right now — try refreshing."
+            : err.message
+          : "Something went wrong."
+      );
+    } finally {
+      setTransitioningStageKey(null);
+    }
+  }
+
+  if (!project) {
+    return (
+      <div className="mx-auto max-w-xl">
+        <div className="mb-6">
+          <Link href="/projects" className="tap-link text-sm text-muted hover:text-foreground">
+            &larr; Projects
+          </Link>
+        </div>
+        {error && (
+          <Card>
+            <CardContent>
+              <p className="text-sm text-danger">{error}</p>
+            </CardContent>
+          </Card>
+        )}
+        {!error && <p className="text-sm text-muted">Loading…</p>}
+      </div>
+    );
+  }
+
+  if (editing) {
+    return (
+      <div className="mx-auto max-w-xl">
+        <div className="mb-6">
+          <Link href="/projects" className="tap-link text-sm text-muted hover:text-foreground">
+            &larr; Projects
+          </Link>
+        </div>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Edit project</h1>
+          <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+        </div>
+        <ProjectForm
+          initial={project}
+          submitLabel="Save changes"
+          onSubmit={async (values) => {
+            setProject(await api.updateProject(project.id, values));
+            setEditing(false);
+          }}
+        />
+      </div>
+    );
+  }
+
+  const tabs: Project360Tab[] = [
+    {
+      key: "overview",
+      label: "Overview",
+      content: (
+        <ProjectOverview
+          project={project}
+          customer={customer}
+          currency={currency}
+          showConvertAction={showConvertAction}
+          showConvertForm={showConvertForm}
+          convertName={convertName}
+          convertEmail={convertEmail}
+          convertPhone={convertPhone}
+          converting={converting}
+          onConvertNameChange={setConvertName}
+          onConvertEmailChange={setConvertEmail}
+          onConvertPhoneChange={setConvertPhone}
+          onShowConvertForm={() => setShowConvertForm(true)}
+          onConvertSubmit={handleConvert}
+        />
+      ),
+    },
+    {
+      key: "workflow",
+      label: "Workflow",
+      content: (
+        <div>
+          {workflowError && <p className="mb-3 text-sm text-danger">{workflowError}</p>}
+          {workflowDetail ? (
+            <WorkflowProgress
+              detail={workflowDetail}
+              canManage={canManageAppointments}
+              pendingKey={transitioningStageKey}
+              onTransition={handleWorkflowTransition}
+            />
+          ) : (
+            !workflowError && <p className="text-sm text-muted">Loading…</p>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  if (canManageAppointments) {
+    tabs.push({
+      key: "schedule",
+      label: "Schedule",
+      content: (
+        <div>
+          {appointmentError && <p className="mb-3 text-sm text-danger">{appointmentError}</p>}
+
+          <ul className="space-y-2">
+            {(appointments ?? []).map((appointment) => (
+              <li
+                key={appointment.id}
+                className="flex items-center justify-between gap-3 rounded-md border border-border p-3"
+              >
+                <div>
+                  <p className="text-sm text-foreground">
+                    {new Date(appointment.scheduled_at).toLocaleString()}
+                  </p>
+                  {appointment.notes && (
+                    <p className="text-xs text-muted">{appointment.notes}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge tone={APPOINTMENT_STATUS_TONE[appointment.status]}>
+                    {appointment.status}
+                  </Badge>
+                  {appointment.status === "scheduled" && (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleAppointmentTransition(appointment.id, "completed")}
+                        disabled={transitioningId === appointment.id}
+                      >
+                        Complete
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleAppointmentTransition(appointment.id, "cancelled")}
+                        disabled={transitioningId === appointment.id}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {appointments && appointments.length === 0 && (
+            <p className="mt-2 text-sm text-muted">No site visits scheduled yet.</p>
+          )}
+
+          <div className="mt-4">
+            {showScheduleForm ? (
+              <form onSubmit={handleSchedule} className="flex flex-col gap-4">
+                <Field label="Date & time" htmlFor="schedule-at">
+                  <Input
+                    id="schedule-at"
+                    type="datetime-local"
+                    required
+                    value={scheduleAt}
+                    onChange={(e) => setScheduleAt(e.target.value)}
+                  />
+                </Field>
+                <Field label="Notes" htmlFor="schedule-notes">
+                  <Input
+                    id="schedule-notes"
+                    value={scheduleNotes}
+                    onChange={(e) => setScheduleNotes(e.target.value)}
+                    placeholder="e.g. Measure kitchen worktop"
+                  />
+                </Field>
+                <Button type="submit" disabled={scheduling}>
+                  {scheduling ? "Scheduling…" : "Save site visit"}
+                </Button>
+              </form>
+            ) : (
+              <Button onClick={() => setShowScheduleForm(true)} variant="outline">
+                Schedule Site Visit
+              </Button>
+            )}
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  tabs.push({
+    key: "team",
+    label: "Team",
+    content: (
+      <div>
+        {operationsError && <p className="mb-3 text-sm text-danger">{operationsError}</p>}
+        <dl>
+          <div>
+            <dt className="text-xs font-medium text-muted">Assigned to</dt>
+            <dd className="mt-1 text-sm text-foreground">
+              {canAssign ? (
+                <Select
+                  aria-label="Assigned to"
+                  value={project.assigned_user_id ?? ""}
+                  onChange={handleAssign}
+                  disabled={assigning || !teamMembers}
+                >
+                  <option value="">Unassigned</option>
+                  {(teamMembers ?? []).map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                (teamMembers?.find((m) => m.id === project.assigned_user_id)?.name ??
+                  (project.assigned_user_id ? project.assigned_user_id : "Unassigned"))
+              )}
+            </dd>
+          </div>
+        </dl>
+      </div>
+    ),
+  });
+
+  tabs.push({
+    key: "tasks",
+    label: "Tasks",
+    content: <ProjectTasksPanel projectId={project.id} />,
+  });
+
+  tabs.push({
+    key: "timeline",
+    label: "Timeline",
+    content: workflowHistory ? (
+      <WorkflowHistory history={workflowHistory} />
+    ) : (
+      <p className="text-sm text-muted">Loading…</p>
+    ),
+  });
+
   return (
-    <div className="mx-auto max-w-xl">
+    <div className="mx-auto max-w-3xl">
       <div className="mb-6">
         <Link href="/projects" className="tap-link text-sm text-muted hover:text-foreground">
           &larr; Projects
@@ -238,307 +496,14 @@ export default function ProjectDetailPage() {
       </div>
 
       {error && (
-        <Card>
+        <Card className="mb-4">
           <CardContent>
             <p className="text-sm text-danger">{error}</p>
           </CardContent>
         </Card>
       )}
 
-      {!error && !project && <p className="text-sm text-muted">Loading…</p>}
-
-      {project && editing && (
-        <div className="mb-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">
-              Edit project
-            </h1>
-            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-              Cancel
-            </Button>
-          </div>
-          <ProjectForm
-            initial={project}
-            submitLabel="Save changes"
-            onSubmit={async (values) => {
-              setProject(await api.updateProject(project.id, values));
-              setEditing(false);
-            }}
-          />
-        </div>
-      )}
-
-      {project && !editing && (
-        <Card>
-          <CardContent>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h1 className="truncate text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-                  {project.name}
-                </h1>
-                <p className="text-xs text-muted">
-                  {tradeLabel ? `${tradeLabel} · ` : ""}
-                  Started {formatRelativeTime(project.created_at)}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Badge tone={PROJECT_STATUS_TONE[project.status]}>
-                  {PROJECT_STATUS_LABEL[project.status]}
-                </Badge>
-                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                  <EditIcon className="h-4 w-4" />
-                  Edit
-                </Button>
-              </div>
-            </div>
-
-            {/* Sprint 036 (Workstream F) — the job, not just its name.
-                Every field renders an em dash when absent rather than
-                being hidden: a start date you have not set is information
-                worth seeing on a project page. */}
-            <dl className="mt-6 grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2">
-              <div className="min-w-0">
-                <dt className="text-xs font-medium text-muted">Customer</dt>
-                <dd className="truncate text-sm text-foreground">
-                  {customer ? (
-                    <Link
-                      href={`/customers/${customer.id}`}
-                      className="text-accent hover:underline"
-                    >
-                      {customer.company_name || customer.name}
-                    </Link>
-                  ) : (
-                    "—"
-                  )}
-                </dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs font-medium text-muted">Value</dt>
-                <dd className="text-sm text-foreground">
-                  {project.estimated_value != null
-                    ? formatMoney(project.estimated_value, currency)
-                    : "—"}
-                </dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs font-medium text-muted">Starts</dt>
-                <dd className="text-sm text-foreground">{formatDate(project.start_date)}</dd>
-              </div>
-              <div className="min-w-0">
-                <dt className="text-xs font-medium text-muted">Target completion</dt>
-                <dd className="text-sm text-foreground">
-                  {formatDate(project.target_completion_date)}
-                </dd>
-              </div>
-              <div className="min-w-0 sm:col-span-2">
-                <dt className="text-xs font-medium text-muted">Site</dt>
-                <dd className="text-sm text-foreground">
-                  {[
-                    project.site_address_line1,
-                    project.site_address_line2,
-                    project.site_city,
-                    project.site_postcode,
-                  ]
-                    .filter(Boolean)
-                    .join(", ") || "—"}
-                </dd>
-              </div>
-              {project.description && (
-                <div className="min-w-0 sm:col-span-2">
-                  <dt className="text-xs font-medium text-muted">Description</dt>
-                  <dd className="whitespace-pre-wrap text-sm text-foreground">
-                    {project.description}
-                  </dd>
-                </div>
-              )}
-              <div className="min-w-0 sm:col-span-2">
-                <dt className="text-xs font-medium text-muted">Notes</dt>
-                <dd className="whitespace-pre-wrap text-sm text-foreground">
-                  {project.notes ?? "—"}
-                </dd>
-              </div>
-            </dl>
-
-            <div className="mt-6 border-t border-border pt-4">
-              <h2 className="text-sm font-semibold text-foreground">Project Operations</h2>
-
-              {operationsError && (
-                <p className="mt-2 text-sm text-danger">{operationsError}</p>
-              )}
-
-              <dl className="mt-3 space-y-3">
-                <div>
-                  <dt className="text-xs font-medium text-muted">Assigned to</dt>
-                  <dd className="text-sm text-foreground">
-                    {canAssign ? (
-                      <Select
-                        aria-label="Assigned to"
-                        value={project.assigned_user_id ?? ""}
-                        onChange={handleAssign}
-                        disabled={assigning || !teamMembers}
-                      >
-                        <option value="">Unassigned</option>
-                        {(teamMembers ?? []).map((member) => (
-                          <option key={member.id} value={member.id}>
-                            {member.name}
-                          </option>
-                        ))}
-                      </Select>
-                    ) : (
-                      (teamMembers?.find((m) => m.id === project.assigned_user_id)?.name ??
-                        (project.assigned_user_id ? project.assigned_user_id : "Unassigned"))
-                    )}
-                  </dd>
-                </div>
-              </dl>
-
-              <div className="mt-4">
-                {!canManageAppointments ? null : nextStatus ? (
-                  <Button onClick={handleAdvance} disabled={advancing}>
-                    {advancing
-                      ? "Advancing…"
-                      : `Advance to ${PROJECT_STATUS_LABEL[nextStatus]}`}
-                  </Button>
-                ) : (
-                  <p className="text-sm text-muted">
-                    This project has completed the pipeline.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {showConvertAction && (
-              <div className="mt-6 border-t border-border pt-4">
-                {showConvertForm ? (
-                  <form onSubmit={handleConvert} className="flex flex-col gap-4">
-                    <Field label="Full name" htmlFor="convert-name">
-                      <Input
-                        id="convert-name"
-                        required
-                        value={convertName}
-                        onChange={(e) => setConvertName(e.target.value)}
-                        placeholder="e.g. James Okafor"
-                      />
-                    </Field>
-                    <Field label="Email" htmlFor="convert-email">
-                      <Input
-                        id="convert-email"
-                        type="email"
-                        value={convertEmail}
-                        onChange={(e) => setConvertEmail(e.target.value)}
-                        placeholder="james@example.com"
-                      />
-                    </Field>
-                    <Field label="Phone" htmlFor="convert-phone">
-                      <Input
-                        id="convert-phone"
-                        value={convertPhone}
-                        onChange={(e) => setConvertPhone(e.target.value)}
-                        placeholder="07123 456789"
-                      />
-                    </Field>
-                    <Button type="submit" disabled={converting}>
-                      {converting ? "Saving…" : "Save customer"}
-                    </Button>
-                  </form>
-                ) : (
-                  <Button onClick={() => setShowConvertForm(true)} variant="outline">
-                    Convert to Customer
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {canManageAppointments && (
-              <div className="mt-6 border-t border-border pt-4">
-                <h2 className="text-sm font-semibold text-foreground">Site Visits</h2>
-
-                {appointmentError && (
-                  <p className="mt-2 text-sm text-danger">{appointmentError}</p>
-                )}
-
-                <ul className="mt-3 space-y-2">
-                  {(appointments ?? []).map((appointment) => (
-                    <li
-                      key={appointment.id}
-                      className="flex items-center justify-between gap-3 rounded-md border border-border p-3"
-                    >
-                      <div>
-                        <p className="text-sm text-foreground">
-                          {new Date(appointment.scheduled_at).toLocaleString()}
-                        </p>
-                        {appointment.notes && (
-                          <p className="text-xs text-muted">{appointment.notes}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge tone={APPOINTMENT_STATUS_TONE[appointment.status]}>
-                          {appointment.status}
-                        </Badge>
-                        {appointment.status === "scheduled" && (
-                          <>
-                            <Button
-                              variant="outline"
-                              onClick={() => handleTransition(appointment.id, "completed")}
-                              disabled={transitioningId === appointment.id}
-                            >
-                              Complete
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => handleTransition(appointment.id, "cancelled")}
-                              disabled={transitioningId === appointment.id}
-                            >
-                              Cancel
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                {appointments && appointments.length === 0 && (
-                  <p className="mt-2 text-sm text-muted">No site visits scheduled yet.</p>
-                )}
-
-                <div className="mt-4">
-                  {showScheduleForm ? (
-                    <form onSubmit={handleSchedule} className="flex flex-col gap-4">
-                      <Field label="Date & time" htmlFor="schedule-at">
-                        <Input
-                          id="schedule-at"
-                          type="datetime-local"
-                          required
-                          value={scheduleAt}
-                          onChange={(e) => setScheduleAt(e.target.value)}
-                        />
-                      </Field>
-                      <Field label="Notes" htmlFor="schedule-notes">
-                        <Input
-                          id="schedule-notes"
-                          value={scheduleNotes}
-                          onChange={(e) => setScheduleNotes(e.target.value)}
-                          placeholder="e.g. Measure kitchen worktop"
-                        />
-                      </Field>
-                      <Button type="submit" disabled={scheduling}>
-                        {scheduling ? "Scheduling…" : "Save site visit"}
-                      </Button>
-                    </form>
-                  ) : (
-                    <Button onClick={() => setShowScheduleForm(true)} variant="outline">
-                      Schedule Site Visit
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-      {project && !editing && <ProjectTasksPanel projectId={project.id} />}
-
+      <Project360Shell project={project} tradeLabel={tradeLabel} onEdit={() => setEditing(true)} tabs={tabs} />
     </div>
   );
 }
