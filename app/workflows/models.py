@@ -7,6 +7,8 @@ persisted, versioned equivalents live in app/database/models.py and are
 seeded from these at migration time (Task 3).
 """
 
+import uuid
+from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel
@@ -68,3 +70,49 @@ class ProjectWorkflowSummary(BaseModel):
     stage_key: str
     stage_label: str
     role: WorkflowRole
+
+
+class WorkflowTransitionRequest(BaseModel):
+    """Body of POST /projects/{id}/workflow/transition (Task 5). Hold and
+    Cancel are requested the same way as any forward move — target_stage_key
+    "on_hold"/"cancelled" — Resume is requested by passing the key of the
+    stage the project was on before it was held, which the service layer
+    recognises via the project's own workflow_previous_active_stage_id
+    rather than a static graph edge."""
+
+    target_stage_key: str
+    reason: str | None = None
+
+
+class WorkflowTransitionOption(BaseModel):
+    """One stage a project could move to next. `blocked_requirements` is
+    always empty as of Task 5 — Task 6 populates it by evaluating that
+    target stage's own WorkflowStage.gate_definitions against the project's
+    real state, never fabricating a requirement that doesn't exist yet."""
+
+    stage_key: str
+    stage_label: str
+    role: WorkflowRole
+    blocked_requirements: list[str] = []
+
+
+class ProjectWorkflowDetail(ProjectWorkflowSummary):
+    """GET /projects/{id}/workflow response — the current stage (inherited
+    from ProjectWorkflowSummary) plus what can happen next."""
+
+    is_terminal: bool
+    allowed_transitions: list[WorkflowTransitionOption]
+
+
+class WorkflowHistoryEntry(BaseModel):
+    """One row of GET /projects/{id}/workflow/history — the append-only
+    audit trail backing a future Project 360 Timeline tab."""
+
+    id: uuid.UUID
+    from_stage_key: str | None
+    from_stage_label: str | None
+    to_stage_key: str
+    to_stage_label: str
+    actor_user_id: uuid.UUID | None
+    reason: str | None
+    created_at: datetime

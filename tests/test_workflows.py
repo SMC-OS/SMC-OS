@@ -105,7 +105,7 @@ def test_all_28_trades_produce_distinct_templates_except_other():
 import uuid
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.database import crud
 from app.database.database import SessionLocal
@@ -367,3 +367,285 @@ def test_quote_handoff_binds_the_projects_workflow_from_the_quotes_trade(client,
     session.execute(delete(Customer).where(Customer.id == uuid.UUID(customer.json()["id"])))
     session.commit()
     session.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — transition engine, Hold/Resume/Cancel and workflow history
+#
+# electrical_v1's ordered sequence (see app/workflows/catalogue.py) is
+# enquiry -> site_assessment -> quote -> approved -> scheduled ->
+# first_fix -> second_fix -> testing -> certification -> snagging ->
+# complete; general_v1's is enquiry -> site_visit -> quote -> approved ->
+# scheduled -> in_progress -> inspection -> complete. Only adjacent
+# positions have a real graph edge — anything else (a skip, a repeat, a
+# backward move) must be rejected.
+# ---------------------------------------------------------------------------
+
+from app.projects.models import ProjectStatus
+from app.workflows.service import get_project_workflow
+
+TASK5_PREFIX = "Pytest Task5 WF"
+
+
+def _cleanup_task5_project(name: str) -> None:
+    session = SessionLocal()
+    try:
+        ids = [row[0] for row in session.execute(select(Project.id).where(Project.name == name)).all()]
+        if ids:
+            session.execute(delete(ProjectWorkflowHistory).where(ProjectWorkflowHistory.project_id.in_(ids)))
+            session.execute(delete(Project).where(Project.id.in_(ids)))
+        session.execute(delete(ActivityLog).where(ActivityLog.description == name))
+        session.commit()
+    finally:
+        session.close()
+
+
+def _create_project(client, headers, name: str, project_type: str | None) -> str:
+    payload = {"name": name}
+    if project_type is not None:
+        payload["project_type"] = project_type
+    resp = client.post("/api/v1/projects", json=payload, headers=headers)
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def test_get_workflow_returns_current_stage_and_allowed_forward_hold_cancel(client, auth_headers):
+    name = f"{TASK5_PREFIX} GetDetail"
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        resp = client.get(f"/api/v1/projects/{project_id}/workflow", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["template_key"] == "electrical_v1"
+        assert body["stage_key"] == "enquiry"
+        assert body["role"] == "lead"
+        assert body["is_terminal"] is False
+
+        option_keys = {o["stage_key"] for o in body["allowed_transitions"]}
+        assert option_keys == {"site_assessment", "on_hold", "cancelled"}
+        for option in body["allowed_transitions"]:
+            assert option["blocked_requirements"] == []
+    finally:
+        _cleanup_task5_project(name)
+
+
+def test_forward_transition_moves_the_project_and_is_recorded_in_history(client, auth_headers):
+    name = f"{TASK5_PREFIX} Forward"
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        resp = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "site_assessment", "reason": "Booked a survey"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["workflow"]["stage_key"] == "site_assessment"
+        assert body["workflow"]["role"] == "survey"
+        # The legacy status field is untouched by a workflow-engine move on
+        # a project that was never bound to legacy_v1 in the first place.
+        assert body["status"] == "enquiry"
+
+        history = client.get(f"/api/v1/projects/{project_id}/workflow/history", headers=auth_headers)
+        assert history.status_code == 200
+        rows = history.json()
+        assert len(rows) == 1
+        assert rows[0]["from_stage_key"] == "enquiry"
+        assert rows[0]["to_stage_key"] == "site_assessment"
+        assert rows[0]["reason"] == "Booked a survey"
+        assert rows[0]["actor_user_id"] is not None
+    finally:
+        _cleanup_task5_project(name)
+
+
+def test_skipping_a_stage_is_rejected_with_409(client, auth_headers):
+    name = f"{TASK5_PREFIX} Skip"
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        resp = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "quote"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 409
+    finally:
+        _cleanup_task5_project(name)
+
+
+def test_unknown_target_stage_key_returns_404(client, auth_headers):
+    name = f"{TASK5_PREFIX} Unknown"
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        resp = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "not-a-real-stage"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+    finally:
+        _cleanup_task5_project(name)
+
+
+def test_hold_then_resume_round_trip(client, auth_headers):
+    name = f"{TASK5_PREFIX} HoldResume"
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        moved = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "site_assessment"},
+            headers=auth_headers,
+        )
+        assert moved.status_code == 200
+
+        held = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "on_hold", "reason": "Customer paused the job"},
+            headers=auth_headers,
+        )
+        assert held.status_code == 200
+        assert held.json()["workflow"]["stage_key"] == "on_hold"
+        assert held.json()["workflow"]["role"] == "on_hold"
+
+        detail = client.get(f"/api/v1/projects/{project_id}/workflow", headers=auth_headers).json()
+        assert detail["is_terminal"] is False
+        option_keys = [o["stage_key"] for o in detail["allowed_transitions"]]
+        assert option_keys[0] == "site_assessment"  # Resume target, listed first
+        assert "cancelled" in option_keys
+
+        resumed = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "site_assessment"},
+            headers=auth_headers,
+        )
+        assert resumed.status_code == 200
+        assert resumed.json()["workflow"]["stage_key"] == "site_assessment"
+
+        history = client.get(f"/api/v1/projects/{project_id}/workflow/history", headers=auth_headers).json()
+        assert [row["to_stage_key"] for row in history] == ["site_assessment", "on_hold", "site_assessment"]
+    finally:
+        _cleanup_task5_project(name)
+
+
+def test_cancel_is_terminal_and_blocks_further_transitions(client, auth_headers):
+    name = f"{TASK5_PREFIX} Cancel"
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        cancelled = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "cancelled", "reason": "Customer withdrew"},
+            headers=auth_headers,
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.json()["workflow"]["role"] == "cancelled"
+
+        detail = client.get(f"/api/v1/projects/{project_id}/workflow", headers=auth_headers).json()
+        assert detail["is_terminal"] is True
+        assert detail["allowed_transitions"] == []
+
+        blocked = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "enquiry"},
+            headers=auth_headers,
+        )
+        assert blocked.status_code == 409
+    finally:
+        _cleanup_task5_project(name)
+
+
+def test_completing_the_full_sequence_reaches_a_terminal_stage(client, auth_headers):
+    name = f"{TASK5_PREFIX} FullRun"
+    try:
+        project_id = _create_project(client, auth_headers, name, None)  # -> general_v1
+
+        forward_keys = [
+            "site_visit", "quote", "approved", "scheduled", "in_progress", "inspection", "complete",
+        ]
+        for key in forward_keys:
+            resp = client.post(
+                f"/api/v1/projects/{project_id}/workflow/transition",
+                json={"target_stage_key": key},
+                headers=auth_headers,
+            )
+            assert resp.status_code == 200, (key, resp.text)
+
+        detail = client.get(f"/api/v1/projects/{project_id}/workflow", headers=auth_headers).json()
+        assert detail["stage_key"] == "complete"
+        assert detail["is_terminal"] is True
+        assert detail["allowed_transitions"] == []
+
+        blocked = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "on_hold"},
+            headers=auth_headers,
+        )
+        assert blocked.status_code == 409
+    finally:
+        _cleanup_task5_project(name)
+
+
+def test_cross_tenant_project_workflow_endpoints_all_404(client, auth_headers, other_tenant_auth_headers):
+    name = f"{TASK5_PREFIX} CrossTenant"
+    try:
+        project_id = _create_project(client, auth_headers, name, "electrical")
+
+        get_resp = client.get(f"/api/v1/projects/{project_id}/workflow", headers=other_tenant_auth_headers)
+        assert get_resp.status_code == 404
+
+        history_resp = client.get(
+            f"/api/v1/projects/{project_id}/workflow/history", headers=other_tenant_auth_headers
+        )
+        assert history_resp.status_code == 404
+
+        transition_resp = client.post(
+            f"/api/v1/projects/{project_id}/workflow/transition",
+            json={"target_stage_key": "on_hold"},
+            headers=other_tenant_auth_headers,
+        )
+        assert transition_resp.status_code == 404
+    finally:
+        _cleanup_task5_project(name)
+
+
+def test_legacy_bound_project_status_endpoint_keeps_workflow_in_sync(db):
+    """A pre-existing (legacy_v1-bound) project moved through the old
+    PATCH /status endpoint must have its `workflow` view move in lockstep
+    — the one binding where a 1:1 stage-key mapping actually exists. A
+    project on a real trade workflow is deliberately NOT exercised here:
+    ProjectService.update_status leaves `workflow` alone for those, proven
+    separately by test_forward_transition_... above (status stays
+    "enquiry" after a pure workflow-engine move)."""
+    tenant = _make_tenant(db, "Task5LegacySyncTenant")
+    legacy_template = crud.get_system_workflow_template_by_key(db, "legacy_v1")
+    enquiry_stage = crud.get_workflow_stage_by_key(db, legacy_template.id, "enquiry")
+
+    project = Project(
+        id=uuid.uuid4(), tenant_id=tenant.id, name="Legacy sync job", status="enquiry",
+        workflow_template_id=legacy_template.id, workflow_stage_id=enquiry_stage.id,
+    )
+    db.add(project)
+    db.commit()
+
+    updated = project_service.update_status(db, project.id, tenant.id, ProjectStatus.QUOTED)
+    assert updated.status == "quoted"
+
+    summary = get_project_workflow(db, updated, tenant.id)
+    assert summary.template_key == "legacy_v1"
+    assert summary.stage_key == "quoted"
+
+    history = crud.list_project_workflow_history(db, project.id, tenant.id)
+    assert len(history) == 1
+    quoted_stage = crud.get_workflow_stage_by_key(db, legacy_template.id, "quoted")
+    assert history[0].from_stage_id == enquiry_stage.id
+    assert history[0].to_stage_id == quoted_stage.id
+
+    db.execute(delete(ProjectWorkflowHistory).where(ProjectWorkflowHistory.project_id == project.id))
+    db.execute(delete(Project).where(Project.id == project.id))
+    db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
+    db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+    db.commit()
