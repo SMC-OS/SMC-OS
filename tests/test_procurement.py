@@ -828,6 +828,52 @@ def test_late_only_filter_reflects_the_deterministic_late_rule(client, db):
 
 
 # ---------------------------------------------------------------------------
+# Command Center procurement signals — Task 25
+# ---------------------------------------------------------------------------
+
+
+def test_command_centre_reports_honest_procurement_signals(client, db):
+    tenant = _make_tenant(db, "ProcurementSignals")
+    headers, user = _make_owner_headers(client, db, tenant, "procsignals")
+    project = _make_project(db, tenant)
+    try:
+        # One draft PO — awaiting approval.
+        client.post(
+            "/api/v1/purchase-orders",
+            json={"project_id": str(project.id), "items": [{"description": "Draft item", "quantity": 1, "unit_cost": 10}]},
+            headers=headers,
+        )
+
+        # One ordered, overdue PO.
+        overdue = client.post(
+            "/api/v1/purchase-orders",
+            json={"project_id": str(project.id), "items": [{"description": "Overdue item", "quantity": 1, "unit_cost": 20}]},
+            headers=headers,
+        ).json()
+        client.post(f"/api/v1/purchase-orders/{overdue['id']}/approve", headers=headers)
+        client.post(
+            f"/api/v1/purchase-orders/{overdue['id']}/order",
+            json={"expected_delivery_date": (date.today() - timedelta(days=2)).isoformat()},
+            headers=headers,
+        )
+
+        # An outstanding material requirement.
+        client.post(
+            f"/api/v1/projects/{project.id}/requirements", json={"description": "Outstanding tiles"}, headers=headers
+        )
+
+        res = client.get("/api/v1/dashboard/command-centre", headers=headers)
+        assert res.status_code == 200, res.text
+        procurement = res.json()["procurement"]
+        assert procurement["purchase_orders_awaiting_approval"] == 1
+        assert procurement["purchase_orders_ordered"] == 1
+        assert procurement["late_deliveries"] == 1
+        assert procurement["materials_required"] == 1
+    finally:
+        _cleanup_tenant(tenant.id)
+
+
+# ---------------------------------------------------------------------------
 # General regression — Task 38
 # ---------------------------------------------------------------------------
 

@@ -75,7 +75,7 @@ from app.database.models import (
     WorkflowTemplate,
     WorkflowTransition,
 )
-from app.procurement.models import is_po_late
+from app.procurement.models import REQUIREMENT_BLOCKING_STATUSES, is_po_late
 
 
 def create_activity_log(
@@ -2722,6 +2722,86 @@ def list_purchase_orders_with_expected_delivery(db: Session) -> list[PurchaseOrd
     groups rules by tenant before evaluating any row."""
     stmt = select(PurchaseOrder).where(PurchaseOrder.expected_delivery_date.is_not(None))
     return list(db.scalars(stmt))
+
+
+def count_material_requirements_outstanding(db: Session, tenant_id: uuid.UUID) -> int:
+    """GeoCore Premium OS Plan 05, Task 25 — requirements still short of
+    the material actually arriving (planned/required/ordered/
+    partially_received), same blocking-status set the materials_ready
+    workflow gate uses."""
+    return (
+        db.query(func.count(ProjectMaterialRequirement.id))
+        .filter(
+            ProjectMaterialRequirement.tenant_id == tenant_id,
+            ProjectMaterialRequirement.status.in_(REQUIREMENT_BLOCKING_STATUSES),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def count_purchase_orders_by_status(db: Session, tenant_id: uuid.UUID) -> dict[str, int]:
+    rows = (
+        db.query(PurchaseOrder.status, func.count())
+        .filter(PurchaseOrder.tenant_id == tenant_id)
+        .group_by(PurchaseOrder.status)
+        .all()
+    )
+    return {status: count for status, count in rows}
+
+
+def count_late_purchase_orders(db: Session, tenant_id: uuid.UUID, today: date) -> int:
+    """Task 26's rule expressed directly in SQL: a real expected date
+    that has passed, on a PO not yet received/cancelled."""
+    return (
+        db.query(func.count(PurchaseOrder.id))
+        .filter(
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.expected_delivery_date.is_not(None),
+            PurchaseOrder.expected_delivery_date < today,
+            PurchaseOrder.status.notin_(["received", "cancelled"]),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def count_purchase_orders_due_this_week(db: Session, tenant_id: uuid.UUID, today: date, week_ahead: date) -> int:
+    return (
+        db.query(func.count(PurchaseOrder.id))
+        .filter(
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.expected_delivery_date.is_not(None),
+            PurchaseOrder.expected_delivery_date >= today,
+            PurchaseOrder.expected_delivery_date <= week_ahead,
+            PurchaseOrder.status.notin_(["received", "cancelled"]),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def list_projects_with_blocking_material_requirements(db: Session, tenant_id: uuid.UUID) -> list[Project]:
+    """Task 25's "Projects Blocked by Materials" population — bounded,
+    same documented per-project-loop exception to the O(1)-query
+    convention that app/dashboard/service.py's margin-risk signal already
+    uses (docs/SPRINTS/sprint-043.md), because confirming a project is
+    *actually* gate-blocked (not merely "has an outstanding requirement")
+    needs a real evaluate_stage_gates() call against its current stage."""
+    project_ids = (
+        db.query(ProjectMaterialRequirement.project_id)
+        .filter(
+            ProjectMaterialRequirement.tenant_id == tenant_id,
+            ProjectMaterialRequirement.status.in_(REQUIREMENT_BLOCKING_STATUSES),
+        )
+        .distinct()
+        .all()
+    )
+    ids = [row[0] for row in project_ids]
+    if not ids:
+        return []
+    stmt = select(Project).where(Project.id.in_(ids))
+    return list(db.scalars(stmt).all())
 
 
 def list_material_allocations_by_project(
