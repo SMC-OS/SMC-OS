@@ -53,6 +53,14 @@ const FULL_STATS = {
   value: { quoted_value: 12500, approved_quoted_value: 9000 },
   site_visits: { scheduled: 2, completed: 1, cancelled: 0 },
   follow_up: { unread_follow_ups: 3 },
+  // GeoCore Premium OS Plan 04 (Sprint 043), Task 20.
+  financials: {
+    approved_contract_value: 48000,
+    approved_variations_value: 3250,
+    projects_with_margin_risk: 1,
+    projects_with_missing_cost_data: 1,
+    projects_with_a_contract: 2,
+  },
 };
 
 const EMPTY_STATS = {
@@ -85,6 +93,13 @@ const EMPTY_STATS = {
   value: { quoted_value: 0, approved_quoted_value: 0 },
   site_visits: { scheduled: 0, completed: 0, cancelled: 0 },
   follow_up: { unread_follow_ups: 0 },
+  financials: {
+    approved_contract_value: 0,
+    approved_variations_value: 0,
+    projects_with_margin_risk: 0,
+    projects_with_missing_cost_data: 0,
+    projects_with_a_contract: 0,
+  },
 };
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -125,6 +140,17 @@ describe("CommandCentrePanel — business command centre (Sprint 025)", () => {
     expect(screen.getByText("Quoted value")).toBeInTheDocument();
     expect(screen.getByText("£12,500")).toBeInTheDocument();
     expect(screen.getByText("3 unread")).toBeInTheDocument();
+
+    // GeoCore Premium OS Plan 04 (Sprint 043), Task 20 — real financial
+    // signals, precisely labelled (never "quote value" for a contract
+    // value, never a fabricated company-wide margin).
+    expect(screen.getByText("Contract & Margin")).toBeInTheDocument();
+    expect(screen.getByText("Approved contract value")).toBeInTheDocument();
+    expect(screen.getByText("£48,000")).toBeInTheDocument();
+    expect(screen.getByText("Approved variations value")).toBeInTheDocument();
+    expect(screen.getByText("£3,250")).toBeInTheDocument();
+    expect(screen.getByText("Projects with missing cost data")).toBeInTheDocument();
+    expect(screen.getByText("1 margin risk")).toBeInTheDocument();
   });
 
   it("renders_zeros_not_a_blank_or_broken_state_for_an_empty_tenant", async () => {
@@ -141,6 +167,12 @@ describe("CommandCentrePanel — business command centre (Sprint 025)", () => {
     expect(screen.queryByText(/couldn.t load/i)).not.toBeInTheDocument();
     expect(screen.getByText("Unread follow-ups")).toBeInTheDocument();
     expect(screen.queryByText(/unread$/)).not.toBeInTheDocument(); // no badge when 0
+
+    // No margin-risk badge when the tenant has no projects with a contract
+    // (the CountRow label "Projects with margin risk" still renders — only
+    // the numbered badge, e.g. "1 margin risk", is conditional).
+    expect(screen.getByText("Contract & Margin")).toBeInTheDocument();
+    expect(screen.queryByText(/^\d+ margin risk$/)).not.toBeInTheDocument();
   });
 
   it("shows_a_real_error_state_on_api_failure_never_a_fabricated_zero", async () => {

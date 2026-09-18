@@ -51,6 +51,19 @@ export interface FollowUpAttention {
   unread_follow_ups: number;
 }
 
+/** GeoCore Premium OS Plan 04 (Sprint 043), Task 20 — scoped to projects
+ * that actually have a base contract (a linked, handed-off quote); an
+ * enquiry with no quote yet has nothing meaningful to report. Never a
+ * company-wide margin percentage — only honest counts, since some
+ * projects' cost data may be incomplete. */
+export interface FinancialSignals {
+  approved_contract_value: number;
+  approved_variations_value: number;
+  projects_with_margin_risk: number;
+  projects_with_missing_cost_data: number;
+  projects_with_a_contract: number;
+}
+
 export interface CommandCentreStats {
   customers: number;
   pipeline: PipelineCounts;
@@ -59,4 +72,5 @@ export interface CommandCentreStats {
   value: QuotedValue;
   site_visits: SiteVisitCounts;
   follow_up: FollowUpAttention;
+  financials: FinancialSignals;
 }
