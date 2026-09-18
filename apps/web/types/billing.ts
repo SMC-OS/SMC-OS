@@ -21,6 +21,9 @@ export interface Plan {
   monthly_price_gbp: number | null;
   annual_price_gbp: number | null;
   annual_recommended: boolean;
+  // Sprint 041 — null for Enterprise; TRIAL_LENGTH_DAYS for every
+  // self-service plan. Drives the public trial-disclosure component.
+  trial_days: number | null;
   entitlements: PlanEntitlements;
 }
 

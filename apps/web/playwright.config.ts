@@ -16,6 +16,12 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export const FRONTEND_URL = "http://localhost:3000";
 export const BACKEND_URL = "http://127.0.0.1:8000";
+// Sprint 041 — apps/marketing's own dev server, so Plan 02's public
+// homepage/pricing/request-demo journeys can be driven by a real browser
+// against the real (statically-served, no-auth) marketing app rather than
+// mocked. Same "localhost, not 127.0.0.1" reasoning as FRONTEND_URL —
+// Next.js dev mode's allowedDevOrigins guard.
+export const MARKETING_URL = "http://localhost:3001";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -56,6 +62,16 @@ export default defineConfig({
       url: FRONTEND_URL,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
+    },
+    {
+      command: "pnpm run dev",
+      cwd: path.resolve(__dirname, "..", "marketing"),
+      url: MARKETING_URL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+      // So the marketing site's CTAs link to the real local apps/web
+      // dev server under test, not its production default.
+      env: { NEXT_PUBLIC_APP_URL: FRONTEND_URL },
     },
   ],
 });

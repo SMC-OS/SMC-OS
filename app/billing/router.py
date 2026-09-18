@@ -33,6 +33,7 @@ from app.billing.plans import (
     PLANS,
     PRICING_GBP,
     SELF_SERVICE_PLANS,
+    TRIAL_LENGTH_DAYS,
 )
 from app.billing.service import BillingError, BillingUnavailable, WebhookSignatureError, billing_service
 from app.database import crud
@@ -67,6 +68,7 @@ def list_plans():
                 # Annual is always the recommended/best-value option for
                 # every self-service plan (~2 months free vs. monthly).
                 annual_recommended=plan in SELF_SERVICE_PLANS,
+                trial_days=TRIAL_LENGTH_DAYS if plan in SELF_SERVICE_PLANS else None,
                 entitlements=PlanEntitlementsOut(
                     seats=entitlements.seats,
                     ai_usage_per_month=entitlements.ai_usage_per_month,

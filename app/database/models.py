@@ -1339,3 +1339,38 @@ class ProjectWorkflowHistory(Base):
     )
     reason: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DemoRequest(Base):
+    """A public "Request a Demo" lead (Sprint 041, GeoCore Premium OS Plan
+    02). Deliberately platform-owned and standalone — no `tenant_id`, no
+    FK to any tenant's own data — a prospective customer's sales lead is
+    not a row inside a customer's own CRM, it belongs to GeoCore's own
+    sales pipeline. Submitted publicly, unauthenticated, through
+    app/demo_requests/router.py, which never trusts a client-supplied
+    `status` or `source` (see app/demo_requests/models.py)."""
+
+    __tablename__ = "demo_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    first_name: Mapped[str] = mapped_column(String, nullable=False)
+    last_name: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    company_name: Mapped[str] = mapped_column(String, nullable=False)
+    team_size: Mapped[str] = mapped_column(String, nullable=False)
+    trades: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    current_system: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preferred_contact_method: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # new -> contacted -> qualified -> booked -> closed. Server-assigned
+    # only; never accepted from the public submission payload.
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="new")
+    source: Mapped[str] = mapped_column(String, nullable=False, server_default="marketing_homepage")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

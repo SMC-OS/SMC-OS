@@ -70,4 +70,9 @@ class PlanOut(BaseModel):
     monthly_price_gbp: int | None
     annual_price_gbp: int | None
     annual_recommended: bool
+    # Sprint 041 — None for Enterprise (contact-sales, no self-service
+    # trial); TRIAL_LENGTH_DAYS for every self-service plan. The single
+    # source both apps/web/app/pricing and the public marketing site read,
+    # so a trial-disclosure component never hard-codes "14" of its own.
+    trial_days: int | None
     entitlements: PlanEntitlementsOut

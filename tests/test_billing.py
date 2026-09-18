@@ -145,6 +145,13 @@ def test_list_plans_is_public(client):
     assert plans["enterprise"]["self_service"] is False
     assert plans["enterprise"]["monthly_price_gbp"] is None
     assert plans["enterprise"]["entitlements"]["seats"] is None
+    # Sprint 041 — the marketing trial-disclosure component computes "£0
+    # due today" / first-billing-date from this, the same TRIAL_LENGTH_DAYS
+    # constant Checkout itself uses (app/billing/service.py), never a
+    # hard-coded marketing figure of its own.
+    for plan in ("starter", "team", "pro", "business"):
+        assert plans[plan]["trial_days"] == 14
+    assert plans["enterprise"]["trial_days"] is None
 
 
 def test_annual_pricing_is_exactly_ten_months_of_monthly(client):
