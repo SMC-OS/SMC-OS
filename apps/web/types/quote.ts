@@ -64,6 +64,13 @@ export interface QuoteItemRequest {
   thickness_mm?: number | null;
   unit_input?: DimensionUnit;
   notes?: string | null;
+  // Sprint 042 (GeoCore Premium OS Plan 03) — Stone Quote Engine V2.
+  // Optional and additive: when set, the backend prices this item from
+  // the Master Catalogue + the caller's own tenant override instead of
+  // the free-text material/thickness lookup. `material`/`thickness`
+  // above are still sent as the human-readable label either way.
+  catalogue_surface_id?: string | null;
+  catalogue_variant_id?: string | null;
 }
 
 export interface QuoteItem {

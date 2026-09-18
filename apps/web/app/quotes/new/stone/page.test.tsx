@@ -13,6 +13,16 @@ import { clearToken, setToken } from "@/lib/auth-storage";
 
 import NewQuotePage from "./page";
 
+// Sprint 042 (GeoCore Premium OS Plan 03) — the page now reads
+// catalogue_surface_id/catalogue_variant_id/material/thickness from the
+// URL on mount (arriving from /catalogue's "Use in a stone quote"). Empty
+// by default, matching every existing test in this file that doesn't
+// arrive via the catalogue; the catalogue-integration tests below set it.
+let currentSearch = "";
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(currentSearch),
+}));
+
 vi.mock("@/components/auth/AuthProvider", () => ({
   useAuth: () => ({
     isAuthenticated: true,
@@ -141,6 +151,7 @@ afterEach(() => {
   cleanup();
   clearToken();
   vi.unstubAllGlobals();
+  currentSearch = "";
 });
 
 describe("NewQuotePage — multi-item editor (Sprint 033)", () => {
@@ -265,5 +276,81 @@ describe("NewQuotePage — multi-item editor (Sprint 033)", () => {
     const resultHeading = await screen.findByText(/quote for sarah whitfield/i);
     const card = resultHeading.closest("div")?.parentElement as HTMLElement;
     expect(within(card).getByText(/worktop/i)).toBeInTheDocument();
+  });
+});
+
+describe("NewQuotePage — Master Catalogue integration (Sprint 042, Plan 03)", () => {
+  it("pre-fills the first item from the catalogue query params and submits the linkage", async () => {
+    currentSearch =
+      "catalogue_surface_id=surface-1&catalogue_variant_id=variant-1&material=Calacatta+Oro&thickness=20mm";
+    render(<NewQuotePage />);
+
+    expect(screen.getByText("From catalogue")).toBeInTheDocument();
+    expect(screen.getByText("Calacatta Oro")).toBeInTheDocument();
+    expect(screen.getByText("20mm")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
+    await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+    await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/quote"),
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.items[0].catalogue_surface_id).toBe("surface-1");
+    expect(body.items[0].catalogue_variant_id).toBe("variant-1");
+    expect(body.items[0].material).toBe("Calacatta Oro");
+  });
+
+  it("clears the catalogue link and reverts to free-text pickers when 'Change' is clicked", async () => {
+    currentSearch = "catalogue_surface_id=surface-1&material=Calacatta+Oro&thickness=20mm";
+    render(<NewQuotePage />);
+
+    expect(screen.getByText("From catalogue")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /change/i }));
+
+    expect(screen.queryByText("From catalogue")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Material")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
+    await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+    await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+      expect(call).toBeTruthy();
+    });
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.items[0].catalogue_surface_id).toBeNull();
+  });
+
+  it("submits null catalogue linkage for an ordinary, non-catalogue item", async () => {
+    render(<NewQuotePage />);
+
+    await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
+    await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+    await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+      expect(call).toBeTruthy();
+    });
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.items[0].catalogue_surface_id).toBeNull();
+    expect(body.items[0].catalogue_variant_id).toBeNull();
+  });
+
+  it("offers a link to browse the Master Catalogue for an authenticated user", () => {
+    render(<NewQuotePage />);
+    expect(screen.getByRole("link", { name: /browse master catalogue/i })).toHaveAttribute(
+      "href",
+      "/catalogue"
+    );
   });
 });
