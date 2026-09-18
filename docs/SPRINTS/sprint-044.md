@@ -203,6 +203,19 @@ one) confirmed separately — see closeout report.
 - Two migrations this sprint: `2b3c4d5e6f7a` (additive — seven new tables,
   two new nullable columns on `project_cost_entries`) and `3c4d5e6f7a8b`
   (data-only — one `UPDATE` seeding `stone_v1`'s Fabrication gate).
+- `alembic check` caught a real naming mismatch introduced by this sprint:
+  `project_material_requirements`/`project_material_allocations` used
+  abbreviated index names (`ix_pmr_*`/`ix_pma_*`) instead of the
+  `ix_<table>_<column>` convention SQLAlchemy's `index=True` generates for
+  every other table this migration touches. Fixed in the migration file,
+  verified with a full local `downgrade`/`upgrade` cycle through it and a
+  re-run of the full backend suite (still 1244 passed, 3 skipped). After
+  the fix, `alembic check` reports **only** the same pre-existing drift
+  Sprint 043 already documented as out of scope (`email_verification_tokens`,
+  `password_reset_tokens`, `processed_stripe_events`,
+  `project_workflow_history`, `projects.workflow_template_id`/
+  `workflow_stage_id`, `quote_items.created_at`, `subscriptions`,
+  `workflow_templates`) — nothing from this sprint's own tables remains.
 
 ### Migration safety
 
