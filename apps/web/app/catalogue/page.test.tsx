@@ -35,6 +35,7 @@ vi.mock("@/components/auth/AuthProvider", () => ({
 const searchCatalogueSurfacesMock = vi.fn();
 const getCatalogueSurfaceMock = vi.fn();
 const createCustomMaterialMock = vi.fn();
+const upsertCatalogueOverrideMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -44,6 +45,7 @@ vi.mock("@/lib/api", async () => {
       searchCatalogueSurfaces: (...args: unknown[]) => searchCatalogueSurfacesMock(...args),
       getCatalogueSurface: (...args: unknown[]) => getCatalogueSurfaceMock(...args),
       createCustomMaterial: (...args: unknown[]) => createCustomMaterialMock(...args),
+      upsertCatalogueOverride: (...args: unknown[]) => upsertCatalogueOverrideMock(...args),
     },
   };
 });
@@ -110,6 +112,7 @@ beforeEach(() => {
   searchCatalogueSurfacesMock.mockReset().mockResolvedValue([surface()]);
   getCatalogueSurfaceMock.mockReset().mockResolvedValue(detail());
   createCustomMaterialMock.mockReset();
+  upsertCatalogueOverrideMock.mockReset();
   pushMock.mockClear();
   replaceMock.mockClear();
 });
@@ -207,6 +210,31 @@ describe("CataloguePage — Sprint 042 Plan 03", () => {
     fireEvent.click(await screen.findByText("Calacatta Oro"));
 
     expect(await screen.findByText(/No price set yet/)).toBeInTheDocument();
+  });
+
+  it("lets the tenant set their own price through the detail panel", async () => {
+    upsertCatalogueOverrideMock.mockResolvedValue({});
+    render(<CataloguePage />);
+    fireEvent.click(await screen.findByText("Calacatta Oro"));
+    await screen.findByText(/No price set yet/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Set your price" }));
+    fireEvent.change(screen.getByLabelText("Your buy cost per slab"), {
+      target: { value: "900" },
+    });
+    fireEvent.change(screen.getByLabelText("Your markup (%)"), {
+      target: { value: "30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save price" }));
+
+    await waitFor(() => expect(upsertCatalogueOverrideMock).toHaveBeenCalled());
+    expect(upsertCatalogueOverrideMock).toHaveBeenCalledWith(
+      "surface-1",
+      expect.objectContaining({ buy_cost_per_slab: 900, default_markup_percent: 30 })
+    );
+    // Re-fetches the surface after saving, so the new price is reflected
+    // rather than the caller having to guess whether it took.
+    await waitFor(() => expect(getCatalogueSurfaceMock).toHaveBeenCalledTimes(2));
   });
 
   it("sends the surface, variant, material and thickness to the stone quote builder on 'Use in a stone quote'", async () => {

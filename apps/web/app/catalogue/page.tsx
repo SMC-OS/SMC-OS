@@ -74,6 +74,17 @@ export default function CataloguePage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState<string>("");
 
+  // Task 3/15/16 — tenant commercial overrides. The global catalogue
+  // never carries one universal price; this is the only place a price
+  // for this tenant gets written, via PUT /catalogue/surfaces/{id}/
+  // override, scoped to this tenant alone.
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceBuyCost, setPriceBuyCost] = useState("");
+  const [priceMarkup, setPriceMarkup] = useState("");
+  const [priceSellingPrice, setPriceSellingPrice] = useState("");
+  const [priceSubmitting, setPriceSubmitting] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
+
   // Task 9 — "Can't find your stone? Add a custom material" on every
   // catalogue selector. Never auto-promoted to the global catalogue:
   // "Save to my private catalogue" creates a tenant-private surface only
@@ -120,12 +131,13 @@ export default function CataloguePage() {
     runSearch();
   }
 
-  function openSurface(id: string) {
+  function openSurface(id: string, keepPriceForm = false) {
     setSelectedId(id);
     setDetail(null);
     setDetailError(null);
     setSelectedVariantId("");
     setDetailLoading(true);
+    if (!keepPriceForm) setEditingPrice(false);
     api
       .getCatalogueSurface(id)
       .then((surface) => {
@@ -133,11 +145,37 @@ export default function CataloguePage() {
         if (surface.variants.length > 0) {
           setSelectedVariantId(surface.variants[0].id);
         }
+        if (!keepPriceForm) {
+          setPriceBuyCost(surface.tenant_override?.buy_cost_per_slab?.toString() ?? "");
+          setPriceMarkup(surface.tenant_override?.default_markup_percent?.toString() ?? "");
+          setPriceSellingPrice(surface.tenant_override?.selling_price_per_slab?.toString() ?? "");
+        }
       })
       .catch((err) =>
         setDetailError(err instanceof ApiError ? err.message : "Something went wrong.")
       )
       .finally(() => setDetailLoading(false));
+  }
+
+  async function savePrice(e: React.FormEvent) {
+    e.preventDefault();
+    if (!detail) return;
+    setPriceSubmitting(true);
+    setPriceError(null);
+    try {
+      await api.upsertCatalogueOverride(detail.id, {
+        buy_cost_per_slab: priceBuyCost ? Number(priceBuyCost) : null,
+        default_markup_percent: priceMarkup ? Number(priceMarkup) : null,
+        selling_price_per_slab: priceSellingPrice ? Number(priceSellingPrice) : null,
+      });
+      openSurface(detail.id, true);
+      setEditingPrice(false);
+      runSearch();
+    } catch (err) {
+      setPriceError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setPriceSubmitting(false);
+    }
   }
 
   function useInQuote() {
@@ -561,10 +599,71 @@ export default function CataloguePage() {
                   )}
 
                   <div className="rounded-lg border border-border bg-surface-hover p-3">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted">
-                      Your pricing
-                    </p>
-                    {detail.tenant_override?.resolved_price_per_slab != null ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                        Your pricing
+                      </p>
+                      {!editingPrice && (
+                        <button
+                          type="button"
+                          className="tap-link text-xs text-accent hover:underline"
+                          onClick={() => setEditingPrice(true)}
+                        >
+                          {detail.tenant_override?.resolved_price_per_slab != null
+                            ? "Edit price"
+                            : "Set your price"}
+                        </button>
+                      )}
+                    </div>
+
+                    {editingPrice ? (
+                      <form onSubmit={savePrice} className="mt-2 flex flex-col gap-3">
+                        <Field label="Your buy cost per slab" htmlFor="priceBuyCost">
+                          <Input
+                            id="priceBuyCost"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={priceBuyCost}
+                            onChange={(e) => setPriceBuyCost(e.target.value)}
+                          />
+                        </Field>
+                        <Field label="Your markup (%)" htmlFor="priceMarkup" hint="Used only when no selling price is set below.">
+                          <Input
+                            id="priceMarkup"
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={priceMarkup}
+                            onChange={(e) => setPriceMarkup(e.target.value)}
+                          />
+                        </Field>
+                        <Field label="Your selling price per slab" htmlFor="priceSellingPrice" hint="Overrides buy cost + markup when set.">
+                          <Input
+                            id="priceSellingPrice"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={priceSellingPrice}
+                            onChange={(e) => setPriceSellingPrice(e.target.value)}
+                          />
+                        </Field>
+                        {priceError && <p className="text-xs text-danger">{priceError}</p>}
+                        <div className="flex gap-2">
+                          <Button type="submit" size="sm" disabled={priceSubmitting}>
+                            {priceSubmitting ? "Saving…" : "Save price"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingPrice(false)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    ) : detail.tenant_override?.resolved_price_per_slab != null ? (
                       <p className="mt-1 text-lg font-semibold text-foreground">
                         {formatCurrencyGBP(detail.tenant_override.resolved_price_per_slab)}{" "}
                         <span className="text-sm font-normal text-muted">per slab</span>
