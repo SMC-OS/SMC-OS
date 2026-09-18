@@ -365,7 +365,13 @@ export function ProjectMaterialsPanel({
       setPurchaseOrders((current) => (current ?? []).map((p) => (p.id === po.id ? updated : p)));
       setReceiptForId(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not record the delivery.");
+      setError(
+        err instanceof ApiError
+          ? err.status === 409
+            ? "That would receive more than was ordered — check the quantities and try again."
+            : err.message
+          : "Could not record the delivery."
+      );
     } finally {
       setSavingReceipt(false);
     }
