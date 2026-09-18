@@ -29,6 +29,18 @@ class QuoteItemRequest(BaseModel):
 
     notes: str | None = None
 
+    # Sprint 042 (GeoCore Premium OS Plan 03) — Stone Quote Engine V2.
+    # Both optional and additive: when `catalogue_surface_id` is set,
+    # app/quotes/calculator.py resolves price from the Master Catalogue
+    # + the caller's own tenant_catalogue_overrides row instead of the
+    # free-text `material`/`thickness` lookup against the old flat
+    # `materials` table — `material`/`thickness` above are still
+    # required (the API's own request shape is unchanged) and are used
+    # as the human-readable label on the line; nothing about the
+    # existing free-text path changes when this is omitted.
+    catalogue_surface_id: uuid.UUID | None = None
+    catalogue_variant_id: uuid.UUID | None = None
+
     @field_validator("item_type")
     @classmethod
     def _item_type_must_be_known(cls, value: str) -> str:

@@ -6,6 +6,14 @@ import type {
 } from "@/types/appointment";
 import type { AuthUser, LoginResponse, SignupRequest } from "@/types/auth";
 import type { BillingPeriod, Plan, PlanId, Subscription } from "@/types/billing";
+import type {
+  CustomMaterialInput,
+  CustomMaterialResult,
+  SurfaceDetail,
+  SurfaceSearchResult,
+  TenantOverride,
+  TenantOverrideInput,
+} from "@/types/catalogue";
 import type { CommandCentreStats } from "@/types/command-centre";
 import type { AICapabilities, ChatMessage, ChatResponse } from "@/types/ai";
 import type {
@@ -543,6 +551,39 @@ export const api = {
   // Served from the backend rather than duplicated as frontend constants,
   // so the quote form, the project form and onboarding cannot drift.
   getTrades: () => request<Trade[]>("/quotes/meta/trades"),
+
+  // Sprint 042 (GeoCore Premium OS Plan 03) — Master Materials & Supplier Catalogue.
+  getMaterialFamilies: () => request<string[]>("/catalogue/meta/material-families"),
+
+  searchCatalogueSurfaces: (params: {
+    q?: string;
+    material_family?: string;
+    colour_family?: string;
+    include_discontinued?: boolean;
+    limit?: number;
+  } = {}) => {
+    const query = new URLSearchParams();
+    if (params.q) query.set("q", params.q);
+    if (params.material_family) query.set("material_family", params.material_family);
+    if (params.colour_family) query.set("colour_family", params.colour_family);
+    if (params.include_discontinued) query.set("include_discontinued", "true");
+    query.set("limit", String(params.limit ?? 30));
+    return request<SurfaceSearchResult[]>(`/catalogue/surfaces?${query.toString()}`);
+  },
+
+  getCatalogueSurface: (surfaceId: string) => request<SurfaceDetail>(`/catalogue/surfaces/${surfaceId}`),
+
+  upsertCatalogueOverride: (surfaceId: string, data: TenantOverrideInput) =>
+    request<TenantOverride>(`/catalogue/surfaces/${surfaceId}/override`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  createCustomMaterial: (data: CustomMaterialInput) =>
+    request<CustomMaterialResult>("/catalogue/custom-materials", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   getQuoteUnits: () => request<QuoteUnit[]>("/quotes/meta/units"),
 

@@ -1,8 +1,27 @@
+import uuid
+from types import SimpleNamespace
+
 from sqlalchemy.orm import Session
 
+from app.catalogue.service import resolve_price_per_slab
+from app.database import crud
 from app.materials.service import material_service
 from app.quotes.slab_calculator import calculate_slabs
 from app.quotes.validator import validate_dimensions
+
+
+class CataloguePriceMissingError(Exception):
+    """Task 8 — raised instead of fabricating a price when a catalogue-
+    selected surface has no resolvable tenant price (no selling price,
+    no cost+markup, no cost+margin set). Registered in
+    app/core/errors.py -> a clear 400, never a silent £0 or a 500."""
+
+    def __init__(self, surface_name: str):
+        self.surface_name = surface_name
+        super().__init__(
+            f"No price is set for '{surface_name}'. Set a buy cost or selling price for this "
+            "material in the Catalogue before adding it to a quote."
+        )
 
 # Sprint 033 — small flat installation surcharges preserved from Sprint
 # 032's per-quote flags, now applied per matching item instead (island/
@@ -43,22 +62,30 @@ def summarize_items(item_results: list[dict]) -> dict:
 
 class QuoteCalculator:
 
-    def calculate(self, db: Session, quote):
+    def calculate(self, db: Session, quote, tenant_id: uuid.UUID | None = None):
         validate_dimensions(quote)
 
         item_results = []
         price_before_vat = 0.0
 
         for item in quote.items:
-            material = material_service.get_by_name_and_thickness(db, item.material, item.thickness)
-            if material is None:
-                # Sprint 003's global KeyError -> 400 handler (app/core/errors.py)
-                # already exists for exactly this "unrecognised value" case, so
-                # this reuses that seam rather than introducing a new one.
-                raise KeyError(f"{item.material} ({item.thickness})")
+            if getattr(item, "catalogue_surface_id", None) is not None:
+                price_per_slab, snapshot = self._resolve_catalogue_item(db, item, tenant_id)
+                adapter = SimpleNamespace(slab_size=snapshot["slab_size"])
+            else:
+                material = material_service.get_by_name_and_thickness(db, item.material, item.thickness)
+                if material is None:
+                    # Sprint 003's global KeyError -> 400 handler
+                    # (app/core/errors.py) already exists for exactly this
+                    # "unrecognised value" case, so this reuses that seam
+                    # rather than introducing a new one.
+                    raise KeyError(f"{item.material} ({item.thickness})")
+                price_per_slab = material.price
+                adapter = material
+                snapshot = None
 
-            slabs = calculate_slabs(item, material)
-            material_price = material.price * slabs
+            slabs = calculate_slabs(item, adapter)
+            material_price = price_per_slab * slabs
             surcharge = _ITEM_TYPE_SURCHARGES.get(item.item_type, 0) * item.quantity
             line_total = round(material_price + surcharge, 2)
             price_before_vat += line_total
@@ -74,9 +101,12 @@ class QuoteCalculator:
                     "thickness_mm": item.thickness_mm,
                     "unit_input": item.unit_input,
                     "notes": item.notes,
-                    "price_per_slab": material.price,
+                    "price_per_slab": price_per_slab,
                     "slabs": slabs,
                     "line_total": line_total,
+                    "catalogue_surface_id": getattr(item, "catalogue_surface_id", None),
+                    "catalogue_variant_id": getattr(item, "catalogue_variant_id", None),
+                    "catalogue_snapshot": snapshot,
                 }
             )
 
@@ -95,3 +125,74 @@ class QuoteCalculator:
             "vat": vat,
             "total": round(price_before_vat + vat, 2),
         }
+
+    def _resolve_catalogue_item(self, db: Session, item, tenant_id: uuid.UUID | None) -> tuple[float, dict]:
+        """Sprint 042 (Plan 03) — the catalogue-selected path. Builds the
+        immutable snapshot at the moment of creation and resolves the
+        price from the caller's own tenant_catalogue_overrides row
+        (never the free-text `materials` table, never another
+        tenant's). Raises CataloguePriceMissingError rather than ever
+        fabricating a price (Task 8)."""
+        surface = crud.get_catalogue_surface_by_id(db, item.catalogue_surface_id, tenant_id)
+        if surface is None:
+            raise KeyError(f"catalogue surface {item.catalogue_surface_id}")
+
+        variant = None
+        if item.catalogue_variant_id is not None:
+            variant = db.get(crud.CatalogueSurfaceVariant, item.catalogue_variant_id)
+            if variant is None or variant.surface_id != surface.id:
+                raise KeyError(f"catalogue variant {item.catalogue_variant_id}")
+
+        override = None
+        if tenant_id is not None:
+            override = crud.get_tenant_catalogue_override(
+                db, tenant_id, surface.id, item.catalogue_variant_id
+            )
+            # A tenant commonly prices a surface once, not per variant
+            # (TenantCatalogueOverride.surface_variant_id=None — see its
+            # own docstring, and app/catalogue/service.py's
+            # create_custom_material, which always writes at surface
+            # level). A quote against a specific variant still finds
+            # that price rather than treating it as unset.
+            if override is None and item.catalogue_variant_id is not None:
+                override = crud.get_tenant_catalogue_override(db, tenant_id, surface.id, None)
+        price_per_slab = resolve_price_per_slab(override)
+        if price_per_slab is None:
+            raise CataloguePriceMissingError(surface.canonical_name)
+
+        supplier = db.get(crud.CatalogueSupplier, surface.supplier_id) if surface.supplier_id else None
+        manufacturer = (
+            db.get(crud.CatalogueManufacturer, surface.manufacturer_id) if surface.manufacturer_id else None
+        )
+        brand = db.get(crud.CatalogueBrand, surface.brand_id) if surface.brand_id else None
+        collection = db.get(crud.CatalogueCollection, surface.collection_id) if surface.collection_id else None
+
+        slab_size = None
+        if variant is not None and variant.slab_length_mm and variant.slab_width_mm:
+            slab_size = f"{int(variant.slab_length_mm)}x{int(variant.slab_width_mm)}"
+
+        margin_basis = (
+            "selling_price"
+            if override.selling_price_per_slab is not None
+            else "markup"
+            if override.default_markup_percent is not None
+            else "margin"
+        )
+
+        snapshot = {
+            "surface_name": surface.canonical_name,
+            "supplier": supplier.name if supplier else None,
+            "manufacturer": manufacturer.name if manufacturer else None,
+            "brand": brand.name if brand else None,
+            "collection": collection.name if collection else None,
+            "material_family": surface.material_family,
+            "thickness_mm": variant.thickness_mm if variant else None,
+            "finish": variant.finish if variant else None,
+            "slab_length_mm": variant.slab_length_mm if variant else None,
+            "slab_width_mm": variant.slab_width_mm if variant else None,
+            "slab_size": slab_size,
+            "cost_used": override.buy_cost_per_slab,
+            "selling_price_used": price_per_slab,
+            "margin_basis": margin_basis,
+        }
+        return price_per_slab, snapshot

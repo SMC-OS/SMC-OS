@@ -201,7 +201,7 @@ class QuoteService:
         ):
             raise CustomerNotFoundError(quote.customer_id)
 
-        result = self.calculator.calculate(db, quote)
+        result = self.calculator.calculate(db, quote, tenant_id=tenant_id)
         first_item = result["items"][0]
 
         row = crud.create_quote(
@@ -265,6 +265,9 @@ class QuoteService:
                     "price_per_slab": item["price_per_slab"],
                     "slabs": item["slabs"],
                     "line_total": item["line_total"],
+                    "catalogue_surface_id": item.get("catalogue_surface_id"),
+                    "catalogue_variant_id": item.get("catalogue_variant_id"),
+                    "catalogue_snapshot": item.get("catalogue_snapshot"),
                 }
                 for index, item in enumerate(result["items"])
             ],

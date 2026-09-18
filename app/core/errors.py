@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.logging import request_id_context
 from app.core.middleware import matched_route_path
+from app.quotes.calculator import CataloguePriceMissingError
 from app.quotes.validator import DimensionError
 
 logger = logging.getLogger("simo_os")
@@ -60,6 +61,13 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(DimensionError)
     async def dimension_error_handler(request: Request, exc: DimensionError):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": str(exc)},
+        )
+
+    @app.exception_handler(CataloguePriceMissingError)
+    async def catalogue_price_missing_handler(request: Request, exc: CataloguePriceMissingError):
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"detail": str(exc)},
