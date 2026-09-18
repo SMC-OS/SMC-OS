@@ -354,6 +354,7 @@ export default function ProjectDetailPage() {
       label: "Schedule",
       content: (
         <div>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">Site Visits</h2>
           {appointmentError && <p className="mb-3 text-sm text-danger">{appointmentError}</p>}
 
           <ul className="space-y-2">

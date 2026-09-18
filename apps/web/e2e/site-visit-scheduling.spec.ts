@@ -60,9 +60,11 @@ test("a_site_visit_can_be_scheduled_and_completed_through_the_ui_and_persists", 
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/customers$/);
 
-  // ---- Open the real Project detail page ----
+  // ---- Open the real Project detail page: Schedule tab (GeoCore Premium
+  // OS Plan 01, Sprint 040, Task 8 — site visits live on their own tab now) ----
   await page.goto(`/projects/${projectId}`);
   await page.waitForLoadState("networkidle");
+  await page.getByRole("tab", { name: /schedule/i }).click();
   await expect(page.getByText("Site Visits", { exact: true })).toBeVisible();
   await expect(page.getByText("No site visits scheduled yet.")).toBeVisible();
   const scheduleButton = page.getByRole("button", { name: "Schedule Site Visit" });
@@ -94,6 +96,7 @@ test("a_site_visit_can_be_scheduled_and_completed_through_the_ui_and_persists", 
   // ---- Verify persistence: reload proves it was saved, not just client state ----
   await page.reload();
   await page.waitForLoadState("networkidle");
+  await page.getByRole("tab", { name: /schedule/i }).click();
   await expect(page.getByText(NOTES)).toBeVisible();
   await expect(page.getByText("scheduled", { exact: true })).toBeVisible();
 
@@ -116,6 +119,7 @@ test("a_site_visit_can_be_scheduled_and_completed_through_the_ui_and_persists", 
   // ---- Verify persistence again after reload ----
   await page.reload();
   await page.waitForLoadState("networkidle");
+  await page.getByRole("tab", { name: /schedule/i }).click();
   await expect(page.getByText("completed", { exact: true })).toBeVisible();
 
   // ---- Verify persisted state through the live API (server-side truth) ----

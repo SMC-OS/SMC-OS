@@ -108,18 +108,6 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   expect(projectRes.ok()).toBeTruthy();
   const projectId = (await projectRes.json()).id as string;
 
-  const quoted = await api.patch(`/api/v1/projects/${projectId}/status`, {
-    headers: ownerHeaders,
-    data: { status: "quoted" },
-  });
-  expect(quoted.ok()).toBeTruthy();
-  const booked = await api.patch(`/api/v1/projects/${projectId}/status`, {
-    headers: ownerHeaders,
-    data: { status: "booked" },
-  });
-  expect(booked.ok()).toBeTruthy();
-  expect((await booked.json()).status).toBe("booked");
-
   // ---- Authenticate through the real login UI ----
   // networkidle after each full navigation: Next dev/Turbopack compiles a
   // route on first visit, and a Playwright click can otherwise land before
@@ -132,10 +120,11 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/customers$/);
 
-  // ---- Open the real Project detail page ----
+  // ---- Open the real Project detail page: Team tab (GeoCore Premium OS
+  // Plan 01, Sprint 040, Task 8 — assignment lives on its own tab now) ----
   await page.goto(`/projects/${projectId}`);
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText("Project Operations", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: /^team$/i }).click();
   const assignSelect = page.getByLabel("Assigned to");
   await expect(assignSelect).toBeVisible();
   await expect(page.getByRole("option", { name: STAFF_NAME })).toBeAttached();
@@ -155,27 +144,34 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   // ---- Verify persistence: reload proves it was saved, not just client state ----
   await page.reload();
   await page.waitForLoadState("networkidle");
+  await page.getByRole("tab", { name: /^team$/i }).click();
   await expect(page.getByLabel("Assigned to")).toHaveValue(assignedProject.assigned_user_id);
 
-  // ---- Advance the Project's status through the UI ----
-  const advanceButton = page.getByRole("button", { name: "Advance to Templated" });
-  await expect(advanceButton).toBeVisible();
-  const statusResponsePromise = page.waitForResponse(
+  // ---- Move the Project through its real trade workflow, through the
+  // Workflow tab (Task 8) — this Project has no project_type, so it's
+  // bound to the general_v1 fallback (Task 4): enquiry -> site_visit is
+  // its first real forward move. ----
+  await page.getByRole("tab", { name: /workflow/i }).click();
+  const moveButton = page.getByRole("button", { name: "Move to Site Visit" });
+  await expect(moveButton).toBeVisible();
+  const transitionResponsePromise = page.waitForResponse(
     (res) =>
-      res.url().endsWith(`/api/v1/projects/${projectId}/status`) &&
-      res.request().method() === "PATCH"
+      res.url().endsWith(`/api/v1/projects/${projectId}/workflow/transition`) &&
+      res.request().method() === "POST"
   );
-  await advanceButton.click();
-  const statusResponse = await statusResponsePromise;
-  expect(statusResponse.status()).toBe(200);
-  expect((await statusResponse.json()).status).toBe("templated");
+  await moveButton.click();
+  const transitionResponse = await transitionResponsePromise;
+  expect(transitionResponse.status()).toBe(200);
+  const movedProject = await transitionResponse.json();
+  expect(movedProject.workflow.stage_key).toBe("site_visit");
+  expect(movedProject.workflow.role).toBe("survey");
 
-  await expect(page.getByText("Templated", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Move to Quote" })).toBeVisible();
 
   // ---- Verify persistence again after reload ----
   await page.reload();
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText("Templated", { exact: true })).toBeVisible();
+  await expect(page.getByText("Survey", { exact: true }).first()).toBeVisible();
 
   // ---- Verify persisted state through the live API (server-side truth) ----
   const persistedProjectRes = await api.get(`/api/v1/projects/${projectId}`, {
@@ -184,12 +180,23 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
   expect(persistedProjectRes.ok()).toBeTruthy();
   const persistedProject = await persistedProjectRes.json();
   expect(persistedProject.assigned_user_id).toBe(assignedProject.assigned_user_id);
-  expect(persistedProject.status).toBe("templated");
+  expect(persistedProject.workflow.stage_key).toBe("site_visit");
 
-  // ---- Verify exactly one project_assigned and one
-  // project_status_changed activity exist for this Project (tenant-scoped:
-  // GET /activity is always the caller's own tenant — see
-  // app/activity/router.py) ----
+  // ---- Verify the workflow transition's own audit trail (Task 5) ----
+  const historyRes = await api.get(`/api/v1/projects/${projectId}/workflow/history`, {
+    headers: ownerHeaders,
+  });
+  expect(historyRes.ok()).toBeTruthy();
+  const history = await historyRes.json();
+  expect(history).toHaveLength(1);
+  expect(history[0].from_stage_key).toBe("enquiry");
+  expect(history[0].to_stage_key).toBe("site_visit");
+
+  // ---- Verify exactly one project_assigned activity exists for this
+  // Project (tenant-scoped: GET /activity is always the caller's own
+  // tenant — see app/activity/router.py). The workflow move above has its
+  // own dedicated audit trail (ProjectWorkflowHistory, verified above) —
+  // it does not also write a project_status_changed ActivityLog entry. ----
   const assignedActivityRes = await api.get(
     "/api/v1/activity?limit=50&type=project_assigned",
     { headers: ownerHeaders }
@@ -200,22 +207,6 @@ test("a_project_can_be_assigned_and_advanced_through_the_ui_and_persists", async
     (event.description ?? "").includes(projectId)
   );
   expect(matchingAssigned).toHaveLength(1);
-
-  // Setup above already made two status transitions of its own
-  // (enquiry -> quoted -> booked) through the real API, so this checks for
-  // exactly the one transition the UI action just caused (booked ->
-  // templated), not every project_status_changed event for this Project.
-  const statusChangedActivityRes = await api.get(
-    "/api/v1/activity?limit=50&type=project_status_changed",
-    { headers: ownerHeaders }
-  );
-  expect(statusChangedActivityRes.ok()).toBeTruthy();
-  const statusChangedActivity = await statusChangedActivityRes.json();
-  const matchingStatusChanged = statusChangedActivity.filter(
-    (event: { description: string | null }) =>
-      event.description === `Project ${projectId} moved from booked to templated`
-  );
-  expect(matchingStatusChanged).toHaveLength(1);
 
   await api.dispose();
 });

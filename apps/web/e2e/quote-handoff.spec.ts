@@ -103,11 +103,16 @@ test("customer_quote_approval_handoff_persists_project", async ({ page }) => {
   expect(projectId).toBeTruthy();
 
   // ---- Verify the real Project page ----
-  await expect(page.getByText("Booked", { exact: true })).toBeVisible();
+  // GeoCore Premium OS Plan 01 (Sprint 040) — the legacy `status` field is
+  // still "booked" under the hood (verified via the live API below), but
+  // Project 360's header shows the new trade-adaptive workflow view
+  // instead: every new project (quote handoff included) binds to its own
+  // trade's workflow, always starting at "Enquiry" (Task 4).
+  await expect(page.getByText("Enquiry", { exact: true }).first()).toBeVisible();
 
   // ---- Verify persistence: reload proves it was saved, not just client state ----
   await page.reload();
-  await expect(page.getByText("Booked", { exact: true })).toBeVisible();
+  await expect(page.getByText("Enquiry", { exact: true }).first()).toBeVisible();
 
   // ---- Verify Quote linkage through the live API (not rendered in the UI) ----
   const projectRes = await api.get(`/api/v1/projects/${projectId}`, {
@@ -119,6 +124,8 @@ test("customer_quote_approval_handoff_persists_project", async ({ page }) => {
   expect(project.quote_id).toBe(quoteId);
   expect(project.customer_id).toBe(customer.id);
   expect(project.status).toBe("booked");
+  expect(project.workflow.template_key).toBe("stone_v1");
+  expect(project.workflow.stage_key).toBe("enquiry");
 
   // ---- Verify exactly one Project exists for this Quote ----
   // GET /api/v1/projects exposes quote_id per-row (same ProjectOut model as
