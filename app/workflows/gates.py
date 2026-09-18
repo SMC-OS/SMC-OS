@@ -54,6 +54,16 @@ class ApprovedSourceQuoteGate(BaseModel):
     type: Literal["approved_source_quote"] = "approved_source_quote"
 
 
+class MaterialsReadyGate(BaseModel):
+    """GeoCore Premium OS Plan 05 (Sprint 044), Task 27 — blocks entry
+    while any of the project's own material requirements is still short
+    of the material actually arriving (planned/required/ordered/
+    partially_received). A project with zero requirements is never
+    blocked by this gate — there is nothing to wait for."""
+
+    type: Literal["materials_ready"] = "materials_ready"
+
+
 GateDefinition = Annotated[
     Union[
         CustomerLinkedGate,
@@ -61,6 +71,7 @@ GateDefinition = Annotated[
         SiteAddressPresentGate,
         CompletedSiteVisitGate,
         ApprovedSourceQuoteGate,
+        MaterialsReadyGate,
     ],
     Field(discriminator="type"),
 ]
@@ -116,6 +127,16 @@ def _blocker_for(db: Session, project: Project, tenant_id: uuid.UUID, gate: Gate
         if quote is None or quote.status != "approved":
             return GateBlocker(
                 code="approved_source_quote", message="This project has no approved source quote yet"
+            )
+        return None
+
+    if isinstance(gate, MaterialsReadyGate):
+        from app.procurement.models import REQUIREMENT_BLOCKING_STATUSES
+
+        requirements = crud.list_material_requirements_by_project(db, project.id, tenant_id)
+        if any(r.status in REQUIREMENT_BLOCKING_STATUSES for r in requirements):
+            return GateBlocker(
+                code="materials_ready", message="Required materials have not all been received yet"
             )
         return None
 
