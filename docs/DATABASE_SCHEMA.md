@@ -94,6 +94,16 @@ Two small, symmetric compatibility bridges keep `status` and `workflow` from eve
 
 `app/dashboard/models.py`'s `PipelineRoleCounts` and `app/automations/subjects.py`'s `project_subject` (`workflow_stage_key`/`workflow_stage_label`/`workflow_role`/`previous_workflow_role`) read the semantic `role` column above — additive alongside the unchanged `PipelineCounts`/`status`/`previous_status`, never replacing them.
 
+### Sprint 041 — GeoCore Premium OS Plan 02: Public Homepage + Request Demo + 14-Day Trial Funnel
+
+One migration, `bfed99c6fa8c` (parent `0f93d11b04a4`).
+
+| Table | Columns | Notes |
+| --- | --- | --- |
+| `demo_requests` | `id`, `first_name`, `last_name`, `email` (indexed), `phone` (nullable), `company_name`, `team_size`, `trades` (JSONB, NOT NULL default `[]`), `current_system` (nullable), `message` (nullable), `preferred_contact_method` (nullable), `status` (NOT NULL default `'new'`), `source` (NOT NULL default `'marketing_homepage'`), `created_at`, `updated_at`. | Standalone and platform-owned — deliberately **no `tenant_id`, no FK to any tenant's data**: a prospective customer's sales lead is GeoCore's own sales pipeline, never a row inside a customer's own CRM. Submitted through the public, rate-limited `POST /api/v1/demo-requests` (`app/demo_requests/`); `status`/`source` are always server-assigned, never accepted from the client. No list/admin endpoint exists yet — an internal review surface is out of this plan's scope. |
+
+`app/billing/models.py`'s `PlanOut` also gained `trial_days` (not a schema change — computed from the existing `TRIAL_LENGTH_DAYS` constant in `app/billing/plans.py`) so the public trial-disclosure component reads the real trial length from `GET /billing/plans` rather than a hard-coded marketing figure.
+
 ---
 
 ## 3. What Sprint 002 deliberately did not build (now fully closed out, Sprint 007)
