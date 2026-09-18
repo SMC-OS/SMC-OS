@@ -22,9 +22,12 @@ from sqlalchemy.orm import Session
 
 from app.automations.engine import automation_engine
 from app.automations.subjects import (
+    cost_entry_subject,
     customer_subject,
+    margin_risk_subject,
     project_subject,
     quote_subject,
+    variation_subject,
 )
 from app.database import crud
 
@@ -193,6 +196,68 @@ class AutomationDispatcher:
                 "Automation dispatch failed",
                 extra={"event": "automation_dispatch_failed", "trigger": trigger_type},
             )
+
+
+    # --- Job financials + variations (GeoCore Premium OS Plan 04, Sprint 043) ---
+
+    def dispatch_variation_created(self, db: Session, variation, project) -> None:
+        self._dispatch(
+            db,
+            tenant_id=variation.tenant_id,
+            trigger_type="variation.created",
+            subject=variation_subject(variation, project_name=project.name),
+        )
+
+    def dispatch_variation_sent(self, db: Session, variation, project) -> None:
+        self._dispatch(
+            db,
+            tenant_id=variation.tenant_id,
+            trigger_type="variation.sent",
+            subject=variation_subject(variation, project_name=project.name),
+        )
+
+    def dispatch_variation_approved(self, db: Session, variation, project) -> None:
+        self._dispatch(
+            db,
+            tenant_id=variation.tenant_id,
+            trigger_type="variation.approved",
+            subject=variation_subject(variation, project_name=project.name),
+        )
+
+    def dispatch_variation_rejected(self, db: Session, variation, project) -> None:
+        self._dispatch(
+            db,
+            tenant_id=variation.tenant_id,
+            trigger_type="variation.rejected",
+            subject=variation_subject(variation, project_name=project.name),
+        )
+
+    def dispatch_cost_added(self, db: Session, entry, project) -> None:
+        self._dispatch(
+            db,
+            tenant_id=entry.tenant_id,
+            trigger_type="cost.added",
+            subject=cost_entry_subject(entry, project_name=project.name),
+        )
+
+    def dispatch_margin_risk_detected(
+        self, db: Session, project, *, forecast_margin_percent: float | None, current_contract_value: float | None
+    ) -> None:
+        """Fired synchronously right after a cost write, from
+        app/financials/service.py, when the project's freshly-recomputed
+        forecast margin is below MARGIN_RISK_THRESHOLD_PERCENT — never a
+        background scan, so it is exact ("this project just crossed into
+        risk") rather than eventually-consistent."""
+        self._dispatch(
+            db,
+            tenant_id=project.tenant_id,
+            trigger_type="margin_risk.detected",
+            subject=margin_risk_subject(
+                project,
+                forecast_margin_percent=forecast_margin_percent,
+                current_contract_value=current_contract_value,
+            ),
+        )
 
 
 automation_dispatcher = AutomationDispatcher()

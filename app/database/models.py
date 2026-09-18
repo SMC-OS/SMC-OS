@@ -1634,3 +1634,149 @@ class TenantCatalogueOverride(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class ProjectCostEntry(Base):
+    """GeoCore Premium OS Plan 04 (Sprint 043) — the internal cost ledger.
+
+    One row is one cost item's *current* record, not an append-only
+    history: the intended workflow is to create a row as `budgeted`, then
+    edit that same row's `state` (and amount, once known) to `committed`
+    and later `actual` as the job progresses — never to leave a stale
+    duplicate row behind in an earlier state. This is what makes
+    app/financials/service.py's forecast formula
+    (SUM(actual) + SUM(committed) + SUM(budgeted)) correct without
+    needing to model supersession between rows: at any moment a real
+    cost item is counted in exactly one state, because it lives in
+    exactly one row. See ADR-047/048 for the full reasoning and the
+    documented limitation this implies.
+
+    Entirely internal — never exposed to a customer (no portal route
+    reads this table); see app/financials/router.py's role gating.
+    """
+
+    __tablename__ = "project_cost_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+    )
+
+    # Stable machine values, validated at the Pydantic boundary — same
+    # plain-String-column-no-DB-enum convention as ProjectStatus/
+    # ActivityType/UserRole elsewhere in this schema.
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False)
+
+    description: Mapped[str] = mapped_column(String, nullable=False)
+    supplier_or_payee: Mapped[str | None] = mapped_column(String, nullable=True)
+    reference: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String, nullable=True)
+    unit_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The number every aggregate actually sums. Always required: whether
+    # it was typed directly or derived from quantity x unit_cost is a
+    # frontend/service convenience, never something the ledger itself
+    # has to re-derive to know what a row is worth.
+    total_cost: Mapped[float] = mapped_column(Float, nullable=False)
+
+    cost_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Variation(Base):
+    """GeoCore Premium OS Plan 04 (Sprint 043) — a project variation
+    (change order): additional or reduced scope agreed after the base
+    contract, priced and taxed exactly like a general quote
+    (app/quotes/general.py's `price()` is reused directly — see
+    app/variations/service.py — never a second commercial maths engine).
+
+    `reference` is a human-readable, per-project sequence ("V-001",
+    "V-002", ...) — never the database id, which a customer must never
+    be asked to quote back. `UNIQUE(project_id, reference)` is the DB-
+    level backstop against a numbering race.
+
+    Once `status` leaves `draft` the commercial fields below stop being
+    editable (see app/variations/service.py's state machine) — an
+    approved variation's amount is never silently rewritten; a real
+    correction is a new, separate variation. `current_contract_value`
+    (app/financials/service.py) is *derived* by summing every `approved`
+    variation's `total` alongside the project's base contract, never
+    maintained by incrementing a running counter — so approving the same
+    variation twice (or retrying a request) can never double-count it.
+    """
+
+    __tablename__ = "variations"
+    __table_args__ = (UniqueConstraint("project_id", "reference", name="uq_variations_project_reference"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+    )
+
+    reference: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="draft")
+
+    vat_rate: Mapped[float] = mapped_column(Float, nullable=False, server_default="0.2")
+    subtotal: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    vat: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    total: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+
+    # Free text — who asked for this (a customer name, "site visit
+    # 12/03"), not a FK to a customer/user record.
+    requested_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class VariationItem(Base):
+    """A variation's line items — same quantity/unit/unit_price/line_total
+    shape as a general quote line (app/quotes/general.py), general enough
+    for both ordinary construction lines and a stone-style line where
+    appropriate. No `line_kind` — a variation is a single list of
+    priced items, not a labour/material/other split; that distinction
+    matters for a quote's own reporting, not for a change order."""
+
+    __tablename__ = "variation_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    variation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("variations.id"), nullable=False, index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    description: Mapped[str] = mapped_column(String, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False, server_default="1")
+    unit: Mapped[str] = mapped_column(String, nullable=False, server_default="item")
+    unit_price: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    line_total: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

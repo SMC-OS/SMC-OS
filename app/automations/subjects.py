@@ -99,6 +99,47 @@ def project_subject(
     }
 
 
+def variation_subject(variation, *, project_name: str | None = None) -> dict:
+    """GeoCore Premium OS Plan 04 (Sprint 043). `total` is the variation's
+    own commercial value — offered/agreed, same "not recognised revenue"
+    framing quote_subject's `total` already carries."""
+    return {
+        "id": str(variation.id),
+        "project_id": str(variation.project_id),
+        "project_name": project_name or "",
+        "reference": variation.reference,
+        "title": variation.title,
+        "status": variation.status,
+        "total": variation.total,
+        "requested_by": variation.requested_by,
+        "created_at": _iso(variation.created_at),
+    }
+
+
+def cost_entry_subject(entry, *, project_name: str | None = None) -> dict:
+    return {
+        "id": str(entry.id),
+        "project_id": str(entry.project_id),
+        "project_name": project_name or "",
+        "category": entry.category,
+        "state": entry.state,
+        "description": entry.description,
+        "total_cost": entry.total_cost,
+        "created_at": _iso(entry.created_at),
+    }
+
+
+def margin_risk_subject(
+    project, *, forecast_margin_percent: float | None, current_contract_value: float | None
+) -> dict:
+    return {
+        "id": str(project.id),
+        "name": project.name,
+        "forecast_margin_percent": forecast_margin_percent,
+        "current_contract_value": current_contract_value,
+    }
+
+
 def render(template: str, subject: dict) -> str:
     """Substitute `{field}` placeholders from the subject.
 
