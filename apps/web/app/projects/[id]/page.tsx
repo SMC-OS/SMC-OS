@@ -12,6 +12,7 @@ import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
 import { ProjectFinancialsPanel } from "@/components/projects/ProjectFinancialsPanel";
 import { ProjectForm } from "@/components/projects/ProjectForm";
+import { ProjectMaterialsPanel } from "@/components/projects/ProjectMaterialsPanel";
 import { ProjectOverview } from "@/components/projects/ProjectOverview";
 import { ProjectTasksPanel } from "@/components/projects/ProjectTasksPanel";
 import { ProjectVariationsPanel } from "@/components/projects/ProjectVariationsPanel";
@@ -452,6 +453,13 @@ export default function ProjectDetailPage() {
       key: "variations",
       label: "Variations",
       content: <ProjectVariationsPanel projectId={project.id} />,
+    });
+    // GeoCore Premium OS Plan 05 (Sprint 044), Task 21 — same RBAC gate as
+    // Financials/Variations above; procurement cost data is internal.
+    tabs.push({
+      key: "materials",
+      label: "Materials",
+      content: <ProjectMaterialsPanel projectId={project.id} />,
     });
   }
 
