@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
+import { ProjectFinancialsPanel } from "@/components/projects/ProjectFinancialsPanel";
 import { ProjectForm } from "@/components/projects/ProjectForm";
 import { ProjectOverview } from "@/components/projects/ProjectOverview";
 import { ProjectTasksPanel } from "@/components/projects/ProjectTasksPanel";
+import { ProjectVariationsPanel } from "@/components/projects/ProjectVariationsPanel";
 import { Project360Shell } from "@/components/projects/Project360Shell";
 import type { Project360Tab } from "@/components/projects/Project360Shell";
 import { WorkflowHistory } from "@/components/projects/WorkflowHistory";
@@ -434,6 +436,22 @@ export default function ProjectDetailPage() {
           </div>
         </div>
       ),
+    });
+  }
+
+  if (canManageAppointments) {
+    // GeoCore Premium OS Plan 04 (Sprint 043) — same RBAC gate as
+    // Schedule/Team above (require_role(OWNER, STAFF) server-side);
+    // internal cost/margin data is not shown to a role that cannot see it.
+    tabs.push({
+      key: "financials",
+      label: "Financials",
+      content: <ProjectFinancialsPanel projectId={project.id} />,
+    });
+    tabs.push({
+      key: "variations",
+      label: "Variations",
+      content: <ProjectVariationsPanel projectId={project.id} />,
     });
   }
 

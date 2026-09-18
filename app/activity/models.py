@@ -40,6 +40,18 @@ class ActivityType(str, Enum):
     # Sprint 039 Production Readiness Defect Gate, Blocker 2
     PASSWORD_RESET_REQUESTED = "password_reset_requested"
     PASSWORD_CHANGED = "password_changed"
+    # GeoCore Premium OS Plan 04 (Sprint 043) — job financials + variations.
+    # Internal only: app/activity/router.py is gated by require_billing_access
+    # and nothing in app/portal/ ever reads ActivityLog, so recording real
+    # cost figures/descriptions here never reaches a customer.
+    PROJECT_COST_ADDED = "project_cost_added"
+    PROJECT_COST_EDITED = "project_cost_edited"
+    PROJECT_COST_DELETED = "project_cost_deleted"
+    VARIATION_CREATED = "variation_created"
+    VARIATION_SENT = "variation_sent"
+    VARIATION_APPROVED = "variation_approved"
+    VARIATION_REJECTED = "variation_rejected"
+    VARIATION_VOIDED = "variation_voided"
 
 
 class ActivityEventCreate(BaseModel):

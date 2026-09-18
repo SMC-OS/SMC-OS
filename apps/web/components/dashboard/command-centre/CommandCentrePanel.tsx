@@ -153,6 +153,45 @@ export function CommandCentrePanel() {
             <CountRow label="Unread follow-ups" value={data.follow_up.unread_follow_ups} />
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Contract &amp; Margin</CardTitle>
+            {data.financials.projects_with_margin_risk > 0 && (
+              <Badge tone="danger">
+                {data.financials.projects_with_margin_risk} margin risk
+              </Badge>
+            )}
+          </CardHeader>
+          <CardContent>
+            {/* GeoCore Premium OS Plan 04 (Sprint 043), Task 20-21 — scoped
+                to projects with a real base contract (a linked, handed-off
+                quote) only; never a company-wide margin percentage, since
+                some projects' cost data may be incomplete. */}
+            <CountRowValue
+              label="Approved contract value"
+              value={data.financials.approved_contract_value}
+            />
+            <CountRowValue
+              label="Approved variations value"
+              value={data.financials.approved_variations_value}
+            />
+            <div className="mt-3 border-t border-border pt-3">
+              <CountRow
+                label="Projects with a contract"
+                value={data.financials.projects_with_a_contract}
+              />
+              <CountRow
+                label="Projects with margin risk"
+                value={data.financials.projects_with_margin_risk}
+              />
+              <CountRow
+                label="Projects with missing cost data"
+                value={data.financials.projects_with_missing_cost_data}
+              />
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

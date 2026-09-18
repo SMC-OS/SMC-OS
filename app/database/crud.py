@@ -25,7 +25,7 @@ docs/DECISIONS.md ADR-029). `tenants`/`invitations` CRUD is unchanged
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import func, or_ as sa_or, select
+from sqlalchemy import delete as sa_delete, func, or_ as sa_or, select
 from sqlalchemy.orm import Session
 
 from app.database.models import (
@@ -53,6 +53,7 @@ from app.database.models import (
     ProcessedEmailEvent,
     ProcessedStripeEvent,
     Project,
+    ProjectCostEntry,
     ProjectWorkflowHistory,
     Quote,
     QuoteItem,
@@ -61,6 +62,8 @@ from app.database.models import (
     Tenant,
     TenantCatalogueOverride,
     User,
+    Variation,
+    VariationItem,
     WorkflowStage,
     WorkflowTemplate,
     WorkflowTransition,
@@ -2291,3 +2294,176 @@ def upsert_tenant_catalogue_override(
     db.commit()
     db.refresh(row)
     return row
+
+
+# ---------------------------------------------------------------------------
+# GeoCore Premium OS Plan 04 (Sprint 043) — job financials + variations.
+# ---------------------------------------------------------------------------
+
+
+def create_project_cost_entry(db: Session, **fields) -> ProjectCostEntry:
+    row = ProjectCostEntry(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_project_cost_entry_by_id(
+    db: Session, cost_entry_id: uuid.UUID, project_id: uuid.UUID, tenant_id: uuid.UUID
+) -> ProjectCostEntry | None:
+    stmt = select(ProjectCostEntry).where(
+        ProjectCostEntry.id == cost_entry_id,
+        ProjectCostEntry.project_id == project_id,
+        ProjectCostEntry.tenant_id == tenant_id,
+    )
+    return db.scalars(stmt).first()
+
+
+def list_project_cost_entries(
+    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID
+) -> list[ProjectCostEntry]:
+    stmt = (
+        select(ProjectCostEntry)
+        .where(ProjectCostEntry.project_id == project_id, ProjectCostEntry.tenant_id == tenant_id)
+        .order_by(ProjectCostEntry.created_at)
+    )
+    return list(db.scalars(stmt).all())
+
+
+def update_project_cost_entry(db: Session, entry: ProjectCostEntry, fields: dict) -> ProjectCostEntry:
+    for key, value in fields.items():
+        setattr(entry, key, value)
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+def delete_project_cost_entry(db: Session, entry: ProjectCostEntry) -> None:
+    db.delete(entry)
+    db.commit()
+
+
+def sum_cost_by_state(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> dict[str, float]:
+    """One grouped query — {state: total_cost_sum}, only states with at
+    least one row present (financials service fills in the zeroes)."""
+    rows = (
+        db.query(ProjectCostEntry.state, func.sum(ProjectCostEntry.total_cost))
+        .filter(ProjectCostEntry.project_id == project_id, ProjectCostEntry.tenant_id == tenant_id)
+        .group_by(ProjectCostEntry.state)
+        .all()
+    )
+    return {state: float(total) for state, total in rows}
+
+
+def count_project_cost_entries(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> int:
+    return (
+        db.query(func.count(ProjectCostEntry.id))
+        .filter(ProjectCostEntry.project_id == project_id, ProjectCostEntry.tenant_id == tenant_id)
+        .scalar()
+        or 0
+    )
+
+
+def create_variation(db: Session, **fields) -> Variation:
+    row = Variation(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_variation_by_id(db: Session, variation_id: uuid.UUID, tenant_id: uuid.UUID) -> Variation | None:
+    stmt = select(Variation).where(Variation.id == variation_id, Variation.tenant_id == tenant_id)
+    return db.scalars(stmt).first()
+
+
+def list_variations_by_project(
+    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID
+) -> list[Variation]:
+    stmt = (
+        select(Variation)
+        .where(Variation.project_id == project_id, Variation.tenant_id == tenant_id)
+        .order_by(Variation.created_at)
+    )
+    return list(db.scalars(stmt).all())
+
+
+def count_variations_for_project(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> int:
+    return (
+        db.query(func.count(Variation.id))
+        .filter(Variation.project_id == project_id, Variation.tenant_id == tenant_id)
+        .scalar()
+        or 0
+    )
+
+
+def update_variation(db: Session, variation: Variation, fields: dict) -> Variation:
+    for key, value in fields.items():
+        setattr(variation, key, value)
+    db.add(variation)
+    db.commit()
+    db.refresh(variation)
+    return variation
+
+
+def sum_approved_variations_total(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> float:
+    total = (
+        db.query(func.sum(Variation.total))
+        .filter(
+            Variation.project_id == project_id,
+            Variation.tenant_id == tenant_id,
+            Variation.status == "approved",
+        )
+        .scalar()
+    )
+    return float(total) if total is not None else 0.0
+
+
+def sum_approved_variations_total_for_tenant(db: Session, tenant_id: uuid.UUID) -> float:
+    total = (
+        db.query(func.sum(Variation.total))
+        .filter(Variation.tenant_id == tenant_id, Variation.status == "approved")
+        .scalar()
+    )
+    return float(total) if total is not None else 0.0
+
+
+def replace_variation_items(db: Session, variation_id: uuid.UUID, items: list[dict]) -> list[VariationItem]:
+    """Wholesale replace, same convention as
+    crud.replace_quote_items/GeneralQuoteBuilder's own lines — a
+    variation's items are edited as a set, never patched one at a time."""
+    db.execute(sa_delete(VariationItem).where(VariationItem.variation_id == variation_id))
+    rows = [
+        VariationItem(id=uuid.uuid4(), variation_id=variation_id, position=index, **item)
+        for index, item in enumerate(items)
+    ]
+    db.add_all(rows)
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+    return rows
+
+
+def list_variation_items(db: Session, variation_id: uuid.UUID) -> list[VariationItem]:
+    stmt = (
+        select(VariationItem)
+        .where(VariationItem.variation_id == variation_id)
+        .order_by(VariationItem.position)
+    )
+    return list(db.scalars(stmt).all())
+
+
+def list_projects_with_a_base_contract(db: Session, tenant_id: uuid.UUID) -> list[Project]:
+    """Every project with a linked quote (always approved — see
+    QuoteService.handoff) — the population app/dashboard/service.py's
+    Command Centre financial signals iterates to compute margin risk /
+    missing-cost-data counts. Deliberately not a single SQL aggregate:
+    those two figures need the same per-project financials_service logic
+    used everywhere else, not a re-derivation in raw SQL — see
+    docs/SPRINTS/sprint-043.md for why this is a bounded Python loop
+    rather than the O(1)-query convention docs/SPRINTS/sprint-025.md set,
+    and why that is an acceptable, documented trade-off at V1's scale."""
+    stmt = select(Project).where(Project.tenant_id == tenant_id, Project.quote_id.is_not(None))
+    return list(db.scalars(stmt).all())

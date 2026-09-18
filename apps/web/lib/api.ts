@@ -34,6 +34,12 @@ import type {
 import type { DashboardStats } from "@/types/dashboard";
 import type { DocumentOut } from "@/types/document";
 import type {
+  ProjectCostEntry,
+  ProjectCostEntryIn,
+  ProjectCostEntryUpdate,
+  ProjectFinancialSummary,
+} from "@/types/financials";
+import type {
   AcceptInvitationRequest,
   InvitationCreateOut,
   InvitationOut,
@@ -66,6 +72,7 @@ import type {
   TenantProfileUpdate,
 } from "@/types/tenant";
 import type { TeamMemberOut } from "@/types/user";
+import type { Variation, VariationCreate, VariationUpdate } from "@/types/variation";
 import type { ProjectWorkflowDetail, WorkflowHistoryEntry } from "@/types/workflow";
 import { clearToken, getToken } from "@/lib/auth-storage";
 import { resolveApiBaseUrl } from "@/lib/runtime-config";
@@ -828,4 +835,88 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ body }),
     }),
+
+  // --- GeoCore Premium OS Plan 04 (Sprint 043) — job financials. ---
+  // Owner/Staff only server-side (require_role(OWNER, STAFF)), same gate
+  // as project workflow transitions/appointments.
+  getProjectFinancialSummary: (projectId: string) =>
+    request<ProjectFinancialSummary>(`/projects/${projectId}/financials/summary`),
+
+  getProjectCosts: (projectId: string) =>
+    request<ProjectCostEntry[]>(`/projects/${projectId}/costs`),
+
+  createProjectCost: (projectId: string, data: ProjectCostEntryIn) =>
+    request<ProjectCostEntry>(`/projects/${projectId}/costs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateProjectCost: (projectId: string, costEntryId: string, data: ProjectCostEntryUpdate) =>
+    request<ProjectCostEntry>(`/projects/${projectId}/costs/${costEntryId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteProjectCost: (projectId: string, costEntryId: string) =>
+    requestNoContent(`/projects/${projectId}/costs/${costEntryId}`, { method: "DELETE" }),
+
+  // --- GeoCore Premium OS Plan 04 (Sprint 043) — variations (change orders). ---
+  getProjectVariations: (projectId: string) =>
+    request<Variation[]>(`/projects/${projectId}/variations`),
+
+  createVariation: (projectId: string, data: VariationCreate) =>
+    request<Variation>(`/projects/${projectId}/variations`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getVariation: (id: string) => request<Variation>(`/variations/${id}`),
+
+  // Draft-only server-side — a 409 (ApiError) means the variation has
+  // already been sent/approved/rejected/voided; the caller must not
+  // silently retry as a create.
+  updateVariation: (id: string, data: VariationUpdate) =>
+    request<Variation>(`/variations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  sendVariation: (id: string) => request<Variation>(`/variations/${id}/send`, { method: "POST" }),
+
+  approveVariation: (id: string) =>
+    request<Variation>(`/variations/${id}/approve`, { method: "POST" }),
+
+  rejectVariation: (id: string) =>
+    request<Variation>(`/variations/${id}/reject`, { method: "POST" }),
+
+  voidVariation: (id: string) => request<Variation>(`/variations/${id}/void`, { method: "POST" }),
+
+  // Same blob-download-and-save pattern as downloadInvoice/downloadDocument.
+  downloadVariationPdf: async (id: string, reference: string): Promise<void> => {
+    const token = getToken();
+    let res: Response;
+
+    try {
+      res = await fetch(`${API_BASE_URL}/api/v1/variations/${id}/pdf`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch {
+      throw new ApiError(`Could not reach the API at /variations/${id}/pdf`, 0);
+    }
+
+    if (!res.ok) {
+      if (res.status === 401) clearToken();
+      throw new ApiError(`Request to /variations/${id}/pdf failed with ${res.status}`, res.status);
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${reference}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

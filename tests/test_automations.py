@@ -142,10 +142,15 @@ def test_meta_lists_every_trigger_with_its_kind(client, auth_headers):
     meta = client.get("/api/v1/automations/meta", headers=auth_headers).json()
     by_key = {t["key"]: t for t in meta["triggers"]}
 
-    assert len(by_key) == 9
+    # GeoCore Premium OS Plan 04 (Sprint 043) added 6 financial/variation
+    # triggers (variation.created/sent/approved/rejected, cost.added,
+    # margin_risk.detected) to the original 9.
+    assert len(by_key) == 15
     assert by_key["quote.approved"]["kind"] == "event"
     assert by_key["quote.expiring"]["kind"] == "scan"
     assert by_key["project.starting"]["kind"] == "scan"
+    assert by_key["variation.approved"]["kind"] == "event"
+    assert by_key["margin_risk.detected"]["kind"] == "event"
 
 
 def test_templates_are_definitions_not_rows(client, auth_headers):

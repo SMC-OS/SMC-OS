@@ -102,6 +102,51 @@ TRIGGERS: tuple[Trigger, ...] = (
         EVENT,
         "project",
     ),
+    # GeoCore Premium OS Plan 04 (Sprint 043) — job financials + variations.
+    Trigger(
+        "variation.created",
+        "Variation created",
+        "Runs when a new project variation is created.",
+        EVENT,
+        "variation",
+    ),
+    Trigger(
+        "variation.sent",
+        "Variation sent",
+        "Runs when a variation is marked as sent to the customer.",
+        EVENT,
+        "variation",
+    ),
+    Trigger(
+        "variation.approved",
+        "Variation approved",
+        "Runs when a variation is approved and its value joins the "
+        "project's current contract.",
+        EVENT,
+        "variation",
+    ),
+    Trigger(
+        "variation.rejected",
+        "Variation rejected",
+        "Runs when a variation is rejected.",
+        EVENT,
+        "variation",
+    ),
+    Trigger(
+        "cost.added",
+        "Project cost recorded",
+        "Runs when a cost is recorded against a project.",
+        EVENT,
+        "cost_entry",
+    ),
+    Trigger(
+        "margin_risk.detected",
+        "Margin risk detected",
+        "Runs when a project's forecast margin falls below GeoCore's "
+        "margin-risk threshold after a cost is recorded.",
+        EVENT,
+        "project",
+    ),
 )
 
 TRIGGER_KEYS: frozenset[str] = frozenset(trigger.key for trigger in TRIGGERS)
