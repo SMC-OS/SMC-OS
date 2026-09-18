@@ -114,3 +114,8 @@ class CooldownLimiter:
 
 email_verification_resend_limiter = CooldownLimiter()
 password_reset_request_limiter = CooldownLimiter()
+# Sprint 041 — public POST /demo-requests, keyed on the submitted email.
+# Same reasoning as password_reset_request_limiter: the cooldown behaves
+# identically whether or not that email has requested a demo before, so
+# it introduces no enumeration signal.
+demo_request_limiter = CooldownLimiter()

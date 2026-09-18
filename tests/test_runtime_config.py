@@ -22,6 +22,10 @@ def test_development_defaults_remain_convenient():
     assert configured.cors_allowed_origins == [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        # Sprint 041 — apps/marketing's dev server now calls the API
+        # directly (GET /billing/plans, POST /demo-requests).
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
     ]
 
 

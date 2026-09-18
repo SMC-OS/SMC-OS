@@ -30,6 +30,11 @@ _DEVELOPMENT_SEED_PASSWORD = "change-me-on-first-login"
 _DEVELOPMENT_CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    # Sprint 041 — apps/marketing's dev server (`next dev --port 3001`),
+    # now calling GET /billing/plans and POST /demo-requests directly
+    # from the browser.
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
 ]
 
 
@@ -182,6 +187,10 @@ class Settings(BaseSettings):
     # "email doesn't exist" the way a naturally-faster not-found path
     # otherwise would. Not a secret; safe to be a plain setting.
     password_reset_response_floor_seconds: float = 0.3
+
+    # Sprint 041 — public POST /demo-requests (GeoCore Premium OS Plan
+    # 02). Same CooldownLimiter shape/reasoning as the two settings above.
+    demo_request_cooldown_seconds: float = 60.0
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
