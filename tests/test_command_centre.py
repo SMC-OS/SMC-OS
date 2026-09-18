@@ -26,6 +26,7 @@ from app.database.models import (
     EmailVerificationToken,
     NotificationRecord,
     Project,
+    ProjectWorkflowHistory,
     Quote,
     QuoteItem,
     Subscription,
@@ -81,6 +82,11 @@ def _cleanup_tenant(tenant_id: uuid.UUID) -> None:
         db.execute(delete(NotificationRecord).where(NotificationRecord.tenant_id == tenant_id))
         db.execute(delete(Appointment).where(Appointment.tenant_id == tenant_id))
         db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant_id))
+        # GeoCore Premium OS Plan 01 (Sprint 040) — a workflow transition
+        # (Task 5) writes a ProjectWorkflowHistory row with no ON DELETE
+        # cascade on its project_id FK, same "children before parents"
+        # ordering as everything else here.
+        db.execute(delete(ProjectWorkflowHistory).where(ProjectWorkflowHistory.tenant_id == tenant_id))
         # Project.quote_id references quotes.id (no ON DELETE CASCADE) —
         # Project must go before Quote, opposite of most other cleanup
         # helpers in this suite which never link the two.
@@ -165,6 +171,76 @@ def test_pipeline_counts_are_exact_and_tenant_scoped(client):
             "installed": 0,
             "complete": 0,
         }
+    finally:
+        _cleanup_tenant(tenant_id)
+        _cleanup_tenant(other_tenant_id)
+
+
+def test_pipeline_by_role_aggregates_across_trades_and_is_tenant_scoped(client):
+    """GeoCore Premium OS Plan 01 (Sprint 040, Task 7) — a stone project on
+    "Measure / Site Visit" and an electrical project on "Site Assessment"
+    are different labels on two different trade workflows, but both are
+    the SURVEY role, so a company-wide "what's out on survey right now"
+    number must count them together. A Project in a different tenant, and
+    one left at its default "Enquiry" (LEAD), must not be miscounted."""
+    headers, tenant_id = _signup(client, "role-pipeline")
+    other_headers, other_tenant_id = _signup(client, "role-pipeline-other")
+    try:
+        lead_stone = client.post(
+            "/api/v1/projects",
+            json={"name": f"{TEST_PREFIX} Stone Lead", "project_type": "stone"},
+            headers=headers,
+        )
+        assert lead_stone.status_code == 201
+
+        survey_stone = client.post(
+            "/api/v1/projects",
+            json={"name": f"{TEST_PREFIX} Stone Survey", "project_type": "stone"},
+            headers=headers,
+        )
+        assert survey_stone.status_code == 201
+        moved_stone = client.post(
+            f"/api/v1/projects/{survey_stone.json()['id']}/workflow/transition",
+            json={"target_stage_key": "measure_site_visit"},
+            headers=headers,
+        )
+        assert moved_stone.status_code == 200
+        assert moved_stone.json()["workflow"]["role"] == "survey"
+
+        survey_electrical = client.post(
+            "/api/v1/projects",
+            json={"name": f"{TEST_PREFIX} Electrical Survey", "project_type": "electrical"},
+            headers=headers,
+        )
+        assert survey_electrical.status_code == 201
+        moved_electrical = client.post(
+            f"/api/v1/projects/{survey_electrical.json()['id']}/workflow/transition",
+            json={"target_stage_key": "site_assessment"},
+            headers=headers,
+        )
+        assert moved_electrical.status_code == 200
+        assert moved_electrical.json()["workflow"]["role"] == "survey"
+
+        # A Project in a completely different tenant must never be counted.
+        other_project = client.post(
+            "/api/v1/projects",
+            json={"name": f"{TEST_PREFIX} Other Tenant Survey", "project_type": "electrical"},
+            headers=other_headers,
+        )
+        assert other_project.status_code == 201
+        client.post(
+            f"/api/v1/projects/{other_project.json()['id']}/workflow/transition",
+            json={"target_stage_key": "site_assessment"},
+            headers=other_headers,
+        )
+
+        response = client.get("/api/v1/dashboard/command-centre", headers=headers)
+        assert response.status_code == 200
+        by_role = response.json()["pipeline_by_role"]
+
+        assert by_role["lead"] == 1
+        assert by_role["survey"] == 2
+        assert sum(by_role.values()) == 3
     finally:
         _cleanup_tenant(tenant_id)
         _cleanup_tenant(other_tenant_id)
@@ -408,6 +484,24 @@ def test_empty_tenant_gets_all_zeros_not_nulls_or_500(client):
                 "fabricated": 0,
                 "installed": 0,
                 "complete": 0,
+            },
+            # GeoCore Premium OS Plan 01 (Sprint 040, Task 7) — additive
+            # alongside "pipeline" above, same never-null empty-state
+            # contract, now for all 13 semantic WorkflowRole buckets.
+            "pipeline_by_role": {
+                "lead": 0,
+                "survey": 0,
+                "quoted": 0,
+                "approved": 0,
+                "procurement": 0,
+                "scheduled": 0,
+                "in_progress": 0,
+                "inspection": 0,
+                "snagging": 0,
+                "handover": 0,
+                "completed": 0,
+                "on_hold": 0,
+                "cancelled": 0,
             },
             "quotes": {"draft": 0, "approved": 0, "handed_off": 0},
             "value": {"quoted_value": 0.0, "approved_quoted_value": 0.0},

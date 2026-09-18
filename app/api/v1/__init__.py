@@ -26,6 +26,7 @@ from app.quotes.router import router as quotes_router
 from app.tasks.router import router as tasks_router
 from app.tenants.router import router as tenants_router
 from app.users.router import router as users_router
+from app.workflows.router import router as workflows_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(core_router)
@@ -47,3 +48,4 @@ api_router.include_router(quotes_router)
 api_router.include_router(tasks_router)
 api_router.include_router(tenants_router)
 api_router.include_router(users_router)
+api_router.include_router(workflows_router)

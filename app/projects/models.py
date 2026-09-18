@@ -5,6 +5,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.trades.catalogue import TRADE_KEYS
+from app.workflows.models import ProjectWorkflowSummary
 
 
 class ProjectStatus(str, Enum):
@@ -94,6 +95,12 @@ class ProjectOut(ProjectCreate):
     created_at: datetime
     quote_id: uuid.UUID | None = None
     assigned_user_id: uuid.UUID | None = None
+    # GeoCore Premium OS Plan 01 (Sprint 040) — the workflow-facing view
+    # of this project, alongside `status` above which stays present and
+    # correct unchanged throughout this migration period. Never optional:
+    # workflow_template_id/workflow_stage_id are NOT NULL as of this
+    # plan's migration, so every Project row has one.
+    workflow: ProjectWorkflowSummary
 
 
 class ProjectStatusUpdate(BaseModel):

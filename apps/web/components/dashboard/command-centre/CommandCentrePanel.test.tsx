@@ -5,7 +5,7 @@
  * value.
  */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearToken, setToken } from "@/lib/auth-storage";
@@ -20,6 +20,9 @@ function jsonResponse(body: unknown, status = 200) {
   } as Response;
 }
 
+// GeoCore Premium OS Plan 01 (Sprint 040, Task 9) — every fixture below
+// carries `pipeline_by_role` alongside the unchanged `pipeline`, matching
+// CommandCentreResponse's own dual-field shape.
 const FULL_STATS = {
   customers: 4,
   pipeline: {
@@ -30,6 +33,21 @@ const FULL_STATS = {
     fabricated: 0,
     installed: 0,
     complete: 0,
+  },
+  pipeline_by_role: {
+    lead: 2,
+    survey: 0,
+    quoted: 1,
+    approved: 0,
+    procurement: 0,
+    scheduled: 1,
+    in_progress: 0,
+    inspection: 0,
+    snagging: 0,
+    handover: 0,
+    completed: 0,
+    on_hold: 0,
+    cancelled: 0,
   },
   quotes: { draft: 1, approved: 2, handed_off: 1 },
   value: { quoted_value: 12500, approved_quoted_value: 9000 },
@@ -47,6 +65,21 @@ const EMPTY_STATS = {
     fabricated: 0,
     installed: 0,
     complete: 0,
+  },
+  pipeline_by_role: {
+    lead: 0,
+    survey: 0,
+    quoted: 0,
+    approved: 0,
+    procurement: 0,
+    scheduled: 0,
+    in_progress: 0,
+    inspection: 0,
+    snagging: 0,
+    handover: 0,
+    completed: 0,
+    on_hold: 0,
+    cancelled: 0,
   },
   quotes: { draft: 0, approved: 0, handed_off: 0 },
   value: { quoted_value: 0, approved_quoted_value: 0 },
@@ -83,7 +116,11 @@ describe("CommandCentrePanel — business command centre (Sprint 025)", () => {
       expect(screen.getByText("Business Command Centre")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Enquiry")).toBeInTheDocument();
+    // GeoCore Premium OS Plan 01 (Sprint 040, Task 9) — the Pipeline card
+    // now renders the 13 shared semantic roles, not the old 7-value
+    // stone-shaped status pipeline.
+    expect(screen.getByText("Lead")).toBeInTheDocument();
+    expect(screen.getByText("In Progress")).toBeInTheDocument();
     expect(screen.getByText("Handed off")).toBeInTheDocument();
     expect(screen.getByText("Quoted value")).toBeInTheDocument();
     expect(screen.getByText("£12,500")).toBeInTheDocument();
@@ -134,5 +171,38 @@ describe("CommandCentrePanel — business command centre (Sprint 025)", () => {
       expect(screen.queryByText(/couldn.t load the business command centre/i)).not.toBeInTheDocument();
     });
     expect(screen.getByText(/session/i)).toBeInTheDocument();
+  });
+
+  it("renders_every_semantic_role_even_when_zero_never_a_sparse_pipeline", async () => {
+    // GeoCore Premium OS Plan 01 (Sprint 040, Task 9) — all 13 roles
+    // always render, 0 if none, same never-sparse contract the old
+    // 7-value pipeline had.
+    fetchMock = vi.fn(async () => jsonResponse(EMPTY_STATS));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CommandCentrePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Business Command Centre")).toBeInTheDocument();
+    });
+
+    const pipelineCard = screen.getByText("Pipeline").closest(".rounded-2xl") as HTMLElement;
+    for (const label of [
+      "Lead",
+      "Survey",
+      "Quoted",
+      "Approved",
+      "Procurement",
+      "Scheduled",
+      "In Progress",
+      "Inspection",
+      "Snagging",
+      "Handover",
+      "Completed",
+      "On Hold",
+      "Cancelled",
+    ]) {
+      expect(within(pipelineCard).getByText(label)).toBeInTheDocument();
+    }
   });
 });

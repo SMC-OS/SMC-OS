@@ -4,6 +4,12 @@
  * tests/test_enquiry_conversion.py). Structural twin of
  * app/quotes/[id]/page.test.tsx (Sprint 020's quote-handoff frontend
  * contract).
+ *
+ * GeoCore Premium OS Plan 01 (Sprint 040, Task 8) reorganised this page
+ * into Project 360's tabs (Overview/Workflow/Schedule/Team/Tasks/
+ * Timeline) — every section below now finds its own tab first where one
+ * exists, and the old "Advance to next status" button/tests are replaced
+ * by the Workflow tab's real transition-engine-driven tests.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -49,6 +55,17 @@ vi.mock("@/components/auth/AuthProvider", () => ({
   }),
 }));
 
+function makeWorkflow(overrides: Record<string, unknown> = {}) {
+  return {
+    template_key: "general_v1",
+    template_name: "General / Custom Trade",
+    stage_key: "enquiry",
+    stage_label: "Enquiry",
+    role: "lead",
+    ...overrides,
+  };
+}
+
 function makeProject(overrides: Record<string, unknown> = {}) {
   return {
     id: PROJECT_ID,
@@ -59,6 +76,16 @@ function makeProject(overrides: Record<string, unknown> = {}) {
     status: "enquiry",
     assigned_user_id: null,
     created_at: new Date().toISOString(),
+    workflow: makeWorkflow(),
+    ...overrides,
+  };
+}
+
+function makeWorkflowDetail(overrides: Record<string, unknown> = {}) {
+  return {
+    ...makeWorkflow(),
+    is_terminal: false,
+    allowed_transitions: [],
     ...overrides,
   };
 }
@@ -116,11 +143,17 @@ let currentProjectOverrides: Record<string, unknown> = {};
 // Mutable per-test Appointment list fixture — read by the default
 // fetchMock's GET /appointments handler below.
 let currentAppointments: Record<string, unknown>[] = [];
+// Mutable per-test workflow detail/history fixtures — read by the default
+// fetchMock's GET /workflow and /workflow/history handlers below.
+let currentWorkflowDetail: Record<string, unknown> = makeWorkflowDetail();
+let currentWorkflowHistory: Record<string, unknown>[] = [];
 
 beforeEach(() => {
   currentRole = "Owner";
   currentProjectOverrides = {};
   currentAppointments = [];
+  currentWorkflowDetail = makeWorkflowDetail();
+  currentWorkflowHistory = [];
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
 
@@ -154,6 +187,18 @@ beforeEach(() => {
       return jsonResponse(
         makeProject({ ...currentProjectOverrides, assigned_user_id: body.assigned_user_id })
       );
+    }
+    if (
+      url.endsWith(`/projects/${PROJECT_ID}/workflow/transition`) &&
+      init?.method === "POST"
+    ) {
+      return jsonResponse(makeProject(currentProjectOverrides));
+    }
+    if (url.endsWith(`/projects/${PROJECT_ID}/workflow/history`)) {
+      return jsonResponse(currentWorkflowHistory);
+    }
+    if (url.endsWith(`/projects/${PROJECT_ID}/workflow`)) {
+      return jsonResponse(currentWorkflowDetail);
     }
     if (url.endsWith("/users")) {
       return jsonResponse([makeTeamMember()]);
@@ -230,6 +275,12 @@ describe("ProjectDetailPage — enquiry conversion (Sprint 021)", () => {
         init?.method === "POST"
       ) {
         return jsonResponse({ detail: "Conversion failed" }, 500);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow/history`)) {
+        return jsonResponse([]);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow`)) {
+        return jsonResponse(makeWorkflowDetail());
       }
       if (url.endsWith(`/projects/${PROJECT_ID}`)) {
         return jsonResponse(makeProject());
@@ -329,8 +380,13 @@ describe("ProjectDetailPage — enquiry conversion (Sprint 021)", () => {
 });
 
 describe("ProjectDetailPage — site visit scheduling (Sprint 022)", () => {
+  async function openScheduleTab() {
+    await userEvent.click(await screen.findByRole("tab", { name: /schedule/i }));
+  }
+
   it("lets_owner_or_staff_schedule_a_site_visit", async () => {
     render(<ProjectDetailPage />);
+    await openScheduleTab();
 
     const scheduleButton = await screen.findByRole("button", {
       name: /schedule site visit/i,
@@ -376,6 +432,12 @@ describe("ProjectDetailPage — site visit scheduling (Sprint 022)", () => {
       if (url.endsWith(`/projects/${PROJECT_ID}/appointments`)) {
         return jsonResponse([]);
       }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow/history`)) {
+        return jsonResponse([]);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow`)) {
+        return jsonResponse(makeWorkflowDetail());
+      }
       if (url.endsWith(`/projects/${PROJECT_ID}`)) {
         return jsonResponse(makeProject());
       }
@@ -383,6 +445,7 @@ describe("ProjectDetailPage — site visit scheduling (Sprint 022)", () => {
     });
 
     render(<ProjectDetailPage />);
+    await openScheduleTab();
 
     await userEvent.click(
       await screen.findByRole("button", { name: /schedule site visit/i })
@@ -416,27 +479,26 @@ describe("ProjectDetailPage — site visit scheduling (Sprint 022)", () => {
   it("shows_schedule_site_visit_for_staff", async () => {
     currentRole = "Staff";
     render(<ProjectDetailPage />);
+    await openScheduleTab();
 
     expect(
       await screen.findByRole("button", { name: /schedule site visit/i })
     ).toBeInTheDocument();
   });
 
-  it("hides_site_visits_section_from_user_without_owner_or_staff_role", async () => {
+  it("hides_site_visits_tab_from_user_without_owner_or_staff_role", async () => {
     currentRole = null;
     render(<ProjectDetailPage />);
 
     await screen.findByText("Riverside Kitchen Enquiry");
 
-    expect(screen.queryByText(/site visits/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /schedule site visit/i })
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /schedule/i })).not.toBeInTheDocument();
   });
 
   it("lets_owner_complete_a_scheduled_site_visit", async () => {
     currentAppointments = [makeAppointment()];
     render(<ProjectDetailPage />);
+    await openScheduleTab();
 
     const completeButton = await screen.findByRole("button", { name: /^complete$/i });
     await userEvent.click(completeButton);
@@ -472,6 +534,12 @@ describe("ProjectDetailPage — site visit scheduling (Sprint 022)", () => {
       if (url.endsWith(`/projects/${PROJECT_ID}/appointments`)) {
         return jsonResponse(currentAppointments);
       }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow/history`)) {
+        return jsonResponse([]);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow`)) {
+        return jsonResponse(makeWorkflowDetail());
+      }
       if (url.endsWith(`/projects/${PROJECT_ID}`)) {
         return jsonResponse(makeProject());
       }
@@ -479,6 +547,7 @@ describe("ProjectDetailPage — site visit scheduling (Sprint 022)", () => {
     });
 
     render(<ProjectDetailPage />);
+    await openScheduleTab();
 
     const completeButton = await screen.findByRole("button", { name: /^complete$/i });
     await userEvent.click(completeButton);
@@ -502,10 +571,15 @@ describe("ProjectDetailPage — site visit scheduling (Sprint 022)", () => {
   });
 });
 
-describe("ProjectDetailPage — project operations (Sprint 023)", () => {
+describe("ProjectDetailPage — team assignment (Sprint 023)", () => {
+  async function openTeamTab() {
+    await userEvent.click(await screen.findByRole("tab", { name: /^team$/i }));
+  }
+
   it("lets_owner_assign_a_staff_member_and_it_persists", async () => {
     currentProjectOverrides = { status: "booked" };
     render(<ProjectDetailPage />);
+    await openTeamTab();
 
     const select = await screen.findByLabelText(/assigned to/i);
     await waitFor(() => {
@@ -541,6 +615,12 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
       if (url.endsWith("/users")) {
         return jsonResponse([makeTeamMember()]);
       }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow/history`)) {
+        return jsonResponse([]);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow`)) {
+        return jsonResponse(makeWorkflowDetail());
+      }
       if (url.endsWith(`/projects/${PROJECT_ID}`)) {
         return jsonResponse(makeProject(currentProjectOverrides));
       }
@@ -548,6 +628,7 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
     });
 
     render(<ProjectDetailPage />);
+    await openTeamTab();
 
     const select = await screen.findByLabelText(/assigned to/i);
     await waitFor(() => {
@@ -575,8 +656,8 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
   it("shows_the_assign_control_only_for_owner", async () => {
     currentProjectOverrides = { status: "booked" };
     render(<ProjectDetailPage />);
+    await openTeamTab();
 
-    await screen.findByText("Project Operations");
     expect(await screen.findByLabelText(/assigned to/i)).toBeInTheDocument();
   });
 
@@ -584,8 +665,8 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
     currentRole = "Staff";
     currentProjectOverrides = { status: "booked" };
     render(<ProjectDetailPage />);
+    await openTeamTab();
 
-    await screen.findByText("Project Operations");
     expect(screen.queryByLabelText(/assigned to/i)).not.toBeInTheDocument();
   });
 
@@ -593,109 +674,178 @@ describe("ProjectDetailPage — project operations (Sprint 023)", () => {
     currentRole = "Staff";
     currentProjectOverrides = { status: "booked", assigned_user_id: null };
     render(<ProjectDetailPage />);
+    await openTeamTab();
 
     expect(await screen.findByText("Unassigned")).toBeInTheDocument();
   });
+});
 
-  it("shows_the_advance_button_for_owner_and_staff", async () => {
-    currentProjectOverrides = { status: "booked" };
+describe("ProjectDetailPage — Workflow tab (GeoCore Premium OS Plan 01, Sprint 040, Task 8)", () => {
+  async function openWorkflowTab() {
+    await userEvent.click(await screen.findByRole("tab", { name: /workflow/i }));
+  }
+
+  it("shows_the_current_stage_and_next_step_actions_for_owner_and_staff", async () => {
+    currentWorkflowDetail = makeWorkflowDetail({
+      allowed_transitions: [
+        { stage_key: "site_visit", stage_label: "Site Visit", role: "survey", blocked_requirements: [] },
+      ],
+    });
     render(<ProjectDetailPage />);
+    await openWorkflowTab();
 
+    expect((await screen.findAllByText("Enquiry")).length).toBeGreaterThan(0);
     expect(
-      await screen.findByRole("button", { name: /advance to templated/i })
+      await screen.findByRole("button", { name: /move to site visit/i })
     ).toBeInTheDocument();
 
     currentRole = "Staff";
     cleanup();
     render(<ProjectDetailPage />);
+    await openWorkflowTab();
     expect(
-      await screen.findByRole("button", { name: /advance to templated/i })
+      await screen.findByRole("button", { name: /move to site visit/i })
     ).toBeInTheDocument();
   });
 
-  it("hides_the_advance_button_from_a_user_without_owner_or_staff_role", async () => {
+  it("hides_transition_actions_from_a_user_without_owner_or_staff_role", async () => {
     currentRole = null;
-    currentProjectOverrides = { status: "booked" };
+    currentWorkflowDetail = makeWorkflowDetail({
+      allowed_transitions: [
+        { stage_key: "site_visit", stage_label: "Site Visit", role: "survey", blocked_requirements: [] },
+      ],
+    });
     render(<ProjectDetailPage />);
+    await openWorkflowTab();
 
-    await screen.findByText("Riverside Kitchen Enquiry");
-
+    await waitFor(() => {
+      expect(screen.getAllByText("Enquiry").length).toBeGreaterThan(0);
+    });
     expect(
-      screen.queryByRole("button", { name: /advance to/i })
+      screen.queryByRole("button", { name: /move to/i })
     ).not.toBeInTheDocument();
   });
 
-  it("advancing_status_updates_the_badge_and_persists", async () => {
-    currentProjectOverrides = { status: "booked" };
+  it("moving_to_the_next_stage_updates_the_header_badge_and_persists", async () => {
+    currentWorkflowDetail = makeWorkflowDetail({
+      allowed_transitions: [
+        { stage_key: "site_visit", stage_label: "Site Visit", role: "survey", blocked_requirements: [] },
+      ],
+    });
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
 
-      if (url.endsWith(`/projects/${PROJECT_ID}/status`) && init?.method === "PATCH") {
-        return jsonResponse(makeProject({ status: "templated" }));
+      if (
+        url.endsWith(`/projects/${PROJECT_ID}/workflow/transition`) &&
+        init?.method === "POST"
+      ) {
+        return jsonResponse(
+          makeProject({
+            workflow: makeWorkflow({ stage_key: "site_visit", stage_label: "Site Visit", role: "survey" }),
+          })
+        );
       }
-      if (url.endsWith("/users")) {
-        return jsonResponse([makeTeamMember()]);
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow/history`)) {
+        return jsonResponse([]);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow`)) {
+        return jsonResponse(currentWorkflowDetail);
       }
       if (url.endsWith(`/projects/${PROJECT_ID}`)) {
-        return jsonResponse(makeProject(currentProjectOverrides));
+        return jsonResponse(makeProject());
       }
       throw new Error(`Unexpected fetch in test: ${url}`);
     });
 
     render(<ProjectDetailPage />);
+    await openWorkflowTab();
 
-    const advanceButton = await screen.findByRole("button", { name: /advance to templated/i });
-    await userEvent.click(advanceButton);
+    const moveButton = await screen.findByRole("button", { name: /move to site visit/i });
+    await userEvent.click(moveButton);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/projects/${PROJECT_ID}/status`),
+        expect.stringContaining(`/projects/${PROJECT_ID}/workflow/transition`),
         expect.objectContaining({
-          method: "PATCH",
-          body: JSON.stringify({ status: "templated" }),
+          method: "POST",
+          body: JSON.stringify({ target_stage_key: "site_visit", reason: null }),
         })
       );
     });
 
-    expect(await screen.findByText("Templated")).toBeInTheDocument();
+    // The server's returned Project is authoritative — the header badge
+    // now shows the new stage.
+    expect(await screen.findAllByText("Site Visit")).not.toHaveLength(0);
   });
 
-  it("keeps_the_current_status_and_shows_an_error_when_advancing_fails", async () => {
-    currentProjectOverrides = { status: "booked" };
+  it("keeps_the_current_stage_and_shows_an_error_when_a_transition_fails", async () => {
+    currentWorkflowDetail = makeWorkflowDetail({
+      allowed_transitions: [
+        { stage_key: "site_visit", stage_label: "Site Visit", role: "survey", blocked_requirements: [] },
+      ],
+    });
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
 
-      if (url.endsWith(`/projects/${PROJECT_ID}/status`) && init?.method === "PATCH") {
-        return jsonResponse({ detail: "Invalid status transition" }, 409);
+      if (
+        url.endsWith(`/projects/${PROJECT_ID}/workflow/transition`) &&
+        init?.method === "POST"
+      ) {
+        return jsonResponse({ detail: "Cannot move this project" }, 409);
       }
-      if (url.endsWith("/users")) {
-        return jsonResponse([makeTeamMember()]);
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow/history`)) {
+        return jsonResponse([]);
+      }
+      if (url.endsWith(`/projects/${PROJECT_ID}/workflow`)) {
+        return jsonResponse(currentWorkflowDetail);
       }
       if (url.endsWith(`/projects/${PROJECT_ID}`)) {
-        return jsonResponse(makeProject(currentProjectOverrides));
+        return jsonResponse(makeProject());
       }
       throw new Error(`Unexpected fetch in test: ${url}`);
     });
 
     render(<ProjectDetailPage />);
+    await openWorkflowTab();
 
-    const advanceButton = await screen.findByRole("button", { name: /advance to templated/i });
-    await userEvent.click(advanceButton);
+    const moveButton = await screen.findByRole("button", { name: /move to site visit/i });
+    await userEvent.click(moveButton);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/projects/${PROJECT_ID}/status`),
-        expect.objectContaining({ method: "PATCH" })
+        expect.stringContaining(`/projects/${PROJECT_ID}/workflow/transition`),
+        expect.objectContaining({ method: "POST" })
       );
     });
 
-    // A failed transition must never advance the displayed status.
-    expect(screen.queryByText("Templated")).not.toBeInTheDocument();
-    expect(await screen.findByText("Booked")).toBeInTheDocument();
-    expect(await screen.findByText(/failed with 409/i)).toBeInTheDocument();
+    // A failed transition must never advance the displayed stage.
+    expect(screen.getAllByText("Enquiry").length).toBeGreaterThan(0);
+    expect(await screen.findByText(/isn't available right now/i)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /advance to templated/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /move to site visit/i })).toBeEnabled();
     });
+  });
+
+  it("shows_why_a_stage_is_blocked_and_disables_moving_to_it", async () => {
+    currentWorkflowDetail = makeWorkflowDetail({
+      allowed_transitions: [
+        {
+          stage_key: "booked",
+          stage_label: "Booked",
+          role: "approved",
+          blocked_requirements: [
+            { code: "assigned_user", message: "This project has no assigned team member yet" },
+          ],
+        },
+      ],
+    });
+    render(<ProjectDetailPage />);
+    await openWorkflowTab();
+
+    expect(
+      await screen.findByText(/this project has no assigned team member yet/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /move to booked/i })).toBeDisabled();
   });
 });

@@ -91,7 +91,7 @@ def update_project_status(
 ):
     try:
         project = project_service.update_status(
-            db, project_id, current_user.tenant_id, data.status
+            db, project_id, current_user.tenant_id, data.status, actor_user_id=current_user.id
         )
     except InvalidProjectTransitionError:
         raise HTTPException(

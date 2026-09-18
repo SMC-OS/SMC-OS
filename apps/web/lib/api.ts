@@ -58,6 +58,7 @@ import type {
   TenantProfileUpdate,
 } from "@/types/tenant";
 import type { TeamMemberOut } from "@/types/user";
+import type { ProjectWorkflowDetail, WorkflowHistoryEntry } from "@/types/workflow";
 import { clearToken, getToken } from "@/lib/auth-storage";
 import { resolveApiBaseUrl } from "@/lib/runtime-config";
 
@@ -485,6 +486,28 @@ export const api = {
     request<AppointmentOut>(`/appointments/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status: "cancelled" satisfies AppointmentTransitionTarget }),
+    }),
+
+  // GeoCore Premium OS Plan 01 (Sprint 040, Task 8) — Project 360's
+  // Workflow/Timeline tabs. getProjectWorkflow's `allowed_transitions`
+  // already carries each option's own unmet gate requirements
+  // (blocked_requirements), so the UI never needs a second round trip to
+  // explain why a listed move isn't reachable yet.
+  getProjectWorkflow: (projectId: string) =>
+    request<ProjectWorkflowDetail>(`/projects/${projectId}/workflow`),
+
+  getProjectWorkflowHistory: (projectId: string) =>
+    request<WorkflowHistoryEntry[]>(`/projects/${projectId}/workflow/history`),
+
+  // One endpoint for every project's advancement action regardless of
+  // trade or legacy binding (Hold/Resume/Cancel included — the caller
+  // just names the target stage key, e.g. "on_hold"). Returns the
+  // updated Project, same authoritative-response contract as
+  // updateProjectStatus/assignProject above.
+  transitionProjectWorkflow: (projectId: string, targetStageKey: string, reason?: string | null) =>
+    request<Project>(`/projects/${projectId}/workflow/transition`, {
+      method: "POST",
+      body: JSON.stringify({ target_stage_key: targetStageKey, reason: reason ?? null }),
     }),
 
   // AI Quotation Generator v1: extraction only, pre-fills the manual form

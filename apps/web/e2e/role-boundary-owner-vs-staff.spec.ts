@@ -142,7 +142,8 @@ test("a_staff_session_sees_owner_only_controls_absent_not_merely_rejected", asyn
   // apps/web/app/projects/[id]/page.tsx's canAssign = role === "Owner") ----
   await page.goto(`/projects/${projectId}`);
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText("Project Operations", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: /^team$/i }).click();
+  await expect(page.getByText("Unassigned", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Assigned to")).not.toBeVisible();
 
   await api.dispose();

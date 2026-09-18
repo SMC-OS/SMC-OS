@@ -175,6 +175,9 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await expect(page.getByText("Enquiry", { exact: true })).toBeVisible();
 
   // ==== 5. Schedule and complete a site visit ====
+  // GeoCore Premium OS Plan 01 (Sprint 040, Task 8) — site visits live on
+  // their own Schedule tab now, not inline on the page.
+  await page.getByRole("tab", { name: /schedule/i }).click();
   await expect(page.getByText("Site Visits", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Schedule Site Visit" }).click();
   await page.getByLabel("Date & time").fill("2030-06-15T10:30");
@@ -226,29 +229,58 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   const handoff = await handoffResponse;
   expect(handoff.status()).toBe(200);
   const handedOffProject = await handoff.json();
+  // The legacy `status` field still says "booked" (unchanged, pre-Plan-01
+  // behaviour) - GeoCore Premium OS Plan 01 (Sprint 040) binds every new
+  // project's own trade workflow independently, always starting at that
+  // workflow's first ("Enquiry") stage regardless of `status`, proven via
+  // the real API here and via the real UI below.
   expect(handedOffProject.status).toBe("booked");
-  await expect(page.getByText("Booked", { exact: true })).toBeVisible();
+  expect(handedOffProject.workflow.template_key).toBe("stone_v1");
+  expect(handedOffProject.workflow.stage_key).toBe("enquiry");
 
-  // ==== 8. Assignment + status operations on the handed-off Project ====
+  // ==== 8. Assignment + the full trade workflow, through Project 360's
+  // Team and Workflow tabs (Task 8) ====
   await page.goto(`/projects/${handedOffProject.id}`);
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText("Project Operations", { exact: true })).toBeVisible();
+  await expect(page.getByText("Enquiry", { exact: true }).first()).toBeVisible();
+
+  await page.getByRole("tab", { name: /^team$/i }).click();
   const assignResponse = page.waitForResponse(
     (res) => res.url().endsWith(`/api/v1/projects/${handedOffProject.id}/assign`) && res.request().method() === "PATCH"
   );
   await page.getByLabel("Assigned to").selectOption({ label: STAFF_NAME });
   await assignResponse;
 
-  for (const nextLabel of ["Templated", "Fabricated", "Installed", "Complete"]) {
-    const advanceButton = page.getByRole("button", { name: `Advance to ${nextLabel}` });
-    await expect(advanceButton).toBeVisible();
-    const statusResponse = page.waitForResponse(
-      (res) => res.url().endsWith(`/api/v1/projects/${handedOffProject.id}/status`) && res.request().method() === "PATCH"
+  // The stone_v1 workflow's own real sequence (app/workflows/catalogue.py)
+  // — every stage this Stone & Worktops job actually moves through, driven
+  // entirely by POST /workflow/transition via the real UI, never the
+  // legacy PATCH /status endpoint.
+  await page.getByRole("tab", { name: /workflow/i }).click();
+  for (const stageLabel of [
+    "Measure / Site Visit",
+    "Quote",
+    "Approved",
+    "Deposit",
+    "Material Ordered / Reserved",
+    "Template",
+    "Fabrication",
+    "QC",
+    "Installation",
+    "Snagging",
+    "Complete",
+  ]) {
+    const moveButton = page.getByRole("button", { name: `Move to ${stageLabel}` });
+    await expect(moveButton).toBeVisible();
+    const transitionResponse = page.waitForResponse(
+      (res) =>
+        res.url().endsWith(`/api/v1/projects/${handedOffProject.id}/workflow/transition`) &&
+        res.request().method() === "POST"
     );
-    await advanceButton.click();
-    await statusResponse;
-    await expect(page.getByText(nextLabel, { exact: true })).toBeVisible();
+    await moveButton.click();
+    await transitionResponse;
   }
+  // Complete is terminal — no further move is offered.
+  await expect(page.getByText(/reached a terminal stage/i)).toBeVisible();
 
   // ==== 9. Upload a Document to the Customer ====
   await page.goto(`/customers/${customerId}`);

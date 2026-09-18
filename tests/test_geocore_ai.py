@@ -202,3 +202,37 @@ def test_context_is_bounded_and_tenant_scoped(db, auth_headers, client):
     # so, so a model cannot read it as income.
     assert "quoted_value_recent" in summary["quotes"]
     assert "revenue" not in str(summary)
+
+
+def test_context_groups_projects_by_semantic_role_with_trade_stage_labels(db, auth_headers, client):
+    """GeoCore Premium OS Plan 01 (Sprint 040, Task 7) — additive: the
+    existing by_status/recent_project_names shape stays exactly as it
+    was (proven above), and `projects.by_role` plus `recent_projects`
+    (name + workflow/stage labels, still no customer PII) are new."""
+    tenant_id = uuid.UUID(client.get("/api/v1/auth/me", headers=auth_headers).json()["tenant_id"])
+    name = f"Pytest Task7 AI Context {uuid.uuid4().hex[:8]}"
+    created = client.post(
+        "/api/v1/projects", json={"name": name, "project_type": "electrical"}, headers=auth_headers
+    )
+    assert created.status_code == 201
+    project_id = created.json()["id"]
+
+    try:
+        summary = ai_context.build(db, tenant_id)
+
+        assert "by_role" in summary["projects"]
+        assert summary["projects"]["by_role"].get("lead", 0) >= 1
+
+        matches = [p for p in summary["recent_projects"] if p["name"] == name]
+        assert len(matches) == 1
+        assert matches[0]["workflow_name"] == "Electrical"
+        assert matches[0]["stage_label"] == "Enquiry"
+        assert "email" not in str(matches[0]).lower()
+    finally:
+        from sqlalchemy import delete
+
+        from app.database.models import ActivityLog, Project
+
+        db.execute(delete(Project).where(Project.id == uuid.UUID(project_id)))
+        db.execute(delete(ActivityLog).where(ActivityLog.description == name))
+        db.commit()

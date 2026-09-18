@@ -157,6 +157,22 @@ class AutomationDispatcher:
                 subject=subject,
             )
 
+    def dispatch_project_workflow_transitioned(self, db: Session, project, *, to_stage_key: str) -> None:
+        """GeoCore Premium OS Plan 01 (Sprint 040, Task 5) — fired after a
+        trade-adaptive workflow transition (forward move, Hold, Resume or
+        Cancel) commits. Subject fields stay legacy-shaped for now
+        (project.status is untouched by a workflow-engine move on a
+        non-legacy project) — Task 7 is what teaches project_subject to
+        also carry workflow_stage_key/workflow_role, without changing this
+        dispatch call's own shape."""
+        self._dispatch_with_discriminator(
+            db,
+            tenant_id=project.tenant_id,
+            trigger_type="project.workflow_transitioned",
+            subject=self._project_subject(db, project),
+            discriminator=to_stage_key,
+        )
+
     def _dispatch_with_discriminator(
         self, db: Session, *, tenant_id, trigger_type: str, subject: dict, discriminator: str
     ) -> None:

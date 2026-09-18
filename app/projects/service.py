@@ -16,6 +16,8 @@ from app.customers.models import CustomerCreate
 from app.projects.models import ProjectCreate, ProjectStatus, ProjectUpdate
 from app.database import crud
 from app.database.models import Customer, Project
+from app.workflows import service as workflow_service
+from app.workflows.service import resolve_initial_binding
 
 
 class CustomerNotFoundError(Exception):
@@ -68,6 +70,12 @@ class ProjectService:
         ) is None:
             raise CustomerNotFoundError(data.customer_id)
 
+        # GeoCore Premium OS Plan 01 (Sprint 040) — every new project binds
+        # to the system workflow for its own trade (never guessed as
+        # stone) at that workflow's first ("Enquiry") stage, in the same
+        # INSERT as project creation itself.
+        workflow_template_id, workflow_stage_id = resolve_initial_binding(db, data.project_type)
+
         project = crud.create_project(
             db,
             id=uuid.uuid4(),
@@ -85,6 +93,8 @@ class ProjectService:
             start_date=data.start_date,
             target_completion_date=data.target_completion_date,
             estimated_value=data.estimated_value,
+            workflow_template_id=workflow_template_id,
+            workflow_stage_id=workflow_stage_id,
         )
         # Sprint 004 established this pattern for customers — the backend
         # logs its own ActivityEvent, replacing a standalone frontend call.
@@ -127,14 +137,38 @@ class ProjectService:
         return crud.update_project(db, project_id, tenant_id, changes)
 
     def update_status(
-        self, db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID, status: ProjectStatus
+        self,
+        db: Session,
+        project_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        status: ProjectStatus,
+        actor_user_id: uuid.UUID | None = None,
     ) -> Project | None:
         """Sprint 023 (docs/SPRINTS/sprint-023.md §4): only the exact next
         value in `_STATUS_SEQUENCE` is accepted — a repeat, a skip, any
         backward move, or any transition from the terminal "complete"
         status raises InvalidProjectTransitionError. The status write and
         its PROJECT_STATUS_CHANGED activity are one transaction, same
-        caller-owned-transaction pattern as Sprint 021/022."""
+        caller-owned-transaction pattern as Sprint 021/022.
+
+        GeoCore Premium OS Plan 01 (Sprint 040, Task 5) — this endpoint
+        keeps working for every project exactly as before (repository
+        discovery found the entire existing regression suite, the
+        frontend and every E2E journey drive `status` through this
+        endpoint regardless of trade, and Plan 01's own dual-field
+        compatibility rule requires `status` to stay correct for the
+        whole migration period, not just for legacy_v1 rows). The one
+        addition: for a project still bound to legacy_v1 specifically —
+        whose stage keys are, by construction, exactly the seven
+        ProjectStatus values — this also moves `ProjectOut.workflow` to
+        the matching stage in the same transaction and records a normal
+        ProjectWorkflowHistory row, so a legacy project's workflow view
+        and Timeline never drift from its own `status`. A project bound
+        to a real trade workflow has no such 1:1 key mapping, so its
+        `workflow` stays exactly as the new
+        POST /projects/{id}/workflow/transition endpoint last left it —
+        `status` and `workflow` are two independent, equally valid views
+        during this rollout, exactly like `ProjectOut`'s own dual fields."""
         project = crud.get_project_by_id(db, project_id, tenant_id)
         if project is None:
             return None
@@ -154,10 +188,42 @@ class ProjectService:
         if status != next_status:
             raise InvalidProjectTransitionError(previous_status, status.value)
 
+        is_legacy = workflow_service.is_legacy_binding(db, project)
+        from_stage = (
+            crud.get_workflow_stage_by_key(db, project.workflow_template_id, previous_status)
+            if is_legacy
+            else None
+        )
+        to_stage = (
+            crud.get_workflow_stage_by_key(db, project.workflow_template_id, status.value)
+            if is_legacy
+            else None
+        )
+
         try:
             updated = crud.update_project_status(
                 db, project_id, tenant_id, status.value, commit=False
             )
+            if is_legacy and to_stage is not None:
+                crud.update_project_workflow(
+                    db,
+                    project_id,
+                    tenant_id,
+                    workflow_stage_id=to_stage.id,
+                    workflow_previous_active_stage_id=project.workflow_previous_active_stage_id,
+                    commit=False,
+                )
+                crud.create_project_workflow_history(
+                    db,
+                    id=uuid.uuid4(),
+                    tenant_id=tenant_id,
+                    project_id=project_id,
+                    from_stage_id=from_stage.id if from_stage else None,
+                    to_stage_id=to_stage.id,
+                    actor_user_id=actor_user_id,
+                    reason=None,
+                    commit=False,
+                )
             activity_service.log(
                 ActivityEventCreate(
                     type=ActivityType.PROJECT_STATUS_CHANGED,

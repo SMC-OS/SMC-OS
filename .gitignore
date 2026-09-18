@@ -75,3 +75,6 @@ Thumbs.db
 *.swp
 *.swo
 *.pem
+
+# ---- Isolated agent worktrees ----
+.claude/worktrees/

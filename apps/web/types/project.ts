@@ -1,3 +1,5 @@
+import type { ProjectWorkflowSummary } from "@/types/workflow";
+
 export const PROJECT_STATUSES = [
   "enquiry",
   "quoted",
@@ -57,4 +59,9 @@ export interface Project extends ProjectCreate {
   status: ProjectStatus;
   created_at: string;
   assigned_user_id: string | null;
+  // GeoCore Premium OS Plan 01 (Sprint 040) — the workflow-facing view of
+  // this project, alongside `status` above which stays present and
+  // correct unchanged throughout this migration period (see
+  // app/projects/models.py's ProjectOut for the backend's own reasoning).
+  workflow: ProjectWorkflowSummary;
 }

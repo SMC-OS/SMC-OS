@@ -47,6 +47,24 @@ TRADES: tuple[Trade, ...] = (
     Trade("electrical", "Electrical"),
     Trade("carpentry", "Carpentry & Joinery"),
     Trade("stone", "Stone & Worktops", default_quote_kind="stone"),
+    # GeoCore Premium OS, Plan 01 Task 1 — the expanded specialist trade
+    # library. New stable keys only; nothing above this line is renamed,
+    # reordered or removed.
+    Trade("heating_hvac", "Heating / HVAC"),
+    Trade("tiling", "Tiling"),
+    Trade("plastering_rendering", "Plastering & Rendering"),
+    Trade("brickwork_masonry", "Brickwork & Masonry"),
+    Trade("groundworks", "Groundworks"),
+    Trade("drainage", "Drainage"),
+    Trade("windows_doors", "Windows & Doors"),
+    Trade("glazing", "Glazing"),
+    Trade("landscaping", "Landscaping"),
+    Trade("fencing", "Fencing"),
+    Trade("demolition_stripout", "Demolition / Strip-Out"),
+    Trade("insulation", "Insulation"),
+    Trade("steelwork", "Structural Steelwork"),
+    Trade("scaffolding", "Scaffolding"),
+    Trade("solar_renewables", "Solar & Renewables"),
     Trade("other", "Other"),
 )
 

@@ -42,8 +42,20 @@ def build(db: Session, tenant_id: uuid.UUID) -> dict:
         by_status[quote.status] = by_status.get(quote.status, 0) + 1
 
     project_status: dict[str, int] = {}
+    # GeoCore Premium OS Plan 01 (Sprint 040, Task 7) — the semantic-role
+    # sibling of project_status above, same rationale as the dashboard's
+    # PipelineRoleCounts: a stone project on "Fabrication" and an
+    # electrical one on "First Fix" both count under `in_progress`, so a
+    # question like "what's in progress right now" is answerable across
+    # every trade in one number, not one per trade. `project.workflow` is
+    # already-loaded ORM data (no extra query), and its `role`/`stage_label`
+    # are stable machine/display strings, not PII.
+    project_role: dict[str, int] = {}
     for project in projects:
         project_status[project.status] = project_status.get(project.status, 0) + 1
+        workflow = project.workflow
+        if workflow is not None:
+            project_role[workflow["role"]] = project_role.get(workflow["role"], 0) + 1
 
     return {
         "customers": crud.count_customers(db, tenant_id),
@@ -56,12 +68,31 @@ def build(db: Session, tenant_id: uuid.UUID) -> dict:
             # here in the key name so a model cannot read it as income.
             "quoted_value_recent": round(sum(q.total or 0 for q in quotes), 2),
         },
-        "projects": {"total_recent": len(projects), "by_status": project_status},
+        "projects": {
+            "total_recent": len(projects),
+            "by_status": project_status,
+            "by_role": project_role,
+        },
         # Titles only. Deliberately no customer names, emails, phone
-        # numbers or addresses — see rule 2 above.
+        # numbers or addresses — see rule 2 above. Each project headline
+        # now also carries its own trade workflow and stage label (e.g.
+        # "Fabrication" on the "Stone & Worktops" workflow) — still just
+        # names and machine-defined labels, no new PII.
         "recent_quote_titles": [
             q.title for q in quotes[:_HEADLINE_LIMIT] if q.title
         ],
         "recent_project_names": [p.name for p in projects[:_HEADLINE_LIMIT]],
+        # Additive alongside recent_project_names above (never replacing
+        # it — an existing consumer of the bare-name list keeps working
+        # unchanged): the same headline projects, each now also carrying
+        # its own trade workflow name and current stage label.
+        "recent_projects": [
+            {
+                "name": project.name,
+                "workflow_name": project.workflow["template_name"] if project.workflow else None,
+                "stage_label": project.workflow["stage_label"] if project.workflow else None,
+            }
+            for project in projects[:_HEADLINE_LIMIT]
+        ],
         "open_task_titles": [t.title for t in tasks],
     }
