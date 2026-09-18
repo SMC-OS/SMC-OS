@@ -64,9 +64,13 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
-    op.create_index("ix_pmr_tenant_id", "project_material_requirements", ["tenant_id"])
-    op.create_index("ix_pmr_project_id", "project_material_requirements", ["project_id"])
-    op.create_index("ix_pmr_status", "project_material_requirements", ["status"])
+    op.create_index(
+        "ix_project_material_requirements_tenant_id", "project_material_requirements", ["tenant_id"]
+    )
+    op.create_index(
+        "ix_project_material_requirements_project_id", "project_material_requirements", ["project_id"]
+    )
+    op.create_index("ix_project_material_requirements_status", "project_material_requirements", ["status"])
 
     op.create_table(
         "tenant_supplier_accounts",
@@ -204,9 +208,13 @@ def upgrade() -> None:
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
-    op.create_index("ix_pma_tenant_id", "project_material_allocations", ["tenant_id"])
-    op.create_index("ix_pma_project_id", "project_material_allocations", ["project_id"])
-    op.create_index("ix_pma_material_requirement_id", "project_material_allocations", ["material_requirement_id"])
+    op.create_index("ix_project_material_allocations_tenant_id", "project_material_allocations", ["tenant_id"])
+    op.create_index("ix_project_material_allocations_project_id", "project_material_allocations", ["project_id"])
+    op.create_index(
+        "ix_project_material_allocations_material_requirement_id",
+        "project_material_allocations",
+        ["material_requirement_id"],
+    )
 
     # Additive linkage from the Plan 04 cost ledger to the PO/PO-item that
     # created a committed cost entry — see app/financials/service.py and
@@ -233,9 +241,11 @@ def downgrade() -> None:
     op.drop_column("project_cost_entries", "purchase_order_item_id")
     op.drop_column("project_cost_entries", "purchase_order_id")
 
-    op.drop_index("ix_pma_material_requirement_id", table_name="project_material_allocations")
-    op.drop_index("ix_pma_project_id", table_name="project_material_allocations")
-    op.drop_index("ix_pma_tenant_id", table_name="project_material_allocations")
+    op.drop_index(
+        "ix_project_material_allocations_material_requirement_id", table_name="project_material_allocations"
+    )
+    op.drop_index("ix_project_material_allocations_project_id", table_name="project_material_allocations")
+    op.drop_index("ix_project_material_allocations_tenant_id", table_name="project_material_allocations")
     op.drop_table("project_material_allocations")
 
     op.drop_index("ix_purchase_receipt_items_purchase_order_item_id", table_name="purchase_receipt_items")
@@ -261,7 +271,7 @@ def downgrade() -> None:
     op.drop_index("ix_tenant_supplier_accounts_tenant_id", table_name="tenant_supplier_accounts")
     op.drop_table("tenant_supplier_accounts")
 
-    op.drop_index("ix_pmr_status", table_name="project_material_requirements")
-    op.drop_index("ix_pmr_project_id", table_name="project_material_requirements")
-    op.drop_index("ix_pmr_tenant_id", table_name="project_material_requirements")
+    op.drop_index("ix_project_material_requirements_status", table_name="project_material_requirements")
+    op.drop_index("ix_project_material_requirements_project_id", table_name="project_material_requirements")
+    op.drop_index("ix_project_material_requirements_tenant_id", table_name="project_material_requirements")
     op.drop_table("project_material_requirements")
