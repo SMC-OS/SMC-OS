@@ -25,7 +25,10 @@ from app.automations.subjects import (
     cost_entry_subject,
     customer_subject,
     margin_risk_subject,
+    material_allocation_subject,
+    material_requirement_subject,
     project_subject,
+    purchase_order_subject,
     quote_subject,
     variation_subject,
 )
@@ -257,6 +260,58 @@ class AutomationDispatcher:
                 forecast_margin_percent=forecast_margin_percent,
                 current_contract_value=current_contract_value,
             ),
+        )
+
+    # --- Procurement + materials operations (GeoCore Premium OS Plan 05, Sprint 044) ---
+
+    def dispatch_material_requirement_created(self, db: Session, requirement, project) -> None:
+        self._dispatch(
+            db,
+            tenant_id=requirement.tenant_id,
+            trigger_type="material_requirement.created",
+            subject=material_requirement_subject(requirement, project_name=project.name),
+        )
+
+    def dispatch_purchase_order_approved(self, db: Session, purchase_order, project_name: str | None) -> None:
+        self._dispatch(
+            db,
+            tenant_id=purchase_order.tenant_id,
+            trigger_type="purchase_order.approved",
+            subject=purchase_order_subject(purchase_order, project_name=project_name),
+        )
+
+    def dispatch_purchase_order_ordered(self, db: Session, purchase_order, project_name: str | None) -> None:
+        self._dispatch(
+            db,
+            tenant_id=purchase_order.tenant_id,
+            trigger_type="purchase_order.ordered",
+            subject=purchase_order_subject(purchase_order, project_name=project_name),
+        )
+
+    def dispatch_purchase_order_partially_received(
+        self, db: Session, purchase_order, project_name: str | None
+    ) -> None:
+        self._dispatch(
+            db,
+            tenant_id=purchase_order.tenant_id,
+            trigger_type="purchase_order.partially_received",
+            subject=purchase_order_subject(purchase_order, project_name=project_name),
+        )
+
+    def dispatch_purchase_order_received(self, db: Session, purchase_order, project_name: str | None) -> None:
+        self._dispatch(
+            db,
+            tenant_id=purchase_order.tenant_id,
+            trigger_type="purchase_order.received",
+            subject=purchase_order_subject(purchase_order, project_name=project_name),
+        )
+
+    def dispatch_material_allocated(self, db: Session, allocation, project_name: str | None) -> None:
+        self._dispatch(
+            db,
+            tenant_id=allocation.tenant_id,
+            trigger_type="material.allocated",
+            subject=material_allocation_subject(allocation, project_name=project_name),
         )
 
 

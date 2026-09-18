@@ -1687,6 +1687,18 @@ class ProjectCostEntry(Base):
     cost_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # GeoCore Premium OS Plan 05 (Sprint 044) — set only for a cost entry
+    # created by procurement (PO approval/receipt), never by a manually
+    # added cost. This is the linkage app/financials/service.py's
+    # idempotency guard checks before creating another committed-cost row
+    # for the same PO item — see ADR-050.
+    purchase_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_orders.id"), nullable=True, index=True
+    )
+    purchase_order_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_order_items.id"), nullable=True, index=True
+    )
+
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
@@ -1778,5 +1790,274 @@ class VariationItem(Base):
     unit: Mapped[str] = mapped_column(String, nullable=False, server_default="item")
     unit_price: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
     line_total: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProjectMaterialRequirement(Base):
+    """GeoCore Premium OS Plan 05 (Sprint 044) — a project's need for a
+    material, tracked independently of whether it has been ordered yet.
+
+    Supports three shapes of material identity, all optional: a Plan 03
+    catalogue surface/variant (stone), a free-text `custom_material_name`
+    (construction), or neither yet (a placeholder requirement a user
+    fills in later). `source_type`/`source_id` record a deliberate
+    conversion from a quote or variation line (Task 2) — the same
+    polymorphic-origin convention `Task`/`Notification` already use —
+    never an automatic one: nothing creates a requirement without an
+    explicit user action.
+    """
+
+    __tablename__ = "project_material_requirements"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+    )
+
+    catalogue_surface_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_surfaces.id"), nullable=True
+    )
+    catalogue_variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_surface_variants.id"), nullable=True
+    )
+    custom_material_name: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    description: Mapped[str] = mapped_column(String, nullable=False)
+    material_family: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    required_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String, nullable=True)
+    required_by_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    preferred_supplier_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_suppliers.id"), nullable=True
+    )
+
+    # Stable machine values (app/procurement/models.py), same plain-
+    # String-no-DB-enum convention as ProjectCostEntry.category/state.
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="required", index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    source_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TenantSupplierAccount(Base):
+    """GeoCore Premium OS Plan 05 — a tenant's own private commercial
+    relationship with a global (`catalogue_suppliers`) supplier: account
+    reference, contacts, payment terms. Mirrors `TenantCatalogueOverride`'s
+    "identity is global, commercial detail is tenant-private" split
+    exactly (Task 5/6) — never a second Supplier identity table. Unlike
+    `TenantCatalogueOverride`, both `tenant_id` and `supplier_id` here are
+    always required, so uniqueness is a real DB constraint rather than a
+    service-layer-enforced one."""
+
+    __tablename__ = "tenant_supplier_accounts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "supplier_id", name="uq_tenant_supplier_accounts_tenant_supplier"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    supplier_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_suppliers.id"), nullable=False, index=True
+    )
+
+    account_reference: Mapped[str | None] = mapped_column(String, nullable=True)
+    contact_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    payment_terms: Mapped[str | None] = mapped_column(String, nullable=True)
+    delivery_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    private_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PurchaseOrder(Base):
+    """GeoCore Premium OS Plan 05 — a purchase order. `reference` is
+    human-readable and sequential **per tenant** (`PO-001`, `PO-002`, …),
+    not per project — unlike a Variation's per-project `V-001` numbering,
+    a PO is a tenant-level commercial document that may or may not be
+    tied to one project (`project_id` is nullable; a general stock/
+    workshop purchase has none). See ADR-050 for the full reasoning.
+
+    `status` follows Task 8's lock rule: `draft` is freely editable;
+    `approved`/`ordered`/`partially_received`/`received` lock the
+    commercial fields (subtotal/vat/total/items) — a correction is a new
+    PO, never a silent rewrite of an approved one's pricing.
+    `partially_received`/`received` are *derived* from receipt data
+    (Task 12), never set directly by a caller."""
+
+    __tablename__ = "purchase_orders"
+    __table_args__ = (UniqueConstraint("tenant_id", "reference", name="uq_purchase_orders_tenant_reference"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True, index=True
+    )
+    supplier_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_suppliers.id"), nullable=True, index=True
+    )
+
+    reference: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="draft", index=True)
+
+    order_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expected_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    received_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    supplier_reference: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    vat_rate: Mapped[float] = mapped_column(Float, nullable=False, server_default="0.2")
+    subtotal: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    vat: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    total: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PurchaseOrderItem(Base):
+    """A PO's line items. `material_requirement_id` links it back to the
+    project need it fulfils (nullable — a PO can also carry ad-hoc lines
+    with no prior requirement). `catalogue_surface_id`/`catalogue_variant_id`
+    are optional stone identity (Task 18); construction lines are valid
+    with neither (Task 19) — `description` alone is always enough to know
+    what was ordered, immutable once written, same "a human-readable
+    record that survives the catalogue changing later" posture as a
+    quote's own snapshot."""
+
+    __tablename__ = "purchase_order_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    purchase_order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_orders.id"), nullable=False, index=True
+    )
+    material_requirement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("project_material_requirements.id"), nullable=True, index=True
+    )
+    catalogue_surface_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_surfaces.id"), nullable=True
+    )
+    catalogue_variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_surface_variants.id"), nullable=True
+    )
+
+    description: Mapped[str] = mapped_column(String, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False, server_default="1")
+    unit: Mapped[str] = mapped_column(String, nullable=False, server_default="item")
+    unit_cost: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    line_total: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PurchaseReceipt(Base):
+    """One delivery event against a PO (Task 10) — a PO can have many,
+    supporting genuine partial/multiple deliveries rather than a single
+    received boolean. `received_at` is the real delivery date/time,
+    supplied by the recording user, not a server timestamp of when the
+    row was typed in."""
+
+    __tablename__ = "purchase_receipts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    purchase_order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_orders.id"), nullable=False, index=True
+    )
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    delivery_reference: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PurchaseReceiptItem(Base):
+    """One PO item's quantity within one delivery. Several rows across
+    several receipts can point at the same `purchase_order_item_id` —
+    that is exactly how a partial-then-remaining delivery is represented
+    (Task 10/11); the sum across all of them is a PO item's total
+    received quantity, and app/procurement/service.py enforces it can
+    never exceed the ordered quantity."""
+
+    __tablename__ = "purchase_receipt_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    purchase_receipt_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_receipts.id"), nullable=False, index=True
+    )
+    purchase_order_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_order_items.id"), nullable=False, index=True
+    )
+    quantity_received: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class ProjectMaterialAllocation(Base):
+    """GeoCore Premium OS Plan 05, Task 14 — a deliberate record that
+    received material was assigned to a specific project requirement:
+    what, how much, which project, which requirement, when, who. Not a
+    warehouse bin/location system — there is no stock table this debits,
+    only an audit-quality record of the allocation decision itself."""
+
+    __tablename__ = "project_material_allocations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+    )
+    material_requirement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("project_material_requirements.id"), nullable=True, index=True
+    )
+    purchase_order_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_order_items.id"), nullable=True
+    )
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    allocated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

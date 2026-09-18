@@ -21,6 +21,7 @@ from app.dashboard.router import router as dashboard_router
 from app.demo_requests.router import router as demo_requests_router
 from app.documents.router import router as documents_router
 from app.financials.router import router as financials_router
+from app.procurement.router import router as procurement_router
 from app.invitations.router import router as invitations_router
 from app.messages.router import router as messages_router
 from app.portal.router import router as portal_router
@@ -50,6 +51,7 @@ api_router.include_router(financials_router)
 api_router.include_router(invitations_router)
 api_router.include_router(messages_router)
 api_router.include_router(portal_router)
+api_router.include_router(procurement_router)
 api_router.include_router(projects_router)
 api_router.include_router(quotes_router)
 api_router.include_router(tasks_router)

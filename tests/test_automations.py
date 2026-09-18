@@ -144,13 +144,18 @@ def test_meta_lists_every_trigger_with_its_kind(client, auth_headers):
 
     # GeoCore Premium OS Plan 04 (Sprint 043) added 6 financial/variation
     # triggers (variation.created/sent/approved/rejected, cost.added,
-    # margin_risk.detected) to the original 9.
-    assert len(by_key) == 15
+    # margin_risk.detected) to the original 9. Plan 05 (Sprint 044) added
+    # 7 more procurement triggers (material_requirement.created,
+    # purchase_order.approved/ordered/partially_received/received,
+    # delivery.overdue, material.allocated).
+    assert len(by_key) == 22
     assert by_key["quote.approved"]["kind"] == "event"
     assert by_key["quote.expiring"]["kind"] == "scan"
     assert by_key["project.starting"]["kind"] == "scan"
     assert by_key["variation.approved"]["kind"] == "event"
     assert by_key["margin_risk.detected"]["kind"] == "event"
+    assert by_key["purchase_order.approved"]["kind"] == "event"
+    assert by_key["delivery.overdue"]["kind"] == "scan"
 
 
 def test_templates_are_definitions_not_rows(client, auth_headers):

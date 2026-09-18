@@ -30,8 +30,9 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.automations.engine import automation_engine
-from app.automations.subjects import project_subject, quote_subject
+from app.automations.subjects import project_subject, purchase_order_subject, quote_subject
 from app.database import crud
+from app.procurement.models import is_po_late
 
 # How far ahead each scan trigger looks. Plain constants, not
 # configuration: they are the smallest coherent choice, and making them
@@ -49,6 +50,7 @@ _CHASEABLE_QUOTE_STATUSES = frozenset({"sent"})
 class ScanResult:
     quotes_examined: int = 0
     projects_examined: int = 0
+    purchase_orders_examined: int = 0
     runs_succeeded: int = 0
     runs_skipped: int = 0
     runs_failed: int = 0
@@ -57,6 +59,7 @@ class ScanResult:
         return {
             "quotes_examined": self.quotes_examined,
             "projects_examined": self.projects_examined,
+            "purchase_orders_examined": self.purchase_orders_examined,
             "runs_succeeded": self.runs_succeeded,
             "runs_skipped": self.runs_skipped,
             "runs_failed": self.runs_failed,
@@ -70,6 +73,7 @@ class AutomationScanner:
 
         self._scan_expiring_quotes(db, now=now, today=today, result=result)
         self._scan_starting_projects(db, now=now, today=today, result=result)
+        self._scan_overdue_deliveries(db, now=now, today=today, result=result)
         return result
 
     def _accumulate(self, result: ScanResult, engine_result) -> None:
@@ -167,6 +171,46 @@ class AutomationScanner:
                 now=now,
                 automations=by_tenant[project.tenant_id],
                 discriminator=f"starts:{project.start_date.isoformat()}",
+            )
+            self._accumulate(result, engine_result)
+
+    def _scan_overdue_deliveries(
+        self, db: Session, *, now: datetime, today: date, result: ScanResult
+    ) -> None:
+        """GeoCore Premium OS Plan 05 (Sprint 044), Task 26/28 — a PO is
+        late only by is_po_late's own deterministic rule (a real expected
+        date that has passed, on a PO not yet received/cancelled); a
+        missing expected date is never treated as overdue. Discriminator
+        is keyed to the day, so a PO stuck overdue for a week fires once
+        per day rather than once ever or on every scan run that day."""
+        automations = crud.list_enabled_automations_by_trigger_all_tenants(db, "delivery.overdue")
+        if not automations:
+            return
+
+        by_tenant: dict = {}
+        for automation in automations:
+            by_tenant.setdefault(automation.tenant_id, []).append(automation)
+
+        for purchase_order in crud.list_purchase_orders_with_expected_delivery(db):
+            if purchase_order.tenant_id not in by_tenant:
+                continue
+            if not is_po_late(purchase_order.status, purchase_order.expected_delivery_date, today):
+                continue
+
+            result.purchase_orders_examined += 1
+            project = (
+                crud.get_project_by_id(db, purchase_order.project_id, purchase_order.tenant_id)
+                if purchase_order.project_id
+                else None
+            )
+            engine_result = automation_engine.run_for_subject(
+                db,
+                tenant_id=purchase_order.tenant_id,
+                trigger_type="delivery.overdue",
+                subject=purchase_order_subject(purchase_order, project_name=project.name if project else None),
+                now=now,
+                automations=by_tenant[purchase_order.tenant_id],
+                discriminator=f"overdue:{today.isoformat()}",
             )
             self._accumulate(result, engine_result)
 

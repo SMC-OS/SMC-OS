@@ -140,6 +140,39 @@ def margin_risk_subject(
     }
 
 
+def material_requirement_subject(requirement, *, project_name: str | None = None) -> dict:
+    return {
+        "id": str(requirement.id),
+        "project_id": str(requirement.project_id),
+        "project_name": project_name or "",
+        "description": requirement.description,
+        "status": requirement.status,
+        "required_by_date": _iso(requirement.required_by_date),
+    }
+
+
+def purchase_order_subject(purchase_order, *, project_name: str | None = None) -> dict:
+    return {
+        "id": str(purchase_order.id),
+        "reference": purchase_order.reference,
+        "project_id": str(purchase_order.project_id) if purchase_order.project_id else None,
+        "project_name": project_name or "",
+        "status": purchase_order.status,
+        "total": purchase_order.total,
+        "expected_delivery_date": _iso(purchase_order.expected_delivery_date),
+        "supplier_reference": purchase_order.supplier_reference,
+    }
+
+
+def material_allocation_subject(allocation, *, project_name: str | None = None) -> dict:
+    return {
+        "id": str(allocation.id),
+        "project_id": str(allocation.project_id),
+        "project_name": project_name or "",
+        "quantity": allocation.quantity,
+    }
+
+
 def render(template: str, subject: dict) -> str:
     """Substitute `{field}` placeholders from the subject.
 
