@@ -27,15 +27,18 @@ export const SITE_URL = origin(process.env.NEXT_PUBLIC_SITE_URL, "https://www.ge
 export const APP_URL = origin(process.env.NEXT_PUBLIC_APP_URL, "https://app.geocore.one");
 
 export const SITE_NAME = "GeoCore";
-export const SITE_TAGLINE = "Build smarter together";
-// Sprint 039 Production Readiness Defect Gate, Blocker 7 — the locked
-// top-level positioning is construction and renovation businesses in
-// general; stone and worktops are a specialist vertical GeoCore supports
-// (see app/quotes/new/stone), never the platform's assumed identity. This
-// description feeds the marketing meta description, Open Graph and
-// structured data below, so a single correction here fixes all three.
+// GeoCore Premium OS Plan 02 (Sprint 041) / Master Spec §25 — the
+// positioning is revised from Sprint 039 Blocker 7's "construction and
+// renovation businesses in general" (which named no trade at all) to the
+// explicit, approved product language: GeoCore is the operating system
+// for stone AND construction — stone is a first-class specialist
+// vertical, not an afterthought, and construction is a first-class
+// platform scope, not the whole identity either. See docs/DECISIONS.md
+// ADR-043 for the full reasoning and why the locked positioning test was
+// rewritten rather than routed around.
+export const SITE_TAGLINE = "The Operating System for Stone & Construction";
 export const SITE_DESCRIPTION =
-  "GeoCore is the AI operating system for construction and renovation businesses — quoting, projects, scheduling and client communication in one place.";
+  "GeoCore is the operating system for Stone & Construction businesses — run enquiries, quotes, projects, materials, teams, site operations and profitability from one connected platform.";
 
 /**
  * Whether this deployment should allow indexing. Only the production
