@@ -484,6 +484,40 @@ def test_catalogue_quote_creates_an_immutable_snapshot_that_survives_later_catal
         _cleanup_tenant(tenant.id, [surface.id])
 
 
+def test_catalogue_quote_falls_back_to_a_surface_level_price_when_no_variant_specific_override_exists(
+    client, db
+):
+    """A tenant who sets one price for a surface (never scoping it to a
+    particular thickness/finish — the common case) expects that price to
+    apply when quoting ANY of that surface's variants, not just the one
+    they happened to be looking at when they set it. The override row
+    itself is intentionally surface-level (surface_variant_id=None, e.g.
+    via the custom-material 'save to catalogue' path in
+    app/catalogue/service.py::create_custom_material); a quote against a
+    specific variant must still find it."""
+    tenant = _make_tenant(db, "SurfaceLevelPriceTenant")
+    headers = _make_owner_headers(client, db, tenant, "surface-level-price")
+    surface = _seed_surface(db, name="Surface Level Priced Stone")
+    variant = _seed_variant(db, surface.id, thickness_mm=30.0)
+    try:
+        crud.upsert_tenant_catalogue_override(
+            db,
+            tenant_id=tenant.id,
+            surface_id=surface.id,
+            surface_variant_id=None,
+            selling_price_per_slab=650,
+        )
+
+        resp = _create_catalogue_quote(
+            client, headers, surface.id, variant.id, customer_name="Surface Level Price Customer"
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["items"][0]["price_per_slab"] == 650
+    finally:
+        _cleanup_tenant(tenant.id, [surface.id])
+
+
 def test_catalogue_quote_from_a_different_tenants_private_surface_returns_400(client, db):
     tenant_a = _make_tenant(db, "CrossTenantQuoteA")
     tenant_b = _make_tenant(db, "CrossTenantQuoteB")

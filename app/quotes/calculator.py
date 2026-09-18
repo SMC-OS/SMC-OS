@@ -148,6 +148,14 @@ class QuoteCalculator:
             override = crud.get_tenant_catalogue_override(
                 db, tenant_id, surface.id, item.catalogue_variant_id
             )
+            # A tenant commonly prices a surface once, not per variant
+            # (TenantCatalogueOverride.surface_variant_id=None — see its
+            # own docstring, and app/catalogue/service.py's
+            # create_custom_material, which always writes at surface
+            # level). A quote against a specific variant still finds
+            # that price rather than treating it as unset.
+            if override is None and item.catalogue_variant_id is not None:
+                override = crud.get_tenant_catalogue_override(db, tenant_id, surface.id, None)
         price_per_slab = resolve_price_per_slab(override)
         if price_per_slab is None:
             raise CataloguePriceMissingError(surface.canonical_name)
