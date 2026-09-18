@@ -64,6 +64,20 @@ export interface FinancialSignals {
   projects_with_a_contract: number;
 }
 
+/** GeoCore Premium OS Plan 05 (Sprint 044), Task 25 — high-value
+ * procurement signals only, each backed by a real, explainable rule.
+ * `projects_blocked_by_materials` counts a project only when it is
+ * genuinely gate-blocked right now, never merely "has an outstanding
+ * requirement somewhere". */
+export interface ProcurementSignals {
+  materials_required: number;
+  purchase_orders_awaiting_approval: number;
+  purchase_orders_ordered: number;
+  late_deliveries: number;
+  materials_due_this_week: number;
+  projects_blocked_by_materials: number;
+}
+
 export interface CommandCentreStats {
   customers: number;
   pipeline: PipelineCounts;
@@ -73,4 +87,5 @@ export interface CommandCentreStats {
   site_visits: SiteVisitCounts;
   follow_up: FollowUpAttention;
   financials: FinancialSignals;
+  procurement: ProcurementSignals;
 }
