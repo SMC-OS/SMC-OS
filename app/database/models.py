@@ -351,6 +351,27 @@ class QuoteItem(Base):
     # own price_before_vat is the sum of every item's line_total.
     line_total: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Sprint 042 (GeoCore Premium OS Plan 03) — Stone Quote Engine V2.
+    # Both nullable: only a stone line created via catalogue selection
+    # sets them; a free-text stone line (the pre-existing path) or any
+    # general line leaves both NULL, exactly as before this plan.
+    catalogue_surface_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_surfaces.id"), nullable=True, index=True
+    )
+    catalogue_variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_surface_variants.id"), nullable=True
+    )
+    # Immutable commercial/material snapshot at the moment this quote
+    # line was created — surface name, supplier, manufacturer, brand,
+    # collection, material family, thickness, finish, slab dimensions,
+    # cost used, selling price used, markup/margin basis. Read whole,
+    # never queried into or joined against (same JSONB rule Automation's
+    # conditions/actions and DemoRequest.trades already follow). Once
+    # written, NOTHING re-reads the catalogue/tenant-override tables to
+    # redisplay this quote — a later catalogue rename or tenant price
+    # change must never alter a historical quote's own figures.
+    catalogue_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -1369,6 +1390,245 @@ class DemoRequest(Base):
     # only; never accepted from the public submission payload.
     status: Mapped[str] = mapped_column(String, nullable=False, server_default="new")
     source: Mapped[str] = mapped_column(String, nullable=False, server_default="marketing_homepage")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CatalogueSupplier(Base):
+    """A distributor/stockist a surface can be sourced through (Sprint
+    042, GeoCore Premium OS Plan 03). Global/platform-owned, same as
+    WorkflowTemplate's system rows — no tenant_id. Distinct from
+    `CatalogueManufacturer`: a supplier sells a manufacturer's product,
+    it does not make it."""
+
+    __tablename__ = "catalogue_suppliers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    website: Mapped[str | None] = mapped_column(String, nullable=True)
+    country: Mapped[str | None] = mapped_column(String, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CatalogueManufacturer(Base):
+    """Who actually makes the surface (Sprint 042). Global/platform-owned.
+    Distinct from `CatalogueBrand`: e.g. manufacturer Cosentino makes the
+    brand Silestone — the two are never collapsed into one field."""
+
+    __tablename__ = "catalogue_manufacturers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    website: Mapped[str | None] = mapped_column(String, nullable=True)
+    country: Mapped[str | None] = mapped_column(String, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CatalogueBrand(Base):
+    """A consumer-facing brand name (Sprint 042) — may or may not share
+    its manufacturer's own name; `manufacturer_id` is nullable because
+    real provenance data does not always resolve one. Global/platform-
+    owned."""
+
+    __tablename__ = "catalogue_brands"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    manufacturer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_manufacturers.id"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    website: Mapped[str | None] = mapped_column(String, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CatalogueCollection(Base):
+    """An optional named range within a brand/manufacturer (Sprint 042)
+    — e.g. a specific Silestone or Dekton collection. Both parent links
+    are nullable; a collection with neither is legitimate for a source
+    that names ranges without a resolvable owning brand."""
+
+    __tablename__ = "catalogue_collections"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    brand_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_brands.id"), nullable=True, index=True
+    )
+    manufacturer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_manufacturers.id"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CatalogueSurface(Base):
+    """A stone/surface product's identity (Sprint 042) — never its
+    price. `tenant_id` follows the same idiom `WorkflowTemplate` already
+    established for "global vs owned" rows: NULL = a platform-seeded,
+    globally-readable reference record; set = a tenant's own private
+    custom material (Task 9/10), visible only to that tenant, never
+    promoted to the global catalogue automatically.
+
+    `canonical_name` is deliberately NOT unique — the same visible name
+    ("Calacatta Gold") legitimately exists under more than one supplier
+    or brand; identity is the row itself (`id`), matched via combined
+    supplier/manufacturer/brand/collection/SKU/thickness/finish (see
+    app/catalogue/dedupe.py), never the name alone."""
+
+    __tablename__ = "catalogue_surfaces"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
+    )
+
+    supplier_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_suppliers.id"), nullable=True, index=True
+    )
+    manufacturer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_manufacturers.id"), nullable=True, index=True
+    )
+    brand_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_brands.id"), nullable=True, index=True
+    )
+    collection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_collections.id"), nullable=True, index=True
+    )
+
+    canonical_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String, nullable=False)
+    supplier_sku: Mapped[str | None] = mapped_column(String, nullable=True)
+    manufacturer_sku: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Closed set validated at the Pydantic boundary (app/catalogue/models.py),
+    # plain String — same no-native-enum convention as every other
+    # controlled-vocabulary column in this schema.
+    material_family: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    colour_family: Mapped[str | None] = mapped_column(String, nullable=True)
+    pattern_family: Mapped[str | None] = mapped_column(String, nullable=True)
+    origin_country: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    discontinued: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CatalogueSurfaceVariant(Base):
+    """A commercially meaningful variant of a surface — thickness,
+    finish and/or slab format (Sprint 042). Deliberately not encoded as
+    one free-text string ("20mm polished 3200x1600") so each attribute
+    stays independently queryable/filterable."""
+
+    __tablename__ = "catalogue_surface_variants"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    surface_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_surfaces.id"), nullable=False, index=True
+    )
+    thickness_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    finish: Mapped[str | None] = mapped_column(String, nullable=True)
+    slab_length_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    slab_width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    supplier_variant_sku: Mapped[str | None] = mapped_column(String, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TenantCatalogueOverride(Base):
+    """A tenant's own private commercial data for a global (or their own
+    private) catalogue surface (Sprint 042) — cost, markup/margin,
+    selling price, stock, lead time. The global catalogue identity above
+    never holds a universal price; this is the only place a price lives,
+    and it is always scoped to exactly one tenant. Global catalogue
+    updates (re-seeding, provenance refresh) must never write to this
+    table — see app/catalogue/service.py.
+
+    `surface_variant_id` nullable = the override applies to the whole
+    surface regardless of variant; set = a variant-specific override
+    (e.g. a thicker slab costs more). No DB-level uniqueness is enforced
+    (a nullable variant_id makes a clean composite UNIQUE unreliable in
+    Postgres); app/catalogue/service.py enforces "one override row per
+    (tenant, surface, variant)" via an explicit get-or-create lookup —
+    the same service-layer-enforced-uniqueness convention `materials`
+    already uses."""
+
+    __tablename__ = "tenant_catalogue_overrides"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    surface_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_surfaces.id"), nullable=False, index=True
+    )
+    surface_variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_surface_variants.id"), nullable=True, index=True
+    )
+
+    preferred_supplier_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("catalogue_suppliers.id"), nullable=True
+    )
+    supplier_account_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    tenant_supplier_sku: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    buy_cost_per_slab: Mapped[float | None] = mapped_column(Float, nullable=True)
+    buy_cost_per_m2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delivery_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fabrication_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    installation_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Precedence when computing a price (app/catalogue/service.py's
+    # resolve_price): an explicit selling_price_per_slab always wins;
+    # otherwise default_markup_percent applied to buy_cost_per_slab;
+    # otherwise target_margin_percent applied to buy_cost_per_slab;
+    # otherwise no price is computed (never fabricated) — see
+    # docs/DECISIONS.md for the ADR.
+    default_markup_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_margin_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    selling_price_per_slab: Mapped[float | None] = mapped_column(Float, nullable=True)
+    selling_price_per_m2: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    stock_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    lead_time_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tenant_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    private_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
