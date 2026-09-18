@@ -33,6 +33,12 @@ from app.database.models import (
     Appointment,
     Automation,
     AutomationRun,
+    CatalogueBrand,
+    CatalogueCollection,
+    CatalogueManufacturer,
+    CatalogueSupplier,
+    CatalogueSurface,
+    CatalogueSurfaceVariant,
     Communication,
     Customer,
     Document,
@@ -53,6 +59,7 @@ from app.database.models import (
     Subscription,
     Task,
     Tenant,
+    TenantCatalogueOverride,
     User,
     WorkflowStage,
     WorkflowTemplate,
@@ -2124,3 +2131,163 @@ def update_project_workflow_binding(
         db.flush()
     db.refresh(project)
     return project
+
+
+# --- Master Materials & Supplier Catalogue (Sprint 042, Plan 03) ----------
+
+
+def create_catalogue_supplier(db: Session, **fields) -> CatalogueSupplier:
+    row = CatalogueSupplier(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_catalogue_manufacturer(db: Session, **fields) -> CatalogueManufacturer:
+    row = CatalogueManufacturer(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_catalogue_brand(db: Session, **fields) -> CatalogueBrand:
+    row = CatalogueBrand(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_catalogue_collection(db: Session, **fields) -> CatalogueCollection:
+    row = CatalogueCollection(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_catalogue_surface(db: Session, **fields) -> CatalogueSurface:
+    row = CatalogueSurface(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_catalogue_surface_variant(db: Session, **fields) -> CatalogueSurfaceVariant:
+    row = CatalogueSurfaceVariant(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_catalogue_surface_by_id(
+    db: Session, surface_id: uuid.UUID, tenant_id: uuid.UUID | None
+) -> CatalogueSurface | None:
+    """Global rows (tenant_id IS NULL) are readable by anyone; a
+    tenant-private row is only readable by its own tenant — never
+    leaked across tenants."""
+    row = db.get(CatalogueSurface, surface_id)
+    if row is None:
+        return None
+    if row.tenant_id is not None and row.tenant_id != tenant_id:
+        return None
+    return row
+
+
+def list_catalogue_surface_variants(db: Session, surface_id: uuid.UUID) -> list[CatalogueSurfaceVariant]:
+    stmt = (
+        select(CatalogueSurfaceVariant)
+        .where(CatalogueSurfaceVariant.surface_id == surface_id, CatalogueSurfaceVariant.active.is_(True))
+        .order_by(CatalogueSurfaceVariant.thickness_mm)
+    )
+    return list(db.scalars(stmt))
+
+
+def search_catalogue_surfaces(
+    db: Session,
+    *,
+    tenant_id: uuid.UUID | None,
+    query: str | None = None,
+    material_family: str | None = None,
+    supplier_id: uuid.UUID | None = None,
+    manufacturer_id: uuid.UUID | None = None,
+    brand_id: uuid.UUID | None = None,
+    collection_id: uuid.UUID | None = None,
+    colour_family: str | None = None,
+    include_discontinued: bool = False,
+    limit: int = 20,
+) -> list[CatalogueSurface]:
+    """Every tenant sees every global (tenant_id IS NULL) surface, plus
+    only their own private ones — never another tenant's. Same
+    `limit`-only pagination idiom as list_quotes/list_automation_runs;
+    filters are appended only when supplied (Task 4)."""
+    stmt = select(CatalogueSurface).where(
+        sa_or(CatalogueSurface.tenant_id.is_(None), CatalogueSurface.tenant_id == tenant_id)
+    )
+    if not include_discontinued:
+        stmt = stmt.where(CatalogueSurface.discontinued.is_(False))
+    if query:
+        stmt = stmt.where(CatalogueSurface.canonical_name.ilike(f"%{query}%"))
+    if material_family:
+        stmt = stmt.where(CatalogueSurface.material_family == material_family)
+    if supplier_id:
+        stmt = stmt.where(CatalogueSurface.supplier_id == supplier_id)
+    if manufacturer_id:
+        stmt = stmt.where(CatalogueSurface.manufacturer_id == manufacturer_id)
+    if brand_id:
+        stmt = stmt.where(CatalogueSurface.brand_id == brand_id)
+    if collection_id:
+        stmt = stmt.where(CatalogueSurface.collection_id == collection_id)
+    if colour_family:
+        stmt = stmt.where(CatalogueSurface.colour_family == colour_family)
+    stmt = stmt.order_by(CatalogueSurface.canonical_name).limit(limit)
+    return list(db.scalars(stmt))
+
+
+def get_tenant_catalogue_override(
+    db: Session, tenant_id: uuid.UUID, surface_id: uuid.UUID, surface_variant_id: uuid.UUID | None = None
+) -> TenantCatalogueOverride | None:
+    stmt = select(TenantCatalogueOverride).where(
+        TenantCatalogueOverride.tenant_id == tenant_id,
+        TenantCatalogueOverride.surface_id == surface_id,
+        TenantCatalogueOverride.surface_variant_id == surface_variant_id,
+    )
+    return db.scalars(stmt).first()
+
+
+def upsert_tenant_catalogue_override(
+    db: Session,
+    *,
+    tenant_id: uuid.UUID,
+    surface_id: uuid.UUID,
+    surface_variant_id: uuid.UUID | None,
+    **fields,
+) -> TenantCatalogueOverride:
+    """Enforces "one override row per (tenant, surface, variant)" at
+    the service layer (see TenantCatalogueOverride's own docstring for
+    why this isn't a DB constraint) — an explicit lookup-then-update-or-
+    insert, never a blind create."""
+    existing = get_tenant_catalogue_override(db, tenant_id, surface_id, surface_variant_id)
+    if existing is not None:
+        for key, value in fields.items():
+            setattr(existing, key, value)
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    row = TenantCatalogueOverride(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        surface_id=surface_id,
+        surface_variant_id=surface_variant_id,
+        **fields,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
