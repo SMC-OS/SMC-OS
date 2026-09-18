@@ -540,3 +540,29 @@ def test_general_construction_quote_never_touches_the_catalogue(client, db):
         finally:
             db2.close()
         _cleanup_tenant(tenant.id)
+
+
+# ---------------------------------------------------------------------------
+# Task 17 — AI catalogue grounding never fabricates price/availability
+# ---------------------------------------------------------------------------
+
+
+def test_ai_catalogue_search_reports_missing_price_explicitly_never_fabricated(db):
+    from app.catalogue.ai import search_for_ai
+
+    tenant = _make_tenant(db, "AiGroundingTenant")
+    surface = _seed_surface(db, name=f"AiGroundingSurface{uuid.uuid4().hex[:6]}")
+    try:
+        results = search_for_ai(db, tenant.id, surface.canonical_name)
+        assert len(results) == 1
+        assert results[0]["price_available"] is False
+        assert results[0]["price_per_slab"] is None
+
+        crud.upsert_tenant_catalogue_override(
+            db, tenant_id=tenant.id, surface_id=surface.id, surface_variant_id=None, selling_price_per_slab=444
+        )
+        results2 = search_for_ai(db, tenant.id, surface.canonical_name)
+        assert results2[0]["price_available"] is True
+        assert results2[0]["price_per_slab"] == 444
+    finally:
+        _cleanup_tenant(tenant.id, [surface.id])
