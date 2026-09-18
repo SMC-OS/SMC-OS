@@ -31,6 +31,22 @@ const EMPTY_REQUIREMENT: MaterialRequirementIn = {
   required_by_date: null,
 };
 
+// GeoCore Premium OS Plan 05 (Sprint 044), Task 35-36 — a suggested
+// requirement drawn from a source the project already has (its handed-off
+// quote, an approved variation). Purely an editorial suggestion: nothing
+// here is ever sent to procurement without the user pressing the button
+// for that specific line.
+interface SuggestedRequirement {
+  key: string;
+  source: "quote" | "variation";
+  sourceId: string;
+  description: string;
+  quantity: number | null;
+  unit: string | null;
+  catalogueSurfaceId: string | null;
+  catalogueVariantId: string | null;
+}
+
 const EMPTY_PO_ITEM: PurchaseOrderItemIn = {
   description: "",
   quantity: 1,
@@ -45,12 +61,22 @@ const EMPTY_PO_ITEM: PurchaseOrderItemIn = {
  * PO status are always the backend's own derived state — this panel
  * never computes or guesses either.
  */
-export function ProjectMaterialsPanel({ projectId }: { projectId: string }) {
+export function ProjectMaterialsPanel({
+  projectId,
+  quoteId,
+}: {
+  projectId: string;
+  quoteId?: string | null;
+}) {
   const [requirements, setRequirements] = useState<MaterialRequirement[] | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[] | null>(null);
   const [suppliers, setSuppliers] = useState<CatalogueSupplierSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  const [suggestions, setSuggestions] = useState<SuggestedRequirement[]>([]);
+  const [sentSuggestionKeys, setSentSuggestionKeys] = useState<Set<string>>(new Set());
+  const [suggestionBusyKey, setSuggestionBusyKey] = useState<string | null>(null);
 
   const [showRequirementForm, setShowRequirementForm] = useState(false);
   const [requirement, setRequirement] = useState<MaterialRequirementIn>({ ...EMPTY_REQUIREMENT });
@@ -81,12 +107,89 @@ export function ProjectMaterialsPanel({ projectId }: { projectId: string }) {
       .then(setPurchaseOrders)
       .catch(() => setError("Could not load purchase orders."));
     api.getSuppliers().then(setSuppliers).catch(() => {});
+
+    // Task 35 — a handed-off quote's stone lines, suggested (never
+    // required) as material requirements.
+    if (quoteId) {
+      api
+        .getQuote(quoteId)
+        .then((quote) => {
+          const fromQuote: SuggestedRequirement[] = quote.items
+            .filter((item) => item.line_kind === "stone" || item.description)
+            .map((item) => ({
+              key: `quote-item-${item.id}`,
+              source: "quote" as const,
+              sourceId: item.id,
+              description:
+                item.line_kind === "stone"
+                  ? [item.material, item.thickness].filter(Boolean).join(" ")
+                  : (item.description ?? "Quote item"),
+              quantity: item.line_kind === "stone" ? item.slabs : item.quantity,
+              unit: item.line_kind === "stone" ? "slab" : (item.unit ?? "item"),
+              catalogueSurfaceId: item.catalogue_surface_id,
+              catalogueVariantId: item.catalogue_variant_id,
+            }));
+          setSuggestions((current) => [
+            ...fromQuote,
+            ...current.filter((s) => s.source !== "quote"),
+          ]);
+        })
+        .catch(() => {});
+    }
+
+    // Task 36 — items from approved variations (change orders), suggested
+    // the same way.
+    api
+      .getProjectVariations(projectId)
+      .then((variations) => {
+        const fromVariations: SuggestedRequirement[] = variations
+          .filter((v) => v.status === "approved")
+          .flatMap((v) =>
+            v.items.map((item) => ({
+              key: `variation-item-${item.id}`,
+              source: "variation" as const,
+              sourceId: item.id,
+              description: item.description,
+              quantity: item.quantity,
+              unit: item.unit,
+              catalogueSurfaceId: null,
+              catalogueVariantId: null,
+            }))
+          );
+        setSuggestions((current) => [
+          ...current.filter((s) => s.source !== "variation"),
+          ...fromVariations,
+        ]);
+      })
+      .catch(() => {});
+  }
+
+  async function sendSuggestionToProcurement(suggestion: SuggestedRequirement) {
+    setSuggestionBusyKey(suggestion.key);
+    setError(null);
+    try {
+      const created = await api.createProjectRequirement(projectId, {
+        description: suggestion.description,
+        catalogue_surface_id: suggestion.catalogueSurfaceId,
+        catalogue_variant_id: suggestion.catalogueVariantId,
+        required_quantity: suggestion.quantity,
+        unit: suggestion.unit,
+        source_type: suggestion.source,
+        source_id: suggestion.sourceId,
+      });
+      setRequirements((current) => [created, ...(current ?? [])]);
+      setSentSuggestionKeys((current) => new Set(current).add(suggestion.key));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not create the requirement.");
+    } finally {
+      setSuggestionBusyKey(null);
+    }
   }
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, quoteId]);
 
   async function createRequirement(event: React.FormEvent) {
     event.preventDefault();
@@ -277,9 +380,46 @@ export function ProjectMaterialsPanel({ projectId }: { projectId: string }) {
     );
   }
 
+  const openSuggestions = suggestions.filter((s) => !sentSuggestionKeys.has(s.key));
+
   return (
     <div className="space-y-4">
       {error && <p className="text-sm text-danger">{error}</p>}
+
+      {openSuggestions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Suggested from quote &amp; variations</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {/* GeoCore Premium OS Plan 05 (Sprint 044), Task 35-36 — an
+                editorial suggestion only; nothing here becomes a real
+                material requirement, let alone a purchase order, until
+                the user presses this button for that specific line. */}
+            <ul className="divide-y divide-border">
+              {openSuggestions.map((s) => (
+                <li key={s.key} className="flex items-center justify-between gap-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm text-foreground">{s.description}</p>
+                    <p className="text-xs text-muted">
+                      {s.quantity != null ? `${s.quantity} ${s.unit ?? ""} · ` : ""}
+                      From {s.source === "quote" ? "this project's quote" : "an approved variation"}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={suggestionBusyKey === s.key}
+                    onClick={() => sendSuggestionToProcurement(s)}
+                  >
+                    Send to procurement
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">

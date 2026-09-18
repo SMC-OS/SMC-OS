@@ -459,7 +459,7 @@ export default function ProjectDetailPage() {
     tabs.push({
       key: "materials",
       label: "Materials",
-      content: <ProjectMaterialsPanel projectId={project.id} />,
+      content: <ProjectMaterialsPanel projectId={project.id} quoteId={project.quote_id} />,
     });
   }
 

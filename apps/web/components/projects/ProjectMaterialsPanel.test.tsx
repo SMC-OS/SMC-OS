@@ -8,7 +8,7 @@
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MaterialRequirement, PurchaseOrder } from "@/types/procurement";
 
@@ -24,6 +24,10 @@ const cancelPurchaseOrderMock = vi.fn();
 const recordPurchaseOrderReceiptMock = vi.fn();
 const downloadPurchaseOrderPdfMock = vi.fn();
 const getSuppliersMock = vi.fn();
+// GeoCore Premium OS Plan 05 (Sprint 044), Task 35-36 — the "Suggested
+// from quote & variations" section's own data sources.
+const getQuoteMock = vi.fn();
+const getProjectVariationsMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -42,6 +46,8 @@ vi.mock("@/lib/api", async () => {
       recordPurchaseOrderReceipt: (...args: unknown[]) => recordPurchaseOrderReceiptMock(...args),
       downloadPurchaseOrderPdf: (...args: unknown[]) => downloadPurchaseOrderPdfMock(...args),
       getSuppliers: (...args: unknown[]) => getSuppliersMock(...args),
+      getQuote: (...args: unknown[]) => getQuoteMock(...args),
+      getProjectVariations: (...args: unknown[]) => getProjectVariationsMock(...args),
     },
   };
 });
@@ -111,6 +117,12 @@ function purchaseOrder(overrides: Partial<PurchaseOrder> = {}): PurchaseOrder {
     ...overrides,
   };
 }
+
+beforeEach(() => {
+  // No quote linked and no approved variations, by default — most tests
+  // aren't exercising the "Suggested" section.
+  getProjectVariationsMock.mockResolvedValue([]);
+});
 
 afterEach(() => {
   cleanup();
@@ -261,6 +273,60 @@ describe("ProjectMaterialsPanel", () => {
       );
     });
     expect(await screen.findByText("Received")).toBeInTheDocument();
+  });
+
+  // GeoCore Premium OS Plan 05 (Sprint 044), Task 35-36 — "Send to
+  // procurement" is an editorial suggestion only: nothing is created
+  // until the user presses the button for that specific line.
+  it("suggests_a_catalogue_linked_quote_line_and_sends_it_to_procurement_on_request", async () => {
+    getProjectRequirementsMock.mockResolvedValue([]);
+    getPurchaseOrdersMock.mockResolvedValue([]);
+    getSuppliersMock.mockResolvedValue([]);
+    getQuoteMock.mockResolvedValue({
+      id: "quote-1",
+      items: [
+        {
+          id: "quote-item-1",
+          line_kind: "stone",
+          description: null,
+          material: "Calacatta Oro",
+          thickness: "20mm",
+          quantity: 1,
+          unit: null,
+          slabs: 2,
+          catalogue_surface_id: "surface-1",
+          catalogue_variant_id: "variant-1",
+        },
+      ],
+    });
+    createProjectRequirementMock.mockResolvedValue(requirement({ description: "Calacatta Oro 20mm" }));
+
+    render(<ProjectMaterialsPanel projectId="project-1" quoteId="quote-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Calacatta Oro 20mm")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/From this project's quote/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /send to procurement/i }));
+
+    await waitFor(() => {
+      expect(createProjectRequirementMock).toHaveBeenCalledWith(
+        "project-1",
+        expect.objectContaining({
+          description: "Calacatta Oro 20mm",
+          catalogue_surface_id: "surface-1",
+          catalogue_variant_id: "variant-1",
+          required_quantity: 2,
+          unit: "slab",
+          source_type: "quote",
+        })
+      );
+    });
+    // Sent once — the suggestion disappears rather than staying offered.
+    await waitFor(() => {
+      expect(screen.queryByText(/From this project's quote/)).not.toBeInTheDocument();
+    });
   });
 
   it("offers_no_further_actions_other_than_pdf_for_a_terminal_purchase_order", async () => {

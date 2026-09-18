@@ -95,6 +95,11 @@ export interface QuoteItem {
   price_per_slab: number | null;
   slabs: number | null;
   line_total: number | null;
+  // GeoCore Premium OS Plan 05 (Sprint 044), Task 35 — present only on a
+  // stone line created via catalogue selection; lets this line be sent
+  // straight to a project's material requirements.
+  catalogue_surface_id: string | null;
+  catalogue_variant_id: string | null;
 }
 
 /** Sprint 033 (Workstream C): `items` is the source of truth — a quote is
