@@ -74,6 +74,21 @@ class FollowUpAttention(BaseModel):
     unread_follow_ups: int
 
 
+class FinancialSignals(BaseModel):
+    """GeoCore Premium OS Plan 04 (Sprint 043), Task 20 — scoped to
+    projects that have a real base contract (a linked, handed-off quote);
+    an enquiry with no quote yet has nothing meaningful to report here.
+    Never a company-wide margin percentage — Task 20 forbids showing a
+    confident average when underlying cost data is incomplete for some
+    projects, so only counts are exposed, never an aggregate margin."""
+
+    approved_contract_value: float
+    approved_variations_value: float
+    projects_with_margin_risk: int
+    projects_with_missing_cost_data: int
+    projects_with_a_contract: int
+
+
 class CommandCentreResponse(BaseModel):
     customers: int
     pipeline: PipelineCounts
@@ -82,3 +97,4 @@ class CommandCentreResponse(BaseModel):
     value: QuotedValue
     site_visits: SiteVisitCounts
     follow_up: FollowUpAttention
+    financials: FinancialSignals

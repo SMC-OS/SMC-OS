@@ -562,3 +562,41 @@ def test_general_quoting_is_unaffected_by_the_financials_and_variations_modules(
         assert body["total"] == 768.0  # 640 + 20% VAT
     finally:
         _cleanup_tenant(tenant.id)
+
+
+# ---------------------------------------------------------------------------
+# Task 20 — Command Centre financial signals
+# ---------------------------------------------------------------------------
+
+
+def test_command_centre_reports_honest_financial_signals(client, db):
+    tenant = _make_tenant(db, "CommandCentreFinancialsTenant")
+    headers, user = _make_owner_headers(client, db, tenant, "cc-financials")
+    try:
+        # A project with no linked quote never counts here at all.
+        _make_project(db, tenant, name="Bare enquiry, no quote")
+
+        # A real project with a contract, an approved variation, and
+        # deliberately no cost entries — so it must show up as margin-
+        # risk-unknown but cost-data-missing.
+        no_cost_project = _make_project_with_approved_quote(client, headers, db, tenant)
+
+        # A second, cost-loaded project whose forecast margin is
+        # deliberately razor-thin, so it should be flagged as at risk.
+        risky_project = _make_project_with_approved_quote(client, headers, db, tenant)
+        financials_service.create_cost_entry(
+            db, risky_project.id, tenant.id, user.id,
+            ProjectCostEntryIn(category="material", state="actual", description="Nearly all of it", total_cost=23000.0),
+        )
+
+        resp = client.get("/api/v1/dashboard/command-centre", headers=headers)
+        assert resp.status_code == 200, resp.text
+        financials = resp.json()["financials"]
+
+        assert financials["projects_with_a_contract"] == 2
+        assert financials["projects_with_missing_cost_data"] == 1
+        assert financials["projects_with_margin_risk"] == 1
+        # Both projects' base contract (24000 each) counts toward the total.
+        assert financials["approved_contract_value"] == 48000.0
+    finally:
+        _cleanup_tenant(tenant.id)

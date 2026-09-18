@@ -2453,3 +2453,17 @@ def list_variation_items(db: Session, variation_id: uuid.UUID) -> list[Variation
         .order_by(VariationItem.position)
     )
     return list(db.scalars(stmt).all())
+
+
+def list_projects_with_a_base_contract(db: Session, tenant_id: uuid.UUID) -> list[Project]:
+    """Every project with a linked quote (always approved — see
+    QuoteService.handoff) — the population app/dashboard/service.py's
+    Command Centre financial signals iterates to compute margin risk /
+    missing-cost-data counts. Deliberately not a single SQL aggregate:
+    those two figures need the same per-project financials_service logic
+    used everywhere else, not a re-derivation in raw SQL — see
+    docs/SPRINTS/sprint-043.md for why this is a bounded Python loop
+    rather than the O(1)-query convention docs/SPRINTS/sprint-025.md set,
+    and why that is an acceptable, documented trade-off at V1's scale."""
+    stmt = select(Project).where(Project.tenant_id == tenant_id, Project.quote_id.is_not(None))
+    return list(db.scalars(stmt).all())
