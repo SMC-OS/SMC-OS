@@ -507,6 +507,15 @@ def test_empty_tenant_gets_all_zeros_not_nulls_or_500(client):
             "value": {"quoted_value": 0.0, "approved_quoted_value": 0.0},
             "site_visits": {"scheduled": 0, "completed": 0, "cancelled": 0},
             "follow_up": {"unread_follow_ups": 0},
+            # GeoCore Premium OS Plan 04 (Sprint 043), Task 20 — additive,
+            # same never-null empty-state contract as everything above.
+            "financials": {
+                "approved_contract_value": 0.0,
+                "approved_variations_value": 0.0,
+                "projects_with_margin_risk": 0,
+                "projects_with_missing_cost_data": 0,
+                "projects_with_a_contract": 0,
+            },
         }
     finally:
         _cleanup_tenant(tenant_id)
