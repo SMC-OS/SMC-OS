@@ -19,6 +19,7 @@ import {
   type SurfaceDetail,
   type SurfaceSearchResult,
 } from "@/types/catalogue";
+import type { Project } from "@/types/project";
 
 interface CustomMaterialFormState {
   canonical_name: string;
@@ -96,6 +97,18 @@ export default function CataloguePage() {
   const [customError, setCustomError] = useState<string | null>(null);
   const [customResult, setCustomResult] = useState<CustomMaterialResult | null>(null);
 
+  // GeoCore Premium OS Plan 05 (Sprint 044), Task 34 — "Add to Project
+  // Requirement" from a catalogue surface, so a material identified here
+  // can flow straight into a project's procurement without re-typing it.
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [showRequirementForm, setShowRequirementForm] = useState(false);
+  const [requirementProjectId, setRequirementProjectId] = useState("");
+  const [requirementQuantity, setRequirementQuantity] = useState("");
+  const [requirementUnit, setRequirementUnit] = useState("");
+  const [requirementSubmitting, setRequirementSubmitting] = useState(false);
+  const [requirementError, setRequirementError] = useState<string | null>(null);
+  const [requirementSuccess, setRequirementSuccess] = useState(false);
+
   const runSearch = useCallback(() => {
     setLoading(true);
     setError(null);
@@ -123,6 +136,7 @@ export default function CataloguePage() {
     runSearch();
     // Only re-run automatically on the filters below, not on every
     // keystroke into `query` — that has its own explicit "Search" submit.
+    api.getProjects().then(setProjects).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady, isAuthenticated, router, materialFamily]);
 
@@ -138,6 +152,9 @@ export default function CataloguePage() {
     setSelectedVariantId("");
     setDetailLoading(true);
     if (!keepPriceForm) setEditingPrice(false);
+    setShowRequirementForm(false);
+    setRequirementSuccess(false);
+    setRequirementError(null);
     api
       .getCatalogueSurface(id)
       .then((surface) => {
@@ -196,6 +213,31 @@ export default function CataloguePage() {
     params.set("material", result.canonical_name);
     if (customForm.thickness_mm) params.set("thickness", `${customForm.thickness_mm}mm`);
     router.push(`/quotes/new/stone?${params.toString()}`);
+  }
+
+  async function addToProjectRequirement(e: React.FormEvent) {
+    e.preventDefault();
+    if (!detail || !requirementProjectId) return;
+    const variant = detail.variants.find((v) => v.id === selectedVariantId) ?? null;
+    setRequirementSubmitting(true);
+    setRequirementError(null);
+    try {
+      await api.createProjectRequirement(requirementProjectId, {
+        description: detail.canonical_name,
+        catalogue_surface_id: detail.id,
+        catalogue_variant_id: variant?.id ?? null,
+        material_family: detail.material_family,
+        required_quantity: requirementQuantity ? Number(requirementQuantity) : null,
+        unit: requirementUnit || null,
+      });
+      setRequirementSuccess(true);
+      setRequirementQuantity("");
+      setRequirementUnit("");
+    } catch (err) {
+      setRequirementError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setRequirementSubmitting(false);
+    }
   }
 
   async function handleCustomMaterialSubmit(e: React.FormEvent) {
@@ -691,9 +733,104 @@ export default function CataloguePage() {
                     </p>
                   )}
 
-                  <Button onClick={useInQuote} disabled={detail.variants.length > 0 && !selectedVariantId}>
-                    Use in a stone quote
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={useInQuote} disabled={detail.variants.length > 0 && !selectedVariantId}>
+                      Use in a stone quote
+                    </Button>
+                    {!showRequirementForm && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowRequirementForm(true);
+                          setRequirementSuccess(false);
+                        }}
+                        disabled={projects.length === 0}
+                      >
+                        Add to project requirement
+                      </Button>
+                    )}
+                  </div>
+
+                  {showRequirementForm && (
+                    <form
+                      onSubmit={addToProjectRequirement}
+                      className="rounded-lg border border-border p-3"
+                    >
+                      {requirementSuccess ? (
+                        <div className="flex flex-col gap-2">
+                          <p className="text-sm text-foreground">
+                            Added as a material requirement on the selected project.
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowRequirementForm(false)}
+                          >
+                            Close
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          <Field label="Project" htmlFor="requirementProject" required>
+                            <Select
+                              id="requirementProject"
+                              required
+                              value={requirementProjectId}
+                              onChange={(e) => setRequirementProjectId(e.target.value)}
+                            >
+                              <option value="">Select a project</option>
+                              {projects.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </Select>
+                          </Field>
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="Quantity" htmlFor="requirementQuantity">
+                              <Input
+                                id="requirementQuantity"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={requirementQuantity}
+                                onChange={(e) => setRequirementQuantity(e.target.value)}
+                              />
+                            </Field>
+                            <Field label="Unit" htmlFor="requirementUnit">
+                              <Input
+                                id="requirementUnit"
+                                value={requirementUnit}
+                                onChange={(e) => setRequirementUnit(e.target.value)}
+                                placeholder="e.g. slab"
+                              />
+                            </Field>
+                          </div>
+                          {requirementError && (
+                            <p className="text-xs text-danger">{requirementError}</p>
+                          )}
+                          <div className="flex gap-2">
+                            <Button
+                              type="submit"
+                              size="sm"
+                              disabled={requirementSubmitting || !requirementProjectId}
+                            >
+                              {requirementSubmitting ? "Adding…" : "Add requirement"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setShowRequirementForm(false)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </form>
+                  )}
                 </div>
               )}
             </CardContent>
