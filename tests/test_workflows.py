@@ -200,23 +200,62 @@ def test_legacy_bound_projects_always_have_a_stage_matching_their_own_status(db)
     """A permanent invariant (not a one-off snapshot): any project bound
     to legacy_v1 must have its workflow_stage's key equal to its own
     `status` string — the migration's backfill, and nothing else, may
-    ever put a legacy-bound project on a mismatched stage. Deliberately
-    does not assert every row is legacy-bound (Task 4 onward binds new
-    projects to real trade templates, and later tasks' own tests create
-    such rows in this same database)."""
+    ever put a legacy-bound project on a mismatched stage.
+
+    Hermetic by construction: this test creates one project per historical
+    ProjectStatus itself (the migration's backfill only ever touched
+    `projects` rows that existed at migration time, so a freshly created,
+    empty CI database has none of its own — this must never depend on
+    another test, another run, or a developer's local database having left
+    any legacy-bound rows behind). It also confirms the thing the backfill
+    promises: binding a project to its matching legacy_v1 stage never
+    rewrites `projects.status` itself.
+    """
     from sqlalchemy import select as sa_select
 
     from app.database.models import WorkflowStage
 
-    rows = db.execute(
-        sa_select(Project.status, WorkflowStage.key)
-        .join(WorkflowTemplate, WorkflowTemplate.id == Project.workflow_template_id)
-        .join(WorkflowStage, WorkflowStage.id == Project.workflow_stage_id)
-        .where(WorkflowTemplate.key == "legacy_v1")
-    ).all()
-    assert len(rows) > 0, "expected pre-existing fixture projects from earlier test runs"
-    for status, stage_key in rows:
-        assert stage_key == status
+    historical_statuses = [
+        "enquiry", "quoted", "booked", "templated", "fabricated", "installed", "complete",
+    ]
+
+    tenant = _make_tenant(db, "LegacyInvariantTenant")
+    legacy_template = crud.get_system_workflow_template_by_key(db, "legacy_v1")
+    assert legacy_template is not None
+
+    project_ids = []
+    try:
+        for status in historical_statuses:
+            stage = crud.get_workflow_stage_by_key(db, legacy_template.id, status)
+            assert stage is not None, status
+            project = Project(
+                id=uuid.uuid4(), tenant_id=tenant.id, name=f"Legacy fixture {status}",
+                status=status, workflow_template_id=legacy_template.id, workflow_stage_id=stage.id,
+            )
+            db.add(project)
+            db.commit()
+            project_ids.append(project.id)
+
+        rows = db.execute(
+            sa_select(Project.status, WorkflowStage.key)
+            .join(WorkflowTemplate, WorkflowTemplate.id == Project.workflow_template_id)
+            .join(WorkflowStage, WorkflowStage.id == Project.workflow_stage_id)
+            .where(Project.id.in_(project_ids))
+        ).all()
+        assert len(rows) == len(historical_statuses)
+        for status, stage_key in rows:
+            assert stage_key == status
+
+        # The backfill contract binds a project to its matching stage —
+        # it must never itself rewrite the legacy `status` column.
+        reloaded_statuses = {
+            row[0] for row in db.execute(sa_select(Project.status).where(Project.id.in_(project_ids))).all()
+        }
+        assert reloaded_statuses == set(historical_statuses)
+    finally:
+        db.execute(delete(Project).where(Project.id.in_(project_ids)))
+        db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+        db.commit()
 
 
 def test_workflow_history_is_append_only_and_tenant_scoped(db):
