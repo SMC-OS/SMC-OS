@@ -52,6 +52,18 @@ class ActivityType(str, Enum):
     VARIATION_APPROVED = "variation_approved"
     VARIATION_REJECTED = "variation_rejected"
     VARIATION_VOIDED = "variation_voided"
+    # GeoCore Premium OS Plan 05 (Sprint 044) — procurement + materials
+    # operations. Same internal-only guarantee as the financials block
+    # above: supplier/cost detail here is never customer-visible.
+    MATERIAL_REQUIREMENT_CREATED = "material_requirement_created"
+    MATERIAL_REQUIREMENT_EDITED = "material_requirement_edited"
+    MATERIAL_REQUIREMENT_CANCELLED = "material_requirement_cancelled"
+    PURCHASE_ORDER_CREATED = "purchase_order_created"
+    PURCHASE_ORDER_APPROVED = "purchase_order_approved"
+    PURCHASE_ORDER_ORDERED = "purchase_order_ordered"
+    PURCHASE_ORDER_CANCELLED = "purchase_order_cancelled"
+    PURCHASE_ORDER_RECEIPT_RECORDED = "purchase_order_receipt_recorded"
+    MATERIAL_ALLOCATED = "material_allocated"
 
 
 class ActivityEventCreate(BaseModel):

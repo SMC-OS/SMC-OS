@@ -89,6 +89,22 @@ class FinancialSignals(BaseModel):
     projects_with_a_contract: int
 
 
+class ProcurementSignals(BaseModel):
+    """GeoCore Premium OS Plan 05 (Sprint 044), Task 25 — high-value
+    operational procurement signals only, each backed by a real,
+    explainable rule (never invented metric clutter). `projects_blocked_
+    by_materials` counts a project only when it is genuinely gate-blocked
+    right now (materials_ready unmet at its *current* stage), not merely
+    "has an outstanding requirement somewhere"."""
+
+    materials_required: int
+    purchase_orders_awaiting_approval: int
+    purchase_orders_ordered: int
+    late_deliveries: int
+    materials_due_this_week: int
+    projects_blocked_by_materials: int
+
+
 class CommandCentreResponse(BaseModel):
     customers: int
     pipeline: PipelineCounts
@@ -98,3 +114,4 @@ class CommandCentreResponse(BaseModel):
     site_visits: SiteVisitCounts
     follow_up: FollowUpAttention
     financials: FinancialSignals
+    procurement: ProcurementSignals

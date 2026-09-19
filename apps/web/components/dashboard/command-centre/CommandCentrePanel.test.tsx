@@ -61,6 +61,15 @@ const FULL_STATS = {
     projects_with_missing_cost_data: 1,
     projects_with_a_contract: 2,
   },
+  // GeoCore Premium OS Plan 05 (Sprint 044), Task 25.
+  procurement: {
+    materials_required: 4,
+    purchase_orders_awaiting_approval: 2,
+    purchase_orders_ordered: 3,
+    late_deliveries: 1,
+    materials_due_this_week: 2,
+    projects_blocked_by_materials: 1,
+  },
 };
 
 const EMPTY_STATS = {
@@ -99,6 +108,14 @@ const EMPTY_STATS = {
     projects_with_margin_risk: 0,
     projects_with_missing_cost_data: 0,
     projects_with_a_contract: 0,
+  },
+  procurement: {
+    materials_required: 0,
+    purchase_orders_awaiting_approval: 0,
+    purchase_orders_ordered: 0,
+    late_deliveries: 0,
+    materials_due_this_week: 0,
+    projects_blocked_by_materials: 0,
   },
 };
 
@@ -151,6 +168,14 @@ describe("CommandCentrePanel — business command centre (Sprint 025)", () => {
     expect(screen.getByText("£3,250")).toBeInTheDocument();
     expect(screen.getByText("Projects with missing cost data")).toBeInTheDocument();
     expect(screen.getByText("1 margin risk")).toBeInTheDocument();
+
+    // GeoCore Premium OS Plan 05 (Sprint 044), Task 25 — real procurement
+    // signals, never meaningless metric clutter.
+    expect(screen.getByRole("heading", { name: "Procurement" })).toBeInTheDocument();
+    expect(screen.getByText("Materials required")).toBeInTheDocument();
+    expect(screen.getByText("Purchase orders awaiting approval")).toBeInTheDocument();
+    expect(screen.getByText("Projects blocked by materials")).toBeInTheDocument();
+    expect(screen.getByText("1 late")).toBeInTheDocument();
   });
 
   it("renders_zeros_not_a_blank_or_broken_state_for_an_empty_tenant", async () => {
@@ -173,6 +198,10 @@ describe("CommandCentrePanel — business command centre (Sprint 025)", () => {
     // the numbered badge, e.g. "1 margin risk", is conditional).
     expect(screen.getByText("Contract & Margin")).toBeInTheDocument();
     expect(screen.queryByText(/^\d+ margin risk$/)).not.toBeInTheDocument();
+
+    // No late-delivery badge when nothing is late.
+    expect(screen.getByRole("heading", { name: "Procurement" })).toBeInTheDocument();
+    expect(screen.queryByText(/^\d+ late$/)).not.toBeInTheDocument();
   });
 
   it("shows_a_real_error_state_on_api_failure_never_a_fabricated_zero", async () => {

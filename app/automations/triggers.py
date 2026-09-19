@@ -147,6 +147,59 @@ TRIGGERS: tuple[Trigger, ...] = (
         EVENT,
         "project",
     ),
+    # GeoCore Premium OS Plan 05 (Sprint 044) — procurement + materials operations.
+    Trigger(
+        "material_requirement.created",
+        "Material requirement created",
+        "Runs when a new material requirement is added to a project.",
+        EVENT,
+        "material_requirement",
+    ),
+    Trigger(
+        "purchase_order.approved",
+        "Purchase order approved",
+        "Runs when a purchase order is approved and its committed cost "
+        "joins the project's financials.",
+        EVENT,
+        "purchase_order",
+    ),
+    Trigger(
+        "purchase_order.ordered",
+        "Purchase order ordered",
+        "Runs when a purchase order is marked as ordered with a supplier.",
+        EVENT,
+        "purchase_order",
+    ),
+    Trigger(
+        "purchase_order.partially_received",
+        "Purchase order partially received",
+        "Runs when a delivery is recorded that does not yet complete a "
+        "purchase order.",
+        EVENT,
+        "purchase_order",
+    ),
+    Trigger(
+        "purchase_order.received",
+        "Purchase order received",
+        "Runs when every line on a purchase order has been received in full.",
+        EVENT,
+        "purchase_order",
+    ),
+    Trigger(
+        "delivery.overdue",
+        "Delivery overdue",
+        "Runs when a purchase order's expected delivery date has passed "
+        "without the order being received.",
+        SCAN,
+        "purchase_order",
+    ),
+    Trigger(
+        "material.allocated",
+        "Material allocated",
+        "Runs when received material is allocated to a project requirement.",
+        EVENT,
+        "material_allocation",
+    ),
 )
 
 TRIGGER_KEYS: frozenset[str] = frozenset(trigger.key for trigger in TRIGGERS)

@@ -49,6 +49,21 @@ import type { MessageOut } from "@/types/message";
 import type { AppNotification } from "@/types/notification";
 import type { PortalLinkCreateOut, PortalLinkOut, PortalPublicOut } from "@/types/portal";
 import type {
+  CatalogueSupplierSummary,
+  MaterialAllocation,
+  MaterialAllocationCreate,
+  MaterialRequirement,
+  MaterialRequirementIn,
+  MaterialRequirementUpdate,
+  OrderPurchaseOrderRequest,
+  PurchaseOrder,
+  PurchaseOrderCreate,
+  PurchaseOrderUpdate,
+  PurchaseReceipt,
+  PurchaseReceiptCreate,
+  TenantSupplierAccount,
+} from "@/types/procurement";
+import type {
   Project,
   ProjectCreate,
   ProjectStatus,
@@ -919,4 +934,103 @@ export const api = {
     link.remove();
     URL.revokeObjectURL(url);
   },
+
+  // --- GeoCore Premium OS Plan 05 (Sprint 044) — procurement + materials operations. ---
+  getSuppliers: () => request<CatalogueSupplierSummary[]>("/catalogue/suppliers"),
+
+  getSupplierAccounts: () => request<TenantSupplierAccount[]>("/procurement/supplier-accounts"),
+
+  upsertSupplierAccount: (supplierId: string, fields: Partial<TenantSupplierAccount>) =>
+    request<TenantSupplierAccount>(`/procurement/supplier-accounts/${supplierId}`, {
+      method: "PUT",
+      body: JSON.stringify(fields),
+    }),
+
+  getProjectRequirements: (projectId: string) =>
+    request<MaterialRequirement[]>(`/projects/${projectId}/requirements`),
+
+  createProjectRequirement: (projectId: string, data: MaterialRequirementIn) =>
+    request<MaterialRequirement>(`/projects/${projectId}/requirements`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateRequirement: (requirementId: string, data: MaterialRequirementUpdate) =>
+    request<MaterialRequirement>(`/requirements/${requirementId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  cancelRequirement: (requirementId: string) =>
+    request<MaterialRequirement>(`/requirements/${requirementId}/cancel`, { method: "POST" }),
+
+  getPurchaseOrders: (params: { projectId?: string; lateOnly?: boolean } = {}) => {
+    const query = new URLSearchParams();
+    if (params.projectId) query.set("project_id", params.projectId);
+    if (params.lateOnly) query.set("late_only", "true");
+    const qs = query.toString();
+    return request<PurchaseOrder[]>(`/purchase-orders${qs ? `?${qs}` : ""}`);
+  },
+
+  createPurchaseOrder: (data: PurchaseOrderCreate) =>
+    request<PurchaseOrder>("/purchase-orders", { method: "POST", body: JSON.stringify(data) }),
+
+  getPurchaseOrder: (id: string) => request<PurchaseOrder>(`/purchase-orders/${id}`),
+
+  updatePurchaseOrder: (id: string, data: PurchaseOrderUpdate) =>
+    request<PurchaseOrder>(`/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  approvePurchaseOrder: (id: string) =>
+    request<PurchaseOrder>(`/purchase-orders/${id}/approve`, { method: "POST" }),
+
+  orderPurchaseOrder: (id: string, data: OrderPurchaseOrderRequest) =>
+    request<PurchaseOrder>(`/purchase-orders/${id}/order`, { method: "POST", body: JSON.stringify(data) }),
+
+  cancelPurchaseOrder: (id: string) =>
+    request<PurchaseOrder>(`/purchase-orders/${id}/cancel`, { method: "POST" }),
+
+  getPurchaseOrderReceipts: (id: string) => request<PurchaseReceipt[]>(`/purchase-orders/${id}/receipts`),
+
+  recordPurchaseOrderReceipt: (id: string, data: PurchaseReceiptCreate) =>
+    request<PurchaseReceipt>(`/purchase-orders/${id}/receipts`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  downloadPurchaseOrderPdf: async (id: string, reference: string): Promise<void> => {
+    const token = getToken();
+    let res: Response;
+
+    try {
+      res = await fetch(`${API_BASE_URL}/api/v1/purchase-orders/${id}/pdf`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch {
+      throw new ApiError(`Could not reach the API at /purchase-orders/${id}/pdf`, 0);
+    }
+
+    if (!res.ok) {
+      if (res.status === 401) clearToken();
+      throw new ApiError(`Request to /purchase-orders/${id}/pdf failed with ${res.status}`, res.status);
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${reference}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  getProjectAllocations: (projectId: string) =>
+    request<MaterialAllocation[]>(`/projects/${projectId}/allocations`),
+
+  allocateMaterial: (projectId: string, data: MaterialAllocationCreate) =>
+    request<MaterialAllocation>(`/projects/${projectId}/allocations`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };

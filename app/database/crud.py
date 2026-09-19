@@ -54,13 +54,20 @@ from app.database.models import (
     ProcessedStripeEvent,
     Project,
     ProjectCostEntry,
+    ProjectMaterialAllocation,
+    ProjectMaterialRequirement,
     ProjectWorkflowHistory,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseReceipt,
+    PurchaseReceiptItem,
     Quote,
     QuoteItem,
     Subscription,
     Task,
     Tenant,
     TenantCatalogueOverride,
+    TenantSupplierAccount,
     User,
     Variation,
     VariationItem,
@@ -68,6 +75,7 @@ from app.database.models import (
     WorkflowTemplate,
     WorkflowTransition,
 )
+from app.procurement.models import REQUIREMENT_BLOCKING_STATUSES, is_po_late
 
 
 def create_activity_log(
@@ -2455,6 +2463,22 @@ def list_variation_items(db: Session, variation_id: uuid.UUID) -> list[Variation
     return list(db.scalars(stmt).all())
 
 
+def list_cost_entries_by_purchase_order(db: Session, purchase_order_id: uuid.UUID) -> list[ProjectCostEntry]:
+    """GeoCore Premium OS Plan 05 — every committed/actual cost row this
+    PO's approval created, keyed by `purchase_order_id`. Used to prove
+    idempotency (no duplicate row is ever created for the same PO item)
+    and to clean up committed cost on cancellation (see ADR-050)."""
+    stmt = select(ProjectCostEntry).where(ProjectCostEntry.purchase_order_id == purchase_order_id)
+    return list(db.scalars(stmt).all())
+
+
+def get_cost_entry_by_purchase_order_item(
+    db: Session, purchase_order_item_id: uuid.UUID
+) -> ProjectCostEntry | None:
+    stmt = select(ProjectCostEntry).where(ProjectCostEntry.purchase_order_item_id == purchase_order_item_id)
+    return db.scalars(stmt).first()
+
+
 def list_projects_with_a_base_contract(db: Session, tenant_id: uuid.UUID) -> list[Project]:
     """Every project with a linked quote (always approved — see
     QuoteService.handoff) — the population app/dashboard/service.py's
@@ -2466,4 +2490,326 @@ def list_projects_with_a_base_contract(db: Session, tenant_id: uuid.UUID) -> lis
     rather than the O(1)-query convention docs/SPRINTS/sprint-025.md set,
     and why that is an acceptable, documented trade-off at V1's scale."""
     stmt = select(Project).where(Project.tenant_id == tenant_id, Project.quote_id.is_not(None))
+    return list(db.scalars(stmt).all())
+
+
+# ---------------------------------------------------------------------------
+# GeoCore Premium OS Plan 05 (Sprint 044) — procurement + materials operations.
+# ---------------------------------------------------------------------------
+
+
+def list_catalogue_suppliers(db: Session, *, active_only: bool = True) -> list[CatalogueSupplier]:
+    stmt = select(CatalogueSupplier).order_by(CatalogueSupplier.name)
+    if active_only:
+        stmt = stmt.where(CatalogueSupplier.active.is_(True))
+    return list(db.scalars(stmt).all())
+
+
+def get_catalogue_supplier_by_id(db: Session, supplier_id: uuid.UUID) -> CatalogueSupplier | None:
+    return db.get(CatalogueSupplier, supplier_id)
+
+
+def create_material_requirement(db: Session, **fields) -> ProjectMaterialRequirement:
+    row = ProjectMaterialRequirement(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_material_requirement_by_id(
+    db: Session, requirement_id: uuid.UUID, tenant_id: uuid.UUID
+) -> ProjectMaterialRequirement | None:
+    stmt = select(ProjectMaterialRequirement).where(
+        ProjectMaterialRequirement.id == requirement_id, ProjectMaterialRequirement.tenant_id == tenant_id
+    )
+    return db.scalars(stmt).first()
+
+
+def list_material_requirements_by_project(
+    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID
+) -> list[ProjectMaterialRequirement]:
+    stmt = (
+        select(ProjectMaterialRequirement)
+        .where(
+            ProjectMaterialRequirement.project_id == project_id,
+            ProjectMaterialRequirement.tenant_id == tenant_id,
+        )
+        .order_by(ProjectMaterialRequirement.created_at)
+    )
+    return list(db.scalars(stmt).all())
+
+
+def update_material_requirement(
+    db: Session, requirement: ProjectMaterialRequirement, fields: dict
+) -> ProjectMaterialRequirement:
+    for key, value in fields.items():
+        setattr(requirement, key, value)
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    return requirement
+
+
+def get_tenant_supplier_account(
+    db: Session, tenant_id: uuid.UUID, supplier_id: uuid.UUID
+) -> TenantSupplierAccount | None:
+    stmt = select(TenantSupplierAccount).where(
+        TenantSupplierAccount.tenant_id == tenant_id, TenantSupplierAccount.supplier_id == supplier_id
+    )
+    return db.scalars(stmt).first()
+
+
+def list_tenant_supplier_accounts(db: Session, tenant_id: uuid.UUID) -> list[TenantSupplierAccount]:
+    stmt = select(TenantSupplierAccount).where(TenantSupplierAccount.tenant_id == tenant_id)
+    return list(db.scalars(stmt).all())
+
+
+def upsert_tenant_supplier_account(
+    db: Session, *, tenant_id: uuid.UUID, supplier_id: uuid.UUID, fields: dict
+) -> TenantSupplierAccount:
+    """Same get-or-create-then-update convention as
+    upsert_tenant_catalogue_override — one account profile per
+    (tenant, supplier), enforced here and backstopped by the table's own
+    UNIQUE(tenant_id, supplier_id) constraint."""
+    existing = get_tenant_supplier_account(db, tenant_id, supplier_id)
+    if existing is not None:
+        for key, value in fields.items():
+            setattr(existing, key, value)
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+        return existing
+    row = TenantSupplierAccount(id=uuid.uuid4(), tenant_id=tenant_id, supplier_id=supplier_id, **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def count_purchase_orders_for_tenant(db: Session, tenant_id: uuid.UUID) -> int:
+    return db.query(func.count(PurchaseOrder.id)).filter(PurchaseOrder.tenant_id == tenant_id).scalar() or 0
+
+
+def create_purchase_order(db: Session, **fields) -> PurchaseOrder:
+    row = PurchaseOrder(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_purchase_order_by_id(db: Session, purchase_order_id: uuid.UUID, tenant_id: uuid.UUID) -> PurchaseOrder | None:
+    stmt = select(PurchaseOrder).where(PurchaseOrder.id == purchase_order_id, PurchaseOrder.tenant_id == tenant_id)
+    return db.scalars(stmt).first()
+
+
+def list_purchase_orders(
+    db: Session,
+    tenant_id: uuid.UUID,
+    *,
+    project_id: uuid.UUID | None = None,
+    supplier_id: uuid.UUID | None = None,
+    status: str | None = None,
+    late_only: bool = False,
+    limit: int = 50,
+) -> list[PurchaseOrder]:
+    """Backend filtering (Task 32) — never load-everything-then-filter-
+    client-side. `late_only` is applied in Python after the query (Task
+    26's rule needs "today", which SQL could also express, but the
+    project's list sizes at V1 scale make a second round trip to avoid a
+    plain per-row comparison unnecessary complexity)."""
+    stmt = select(PurchaseOrder).where(PurchaseOrder.tenant_id == tenant_id)
+    if project_id is not None:
+        stmt = stmt.where(PurchaseOrder.project_id == project_id)
+    if supplier_id is not None:
+        stmt = stmt.where(PurchaseOrder.supplier_id == supplier_id)
+    if status is not None:
+        stmt = stmt.where(PurchaseOrder.status == status)
+    stmt = stmt.order_by(PurchaseOrder.created_at.desc()).limit(limit)
+    rows = list(db.scalars(stmt).all())
+    if late_only:
+        today = date.today()
+        rows = [row for row in rows if is_po_late(row.status, row.expected_delivery_date, today)]
+    return rows
+
+
+def update_purchase_order(db: Session, purchase_order: PurchaseOrder, fields: dict) -> PurchaseOrder:
+    for key, value in fields.items():
+        setattr(purchase_order, key, value)
+    db.add(purchase_order)
+    db.commit()
+    db.refresh(purchase_order)
+    return purchase_order
+
+
+def replace_purchase_order_items(
+    db: Session, purchase_order_id: uuid.UUID, items: list[dict]
+) -> list[PurchaseOrderItem]:
+    db.execute(sa_delete(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id == purchase_order_id))
+    rows = [
+        PurchaseOrderItem(id=uuid.uuid4(), purchase_order_id=purchase_order_id, position=index, **item)
+        for index, item in enumerate(items)
+    ]
+    db.add_all(rows)
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+    return rows
+
+
+def list_purchase_order_items(db: Session, purchase_order_id: uuid.UUID) -> list[PurchaseOrderItem]:
+    stmt = (
+        select(PurchaseOrderItem)
+        .where(PurchaseOrderItem.purchase_order_id == purchase_order_id)
+        .order_by(PurchaseOrderItem.position)
+    )
+    return list(db.scalars(stmt).all())
+
+
+def get_purchase_order_item_by_id(db: Session, item_id: uuid.UUID) -> PurchaseOrderItem | None:
+    return db.get(PurchaseOrderItem, item_id)
+
+
+def sum_received_quantity_for_item(db: Session, purchase_order_item_id: uuid.UUID) -> float:
+    total = (
+        db.query(func.sum(PurchaseReceiptItem.quantity_received))
+        .filter(PurchaseReceiptItem.purchase_order_item_id == purchase_order_item_id)
+        .scalar()
+    )
+    return float(total) if total is not None else 0.0
+
+
+def create_purchase_receipt(db: Session, *, items: list[dict], **fields) -> PurchaseReceipt:
+    receipt = PurchaseReceipt(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(receipt)
+    db.flush()
+    rows = [
+        PurchaseReceiptItem(id=uuid.uuid4(), purchase_receipt_id=receipt.id, **item) for item in items
+    ]
+    db.add_all(rows)
+    db.commit()
+    db.refresh(receipt)
+    return receipt
+
+
+def list_purchase_receipts(db: Session, purchase_order_id: uuid.UUID) -> list[PurchaseReceipt]:
+    stmt = (
+        select(PurchaseReceipt)
+        .where(PurchaseReceipt.purchase_order_id == purchase_order_id)
+        .order_by(PurchaseReceipt.received_at)
+    )
+    return list(db.scalars(stmt).all())
+
+
+def list_purchase_receipt_items(db: Session, purchase_receipt_id: uuid.UUID) -> list[PurchaseReceiptItem]:
+    stmt = select(PurchaseReceiptItem).where(PurchaseReceiptItem.purchase_receipt_id == purchase_receipt_id)
+    return list(db.scalars(stmt).all())
+
+
+def create_material_allocation(db: Session, **fields) -> ProjectMaterialAllocation:
+    row = ProjectMaterialAllocation(id=fields.pop("id", uuid.uuid4()), **fields)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_purchase_orders_with_expected_delivery(db: Session) -> list[PurchaseOrder]:
+    """Every PO with an expected delivery date, for the automation scan
+    (Task 26/28) — not tenant-scoped, same rationale as
+    list_projects_with_start_date: the job has no caller, and the scan
+    groups rules by tenant before evaluating any row."""
+    stmt = select(PurchaseOrder).where(PurchaseOrder.expected_delivery_date.is_not(None))
+    return list(db.scalars(stmt))
+
+
+def count_material_requirements_outstanding(db: Session, tenant_id: uuid.UUID) -> int:
+    """GeoCore Premium OS Plan 05, Task 25 — requirements still short of
+    the material actually arriving (planned/required/ordered/
+    partially_received), same blocking-status set the materials_ready
+    workflow gate uses."""
+    return (
+        db.query(func.count(ProjectMaterialRequirement.id))
+        .filter(
+            ProjectMaterialRequirement.tenant_id == tenant_id,
+            ProjectMaterialRequirement.status.in_(REQUIREMENT_BLOCKING_STATUSES),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def count_purchase_orders_by_status(db: Session, tenant_id: uuid.UUID) -> dict[str, int]:
+    rows = (
+        db.query(PurchaseOrder.status, func.count())
+        .filter(PurchaseOrder.tenant_id == tenant_id)
+        .group_by(PurchaseOrder.status)
+        .all()
+    )
+    return {status: count for status, count in rows}
+
+
+def count_late_purchase_orders(db: Session, tenant_id: uuid.UUID, today: date) -> int:
+    """Task 26's rule expressed directly in SQL: a real expected date
+    that has passed, on a PO not yet received/cancelled."""
+    return (
+        db.query(func.count(PurchaseOrder.id))
+        .filter(
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.expected_delivery_date.is_not(None),
+            PurchaseOrder.expected_delivery_date < today,
+            PurchaseOrder.status.notin_(["received", "cancelled"]),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def count_purchase_orders_due_this_week(db: Session, tenant_id: uuid.UUID, today: date, week_ahead: date) -> int:
+    return (
+        db.query(func.count(PurchaseOrder.id))
+        .filter(
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.expected_delivery_date.is_not(None),
+            PurchaseOrder.expected_delivery_date >= today,
+            PurchaseOrder.expected_delivery_date <= week_ahead,
+            PurchaseOrder.status.notin_(["received", "cancelled"]),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def list_projects_with_blocking_material_requirements(db: Session, tenant_id: uuid.UUID) -> list[Project]:
+    """Task 25's "Projects Blocked by Materials" population — bounded,
+    same documented per-project-loop exception to the O(1)-query
+    convention that app/dashboard/service.py's margin-risk signal already
+    uses (docs/SPRINTS/sprint-043.md), because confirming a project is
+    *actually* gate-blocked (not merely "has an outstanding requirement")
+    needs a real evaluate_stage_gates() call against its current stage."""
+    project_ids = (
+        db.query(ProjectMaterialRequirement.project_id)
+        .filter(
+            ProjectMaterialRequirement.tenant_id == tenant_id,
+            ProjectMaterialRequirement.status.in_(REQUIREMENT_BLOCKING_STATUSES),
+        )
+        .distinct()
+        .all()
+    )
+    ids = [row[0] for row in project_ids]
+    if not ids:
+        return []
+    stmt = select(Project).where(Project.id.in_(ids))
+    return list(db.scalars(stmt).all())
+
+
+def list_material_allocations_by_project(
+    db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID
+) -> list[ProjectMaterialAllocation]:
+    stmt = (
+        select(ProjectMaterialAllocation)
+        .where(ProjectMaterialAllocation.project_id == project_id, ProjectMaterialAllocation.tenant_id == tenant_id)
+        .order_by(ProjectMaterialAllocation.created_at)
+    )
     return list(db.scalars(stmt).all())

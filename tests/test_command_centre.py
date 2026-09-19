@@ -516,6 +516,16 @@ def test_empty_tenant_gets_all_zeros_not_nulls_or_500(client):
                 "projects_with_missing_cost_data": 0,
                 "projects_with_a_contract": 0,
             },
+            # GeoCore Premium OS Plan 05 (Sprint 044), Task 25 — additive,
+            # same never-null empty-state contract as everything above.
+            "procurement": {
+                "materials_required": 0,
+                "purchase_orders_awaiting_approval": 0,
+                "purchase_orders_ordered": 0,
+                "late_deliveries": 0,
+                "materials_due_this_week": 0,
+                "projects_blocked_by_materials": 0,
+            },
         }
     finally:
         _cleanup_tenant(tenant_id)

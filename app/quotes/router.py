@@ -57,6 +57,12 @@ def _serialize_item(item) -> dict:
         "price_per_slab": item.price_per_slab,
         "slabs": item.slabs,
         "line_total": item.line_total,
+        # GeoCore Premium OS Plan 05 (Sprint 044), Task 35 — surfaced so a
+        # handed-off quote's catalogue-linked stone lines can be sent
+        # straight to a project's material requirements, without
+        # re-identifying the material by hand.
+        "catalogue_surface_id": item.catalogue_surface_id,
+        "catalogue_variant_id": item.catalogue_variant_id,
     }
 
 

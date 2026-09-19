@@ -192,6 +192,35 @@ export function CommandCentrePanel() {
             </div>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Procurement</CardTitle>
+            {data.procurement.late_deliveries > 0 && (
+              <Badge tone="danger">{data.procurement.late_deliveries} late</Badge>
+            )}
+          </CardHeader>
+          <CardContent>
+            {/* GeoCore Premium OS Plan 05 (Sprint 044), Task 25 — only
+                explainable, real-data-backed signals; a project counts as
+                "blocked" only when a workflow gate is genuinely unmet
+                right now, never merely "has an outstanding requirement". */}
+            <CountRow label="Materials required" value={data.procurement.materials_required} />
+            <CountRow
+              label="Purchase orders awaiting approval"
+              value={data.procurement.purchase_orders_awaiting_approval}
+            />
+            <CountRow label="Purchase orders ordered" value={data.procurement.purchase_orders_ordered} />
+            <div className="mt-3 border-t border-border pt-3">
+              <CountRow label="Late deliveries" value={data.procurement.late_deliveries} />
+              <CountRow label="Materials due this week" value={data.procurement.materials_due_this_week} />
+              <CountRow
+                label="Projects blocked by materials"
+                value={data.procurement.projects_blocked_by_materials}
+              />
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

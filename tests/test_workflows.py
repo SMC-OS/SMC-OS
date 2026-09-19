@@ -109,7 +109,14 @@ from sqlalchemy import delete, select
 
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Project, ProjectWorkflowHistory, Tenant, WorkflowTemplate
+from app.database.models import (
+    ActivityLog,
+    Project,
+    ProjectMaterialRequirement,
+    ProjectWorkflowHistory,
+    Tenant,
+    WorkflowTemplate,
+)
 
 
 @pytest.fixture()
@@ -729,12 +736,14 @@ def test_legacy_bound_project_workflow_transition_keeps_status_in_sync(db):
 # ---------------------------------------------------------------------------
 # Task 6 — workflow stage entry gates
 #
-# No system template seeds any gate_definitions yet (Task 3's migration
-# leaves every stage's column NULL) — there is no authoring UI for them in
-# this plan. These tests set a real stage's gate_definitions directly via
-# the ORM, exactly the way a future admin endpoint eventually would, and
-# always restore it to None afterwards so no other test in this shared
-# database sees an unexpected gate on a template it also uses.
+# No system template seeded any gate_definitions until GeoCore Premium OS
+# Plan 05 (Sprint 044, Task 27) added exactly one real one — stone_v1's
+# `fabrication` stage now carries `materials_ready` (see migration
+# 3c4d5e6f7a8b). Most of the tests below still set a stage's
+# gate_definitions directly via the ORM, exactly the way a future admin
+# endpoint eventually would, and always restore it afterwards so no other
+# test in this shared database sees an unexpected gate on a template it
+# also uses.
 # ---------------------------------------------------------------------------
 
 from app.workflows.gates import (
@@ -743,6 +752,7 @@ from app.workflows.gates import (
     CompletedSiteVisitGate,
     CustomerLinkedGate,
     GateBlocker,
+    MaterialsReadyGate,
     SiteAddressPresentGate,
     evaluate_stage_gates,
     parse_gate_definitions,
@@ -934,6 +944,60 @@ def test_transition_endpoint_returns_structured_409_until_the_gate_clears(client
         session.commit()
         session.close()
         _cleanup_task5_project(name)
+
+
+def test_materials_ready_gate_blocks_then_clears_as_requirements_are_received(db):
+    """GeoCore Premium OS Plan 05 (Sprint 044), Task 27 — a project with
+    an outstanding material requirement is blocked; a project with zero
+    requirements is never blocked (nothing to wait for); a project whose
+    only requirement has reached `received` clears the gate."""
+    from app.database import crud as procurement_crud
+
+    tenant = _make_tenant(db, "MaterialsGateTenant")
+    template = crud.get_system_workflow_template_by_key(db, "general_v1")
+    enquiry = crud.get_workflow_stage_by_key(db, template.id, "enquiry")
+    target = crud.get_workflow_stage_by_key(db, template.id, "quote")
+
+    project = Project(
+        id=uuid.uuid4(), tenant_id=tenant.id, name="Materials gate job", status="enquiry",
+        workflow_template_id=template.id, workflow_stage_id=enquiry.id,
+    )
+    db.add(project)
+    db.commit()
+
+    target.gate_definitions = [{"type": "materials_ready"}]
+    db.add(target)
+    db.commit()
+
+    try:
+        # No requirements at all — never blocked.
+        assert evaluate_stage_gates(db, project, tenant.id, target) == []
+
+        requirement = procurement_crud.create_material_requirement(
+            db, tenant_id=tenant.id, project_id=project.id, description="Quartz worktop", status="required",
+        )
+        blockers = evaluate_stage_gates(db, project, tenant.id, target)
+        assert [b.code for b in blockers] == ["materials_ready"]
+
+        procurement_crud.update_material_requirement(db, requirement, {"status": "received"})
+        assert evaluate_stage_gates(db, project, tenant.id, target) == []
+    finally:
+        target.gate_definitions = None
+        db.add(target)
+        db.commit()
+        db.execute(delete(ProjectMaterialRequirement).where(ProjectMaterialRequirement.project_id == project.id))
+        db.execute(delete(Project).where(Project.id == project.id))
+        db.execute(delete(Tenant).where(Tenant.id == tenant.id))
+        db.commit()
+
+
+def test_stone_v1_fabrication_stage_carries_the_real_seeded_materials_gate(db):
+    """The one real, seeded gate this plan ships (migration
+    3c4d5e6f7a8b) — not a test-only stub."""
+    template = crud.get_system_workflow_template_by_key(db, "stone_v1")
+    fabrication = crud.get_workflow_stage_by_key(db, template.id, "fabrication")
+    parsed = parse_gate_definitions(fabrication.gate_definitions)
+    assert [type(gate) for gate in parsed] == [MaterialsReadyGate]
 
 
 # ---------------------------------------------------------------------------

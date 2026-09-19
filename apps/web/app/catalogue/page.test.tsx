@@ -36,6 +36,10 @@ const searchCatalogueSurfacesMock = vi.fn();
 const getCatalogueSurfaceMock = vi.fn();
 const createCustomMaterialMock = vi.fn();
 const upsertCatalogueOverrideMock = vi.fn();
+// GeoCore Premium OS Plan 05 (Sprint 044), Task 34 — "Add to project
+// requirement" fetches the tenant's projects on mount.
+const getProjectsMock = vi.fn();
+const createProjectRequirementMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -46,6 +50,8 @@ vi.mock("@/lib/api", async () => {
       getCatalogueSurface: (...args: unknown[]) => getCatalogueSurfaceMock(...args),
       createCustomMaterial: (...args: unknown[]) => createCustomMaterialMock(...args),
       upsertCatalogueOverride: (...args: unknown[]) => upsertCatalogueOverrideMock(...args),
+      getProjects: (...args: unknown[]) => getProjectsMock(...args),
+      createProjectRequirement: (...args: unknown[]) => createProjectRequirementMock(...args),
     },
   };
 });
@@ -113,6 +119,8 @@ beforeEach(() => {
   getCatalogueSurfaceMock.mockReset().mockResolvedValue(detail());
   createCustomMaterialMock.mockReset();
   upsertCatalogueOverrideMock.mockReset();
+  getProjectsMock.mockReset().mockResolvedValue([]);
+  createProjectRequirementMock.mockReset();
   pushMock.mockClear();
   replaceMock.mockClear();
 });
@@ -247,6 +255,43 @@ describe("CataloguePage — Sprint 042 Plan 03", () => {
     expect(pushMock).toHaveBeenCalledWith(
       "/quotes/new/stone?catalogue_surface_id=surface-1&catalogue_variant_id=variant-1&material=Calacatta+Oro&thickness=20mm"
     );
+  });
+
+  // GeoCore Premium OS Plan 05 (Sprint 044), Task 34 — "Add to Project
+  // Requirement" hands the selected surface + variant straight to a
+  // project's material requirements, so a fabricator never re-types what
+  // they just found in the catalogue.
+  it("adds the selected surface and variant as a project material requirement", async () => {
+    getProjectsMock.mockResolvedValue([
+      { id: "project-1", name: "Smith Kitchen" },
+      { id: "project-2", name: "Jones Bathroom" },
+    ]);
+    createProjectRequirementMock.mockResolvedValue({});
+    render(<CataloguePage />);
+    fireEvent.click(await screen.findByText("Calacatta Oro"));
+    await screen.findByRole("heading", { name: "Calacatta Oro" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add to project requirement" }));
+    fireEvent.change(screen.getByLabelText("Project"), { target: { value: "project-2" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Unit"), { target: { value: "slab" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add requirement" }));
+
+    await waitFor(() => {
+      expect(createProjectRequirementMock).toHaveBeenCalledWith(
+        "project-2",
+        expect.objectContaining({
+          description: "Calacatta Oro",
+          catalogue_surface_id: "surface-1",
+          catalogue_variant_id: "variant-1",
+          required_quantity: 2,
+          unit: "slab",
+        })
+      );
+    });
+    expect(
+      await screen.findByText("Added as a material requirement on the selected project.")
+    ).toBeInTheDocument();
   });
 
   it("adds a custom material and, when saved to the catalogue, re-runs the search", async () => {

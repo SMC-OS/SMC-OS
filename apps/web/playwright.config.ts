@@ -41,7 +41,12 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: process.env.PW_LOCAL_CHROMIUM_PATH
+          ? { executablePath: process.env.PW_LOCAL_CHROMIUM_PATH }
+          : {},
+      },
     },
   ],
   // Real Next.js dev server + real FastAPI server (app.main:app, same
