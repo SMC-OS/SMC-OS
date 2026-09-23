@@ -79,6 +79,17 @@ def check(label: str, condition: bool, detail: str = "") -> None:
         FAILURES.append(label)
 
 
+def field(obj, key: str, default=None):
+    """Read `key` from a Stripe API object or a plain dict.
+
+    From stripe-python v13, StripeObject is no longer a dict subclass and
+    `.get()` raises AttributeError, but `in` and `obj[key]` still work on
+    both — so never call `.get()` on a Stripe object in this script."""
+    if obj is None:
+        return default
+    return obj[key] if key in obj else default  # noqa: SIM401 — .get() breaks on StripeObject
+
+
 def stripe_module():
     key = settings.stripe_secret_key or ""
     if not key.startswith("sk_test_"):
@@ -187,7 +198,10 @@ def verify(db, stripe) -> None:
         return
     s = subs.data[0]
     customer = stripe.Customer.retrieve(row.stripe_customer_id)
-    has_card = bool(s.get("default_payment_method") or (customer.get("invoice_settings") or {}).get("default_payment_method"))
+    has_card = bool(
+        field(s, "default_payment_method")
+        or field(field(customer, "invoice_settings"), "default_payment_method")
+    )
     check("Checkout collected a payment method", has_card)
     check("Stripe subscription is trialing", s.status == "trialing", s.status)
     check("remaining trial preserved (Stripe trial_end == GeoCore trial_end)",
@@ -196,7 +210,9 @@ def verify(db, stripe) -> None:
           s.trial_end < int((datetime.now(timezone.utc) + timedelta(days=13)).timestamp()))
     check("subscribed to the Business annual price", s["items"]["data"][0]["price"]["id"] == price_id_for("business", "annual"))
     invoice = _preview_invoice(stripe, s.id, row.stripe_customer_id)
-    first_charge = invoice.get("next_payment_attempt") or invoice.get("period_end") or invoice.get("created")
+    first_charge = (
+        field(invoice, "next_payment_attempt") or field(invoice, "period_end") or field(invoice, "created")
+    )
     check("first charge scheduled at trial_end", abs(first_charge - s.trial_end) <= 3600, f"{first_charge} vs {s.trial_end}")
     expected_pence = PRICING_GBP["business"]["annual"] * 100
     check("first charge amount is the Business annual price", invoice.amount_due == expected_pence, f"{invoice.amount_due}")
@@ -235,7 +251,7 @@ def cleanup(db, stripe) -> None:
     for tenant in tenants:
         row = crud.get_subscription_by_tenant_id(db, tenant.id)
         if row and row.stripe_customer_id and not row.stripe_customer_id.startswith("cus_fake_"):
-            clock_id = stripe.Customer.retrieve(row.stripe_customer_id).get("test_clock")
+            clock_id = field(stripe.Customer.retrieve(row.stripe_customer_id), "test_clock")
             if clock_id:
                 stripe.test_helpers.TestClock.delete(clock_id)
         user_ids = [u.id for u in db.scalars(select(User).where(User.tenant_id == tenant.id))]
