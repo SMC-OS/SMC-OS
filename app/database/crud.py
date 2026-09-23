@@ -75,6 +75,7 @@ from app.database.models import (
     WorkflowTemplate,
     WorkflowTransition,
 )
+from app.catalogue import search_terms
 from app.procurement.models import REQUIREMENT_BLOCKING_STATUSES, is_po_late
 
 
@@ -2218,6 +2219,52 @@ def list_catalogue_surface_variants(db: Session, surface_id: uuid.UUID) -> list[
     return list(db.scalars(stmt))
 
 
+def _supplier_sources_surface(tenant_id: uuid.UUID | None, supplier_condition):
+    """Supplier-search semantics (Phase A). A supplier is *where a
+    surface is bought from*, not what the surface is, so a supplier
+    matches a surface only when that supplier genuinely sources it:
+
+    - it is the surface's own catalogue supplier (a distributor-listed
+      or tenant-private row), or
+    - it is this tenant's preferred supplier for the surface, recorded
+      on the tenant's own TenantCatalogueOverride.
+
+    A supplier never matches a surface merely because both exist, and
+    one tenant's preferred-supplier choice never affects another
+    tenant's results. Returned as an EXISTS clause so a surface with
+    several variant-level overrides is still returned once."""
+    catalogue_supplier = (
+        select(CatalogueSupplier.id)
+        .where(CatalogueSupplier.id == CatalogueSurface.supplier_id, supplier_condition)
+        .exists()
+    )
+    if tenant_id is None:
+        return catalogue_supplier
+    preferred_supplier = (
+        select(TenantCatalogueOverride.id)
+        .join(CatalogueSupplier, CatalogueSupplier.id == TenantCatalogueOverride.preferred_supplier_id)
+        .where(
+            TenantCatalogueOverride.tenant_id == tenant_id,
+            TenantCatalogueOverride.surface_id == CatalogueSurface.id,
+            supplier_condition,
+        )
+        .exists()
+    )
+    return sa_or(catalogue_supplier, preferred_supplier)
+
+
+def count_visible_catalogue_surfaces(db: Session, tenant_id: uuid.UUID | None) -> dict[str, int]:
+    """How many active surfaces this tenant can see at all, split into
+    global reference data and its own private rows. Lets the UI tell
+    "the catalogue is empty" apart from "nothing matched your search"."""
+    base = select(func.count(CatalogueSurface.id)).where(CatalogueSurface.discontinued.is_(False))
+    global_count = db.scalar(base.where(CatalogueSurface.tenant_id.is_(None))) or 0
+    tenant_count = 0
+    if tenant_id is not None:
+        tenant_count = db.scalar(base.where(CatalogueSurface.tenant_id == tenant_id)) or 0
+    return {"global_surfaces": global_count, "tenant_surfaces": tenant_count}
+
+
 def search_catalogue_surfaces(
     db: Session,
     *,
@@ -2241,27 +2288,36 @@ def search_catalogue_surfaces(
     )
     if not include_discontinued:
         stmt = stmt.where(CatalogueSurface.discontinued.is_(False))
-    if query:
-        # A user searching by a brand/manufacturer/supplier name they
-        # already know (e.g. "Cosentino") must find it too, not just an
-        # exact/partial match on the surface's own canonical_name
-        # (post-release remediation §3).
-        like = f"%{query}%"
+    tokens = search_terms.tokenize(query)
+    if tokens:
+        # Phase A — every typed word must match *something* about the
+        # surface (AND across words, OR across fields), so "white quartz"
+        # narrows to white quartz rather than returning every white
+        # surface plus every quartz. A word can match the surface's own
+        # name, its brand or manufacturer, its material family or colour
+        # by meaning (app/catalogue/search_terms.py), or a supplier that
+        # actually sources it for this tenant (_supplier_sources_surface).
         stmt = stmt.outerjoin(CatalogueBrand, CatalogueSurface.brand_id == CatalogueBrand.id)
         stmt = stmt.outerjoin(CatalogueManufacturer, CatalogueSurface.manufacturer_id == CatalogueManufacturer.id)
-        stmt = stmt.outerjoin(CatalogueSupplier, CatalogueSurface.supplier_id == CatalogueSupplier.id)
-        stmt = stmt.where(
-            sa_or(
+        for token in tokens:
+            like = f"%{token}%"
+            matches = [
                 CatalogueSurface.canonical_name.ilike(like),
                 CatalogueBrand.name.ilike(like),
                 CatalogueManufacturer.name.ilike(like),
-                CatalogueSupplier.name.ilike(like),
-            )
-        )
+                _supplier_sources_surface(tenant_id, CatalogueSupplier.name.ilike(like)),
+            ]
+            families = search_terms.families_for(token)
+            if families:
+                matches.append(CatalogueSurface.material_family.in_(families))
+            colours = search_terms.colours_for(token)
+            if colours:
+                matches.append(CatalogueSurface.colour_family.in_(colours))
+            stmt = stmt.where(sa_or(*matches))
     if material_family:
         stmt = stmt.where(CatalogueSurface.material_family == material_family)
     if supplier_id:
-        stmt = stmt.where(CatalogueSurface.supplier_id == supplier_id)
+        stmt = stmt.where(_supplier_sources_surface(tenant_id, CatalogueSupplier.id == supplier_id))
     if manufacturer_id:
         stmt = stmt.where(CatalogueSurface.manufacturer_id == manufacturer_id)
     if brand_id:

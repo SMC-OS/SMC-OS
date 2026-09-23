@@ -45,6 +45,13 @@ export interface SurfaceSearchResult {
   has_tenant_price: boolean;
 }
 
+// Phase A — lets a zero-result search say why it is empty.
+export interface CatalogueStatus {
+  global_surfaces: number;
+  tenant_surfaces: number;
+  reference_data_loaded: boolean;
+}
+
 export interface SurfaceVariant {
   id: string;
   thickness_mm: number | null;

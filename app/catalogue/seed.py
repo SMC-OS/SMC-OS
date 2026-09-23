@@ -5,7 +5,9 @@ seed.py's old SEED_DATA_ENABLED-guarded auto-seed) — the Master Spec is
 explicit that no import pipeline may silently auto-publish to
 production. This module is only ever invoked explicitly:
 
-    python -m app.catalogue.seed
+    python -m app.catalogue.seed --dry-run    # writes nothing
+    python -m app.catalogue.seed              # dev / staging
+    python -m app.catalogue.seed --confirm-production
 
 It is idempotent (safe to run more than once — every row is looked up
 by its own slug before being created) and every surface records real
@@ -154,6 +156,13 @@ def _get_or_create_supplier(db: Session, data: dict) -> CatalogueSupplier:
     )
 
 
+def surface_slug(canonical_name: str, manufacturer_slug: str | None) -> str:
+    """The one slug rule for a seeded global surface. Shared with
+    app/catalogue/reference_data.py so the release gate checks exactly
+    the rows this seed creates, never a re-derived copy of the rule."""
+    return f"{manufacturer_slug or 'generic'}-{canonical_name.lower().replace(' ', '-')}"
+
+
 def seed_catalogue(db: Session) -> dict:
     """Idempotent — looked up by slug, never duplicated on re-run.
     Returns a small summary dict for the caller (the CLI entry point
@@ -173,7 +182,7 @@ def seed_catalogue(db: Session) -> dict:
     created_surfaces = 0
     created_variants = 0
     for name, family, mfr_slug, brand_slug, colour, variants in _SURFACES:
-        slug = f"{mfr_slug or 'generic'}-{name.lower().replace(' ', '-')}"
+        slug = surface_slug(name, mfr_slug)
         existing = db.query(CatalogueSurface).filter(CatalogueSurface.slug == slug).first()
         if existing is not None:
             surface = existing
@@ -228,13 +237,61 @@ def seed_catalogue(db: Session) -> dict:
     }
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point. Phase A adds two safety rails:
+
+    --dry-run              writes nothing; prints what the seed would
+                           create (the read-only reference-data gate's
+                           own "missing" report — exact, because the
+                           seed is idempotent by slug).
+    --confirm-production   required, in addition to running the command
+                           at all, before this writes to a database
+                           whose APP_ENV is production.
+
+    After a real run it re-checks the gate and fails loudly if any
+    expected row is still missing."""
+    import argparse
+
+    from app.catalogue.reference_data import check_reference_data, format_report
+    from app.core.config import AppEnvironment, settings
     from app.database.database import SessionLocal
+
+    parser = argparse.ArgumentParser(description="Seed global catalogue reference data (idempotent).")
+    parser.add_argument("--dry-run", action="store_true", help="write nothing; report what would be created")
+    parser.add_argument(
+        "--confirm-production",
+        action="store_true",
+        help="required to write when APP_ENV is production",
+    )
+    args = parser.parse_args(argv)
 
     session = SessionLocal()
     try:
+        if args.dry_run:
+            print("DRY RUN — nothing will be written.")
+            print(format_report(check_reference_data(session)))
+            session.rollback()
+            return 0
+
+        if settings.app_env is AppEnvironment.PRODUCTION and not args.confirm_production:
+            print(
+                "Refusing to write catalogue reference data to production without "
+                "--confirm-production. Run with --dry-run first."
+            )
+            return 2
+
         summary = seed_catalogue(session)
         session.commit()
         print(f"Catalogue seed complete: {summary}")
+
+        report = check_reference_data(session)
+        print(format_report(report))
+        return 0 if report.ok else 1
     finally:
         session.close()
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())

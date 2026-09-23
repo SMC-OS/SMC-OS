@@ -7,6 +7,7 @@ import type {
 import type { AuthUser, LoginResponse, SignupRequest } from "@/types/auth";
 import type { BillingPeriod, Plan, PlanId, Subscription } from "@/types/billing";
 import type {
+  CatalogueStatus,
   CustomMaterialInput,
   CustomMaterialResult,
   SurfaceDetail,
@@ -577,16 +578,20 @@ export const api = {
   // Sprint 042 (GeoCore Premium OS Plan 03) — Master Materials & Supplier Catalogue.
   getMaterialFamilies: () => request<string[]>("/catalogue/meta/material-families"),
 
+  getCatalogueStatus: () => request<CatalogueStatus>("/catalogue/meta/status"),
+
   searchCatalogueSurfaces: (params: {
     q?: string;
     material_family?: string;
     colour_family?: string;
+    supplier_id?: string;
     include_discontinued?: boolean;
     limit?: number;
   } = {}) => {
     const query = new URLSearchParams();
     if (params.q) query.set("q", params.q);
     if (params.material_family) query.set("material_family", params.material_family);
+    if (params.supplier_id) query.set("supplier_id", params.supplier_id);
     if (params.colour_family) query.set("colour_family", params.colour_family);
     if (params.include_discontinued) query.set("include_discontinued", "true");
     query.set("limit", String(params.limit ?? 30));

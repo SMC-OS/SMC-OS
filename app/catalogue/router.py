@@ -20,6 +20,7 @@ from app.auth.dependencies import require_billing_access, require_role
 from app.auth.models import UserRole
 from app.catalogue.models import (
     MATERIAL_FAMILIES,
+    CatalogueStatusOut,
     CustomMaterialCreate,
     CustomMaterialOut,
     SurfaceDetailOut,
@@ -79,6 +80,21 @@ def _get_override(db: Session, tenant_id: uuid.UUID, surface_id: uuid.UUID):
 @router.get("/meta/material-families", response_model=list[str])
 def list_material_families():
     return sorted(MATERIAL_FAMILIES)
+
+
+@router.get("/meta/status", response_model=CatalogueStatusOut)
+def get_catalogue_status(
+    current_user: User = Depends(require_billing_access),
+    db: Session = Depends(get_db),
+):
+    from app.database import crud
+
+    counts = crud.count_visible_catalogue_surfaces(db, current_user.tenant_id)
+    return CatalogueStatusOut(
+        global_surfaces=counts["global_surfaces"],
+        tenant_surfaces=counts["tenant_surfaces"],
+        reference_data_loaded=counts["global_surfaces"] > 0,
+    )
 
 
 @router.get("/surfaces", response_model=list[SurfaceSearchResult])

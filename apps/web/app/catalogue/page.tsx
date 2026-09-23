@@ -14,11 +14,13 @@ import { formatCurrencyGBP } from "@/lib/utils";
 import {
   MATERIAL_FAMILIES,
   MATERIAL_FAMILY_LABELS,
+  type CatalogueStatus,
   type CustomMaterialResult,
   type MaterialFamily,
   type SurfaceDetail,
   type SurfaceSearchResult,
 } from "@/types/catalogue";
+import type { CatalogueSupplierSummary } from "@/types/procurement";
 import type { Project } from "@/types/project";
 
 interface CustomMaterialFormState {
@@ -65,6 +67,15 @@ export default function CataloguePage() {
 
   const [query, setQuery] = useState("");
   const [materialFamily, setMaterialFamily] = useState<MaterialFamily | "">("");
+  // Phase A — supplier is a filter ("who do I buy it from"), never a
+  // guess from the search text; and the catalogue's own status lets an
+  // empty result say whether nothing matched or nothing is loaded.
+  const [supplierId, setSupplierId] = useState("");
+  const [suppliers, setSuppliers] = useState<CatalogueSupplierSummary[]>([]);
+  const [catalogueStatus, setCatalogueStatus] = useState<CatalogueStatus | null>(null);
+  // Bumped by "Clear search" so the cleared query re-runs even when the
+  // family/supplier filters were already empty.
+  const [searchNonce, setSearchNonce] = useState(0);
   const [results, setResults] = useState<SurfaceSearchResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -116,13 +127,14 @@ export default function CataloguePage() {
       .searchCatalogueSurfaces({
         q: query.trim() || undefined,
         material_family: materialFamily || undefined,
+        supplier_id: supplierId || undefined,
       })
       .then(setResults)
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Something went wrong.")
       )
       .finally(() => setLoading(false));
-  }, [query, materialFamily]);
+  }, [query, materialFamily, supplierId]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -138,7 +150,27 @@ export default function CataloguePage() {
     // keystroke into `query` — that has its own explicit "Search" submit.
     api.getProjects().then(setProjects).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, isAuthenticated, router, materialFamily]);
+  }, [isReady, isAuthenticated, router, materialFamily, supplierId, searchNonce]);
+
+  useEffect(() => {
+    if (!isReady || !isAuthenticated) return;
+    // Both optional: a failure only hides the supplier filter or falls
+    // back to the generic "no results" wording, never blocks search.
+    api.getCatalogueStatus().then(setCatalogueStatus).catch(() => {});
+    api.getSuppliers().then(setSuppliers).catch(() => {});
+  }, [isReady, isAuthenticated]);
+
+  const catalogueIsEmpty =
+    catalogueStatus !== null &&
+    catalogueStatus.global_surfaces + catalogueStatus.tenant_surfaces === 0;
+  const hasActiveFilters = Boolean(query.trim() || materialFamily || supplierId);
+
+  function clearFilters() {
+    setQuery("");
+    setMaterialFamily("");
+    setSupplierId("");
+    setSearchNonce((n) => n + 1);
+  }
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -491,7 +523,7 @@ export default function CataloguePage() {
                 id="catalogueQuery"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="e.g. Calacatta, Silestone, Cosentino"
+                placeholder="e.g. Calacatta, white quartz, Silestone"
               />
             </Field>
             <Field label="Material family" htmlFor="catalogueFamily" className="sm:w-56">
@@ -508,6 +540,22 @@ export default function CataloguePage() {
                 ))}
               </Select>
             </Field>
+            {suppliers.length > 0 && (
+              <Field label="Supplier" htmlFor="catalogueSupplier" className="sm:w-56">
+                <Select
+                  id="catalogueSupplier"
+                  value={supplierId}
+                  onChange={(e) => setSupplierId(e.target.value)}
+                >
+                  <option value="">All suppliers</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
             <Button type="submit" disabled={loading}>
               <SearchIcon className="h-4 w-4" />
               {loading ? "Searching…" : "Search"}
@@ -529,14 +577,32 @@ export default function CataloguePage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-4">
-              {results && results.length === 0 && (
+              {results && results.length === 0 && catalogueIsEmpty && (
                 <EmptyState
-                  title="No surfaces found"
-                  description="Try a different search, or add it as a custom material."
+                  title="Your material catalogue is empty"
+                  description="GeoCore's shared reference catalogue hasn't been loaded for your workspace yet. You can still add your own materials and quote them straight away."
                   action={
                     <Button variant="outline" size="sm" onClick={() => setShowCustomForm(true)}>
                       Add custom material
                     </Button>
+                  }
+                />
+              )}
+              {results && results.length === 0 && !catalogueIsEmpty && (
+                <EmptyState
+                  title="No surfaces found"
+                  description="Try fewer words, a different colour or material family, or add it as a custom material."
+                  action={
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {hasActiveFilters && (
+                        <Button variant="ghost" size="sm" onClick={clearFilters}>
+                          Clear search
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => setShowCustomForm(true)}>
+                        Add custom material
+                      </Button>
+                    </div>
                   }
                 />
               )}

@@ -66,7 +66,14 @@ Run these gates in order. Any failure blocks traffic promotion.
    200 {"status":"ready","database":"reachable"}
    ```
 8. Make a minimal authenticated API request. On first setup and after any storage change, also complete the upload persistence smoke test in §4.
-9. Only after every prior gate succeeds, route production traffic to the new release.
+9. Run the read-only catalogue reference-data gate (§13) and require exit code 0:
+
+   ```text
+   python -m app.catalogue.reference_data
+   ```
+
+   It only reads, so it is safe on every release. A non-zero exit means the global catalogue is missing rows its release depends on; follow §13 rather than promoting.
+10. Only after every prior gate succeeds, route production traffic to the new release.
 
 Capture the preflight, migration, revision, startup, and health outputs in the deployment system. Do not promote a release merely because `/health` passes: liveness does not establish database availability or migration state.
 
@@ -230,3 +237,32 @@ python -m scripts.production.set_tenant_identity --slug <slug> --company-number 
 **v1.0.2 (2026-09-03) — auth-session desync on the dashboard.** An expired/invalid JWT (60-minute expiry, no refresh mechanism exists — see §1's `JWT_EXPIRE_MINUTES`) got a correct 401 from the API, but `AuthProvider` only ever computed `isAuthenticated` once, on mount, so nothing told it the token had gone invalid mid-session; the dashboard page also had no auth guard at all, unlike every other protected page. Net effect: a signed-out user kept seeing themselves as authenticated, stuck on a broken dashboard retrying every 5 seconds and reporting the 401 as "Couldn't reach the SIMO OS API." Fixed by making token clearing an event `AuthProvider` reacts to, adding the missing dashboard guard, and having the polling layer distinguish a 401/403 from a real network/API failure. Frontend-only; no backend change. Full record: PR #14, merge commit `94562198b786e30723730f33ac50d1ca1fca06b2`, tag `v1.0.2`.
 
 **Running an ops script against production without it being in the image.** `scripts/production/*.py` is deliberately not copied into the production Docker image (keeps ops tooling out of the runtime attack surface). To run one against production without a local tunnel's environment-guard mismatch (a tunnel's local host, e.g. `127.0.0.1`, doesn't match the script's `simo-postgres-production` host marker), pipe the script's source over `railway ssh` into a Python process running inside a service that already has the real `DATABASE_URL` (e.g. `simo-api-production`): `cat scripts/production/<script>.py | railway ssh --service simo-api-production -- python - <args>`. The script's own environment guard still applies — it checks the container's real, correctly-resolved `DATABASE_URL`, not the tunnel's.
+
+## 13. Appendix — Catalogue reference data (Phase A remediation)
+
+The global material catalogue (surfaces, variants, manufacturers, brands and example suppliers) is reference data, not sample data, but it is deliberately **not** created at application startup: `app/catalogue/seed.py` only runs when invoked by hand. Production shipped the catalogue feature without that step ever being run, so catalogue search was empty. Two tools now close that gap:
+
+| Command | Writes? | Purpose |
+|---|---|---|
+| `python -m app.catalogue.reference_data` | Never | Release gate. Compares the database with the seed definitions. Exit 0 = complete, 1 = rows missing. `--json` for the full report. |
+| `python -m app.catalogue.seed --dry-run` | Never | Prints exactly what the seed would create (the gate's missing list — exact, because the seed is idempotent by slug). |
+| `python -m app.catalogue.seed --confirm-production` | Yes | The only way the seed writes when `APP_ENV=production`. Without the flag it refuses and exits 2. Re-checks the gate afterwards and exits 1 if anything is still missing. |
+
+Expected counts (locked by `tests/test_catalogue_reference_data.py`): **38 surfaces, 47 variants, 7 manufacturers, 3 brands, 2 suppliers.** No prices are ever seeded.
+
+### 13.1 Controlled production run
+
+Run only with explicit owner approval for that specific write. Stop at the first unexpected result.
+
+1. Confirm a production database backup exists and record its identifier and time. The approved backup for the first run is the manual backup of **23 September 2026, 14:03 UK time**; do not delete or overwrite it.
+2. Confirm the release: `alembic current` reports the sole head, and the API deployment is the intended release.
+3. Record the before-state (read-only): `python -m app.catalogue.reference_data --json`. Expect `ok: false` with all 38 surfaces missing on the first run.
+4. Dry run: `python -m app.catalogue.seed --dry-run`. Its missing counts must equal step 3's.
+5. Write: `python -m app.catalogue.seed --confirm-production`. The seed commits row by row; if it stops part-way, re-running it is safe and completes only what is missing.
+6. Verify: `python -m app.catalogue.reference_data` exits 0 and shows 38/47/7/3/2.
+7. Verify through the product: signed in as a real tenant, `GET /api/v1/catalogue/meta/status` returns `global_surfaces: 38`, and searching `white quartz` on the stone quote page returns Calacatta Gold.
+8. Record every output above in the deployment log.
+
+Rollback: the seed only inserts global reference rows, so the targeted rollback is to delete the global rows by the slugs in the gate's report; a full restore from the step-1 backup is the fallback. Tenant data is never touched either way.
+
+Use the `railway ssh` pattern in §12 to run these inside `simo-api-production`, which already has the real `DATABASE_URL`; `app/` ships in the image, so no script needs piping.

@@ -40,6 +40,9 @@ const upsertCatalogueOverrideMock = vi.fn();
 // requirement" fetches the tenant's projects on mount.
 const getProjectsMock = vi.fn();
 const createProjectRequirementMock = vi.fn();
+// Phase A — empty-catalogue status and the supplier filter.
+const getCatalogueStatusMock = vi.fn();
+const getSuppliersMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -52,6 +55,8 @@ vi.mock("@/lib/api", async () => {
       upsertCatalogueOverride: (...args: unknown[]) => upsertCatalogueOverrideMock(...args),
       getProjects: (...args: unknown[]) => getProjectsMock(...args),
       createProjectRequirement: (...args: unknown[]) => createProjectRequirementMock(...args),
+      getCatalogueStatus: (...args: unknown[]) => getCatalogueStatusMock(...args),
+      getSuppliers: (...args: unknown[]) => getSuppliersMock(...args),
     },
   };
 });
@@ -121,6 +126,10 @@ beforeEach(() => {
   upsertCatalogueOverrideMock.mockReset();
   getProjectsMock.mockReset().mockResolvedValue([]);
   createProjectRequirementMock.mockReset();
+  getCatalogueStatusMock
+    .mockReset()
+    .mockResolvedValue({ global_surfaces: 38, tenant_surfaces: 0, reference_data_loaded: true });
+  getSuppliersMock.mockReset().mockResolvedValue([]);
   pushMock.mockClear();
   replaceMock.mockClear();
 });
@@ -378,5 +387,68 @@ describe("CataloguePage — Sprint 042 Plan 03", () => {
 
     expect(await within(await screen.findByRole("list")).findByText("Discontinued")).toBeInTheDocument();
     expect(screen.getByText("Inactive")).toBeInTheDocument();
+  });
+
+  describe("Phase A — empty catalogue vs no results, and supplier filter", () => {
+    it("says the catalogue is empty when no reference data is loaded", async () => {
+      searchCatalogueSurfacesMock.mockResolvedValue([]);
+      getCatalogueStatusMock.mockResolvedValue({
+        global_surfaces: 0,
+        tenant_surfaces: 0,
+        reference_data_loaded: false,
+      });
+      render(<CataloguePage />);
+
+      expect(await screen.findByText("Your material catalogue is empty")).toBeInTheDocument();
+      expect(screen.queryByText("No surfaces found")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Add custom material" })).toBeInTheDocument();
+    });
+
+    it("treats a tenant's own private materials as a non-empty catalogue", async () => {
+      searchCatalogueSurfacesMock.mockResolvedValue([]);
+      getCatalogueStatusMock.mockResolvedValue({
+        global_surfaces: 0,
+        tenant_surfaces: 2,
+        reference_data_loaded: false,
+      });
+      render(<CataloguePage />);
+
+      expect(await screen.findByText("No surfaces found")).toBeInTheDocument();
+    });
+
+    it("offers Clear search on a filtered no-results page and re-runs the search", async () => {
+      render(<CataloguePage />);
+      await waitFor(() => expect(searchCatalogueSurfacesMock).toHaveBeenCalledTimes(1));
+
+      searchCatalogueSurfacesMock.mockResolvedValue([]);
+      fireEvent.change(screen.getByLabelText("Search"), { target: { value: "zzz" } });
+      fireEvent.click(screen.getByRole("button", { name: /search/i }));
+      fireEvent.click(await screen.findByRole("button", { name: "Clear search" }));
+
+      await waitFor(() =>
+        expect(searchCatalogueSurfacesMock).toHaveBeenLastCalledWith(expect.objectContaining({ q: undefined }))
+      );
+      expect(screen.getByLabelText("Search")).toHaveValue("");
+    });
+
+    it("hides the supplier filter when there are no suppliers", async () => {
+      render(<CataloguePage />);
+      await screen.findByText("Calacatta Oro");
+      expect(screen.queryByLabelText("Supplier")).not.toBeInTheDocument();
+    });
+
+    it("filters by supplier id, never by guessing from the search text", async () => {
+      getSuppliersMock.mockResolvedValue([{ id: "sup-9", name: "Stone Merchant Ltd", slug: "stone-merchant" }]);
+      render(<CataloguePage />);
+
+      const select = await screen.findByLabelText("Supplier");
+      fireEvent.change(select, { target: { value: "sup-9" } });
+
+      await waitFor(() =>
+        expect(searchCatalogueSurfacesMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ supplier_id: "sup-9" })
+        )
+      );
+    });
   });
 });

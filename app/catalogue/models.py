@@ -121,6 +121,16 @@ class TenantOverrideIn(BaseModel):
     private_notes: str | None = None
 
 
+class CatalogueStatusOut(BaseModel):
+    """Phase A — how much of the catalogue this tenant can see at all,
+    so a zero-result search can say *why* it is empty: the shared
+    reference data has not been loaded, versus nothing matching."""
+
+    global_surfaces: int
+    tenant_surfaces: int
+    reference_data_loaded: bool
+
+
 class SurfaceSearchResult(BaseModel):
     """Concise result data for catalogue search / quote selection (Task
     4) — never the entire row, and never a price (Task 3/8: price is
