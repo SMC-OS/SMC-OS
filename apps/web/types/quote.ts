@@ -24,9 +24,15 @@ export const MATERIAL_OPTIONS = [
   "Dekton Kelya",
 ] as const;
 
-// Post-release remediation §4 — 12mm was a real, commonly-quoted stone/
-// sintered-stone thickness with no option here at all.
-export const THICKNESS_OPTIONS = ["12mm", "20mm", "30mm"] as const;
+// The legacy free-text material table (app/materials/seed.py) seeds
+// every material at exactly these two thicknesses, always both, never a
+// third — so this list must stay a closed, exhaustive match to it or a
+// free-text selection can point at a (material, thickness) combination
+// that can never price. 12mm stone (a real, commonly-quoted sintered-
+// stone thickness) is reachable instead through a catalogue-linked
+// selection (MaterialCatalogueSearch), whose thickness comes from the
+// chosen surface's real variant, never from this list.
+export const THICKNESS_OPTIONS = ["20mm", "30mm"] as const;
 
 // Post-release remediation §4 — a visual layout picker for the shape of
 // a worktop run. Deliberately a small closed set of icon-backed choices

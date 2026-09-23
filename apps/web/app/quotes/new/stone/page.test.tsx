@@ -509,10 +509,14 @@ describe("NewQuotePage — post-release remediation (§4): layout picker and ext
     expect(body.items[0].notes).toBeNull();
   });
 
-  it("offers 12mm alongside 20mm and 30mm thickness options", () => {
+  it("keeps the free-text thickness dropdown limited to what the legacy material table actually prices", () => {
+    // 12mm stone is reachable through a catalogue-linked selection
+    // instead (its thickness comes from the chosen surface's real
+    // variant) — the free-text dropdown must never offer a combination
+    // the legacy material table (app/materials/seed.py) can't resolve.
     render(<NewQuotePage />);
     const thicknessSelect = screen.getByLabelText("Thickness") as HTMLSelectElement;
     const values = Array.from(thicknessSelect.options).map((o) => o.value);
-    expect(values).toEqual(["12mm", "20mm", "30mm"]);
+    expect(values).toEqual(["20mm", "30mm"]);
   });
 });
