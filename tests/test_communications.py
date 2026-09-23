@@ -447,7 +447,10 @@ class TestRetryPending:
 
         succeeding_provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="m"))
         sweep_delivery = DeliveryService(provider=succeeding_provider)
-        result = sweep_delivery.retry_pending(db)
+        # The sweep is oldest-first and capped (default 100): on a shared
+        # dev database other runs can leave 100+ older retryable rows, so
+        # size the sweep to reach this test's own rows deterministically.
+        result = sweep_delivery.retry_pending(db, limit=100_000)
 
         # Sprint 039 Production Readiness Defect Gate, Blockers 1 and 2 —
         # retry_pending() sweeps *every* tenant by design (its own

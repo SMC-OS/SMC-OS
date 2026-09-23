@@ -183,3 +183,45 @@ def test_a_follow_up_failure_still_keeps_the_request(client, sales_workspace, mo
         assert db.scalar(select(func.count(DemoRequest.id)).where(DemoRequest.email == prospect)) == 1
     finally:
         db.close()
+
+
+def test_same_email_typed_differently_maps_to_one_customer(client, sales_workspace):
+    tenant_id, _, _ = sales_workspace
+    prospect = _email("normalise")
+    assert client.post("/api/v1/demo-requests", json=_payload(f"  {prospect.upper()}  ")).status_code == 201
+    db = SessionLocal()
+    try:
+        demo_service.create_demo_request(db, DemoRequestCreate(**_payload(prospect, message="Follow-up.")))
+        customers = db.scalars(select(Customer).where(Customer.tenant_id == tenant_id)).all()
+        assert [c.email for c in customers] == [prospect]
+    finally:
+        db.close()
+
+
+def test_a_rapid_double_submission_creates_one_customer(client, sales_workspace):
+    tenant_id, _, provider = sales_workspace
+    prospect = _email("double-click")
+    first = client.post("/api/v1/demo-requests", json=_payload(prospect))
+    second = client.post("/api/v1/demo-requests", json=_payload(prospect))
+    assert (first.status_code, second.status_code) == (201, 429)
+    db = SessionLocal()
+    try:
+        assert db.scalar(select(func.count(Customer.id)).where(Customer.tenant_id == tenant_id)) == 1
+    finally:
+        db.close()
+    assert len([m for m in provider.sent if "received your" in m.subject]) == 1
+
+
+def test_two_people_from_the_same_company_are_two_contacts(sales_workspace):
+    """A customer record is a person you deal with (see CustomerCreate):
+    two colleagues from one company are two contacts, not a duplicate."""
+    tenant_id, _, _ = sales_workspace
+    db = SessionLocal()
+    try:
+        demo_service.create_demo_request(db, DemoRequestCreate(**_payload(_email("colleague-a"))))
+        demo_service.create_demo_request(db, DemoRequestCreate(**_payload(_email("colleague-b"), first_name="Sam")))
+        customers = db.scalars(select(Customer).where(Customer.tenant_id == tenant_id)).all()
+        assert len(customers) == 2
+        assert {c.company_name for c in customers} == {f"Fabricator Stoneworks {RUN}"}
+    finally:
+        db.close()

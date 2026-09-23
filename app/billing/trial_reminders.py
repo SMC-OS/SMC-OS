@@ -39,6 +39,10 @@ class TrialReminderResult:
     ended_sent: int = 0
     skipped_not_due: int = 0
     skipped_no_recipient: int = 0
+    retried: int = 0
+    # True when this deployment cannot send email (no provider key, or no
+    # real frontend URL for the links): nothing is attempted or recorded.
+    skipped_email_unconfigured: bool = False
 
 
 def _uk_date_label(moment: datetime) -> str:
@@ -53,6 +57,13 @@ class TrialReminderService:
     def run(self, db: Session, *, now: datetime | None = None) -> TrialReminderResult:
         now = now or datetime.now(timezone.utc)
         result = TrialReminderResult()
+        # Never record a send that cannot happen: a failed row is stored
+        # under the reminder's dedupe key, so running this where email is
+        # not configured (e.g. a worker missing RESEND_API_KEY or
+        # FRONTEND_BASE_URL) must be a no-op, not a silent "already sent".
+        if not settings.resend_api_key or "localhost" in settings.frontend_base_url:
+            result.skipped_email_unconfigured = True
+            return result
         candidates = db.scalars(
             select(Subscription).where(
                 Subscription.status == "trialing",
@@ -100,6 +111,14 @@ class TrialReminderService:
 
                 existing = crud.get_communication_by_dedupe_key(db, tenant.id, dedupe_key)
                 if existing is not None:
+                    # Sent (or suppressed) already: never twice. A failed
+                    # attempt is retried within DeliveryService's own
+                    # bounded, retryable-only policy instead of being
+                    # treated as delivered.
+                    if existing.status == "failed":
+                        retried = self._delivery.retry(db, existing.id)
+                        if retried is not None and retried.status != "failed":
+                            result.retried += 1
                     continue
                 self._delivery.send(
                     db,

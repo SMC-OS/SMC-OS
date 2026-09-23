@@ -2,8 +2,10 @@
 
 Same thin-CLI shape as app/jobs/follow_up.py: all logic lives in
 app.billing.trial_reminders, unit-tested on its own. Idempotent, so it is
-safe on any schedule; app/jobs/follow_up.py also calls it, so the existing
-daily cron runs it with no new Railway service or configuration.
+safe on any schedule, and a no-op wherever email is not configured.
+app/jobs/follow_up.py also calls it, so whichever scheduler runs the
+follow-up job runs this too (see PRODUCTION_RUNBOOK §14 for the current
+state of that scheduler).
 
     python -m app.jobs.trial_reminders
     python -m app.jobs.trial_reminders --now 2026-10-07T09:00:00+00:00   # verification only

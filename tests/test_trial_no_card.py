@@ -232,6 +232,16 @@ def test_checkout_for_a_workspace_that_never_trialled_grants_no_trial(client, ba
     assert "trial_period_days" not in kwargs["subscription_data"]
 
 
+@pytest.fixture(autouse=True)
+def _email_configured(monkeypatch):
+    """Reminders only run where email can really be sent (see
+    TrialReminderService.run); tests configure it explicitly."""
+    from app.core.config import settings as _settings
+
+    monkeypatch.setattr(_settings, "resend_api_key", "re_test_key")
+    monkeypatch.setattr(_settings, "frontend_base_url", "https://app.geocore.test")
+
+
 # --- Reminder emails --------------------------------------------------------------
 
 
@@ -333,3 +343,68 @@ def test_follow_up_job_also_reports_trial_reminders(capsys):
 
     assert follow_up.main([]) == 0
     assert '"trial_reminders"' in capsys.readouterr().out
+
+
+def test_reminders_record_nothing_where_email_is_not_configured(monkeypatch):
+    """A worker without RESEND_API_KEY or a real FRONTEND_BASE_URL must not
+    store failed rows under the reminder dedupe keys — those would block
+    the real reminder forever once email is configured."""
+    from app.core.config import settings
+
+    tenant_id = _workspace_on_trial(datetime.now(timezone.utc) + timedelta(days=1))
+    provider = _FakeProvider()
+    try:
+        for key, value in (("resend_api_key", None), ("frontend_base_url", "http://localhost:3000")):
+            monkeypatch.setattr(settings, "resend_api_key", "re_test_key")
+            monkeypatch.setattr(settings, "frontend_base_url", "https://app.geocore.test")
+            monkeypatch.setattr(settings, key, value)
+            db = SessionLocal()
+            try:
+                result = TrialReminderService(delivery=DeliveryService(provider=provider)).run(db)
+            finally:
+                db.close()
+            assert result.skipped_email_unconfigured is True
+        assert _reminder_types(tenant_id) == []
+        assert provider.sent == []
+    finally:
+        _cleanup_tenant(tenant_id)
+
+
+class _FlakyProvider(_FakeProvider):
+    def __init__(self):
+        super().__init__()
+        self.fail = True
+
+    def send(self, message):
+        if self.fail:
+            return SendResult(outcome=SendOutcome.TRANSIENT_FAILURE, detail="provider timeout")
+        return super().send(message)
+
+
+def test_a_failed_reminder_is_retried_not_treated_as_sent():
+    tenant_id = _workspace_on_trial(datetime.now(timezone.utc) + timedelta(days=2))
+    provider = _FlakyProvider()
+    service = TrialReminderService(delivery=DeliveryService(provider=provider))
+    try:
+        db = SessionLocal()
+        try:
+            service.run(db)
+        finally:
+            db.close()
+        assert provider.sent == []  # first attempt failed
+        provider.fail = False
+        db = SessionLocal()
+        try:
+            result = service.run(db)
+        finally:
+            db.close()
+        assert result.retried == 1
+        assert [m.subject for m in provider.sent] == ["Your GeoCore free trial ends in 2 days"]
+        db = SessionLocal()
+        try:
+            rows = db.query(Communication).filter(Communication.tenant_id == tenant_id).all()
+            assert len(rows) == 1 and rows[0].status != "failed"  # same row, never a second one
+        finally:
+            db.close()
+    finally:
+        _cleanup_tenant(tenant_id)

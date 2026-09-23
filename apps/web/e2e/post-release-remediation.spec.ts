@@ -117,6 +117,13 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
   await page.getByLabel("Length (mm)").first().fill("2400");
   await page.getByRole("button", { name: "Calculate Quote" }).click();
 
-  await expect(page.getByText(/U-shape/)).toBeVisible();
-  await expect(page.getByText(/Sink \/ hob cutout/)).toBeVisible();
+  // Assert on the itemised RESULT, not the form: the picker labels stay
+  // on screen after calculating, so a bare getByText(/U-shape/) matched
+  // the picker (passing without checking the result at all) or, once the
+  // result rendered, two elements (a strict-mode failure). Wait for the
+  // result heading, then match the exact notes line the quote records.
+  await expect(
+    page.getByRole("heading", { name: `Quote for Pytest Layout Customer ${runId}` })
+  ).toBeVisible();
+  await expect(page.getByText("Layout: U-shape. Extras: Sink / hob cutout", { exact: true })).toBeVisible();
 });

@@ -1478,7 +1478,11 @@ def upsert_subscription(
     # already-recorded trial window with None, so — unlike the Stripe id
     # fields above, which are genuinely optional per call — these only
     # apply when the caller actually passes a value.
-    if trial_start is not None:
+    # Phase B: keep the EARLIEST trial_start. A workspace that subscribes
+    # during its no-card trial gets a Stripe subscription whose own
+    # trial_start is the checkout time; overwriting would erase when the
+    # free trial really began. trial_end still follows Stripe.
+    if trial_start is not None and (row.trial_start is None or trial_start < row.trial_start):
         row.trial_start = trial_start
     if trial_end is not None:
         row.trial_end = trial_end

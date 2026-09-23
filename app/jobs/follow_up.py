@@ -39,8 +39,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"error": str(exc)}), file=sys.stderr)
         return 1
 
-    # Phase B — the daily cron that runs this job also sends the no-card
-    # trial reminders, so they need no new Railway service. Isolated: a
+    # Phase B — whatever schedules this job also sends the no-card trial
+    # reminders (a no-op where email is not configured). Isolated: a
     # reminder failure is reported but never fails the follow-up run.
     from app.jobs.trial_reminders import run as run_trial_reminders
 
