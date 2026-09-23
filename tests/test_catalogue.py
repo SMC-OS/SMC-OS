@@ -14,6 +14,9 @@ from app.database import crud
 from app.database.database import SessionLocal
 from app.database.models import (
     ActivityLog,
+    CatalogueBrand,
+    CatalogueManufacturer,
+    CatalogueSupplier,
     CatalogueSurface,
     CatalogueSurfaceVariant,
     Quote,
@@ -241,6 +244,111 @@ def test_search_never_returns_another_tenants_private_surface(db):
     finally:
         _cleanup_tenant(tenant_a.id)
         _cleanup_tenant(tenant_b.id, [private_surface.id])
+
+
+def test_search_matches_brand_manufacturer_and_supplier_name(db):
+    """Post-release remediation (§3): `q` previously matched only
+    canonical_name — a user typing a brand/manufacturer/supplier name
+    they know (e.g. "Cosentino") got zero results unless they already
+    knew the surface's own product name. Text search must also reach
+    those three linked tables."""
+    tenant = _make_tenant(db, "SearchByBrandTenant")
+    unique = uuid.uuid4().hex[:8]
+    supplier = crud.create_catalogue_supplier(
+        db, name=f"UniqueSupplierCo{unique}", slug=f"unique-supplier-{unique}", active=True
+    )
+    manufacturer = crud.create_catalogue_manufacturer(
+        db, name=f"UniqueManufacturerCo{unique}", slug=f"unique-manufacturer-{unique}", active=True
+    )
+    brand = crud.create_catalogue_brand(
+        db, manufacturer_id=None, name=f"UniqueBrandName{unique}", slug=f"unique-brand-{unique}", active=True
+    )
+    by_supplier = crud.create_catalogue_surface(
+        db,
+        tenant_id=None,
+        supplier_id=supplier.id,
+        manufacturer_id=None,
+        brand_id=None,
+        collection_id=None,
+        canonical_name=f"Totally Unrelated Name A {unique}",
+        slug=f"pytest-brand-search-a-{unique}",
+        supplier_sku=None,
+        manufacturer_sku=None,
+        material_family="quartz",
+        colour_family=None,
+        pattern_family=None,
+        origin_country=None,
+        active=True,
+        discontinued=False,
+        source_url=None,
+        source_name="pytest",
+        source_verified_at=None,
+    )
+    by_manufacturer = crud.create_catalogue_surface(
+        db,
+        tenant_id=None,
+        supplier_id=None,
+        manufacturer_id=manufacturer.id,
+        brand_id=None,
+        collection_id=None,
+        canonical_name=f"Totally Unrelated Name B {unique}",
+        slug=f"pytest-brand-search-b-{unique}",
+        supplier_sku=None,
+        manufacturer_sku=None,
+        material_family="quartz",
+        colour_family=None,
+        pattern_family=None,
+        origin_country=None,
+        active=True,
+        discontinued=False,
+        source_url=None,
+        source_name="pytest",
+        source_verified_at=None,
+    )
+    by_brand = crud.create_catalogue_surface(
+        db,
+        tenant_id=None,
+        supplier_id=None,
+        manufacturer_id=None,
+        brand_id=brand.id,
+        collection_id=None,
+        canonical_name=f"Totally Unrelated Name C {unique}",
+        slug=f"pytest-brand-search-c-{unique}",
+        supplier_sku=None,
+        manufacturer_sku=None,
+        material_family="quartz",
+        colour_family=None,
+        pattern_family=None,
+        origin_country=None,
+        active=True,
+        discontinued=False,
+        source_url=None,
+        source_name="pytest",
+        source_verified_at=None,
+    )
+    try:
+        supplier_results = catalogue_service.search(db, tenant.id, query=f"UniqueSupplierCo{unique}")
+        assert by_supplier.id in [s.id for s in supplier_results]
+
+        manufacturer_results = catalogue_service.search(db, tenant.id, query=f"UniqueManufacturerCo{unique}")
+        assert by_manufacturer.id in [s.id for s in manufacturer_results]
+
+        brand_results = catalogue_service.search(db, tenant.id, query=f"UniqueBrandName{unique}")
+        assert by_brand.id in [s.id for s in brand_results]
+
+        # A name query must still not accidentally return unrelated surfaces.
+        name_results = catalogue_service.search(db, tenant.id, query=f"NoSuchTextAnywhere{unique}")
+        assert name_results == []
+    finally:
+        _cleanup_tenant(tenant.id, [by_supplier.id, by_manufacturer.id, by_brand.id])
+        cleanup_db = SessionLocal()
+        try:
+            cleanup_db.execute(delete(CatalogueBrand).where(CatalogueBrand.id == brand.id))
+            cleanup_db.execute(delete(CatalogueManufacturer).where(CatalogueManufacturer.id == manufacturer.id))
+            cleanup_db.execute(delete(CatalogueSupplier).where(CatalogueSupplier.id == supplier.id))
+            cleanup_db.commit()
+        finally:
+            cleanup_db.close()
 
 
 def test_tenant_b_cannot_see_tenant_as_price_override(client, db):

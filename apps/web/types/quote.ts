@@ -24,7 +24,39 @@ export const MATERIAL_OPTIONS = [
   "Dekton Kelya",
 ] as const;
 
-export const THICKNESS_OPTIONS = ["20mm", "30mm"] as const;
+// Post-release remediation §4 — 12mm was a real, commonly-quoted stone/
+// sintered-stone thickness with no option here at all.
+export const THICKNESS_OPTIONS = ["12mm", "20mm", "30mm"] as const;
+
+// Post-release remediation §4 — a visual layout picker for the shape of
+// a worktop run. Deliberately a small closed set of icon-backed choices
+// rather than a freeform diagram editor: it labels the job for the
+// quote's notes, it does not attempt to compute geometry or price from
+// the shape (pricing stays exactly the existing per-item slab-area
+// calculation, unaffected by this field).
+export const LAYOUT_OPTIONS = ["straight", "l_shape", "u_shape", "island", "peninsula"] as const;
+export type LayoutOption = (typeof LAYOUT_OPTIONS)[number];
+export const LAYOUT_LABELS: Record<LayoutOption, string> = {
+  straight: "Straight run",
+  l_shape: "L-shape",
+  u_shape: "U-shape",
+  island: "Island",
+  peninsula: "Peninsula",
+};
+
+// Post-release remediation §4 — common add-ons a customer expects to see
+// itemised on the quote. Same scope note as layout above: these are
+// recorded on the line's notes for transparency, not priced separately
+// — a real extras pricing model is a materially larger change than this
+// reconstruction's scope and is not invented here.
+export const EXTRA_OPTIONS = ["cutout", "upstand_included", "splashback_included", "polished_edge"] as const;
+export type ExtraOption = (typeof EXTRA_OPTIONS)[number];
+export const EXTRA_LABELS: Record<ExtraOption, string> = {
+  cutout: "Sink / hob cutout",
+  upstand_included: "Upstand included",
+  splashback_included: "Splashback included",
+  polished_edge: "Polished edge",
+};
 
 export const DIMENSION_UNITS = ["mm", "cm", "m"] as const;
 export type DimensionUnit = (typeof DIMENSION_UNITS)[number];

@@ -50,13 +50,11 @@ const MODULES: { title: string; body: string; status?: "planned" | "coming" }[] 
   { title: "Documents", body: "Upload and store the drawings, approvals and paperwork each project needs." },
   {
     title: "Materials / Procurement",
-    body: "Supplier and material tracking for stone and general construction alike.",
-    status: "planned",
+    body: "Material requirements, purchase orders and deliveries tracked against every project, for stone and general construction alike.",
   },
   {
     title: "Financials / Profitability",
-    body: "Contract value, variations, recorded cost and forecast margin in one place.",
-    status: "coming",
+    body: "Contract value, variations and recorded cost tracked project by project, with margin visible as the job progresses.",
   },
 ];
 
@@ -299,10 +297,7 @@ export default function HomePage() {
                 <p>A real workflow that follows a stone job from measure to fit, stage by stage.</p>
               </li>
               <li className="card">
-                <div className="card__header">
-                  <h3>Master Stone Catalogue</h3>
-                  <span className="tag tag--coming">Coming in GeoCore Premium OS</span>
-                </div>
+                <h3>Master Stone Catalogue</h3>
                 <p>A structured, searchable supplier and material catalogue with tenant pricing.</p>
               </li>
             </ul>
@@ -364,9 +359,9 @@ export default function HomePage() {
             <p className="eyebrow">Financial &amp; Operational Visibility</p>
             <h2>Know what&apos;s quoted, approved and moving</h2>
             <p className="section__lead">
-              The Command Center already shows quoted and approved value across your pipeline
-              today. Deeper cost tracking, variations and forecast margin are{" "}
-              <span className="tag tag--coming">coming in GeoCore Premium OS</span>.
+              The Command Center shows quoted and approved value across your pipeline, and every
+              project tracks its own contract value, variations and recorded cost — with margin
+              visible as the job progresses.
             </p>
           </div>
         </section>

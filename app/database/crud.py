@@ -2242,7 +2242,22 @@ def search_catalogue_surfaces(
     if not include_discontinued:
         stmt = stmt.where(CatalogueSurface.discontinued.is_(False))
     if query:
-        stmt = stmt.where(CatalogueSurface.canonical_name.ilike(f"%{query}%"))
+        # A user searching by a brand/manufacturer/supplier name they
+        # already know (e.g. "Cosentino") must find it too, not just an
+        # exact/partial match on the surface's own canonical_name
+        # (post-release remediation §3).
+        like = f"%{query}%"
+        stmt = stmt.outerjoin(CatalogueBrand, CatalogueSurface.brand_id == CatalogueBrand.id)
+        stmt = stmt.outerjoin(CatalogueManufacturer, CatalogueSurface.manufacturer_id == CatalogueManufacturer.id)
+        stmt = stmt.outerjoin(CatalogueSupplier, CatalogueSurface.supplier_id == CatalogueSupplier.id)
+        stmt = stmt.where(
+            sa_or(
+                CatalogueSurface.canonical_name.ilike(like),
+                CatalogueBrand.name.ilike(like),
+                CatalogueManufacturer.name.ilike(like),
+                CatalogueSupplier.name.ilike(like),
+            )
+        )
     if material_family:
         stmt = stmt.where(CatalogueSurface.material_family == material_family)
     if supplier_id:

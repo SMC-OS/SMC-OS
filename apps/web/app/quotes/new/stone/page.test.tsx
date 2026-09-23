@@ -121,6 +121,65 @@ beforeEach(() => {
         warnings: [],
       });
     }
+    if (url.includes("/catalogue/surfaces?")) {
+      const parsed = new URL(url, "http://localhost");
+      const q = parsed.searchParams.get("q") ?? "";
+      if (!q.toLowerCase().includes("silestone") && !q.toLowerCase().includes("calacatta")) {
+        return jsonResponse([]);
+      }
+      return jsonResponse([
+        {
+          id: "surface-search-1",
+          canonical_name: "Calacatta Gold",
+          material_family: "quartz",
+          colour_family: "white",
+          supplier_name: null,
+          manufacturer_name: "Cosentino",
+          brand_name: "Silestone",
+          collection_name: null,
+          active: true,
+          discontinued: false,
+          is_tenant_private: false,
+          thicknesses_mm: [20, 30],
+          finishes: ["Polished"],
+          has_tenant_price: false,
+        },
+      ]);
+    }
+    if (url.endsWith("/catalogue/surfaces/surface-search-1")) {
+      return jsonResponse({
+        id: "surface-search-1",
+        is_tenant_private: false,
+        canonical_name: "Calacatta Gold",
+        material_family: "quartz",
+        colour_family: "white",
+        pattern_family: null,
+        origin_country: null,
+        supplier: null,
+        manufacturer: { id: "mfr-1", name: "Cosentino", slug: "cosentino" },
+        brand: { id: "brand-1", name: "Silestone", slug: "silestone" },
+        collection: null,
+        supplier_sku: null,
+        manufacturer_sku: null,
+        active: true,
+        discontinued: false,
+        source_name: null,
+        source_url: null,
+        source_verified_at: null,
+        variants: [
+          {
+            id: "variant-search-1",
+            thickness_mm: 20,
+            finish: "Polished",
+            slab_length_mm: 3200,
+            slab_width_mm: 1600,
+            supplier_variant_sku: null,
+            active: true,
+          },
+        ],
+        tenant_override: null,
+      });
+    }
     if (url.endsWith("/quote") && init?.method === "POST") {
       const parsedBody = JSON.parse(String(init.body));
       const items = (parsedBody.items ?? []).map((item: Record<string, unknown>, i: number) =>
@@ -352,5 +411,108 @@ describe("NewQuotePage — Master Catalogue integration (Sprint 042, Plan 03)", 
       "href",
       "/catalogue"
     );
+  });
+});
+
+describe("NewQuotePage — post-release remediation (§4): inline catalogue material search", () => {
+  it("searches the catalogue as the user types and links the chosen surface on selection", async () => {
+    render(<NewQuotePage />);
+
+    const materialField = screen.getByLabelText("Material");
+    await userEvent.type(materialField, "Silestone");
+
+    const suggestion = await screen.findByRole("button", { name: /calacatta gold/i });
+    await userEvent.click(suggestion);
+
+    await waitFor(() => {
+      expect(screen.getByText("From catalogue")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Calacatta Gold")).toBeInTheDocument();
+    expect(screen.getByText("20mm")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
+    await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+    await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+      expect(call).toBeTruthy();
+    });
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.items[0].catalogue_surface_id).toBe("surface-search-1");
+    expect(body.items[0].catalogue_variant_id).toBe("variant-search-1");
+  });
+
+  it("keeps typed free text as the material with no catalogue link when nothing is selected", async () => {
+    render(<NewQuotePage />);
+
+    const materialField = screen.getByLabelText("Material");
+    await userEvent.clear(materialField);
+    await userEvent.type(materialField, "Some Unlisted Stone");
+
+    expect(materialField).toHaveValue("Some Unlisted Stone");
+    expect(screen.queryByText("From catalogue")).not.toBeInTheDocument();
+  });
+});
+
+describe("NewQuotePage — post-release remediation (§4): layout picker and extras", () => {
+  it("lets the user pick a visual layout and records it on the item's notes", async () => {
+    render(<NewQuotePage />);
+
+    await userEvent.click(screen.getByRole("radio", { name: /l-shape/i }));
+    await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
+    await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+    await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+      expect(call).toBeTruthy();
+    });
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.items[0].notes).toContain("L-shape");
+  });
+
+  it("lets the user pick extras and records them on the item's notes", async () => {
+    render(<NewQuotePage />);
+
+    await userEvent.click(screen.getByLabelText(/sink \/ hob cutout/i));
+    await userEvent.click(screen.getByLabelText(/polished edge/i));
+    await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
+    await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+    await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+      expect(call).toBeTruthy();
+    });
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.items[0].notes).toContain("Sink / hob cutout");
+    expect(body.items[0].notes).toContain("Polished edge");
+  });
+
+  it("sends null notes when no layout or extras are chosen", async () => {
+    render(<NewQuotePage />);
+
+    await userEvent.type(screen.getByLabelText(/customer name/i), "Sarah Whitfield");
+    await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+    await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+      expect(call).toBeTruthy();
+    });
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.items[0].notes).toBeNull();
+  });
+
+  it("offers 12mm alongside 20mm and 30mm thickness options", () => {
+    render(<NewQuotePage />);
+    const thicknessSelect = screen.getByLabelText("Thickness") as HTMLSelectElement;
+    const values = Array.from(thicknessSelect.options).map((o) => o.value);
+    expect(values).toEqual(["12mm", "20mm", "30mm"]);
   });
 });

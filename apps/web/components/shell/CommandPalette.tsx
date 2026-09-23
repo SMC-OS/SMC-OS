@@ -3,14 +3,16 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { PlusIcon, SearchIcon } from "@/components/ui/icons";
+import { FolderIcon, PlusIcon, SearchIcon } from "@/components/ui/icons";
+import { api } from "@/lib/api";
 import { NAV_ITEMS, SETTINGS_SECTIONS } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+import type { Project } from "@/types/project";
 
 interface Command {
   id: string;
   label: string;
-  group: "Navigate" | "Quick actions" | "Settings";
+  group: "Navigate" | "Quick actions" | "Settings" | "Projects";
   icon: (typeof NAV_ITEMS)[number]["icon"];
   run: () => void;
 }
@@ -25,6 +27,28 @@ export function CommandPalette({
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  // Post-release remediation §2 — the palette previously offered only
+  // static nav/action/settings entries, never a way to jump straight to
+  // an existing project by name. Fetched once per open, not per
+  // keystroke: a real search-as-you-type would need a dedicated search
+  // endpoint, which is a larger change than this fixes.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api
+      .getProjects(50)
+      .then((rows) => {
+        if (!cancelled) setProjects(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setProjects([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const commands = useMemo<Command[]>(() => {
     const navCommands: Command[] = NAV_ITEMS.map((item) => ({
@@ -80,8 +104,16 @@ export function CommandPalette({
       run: () => router.push(`/settings?section=${section.key}`),
     }));
 
-    return [...navCommands, ...quickActions, ...settingsCommands];
-  }, [router]);
+    const projectCommands: Command[] = projects.map((project) => ({
+      id: `project-${project.id}`,
+      label: project.name,
+      group: "Projects",
+      icon: FolderIcon,
+      run: () => router.push(`/projects/${project.id}`),
+    }));
+
+    return [...navCommands, ...quickActions, ...settingsCommands, ...projectCommands];
+  }, [router, projects]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return commands;
@@ -171,7 +203,7 @@ export function CommandPalette({
             <p className="px-3 py-6 text-center text-sm text-muted">No matches.</p>
           )}
 
-          {(["Navigate", "Quick actions"] as const).map((group) => {
+          {(["Navigate", "Quick actions", "Projects"] as const).map((group) => {
             const items = filtered.filter((c) => c.group === group);
             if (items.length === 0) return null;
 

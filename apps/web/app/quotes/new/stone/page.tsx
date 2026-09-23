@@ -9,15 +9,22 @@ import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
+import { ExtrasPicker } from "@/components/quotes/ExtrasPicker";
+import { LayoutPicker } from "@/components/quotes/LayoutPicker";
+import { MaterialCatalogueSearch } from "@/components/quotes/MaterialCatalogueSearch";
 import { ApiError, api } from "@/lib/api";
 import { formatCurrencyGBP } from "@/lib/utils";
 import {
+  EXTRA_LABELS,
   ITEM_TYPE_LABELS,
   ITEM_TYPES,
+  LAYOUT_LABELS,
   MATERIAL_OPTIONS,
   THICKNESS_OPTIONS,
   type AIQuoteItemDraft,
+  type ExtraOption,
   type ItemType,
+  type LayoutOption,
   type QuoteResult,
 } from "@/types/quote";
 import type { Customer } from "@/types/customer";
@@ -37,6 +44,10 @@ interface ItemRow {
   // they no longer describe the catalogue surface.
   catalogue_surface_id: string | null;
   catalogue_variant_id: string | null;
+  // Post-release remediation §4 — optional, descriptive-only fields.
+  // Recorded on the submitted item's `notes`; never affect pricing.
+  layout: LayoutOption | "";
+  extras: ExtraOption[];
 }
 
 let nextRowKey = 0;
@@ -56,8 +67,21 @@ function blankItem(overrides: Partial<ItemRow> = {}): ItemRow {
     width_mm: "650",
     catalogue_surface_id: null,
     catalogue_variant_id: null,
+    layout: "",
+    extras: [],
     ...overrides,
   };
+}
+
+/** Post-release remediation §4 — layout/extras are UI-only concepts with
+ * no backend column of their own; they're folded into the existing free-
+ * text `notes` field so they persist and print on the quote without any
+ * schema change. */
+function composeItemNotes(row: ItemRow): string | null {
+  const parts: string[] = [];
+  if (row.layout) parts.push(`Layout: ${LAYOUT_LABELS[row.layout]}`);
+  if (row.extras.length > 0) parts.push(`Extras: ${row.extras.map((e) => EXTRA_LABELS[e]).join(", ")}`);
+  return parts.length > 0 ? parts.join(". ") : null;
 }
 
 function draftToRow(draft: AIQuoteItemDraft): ItemRow {
@@ -190,6 +214,7 @@ function NewQuotePageInner() {
           unit_input: "mm",
           catalogue_surface_id: row.catalogue_surface_id,
           catalogue_variant_id: row.catalogue_variant_id,
+          notes: composeItemNotes(row),
         })),
       });
       setResult(quote);
@@ -419,7 +444,7 @@ function NewQuotePageInner() {
                   id="postcode"
                   value={postcode}
                   onChange={(e) => setPostcode(e.target.value)}
-                  placeholder="SW1A 1AA"
+                  placeholder="e.g. AB1 2CD"
                 />
               </Field>
             </div>
@@ -476,7 +501,7 @@ function NewQuotePageInner() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <Field label="Type" htmlFor={`${row.key}-type`}>
                     <Select
                       id={`${row.key}-type`}
@@ -516,17 +541,19 @@ function NewQuotePageInner() {
                     </Field>
                   ) : (
                     <Field label="Material" htmlFor={`${row.key}-material`}>
-                      <Select
+                      <MaterialCatalogueSearch
                         id={`${row.key}-material`}
                         value={row.material}
-                        onChange={(e) => updateItem(row.key, { material: e.target.value })}
-                      >
-                        {MATERIAL_OPTIONS.map((m) => (
-                          <option key={m} value={m}>
-                            {m}
-                          </option>
-                        ))}
-                      </Select>
+                        onFreeTextChange={(text) => updateItem(row.key, { material: text })}
+                        onSelectSurface={(surface, thicknessLabel, variantId) =>
+                          updateItem(row.key, {
+                            material: surface.canonical_name,
+                            thickness: thicknessLabel,
+                            catalogue_surface_id: surface.id,
+                            catalogue_variant_id: variantId,
+                          })
+                        }
+                      />
                     </Field>
                   )}
 
@@ -586,6 +613,25 @@ function NewQuotePageInner() {
                     />
                   </Field>
                 </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="mb-1.5 text-sm font-medium text-foreground">Layout (optional)</p>
+                    <LayoutPicker
+                      idPrefix={row.key}
+                      value={row.layout}
+                      onChange={(layout) => updateItem(row.key, { layout })}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-sm font-medium text-foreground">Extras (optional)</p>
+                    <ExtrasPicker
+                      idPrefix={row.key}
+                      value={row.extras}
+                      onChange={(extras) => updateItem(row.key, { extras })}
+                    />
+                  </div>
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -635,6 +681,7 @@ function NewQuotePageInner() {
                       {item.quantity} x {item.length_mm}mm x {item.width_mm}mm ·{" "}
                       {item.slabs} slab{item.slabs === 1 ? "" : "s"}
                     </p>
+                    {item.notes && <p className="mt-1 text-xs text-muted">{item.notes}</p>}
                   </div>
                   <span className="text-foreground">
                     {item.line_total !== null ? formatCurrencyGBP(item.line_total) : "—"}

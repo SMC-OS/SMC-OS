@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { PlusIcon, TrashIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
+import { parseNumberInput } from "@/lib/number";
 import { currencySymbol, daysFromTodayISO, formatMoney } from "@/lib/utils";
 import type {
   GeneralQuoteLineRequest,
@@ -423,7 +424,7 @@ export function GeneralQuoteBuilder({
                         step="0.01"
                         value={line.quantity}
                         onChange={(e) =>
-                          updateLine(line.key, { quantity: Number(e.target.value) || 0 })
+                          updateLine(line.key, { quantity: parseNumberInput(e.target.value) })
                         }
                       />
                     </Field>
@@ -451,7 +452,7 @@ export function GeneralQuoteBuilder({
                         step="0.01"
                         value={line.unit_price}
                         onChange={(e) =>
-                          updateLine(line.key, { unit_price: Number(e.target.value) || 0 })
+                          updateLine(line.key, { unit_price: parseNumberInput(e.target.value) })
                         }
                       />
                     </Field>

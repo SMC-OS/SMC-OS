@@ -68,7 +68,12 @@ export function NotificationsPanel() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-80 rounded-xl border border-border bg-surface shadow-lg">
+        // Post-release remediation §10 — a fixed w-80 with no viewport cap
+        // ran off the left edge of the screen at common phone widths
+        // (this button sits offset from the true screen edge, inside the
+        // topbar's right-hand cluster). Same safeguard the mobile nav
+        // drawer already uses (Sidebar.tsx's max-w-[85vw]).
+        <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-1.5rem)] rounded-xl border border-border bg-surface shadow-lg">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-foreground">Notifications</p>
             {unreadCount > 0 && <Badge tone="info">{unreadCount} unread</Badge>}

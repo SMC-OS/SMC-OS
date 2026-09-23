@@ -145,7 +145,7 @@ export function CustomerForm({
                 autoComplete="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="07123 456789"
+                placeholder="e.g. 07123 456789"
               />
             </Field>
           </div>
@@ -158,7 +158,7 @@ export function CustomerForm({
                   id="addressLine1"
                   value={addressLine1}
                   onChange={(e) => setAddressLine1(e.target.value)}
-                  placeholder="14 Elm Road"
+                  placeholder="e.g. 14 Elm Road"
                 />
               </Field>
               <Field label="Address line 2" htmlFor="addressLine2">
@@ -174,7 +174,7 @@ export function CustomerForm({
                     id="city"
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
-                    placeholder="Manchester"
+                    placeholder="e.g. Manchester"
                   />
                 </Field>
                 <Field label="Postcode" htmlFor="postcode">
@@ -182,7 +182,7 @@ export function CustomerForm({
                     id="postcode"
                     value={postcode}
                     onChange={(e) => setPostcode(e.target.value)}
-                    placeholder="M1 4BT"
+                    placeholder="e.g. AB1 2CD"
                     // Uppercase because a UK postcode is conventionally
                     // written that way, applied by CSS so the value the
                     // user typed is what they see.

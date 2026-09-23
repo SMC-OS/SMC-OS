@@ -39,19 +39,27 @@ _MANUFACTURERS = [
     {"name": "Caesarstone", "slug": "caesarstone", "country": "Israel", "website": "https://www.caesarstone.com"},
     {"name": "Cambria", "slug": "cambria", "country": "United States", "website": "https://www.cambriausa.com"},
     {"name": "TheSize (Neolith)", "slug": "thesize-neolith", "country": "Spain", "website": "https://neolith.com"},
+    {"name": "LX Hausys", "slug": "lx-hausys", "country": "South Korea", "website": "https://www.lxhausys.com"},
+    {"name": "Technistone", "slug": "technistone", "country": "Czech Republic", "website": "https://www.technistone.com"},
+    {"name": "Laminam", "slug": "laminam", "country": "Italy", "website": "https://www.laminam.com"},
 ]
 
-# --- Brands (Cosentino's own consumer-facing brand names) ------------------
+# --- Brands (each manufacturer's own consumer-facing brand names) ----------
 
 _BRANDS = [
     {"name": "Silestone", "slug": "silestone", "manufacturer_slug": "cosentino"},
     {"name": "Dekton", "slug": "dekton", "manufacturer_slug": "cosentino"},
+    {"name": "Viatera", "slug": "viatera", "manufacturer_slug": "lx-hausys"},
 ]
 
-# --- A UK stone distributor, for provenance/supplier-vs-manufacturer -------
+# --- Stone distributors, for provenance/supplier-vs-manufacturer -----------
+# "Example" prefix is deliberate: these are clearly-labelled placeholder
+# distributor entries, not real named companies — unlike manufacturer/
+# brand/product names above, which are real and publicly known.
 
 _SUPPLIERS = [
     {"name": "Example UK Stone Distributor", "slug": "example-uk-stone-distributor", "country": "United Kingdom"},
+    {"name": "Example European Stone Importer", "slug": "example-european-stone-importer", "country": "Netherlands"},
 ]
 
 # --- Surfaces: (canonical_name, family, manufacturer_slug, brand_slug,
@@ -60,21 +68,48 @@ _SUPPLIERS = [
 # copy, no photos. Representative across families, not exhaustive.
 
 _SURFACES = [
+    # Post-release remediation §3 expanded this from 15 to 38 surfaces
+    # across 3 more manufacturers and 1 more brand — a modest, still-
+    # representative expansion, deliberately not chasing an unverified
+    # "~96" figure that appears nowhere in this codebase's history.
     ("Calacatta Gold", "quartz", "cosentino", "silestone", "white", [(20, "Polished"), (30, "Polished")]),
     ("Eternal Statuario", "quartz", "cosentino", "silestone", "white", [(20, "Polished")]),
     ("Kensho", "quartz", "cosentino", "silestone", "grey", [(20, "Suede")]),
+    ("Eternal Marquina", "quartz", "cosentino", "silestone", "black", [(20, "Polished")]),
+    ("Pietra Grey", "quartz", "cosentino", "silestone", "grey", [(20, "Polished"), (30, "Polished")]),
+    ("Arctic Fantasy", "quartz", "cosentino", "silestone", "white", [(20, "Suede")]),
     ("Sirocco", "sintered_stone", "cosentino", "dekton", "grey", [(12, "Matte"), (20, "Matte")]),
     ("Kelya", "sintered_stone", "cosentino", "dekton", "white", [(12, "Matte")]),
+    ("Trilium", "sintered_stone", "cosentino", "dekton", "grey", [(12, "Matte")]),
+    ("Laurent", "sintered_stone", "cosentino", "dekton", "white", [(20, "Polished")]),
     ("Pure White", "quartz", "caesarstone", None, "white", [(20, "Polished"), (30, "Polished")]),
     ("Cosmic Black", "quartz", "caesarstone", None, "black", [(20, "Polished")]),
+    ("London Grey", "quartz", "caesarstone", None, "grey", [(20, "Polished")]),
+    ("Vanilla Noir", "quartz", "caesarstone", None, "black", [(20, "Polished"), (30, "Polished")]),
+    ("Frosty Carrina", "quartz", "caesarstone", None, "white", [(20, "Polished")]),
     ("Brittanicca", "quartz", "cambria", None, "white", [(20, "Polished")]),
     ("Ella", "quartz", "cambria", None, "white", [(30, "Polished")]),
+    ("Torquay", "quartz", "cambria", None, "white", [(30, "Polished")]),
+    ("Berwyn", "quartz", "cambria", None, "grey", [(20, "Polished")]),
     ("La Minerva", "sintered_stone", "thesize-neolith", None, "white", [(12, "Silk")]),
+    ("Calacatta", "sintered_stone", "thesize-neolith", None, "white", [(12, "Polished"), (20, "Polished")]),
+    ("Iron Moss", "sintered_stone", "thesize-neolith", None, "grey", [(12, "Silk")]),
+    ("Basalt Grey", "sintered_stone", "thesize-neolith", None, "grey", [(20, "Matte")]),
+    ("Minuet", "quartz", "lx-hausys", "viatera", "white", [(20, "Polished")]),
+    ("Rolling Fog", "quartz", "lx-hausys", "viatera", "grey", [(20, "Polished")]),
+    ("Pebble Beach", "quartz", "lx-hausys", "viatera", "beige", [(30, "Polished")]),
+    ("Crystal Snow", "quartz", "technistone", None, "white", [(20, "Polished")]),
+    ("Starlight", "quartz", "technistone", None, "black", [(20, "Polished")]),
     ("Nero Marquina", "marble", None, None, "black", [(20, "Polished"), (30, "Honed")]),
     ("Carrara White", "marble", None, None, "white", [(20, "Polished")]),
+    ("Emperador Dark", "marble", None, None, "brown", [(20, "Polished")]),
+    ("Bianco Statuario", "marble", None, None, "white", [(20, "Polished"), (30, "Honed")]),
     ("Absolute Black", "granite", None, None, "black", [(20, "Polished"), (30, "Leathered")]),
     ("Kashmir White", "granite", None, None, "white", [(30, "Polished")]),
+    ("Steel Grey", "granite", None, None, "grey", [(30, "Flamed")]),
+    ("Tan Brown", "granite", None, None, "brown", [(30, "Polished")]),
     ("Grey Concrete", "porcelain", None, None, "grey", [(12, "Matte")]),
+    ("Basalt Black", "porcelain", None, None, "black", [(12, "Matte")]),
 ]
 
 

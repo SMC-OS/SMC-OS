@@ -132,7 +132,7 @@ export function ProjectOverview({
                   id="convert-phone"
                   value={convertPhone}
                   onChange={(e) => onConvertPhoneChange(e.target.value)}
-                  placeholder="07123 456789"
+                  placeholder="e.g. 07123 456789"
                 />
               </Field>
               <Button type="submit" disabled={converting}>

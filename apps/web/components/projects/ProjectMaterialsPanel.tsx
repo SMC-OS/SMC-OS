@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/componen
 import { Field, Input, Select } from "@/components/ui/Field";
 import { PlusIcon, TrashIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
+import { parseNumberInput } from "@/lib/number";
 import { formatCurrencyGBP, formatDate, formatDateTime } from "@/lib/utils";
 import {
   REQUIREMENT_STATUS_LABELS,
@@ -595,7 +596,7 @@ export function ProjectMaterialsPanel({
                       aria-label="Quantity"
                       placeholder="Qty"
                       value={item.quantity}
-                      onChange={(e) => updatePoItem(index, { quantity: Number(e.target.value) })}
+                      onChange={(e) => updatePoItem(index, { quantity: parseNumberInput(e.target.value) })}
                     />
                     <Input
                       aria-label="Unit"
@@ -610,7 +611,7 @@ export function ProjectMaterialsPanel({
                       aria-label="Unit cost"
                       placeholder="Unit cost"
                       value={item.unit_cost}
-                      onChange={(e) => updatePoItem(index, { unit_cost: Number(e.target.value) })}
+                      onChange={(e) => updatePoItem(index, { unit_cost: parseNumberInput(e.target.value) })}
                     />
                   </div>
                 ))}

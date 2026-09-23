@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/componen
 import { Field, Input, Textarea } from "@/components/ui/Field";
 import { PlusIcon, TrashIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
+import { parseNumberInput } from "@/lib/number";
 import { formatCurrencyGBP, formatDateTime } from "@/lib/utils";
 import { VARIATION_STATUS_LABELS, VARIATION_STATUS_TONE } from "@/types/variation";
 import type { Variation, VariationItemIn } from "@/types/variation";
@@ -175,7 +176,7 @@ export function ProjectVariationsPanel({ projectId }: { projectId: string }) {
                       aria-label="Quantity"
                       placeholder="Qty"
                       value={item.quantity}
-                      onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
+                      onChange={(e) => updateItem(index, { quantity: parseNumberInput(e.target.value) })}
                     />
                     <Input
                       aria-label="Unit"
@@ -190,7 +191,7 @@ export function ProjectVariationsPanel({ projectId }: { projectId: string }) {
                       aria-label="Unit price"
                       placeholder="Unit price"
                       value={item.unit_price}
-                      onChange={(e) => updateItem(index, { unit_price: Number(e.target.value) })}
+                      onChange={(e) => updateItem(index, { unit_price: parseNumberInput(e.target.value) })}
                     />
                   </div>
                 ))}
