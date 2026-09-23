@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.database import crud
-from app.database.models import CatalogueBrand, CatalogueManufacturer, CatalogueSupplier, CatalogueSurface
+from app.database.models import CatalogueBrand, CatalogueManufacturer, CatalogueSurface
 
 _NOW = lambda: datetime.now(timezone.utc)  # noqa: E731
 
@@ -54,15 +54,18 @@ _BRANDS = [
     {"name": "Viatera", "slug": "viatera", "manufacturer_slug": "lx-hausys"},
 ]
 
-# --- Stone distributors, for provenance/supplier-vs-manufacturer -----------
-# "Example" prefix is deliberate: these are clearly-labelled placeholder
-# distributor entries, not real named companies — unlike manufacturer/
-# brand/product names above, which are real and publicly known.
+# --- Suppliers: deliberately none ----------------------------------------
+# Earlier versions seeded two clearly-labelled placeholder distributors
+# ("Example UK Stone Distributor", "Example European Stone Importer").
+# No seeded surface ever referenced them, and a placeholder company must
+# never appear in a real workspace's supplier lists, so the approved
+# production reference dataset contains zero suppliers. Suppliers are
+# real businesses a tenant works with: they come from the tenant's own
+# data (custom materials, preferred suppliers, procurement), never from
+# this seed. app/catalogue/reference_data.py fails the release gate if
+# either placeholder slug is ever present.
 
-_SUPPLIERS = [
-    {"name": "Example UK Stone Distributor", "slug": "example-uk-stone-distributor", "country": "United Kingdom"},
-    {"name": "Example European Stone Importer", "slug": "example-european-stone-importer", "country": "Netherlands"},
-]
+PLACEHOLDER_SUPPLIER_SLUGS = ("example-uk-stone-distributor", "example-european-stone-importer")
 
 # --- Surfaces: (canonical_name, family, manufacturer_slug, brand_slug,
 # colour_family, variants: list of (thickness_mm, finish)) -----------------
@@ -140,22 +143,6 @@ def _get_or_create_brand(db: Session, data: dict, manufacturer_id) -> CatalogueB
     )
 
 
-def _get_or_create_supplier(db: Session, data: dict) -> CatalogueSupplier:
-    existing = db.query(CatalogueSupplier).filter(CatalogueSupplier.slug == data["slug"]).first()
-    if existing is not None:
-        return existing
-    return crud.create_catalogue_supplier(
-        db,
-        name=data["name"],
-        slug=data["slug"],
-        website=None,
-        country=data.get("country"),
-        active=True,
-        source_url=None,
-        source_verified_at=_NOW(),
-    )
-
-
 def surface_slug(canonical_name: str, manufacturer_slug: str | None) -> str:
     """The one slug rule for a seeded global surface. Shared with
     app/catalogue/reference_data.py so the release gate checks exactly
@@ -175,9 +162,6 @@ def seed_catalogue(db: Session) -> dict:
     brands = {}
     for data in _BRANDS:
         brands[data["slug"]] = _get_or_create_brand(db, data, manufacturers[data["manufacturer_slug"]].id)
-
-    for data in _SUPPLIERS:
-        _get_or_create_supplier(db, data)
 
     created_surfaces = 0
     created_variants = 0
@@ -230,7 +214,6 @@ def seed_catalogue(db: Session) -> dict:
     return {
         "manufacturers": len(manufacturers),
         "brands": len(brands),
-        "suppliers": len(_SUPPLIERS),
         "surfaces_created": created_surfaces,
         "surfaces_total": len(_SURFACES),
         "variants_created": created_variants,
@@ -269,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.dry_run:
             print("DRY RUN — nothing will be written.")
-            print(format_report(check_reference_data(session)))
+            print(format_report(check_reference_data(session), itemised=True))
             session.rollback()
             return 0
 

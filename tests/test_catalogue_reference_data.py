@@ -53,7 +53,7 @@ def test_expected_counts_match_the_approved_production_remediation():
     assert expected.variants == 47
     assert expected.manufacturers == 7
     assert expected.brands == 3
-    assert expected.suppliers == 2
+    assert expected.placeholder_suppliers == 0
 
 
 def test_gate_fails_on_an_empty_catalogue_and_passes_once_seeded():
@@ -63,7 +63,7 @@ def test_gate_fails_on_an_empty_catalogue_and_passes_once_seeded():
         try:
             empty = check_reference_data(db)
             assert not empty.ok
-            assert empty.present == {"manufacturers": 0, "brands": 0, "suppliers": 0, "surfaces": 0, "variants": 0}
+            assert empty.present == {"manufacturers": 0, "brands": 0, "placeholder_suppliers": 0, "surfaces": 0, "variants": 0}
             assert len(empty.missing_surfaces) == 38
             assert len(empty.missing_variants) == 47
 
@@ -72,7 +72,7 @@ def test_gate_fails_on_an_empty_catalogue_and_passes_once_seeded():
 
             full = check_reference_data(db)
             assert full.ok
-            assert full.present == {"manufacturers": 7, "brands": 3, "suppliers": 2, "surfaces": 38, "variants": 47}
+            assert full.present == {"manufacturers": 7, "brands": 3, "placeholder_suppliers": 0, "surfaces": 38, "variants": 47}
         finally:
             db.close()
     finally:
@@ -127,6 +127,8 @@ def test_seed_dry_run_writes_nothing(capsys):
         out = capsys.readouterr().out
         assert "DRY RUN" in out
         assert "38 surfaces" in out
+        assert "+ cosentino-calacatta-gold" in out  # itemised, not just totals
+        assert "supplier" not in out.split("FAIL")[1]  # never proposes a supplier
         assert _global_surface_count() == 0
     finally:
         _wipe_global_catalogue()
@@ -179,3 +181,85 @@ def test_status_endpoint_separates_empty_catalogue_from_no_results(client, auth_
 
 def test_status_endpoint_requires_authentication(client):
     assert client.get("/api/v1/catalogue/meta/status").status_code == 401
+
+
+def test_seed_never_creates_a_supplier():
+    """The approved production dataset contains zero suppliers — the two
+    former placeholder distributors must never be inserted."""
+    _wipe_global_catalogue()
+    try:
+        db = SessionLocal()
+        try:
+            summary = seed.seed_catalogue(db)
+            db.commit()
+            assert "suppliers" not in summary
+            assert db.scalar(select(func.count(CatalogueSupplier.id))) == 0
+            names = {s.name for s in db.scalars(select(CatalogueSupplier))}
+            assert not any(name.startswith("Example") for name in names)
+            assert all(
+                surface.supplier_id is None
+                for surface in db.scalars(select(CatalogueSurface).where(CatalogueSurface.tenant_id.is_(None)))
+            )
+        finally:
+            db.close()
+    finally:
+        _wipe_global_catalogue()
+
+
+def test_gate_fails_when_a_placeholder_supplier_exists_and_never_deletes_it():
+    _wipe_global_catalogue()
+    try:
+        db = SessionLocal()
+        try:
+            seed.seed_catalogue(db)
+            db.add(
+                CatalogueSupplier(
+                    name="Example UK Stone Distributor", slug="example-uk-stone-distributor", active=True
+                )
+            )
+            db.commit()
+
+            report = check_reference_data(db)
+            assert not report.ok
+            assert report.missing_surfaces == []
+            assert report.placeholder_suppliers_present == ["example-uk-stone-distributor"]
+            assert "placeholder suppliers are present" in reference_data.format_report(report)
+            # Reported only: the gate is read-only.
+            assert db.scalar(select(func.count(CatalogueSupplier.id))) == 1
+        finally:
+            db.close()
+    finally:
+        _wipe_global_catalogue()
+
+
+def test_supplier_filter_still_works_with_zero_seeded_suppliers(client, auth_headers):
+    """With the seed contributing no suppliers, supplier search must still
+    work for a supplier a tenant actually configures as preferred."""
+    import uuid as _uuid
+
+    from app.database import crud
+
+    _wipe_global_catalogue()
+    db = SessionLocal()
+    try:
+        seed.seed_catalogue(db)
+        db.commit()
+        me = client.get("/api/v1/auth/me", headers=auth_headers).json()
+        tenant_id = _uuid.UUID(me["tenant_id"])
+        supplier = crud.create_catalogue_supplier(
+            db, name="Tenant Real Merchant Pytest", slug=f"tenant-merchant-{_uuid.uuid4().hex[:8]}", active=True
+        )
+        surface = db.scalars(
+            select(CatalogueSurface).where(CatalogueSurface.slug == seed.surface_slug("Absolute Black", None))
+        ).one()
+        crud.upsert_tenant_catalogue_override(
+            db, tenant_id=tenant_id, surface_id=surface.id, surface_variant_id=None, preferred_supplier_id=supplier.id
+        )
+
+        by_filter = client.get(f"/api/v1/catalogue/surfaces?supplier_id={supplier.id}", headers=auth_headers).json()
+        assert [s["canonical_name"] for s in by_filter] == ["Absolute Black"]
+        by_text = client.get("/api/v1/catalogue/surfaces?q=Tenant%20Real%20Merchant", headers=auth_headers).json()
+        assert [s["canonical_name"] for s in by_text] == ["Absolute Black"]
+    finally:
+        db.close()
+        _wipe_global_catalogue()

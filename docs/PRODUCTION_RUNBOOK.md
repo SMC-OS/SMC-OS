@@ -240,15 +240,15 @@ python -m scripts.production.set_tenant_identity --slug <slug> --company-number 
 
 ## 13. Appendix — Catalogue reference data (Phase A remediation)
 
-The global material catalogue (surfaces, variants, manufacturers, brands and example suppliers) is reference data, not sample data, but it is deliberately **not** created at application startup: `app/catalogue/seed.py` only runs when invoked by hand. Production shipped the catalogue feature without that step ever being run, so catalogue search was empty. Two tools now close that gap:
+The global material catalogue (surfaces, variants, manufacturers and brands) is reference data, not sample data, but it is deliberately **not** created at application startup: `app/catalogue/seed.py` only runs when invoked by hand. Production shipped the catalogue feature without that step ever being run, so catalogue search was empty. Two tools now close that gap:
 
 | Command | Writes? | Purpose |
 |---|---|---|
 | `python -m app.catalogue.reference_data` | Never | Release gate. Compares the database with the seed definitions. Exit 0 = complete, 1 = rows missing. `--json` for the full report. |
-| `python -m app.catalogue.seed --dry-run` | Never | Prints exactly what the seed would create (the gate's missing list — exact, because the seed is idempotent by slug). |
+| `python -m app.catalogue.seed --dry-run` | Never | Lists every row the seed would insert, by slug (the gate's missing list — exact, because the seed is idempotent by slug). |
 | `python -m app.catalogue.seed --confirm-production` | Yes | The only way the seed writes when `APP_ENV=production`. Without the flag it refuses and exits 2. Re-checks the gate afterwards and exits 1 if anything is still missing. |
 
-Expected counts (locked by `tests/test_catalogue_reference_data.py`): **38 surfaces, 47 variants, 7 manufacturers, 3 brands, 2 suppliers.** No prices are ever seeded.
+Expected counts (locked by `tests/test_catalogue_reference_data.py`): **38 surfaces, 47 variants, 7 manufacturers, 3 brands, 0 suppliers.** No prices and no suppliers are ever seeded. The two former placeholder distributors (`example-uk-stone-distributor`, `example-european-stone-importer`) were removed from the seed and must never exist in production: the gate fails if either is present, and only reports it — deleting one is a separately approved operation.
 
 ### 13.1 Controlled production run
 
@@ -256,10 +256,10 @@ Run only with explicit owner approval for that specific write. Stop at the first
 
 1. Confirm a production database backup exists and record its identifier and time. The approved backup for the first run is the manual backup of **23 September 2026, 14:03 UK time**; do not delete or overwrite it.
 2. Confirm the release: `alembic current` reports the sole head, and the API deployment is the intended release.
-3. Record the before-state (read-only): `python -m app.catalogue.reference_data --json`. Expect `ok: false` with all 38 surfaces missing on the first run.
+3. Record the before-state (read-only): `python -m app.catalogue.reference_data --json`. Expect `ok: false` with all 38 surfaces missing on the first run and `placeholder_suppliers_present: []`. If a placeholder supplier is present, stop and report it.
 4. Dry run: `python -m app.catalogue.seed --dry-run`. Its missing counts must equal step 3's.
 5. Write: `python -m app.catalogue.seed --confirm-production`. The seed commits row by row; if it stops part-way, re-running it is safe and completes only what is missing.
-6. Verify: `python -m app.catalogue.reference_data` exits 0 and shows 38/47/7/3/2.
+6. Verify: `python -m app.catalogue.reference_data` exits 0 and shows 7 manufacturers, 3 brands, 38 surfaces, 47 variants and 0 placeholder suppliers.
 7. Verify through the product: signed in as a real tenant, `GET /api/v1/catalogue/meta/status` returns `global_surfaces: 38`, and searching `white quartz` on the stone quote page returns Calacatta Gold.
 8. Record every output above in the deployment log.
 

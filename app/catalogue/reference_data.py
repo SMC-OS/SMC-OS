@@ -8,6 +8,9 @@ missing check. It compares the database against the seed's own
 definitions — the same lists and the same slug rule — and reports what
 is present and what is missing.
 
+Placeholder suppliers are the one thing the gate requires to be *absent*:
+the approved dataset contains none (see seed.PLACEHOLDER_SUPPLIER_SLUGS).
+
 It is strictly read-only: it only ever SELECTs, and the CLI never
 commits. That makes it safe to run against production at any time, and
 it doubles as the seed's dry run, because the seed is idempotent by slug
@@ -28,7 +31,7 @@ from dataclasses import asdict, dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.catalogue.seed import _BRANDS, _MANUFACTURERS, _SUPPLIERS, _SURFACES, surface_slug
+from app.catalogue.seed import _BRANDS, _MANUFACTURERS, _SURFACES, PLACEHOLDER_SUPPLIER_SLUGS, surface_slug
 from app.database.models import (
     CatalogueBrand,
     CatalogueManufacturer,
@@ -42,9 +45,11 @@ from app.database.models import (
 class ExpectedReferenceData:
     manufacturers: int
     brands: int
-    suppliers: int
     surfaces: int
     variants: int
+    # The approved dataset holds no suppliers at all; this is the number
+    # of placeholder supplier rows allowed to exist, which is always 0.
+    placeholder_suppliers: int = 0
 
 
 def expected_counts() -> ExpectedReferenceData:
@@ -53,7 +58,6 @@ def expected_counts() -> ExpectedReferenceData:
     return ExpectedReferenceData(
         manufacturers=len(_MANUFACTURERS),
         brands=len(_BRANDS),
-        suppliers=len(_SUPPLIERS),
         surfaces=len(_SURFACES),
         variants=sum(len(variants) for *_, variants in _SURFACES),
     )
@@ -65,7 +69,10 @@ class ReferenceDataReport:
     present: dict[str, int]
     missing_manufacturers: list[str] = field(default_factory=list)
     missing_brands: list[str] = field(default_factory=list)
-    missing_suppliers: list[str] = field(default_factory=list)
+    # Placeholder suppliers that must NOT exist but do. Reported, never
+    # deleted automatically: removing production rows is a separate,
+    # explicitly approved operation.
+    placeholder_suppliers_present: list[str] = field(default_factory=list)
     missing_surfaces: list[str] = field(default_factory=list)
     missing_variants: list[str] = field(default_factory=list)
 
@@ -74,7 +81,7 @@ class ReferenceDataReport:
         return not (
             self.missing_manufacturers
             or self.missing_brands
-            or self.missing_suppliers
+            or self.placeholder_suppliers_present
             or self.missing_surfaces
             or self.missing_variants
         )
@@ -97,11 +104,10 @@ def check_reference_data(db: Session) -> ReferenceDataReport:
     surfaces): a tenant's private material never satisfies the gate."""
     manufacturer_slugs = [m["slug"] for m in _MANUFACTURERS]
     brand_slugs = [b["slug"] for b in _BRANDS]
-    supplier_slugs = [s["slug"] for s in _SUPPLIERS]
 
     present_manufacturers = _existing_slugs(db, CatalogueManufacturer, manufacturer_slugs)
     present_brands = _existing_slugs(db, CatalogueBrand, brand_slugs)
-    present_suppliers = _existing_slugs(db, CatalogueSupplier, supplier_slugs)
+    placeholder_suppliers = _existing_slugs(db, CatalogueSupplier, list(PLACEHOLDER_SUPPLIER_SLUGS))
 
     surface_slugs = {surface_slug(name, mfr): (name, variants) for name, _, mfr, _, _, variants in _SURFACES}
     surfaces_by_slug = {
@@ -146,38 +152,48 @@ def check_reference_data(db: Session) -> ReferenceDataReport:
         present={
             "manufacturers": len(present_manufacturers),
             "brands": len(present_brands),
-            "suppliers": len(present_suppliers),
+            "placeholder_suppliers": len(placeholder_suppliers),
             "surfaces": len(surfaces_by_slug),
             "variants": present_variant_count,
         },
         missing_manufacturers=sorted(set(manufacturer_slugs) - present_manufacturers),
         missing_brands=sorted(set(brand_slugs) - present_brands),
-        missing_suppliers=sorted(set(supplier_slugs) - present_suppliers),
+        placeholder_suppliers_present=sorted(placeholder_suppliers),
         missing_surfaces=sorted(missing_surfaces),
         missing_variants=sorted(missing_variants),
     )
 
 
-def format_report(report: ReferenceDataReport) -> str:
+def format_report(report: ReferenceDataReport, *, itemised: bool = False) -> str:
+    """Human-readable report. `itemised=True` (the seed's dry run) also
+    lists every individual row the seed would insert, by slug."""
     expected = asdict(report.expected)
     lines = ["Catalogue reference data", ""]
-    for key in ("manufacturers", "brands", "suppliers", "surfaces", "variants"):
-        lines.append(f"  {key:<14} {report.present[key]:>3} / {expected[key]}")
+    for key in ("manufacturers", "brands", "surfaces", "variants", "placeholder_suppliers"):
+        lines.append(f"  {key:<22} {report.present[key]:>3} / {expected[key]}")
     lines.append("")
     if report.ok:
-        lines.append("PASS — every expected reference row is present.")
+        lines.append("PASS — every expected reference row is present and no placeholder supplier exists.")
     else:
         missing = {
             "manufacturers": report.missing_manufacturers,
             "brands": report.missing_brands,
-            "suppliers": report.missing_suppliers,
             "surfaces": report.missing_surfaces,
             "variants": report.missing_variants,
         }
-        lines.append("FAIL — the seed would create:")
-        for key, values in missing.items():
-            if values:
-                lines.append(f"  {len(values)} {key}")
+        if any(missing.values()):
+            lines.append("FAIL — the seed would create:")
+            for key, values in missing.items():
+                if values:
+                    lines.append(f"  {len(values)} {key}")
+                    if itemised:
+                        lines.extend(f"      + {value}" for value in values)
+        if report.placeholder_suppliers_present:
+            lines.append(
+                "FAIL — placeholder suppliers are present and must be removed by a separately "
+                "approved operation (the seed never deletes): "
+                + ", ".join(report.placeholder_suppliers_present)
+            )
     return "\n".join(lines)
 
 
