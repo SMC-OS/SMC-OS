@@ -44,6 +44,7 @@ export const ACTIVITY_ICON: Record<ActivityType, typeof BotIcon> = {
   // Sprint 039 Production Readiness Defect Gate, Blocker 2
   password_reset_requested: InfoIcon,
   password_changed: CheckCircleIcon,
+  demo_request_received: UsersIcon,
 };
 
 export const ACTIVITY_TONE: Record<ActivityType, string> = {
@@ -75,4 +76,5 @@ export const ACTIVITY_TONE: Record<ActivityType, string> = {
   // Sprint 039 Production Readiness Defect Gate, Blocker 2
   password_reset_requested: "bg-info/10 text-info",
   password_changed: "bg-success/10 text-success",
+  demo_request_received: "bg-info/10 text-info",
 };

@@ -19,6 +19,7 @@ from app.billing.models import (
     PlanEntitlementsOut,
     PlanOut,
     PortalSessionOut,
+    StartTrialRequest,
     SubscriptionOut,
 )
 from app.billing.plans import (
@@ -35,6 +36,7 @@ from app.billing.plans import (
     SELF_SERVICE_PLANS,
     TRIAL_LENGTH_DAYS,
 )
+from app.billing.trial import start_trial_if_eligible, trial_status
 from app.billing.service import BillingError, BillingUnavailable, WebhookSignatureError, billing_service
 from app.database import crud
 from app.database.database import get_db
@@ -81,13 +83,48 @@ def list_plans():
     return plans
 
 
+def _subscription_out(subscription) -> SubscriptionOut:
+    out = SubscriptionOut.model_validate(subscription)
+    status_ = trial_status(subscription)
+    if status_ is not None:
+        out.trial_state = status_.state
+        out.trial_days_remaining = status_.days_remaining
+    return out
+
+
 @router.get("/subscription", response_model=SubscriptionOut | None)
 def get_subscription(
     current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
     db: Session = Depends(get_db),
 ):
     subscription = billing_service.get_subscription(db, current_user.tenant_id)
-    return SubscriptionOut.model_validate(subscription) if subscription else None
+    return _subscription_out(subscription) if subscription else None
+
+
+@router.post("/trial", response_model=SubscriptionOut, status_code=status.HTTP_201_CREATED)
+def start_trial(
+    data: StartTrialRequest | None = None,
+    current_user: User = Depends(require_role(UserRole.OWNER)),
+    db: Session = Depends(get_db),
+):
+    """Phase B — starts the 14-day no-card trial for a workspace that has
+    never had a subscription. New signups already get one automatically;
+    this exists for workspaces created before the no-card trial (which
+    have no subscription row). Any workspace that already has a
+    subscription of any kind — paid, cancelled, grandfathered or a past
+    trial — gets 409 and nothing changes."""
+    if billing_service.get_subscription(db, current_user.tenant_id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This workspace has already used its free trial or has a subscription.",
+        )
+    subscription = start_trial_if_eligible(
+        db,
+        current_user.tenant_id,
+        plan=data.plan if data else None,
+        billing_period=data.billing_period if data else None,
+    )
+    return _subscription_out(subscription)
 
 
 @router.post("/checkout", response_model=CheckoutSessionOut)
@@ -133,7 +170,7 @@ def cancel_at_period_end(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Billing is not configured.")
     except BillingError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    return SubscriptionOut.model_validate(subscription)
+    return _subscription_out(subscription)
 
 
 @router.post("/resume", response_model=SubscriptionOut)
@@ -149,7 +186,7 @@ def resume_subscription(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Billing is not configured.")
     except BillingError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    return SubscriptionOut.model_validate(subscription)
+    return _subscription_out(subscription)
 
 
 @router.post("/webhook", include_in_schema=False)

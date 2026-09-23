@@ -77,3 +77,21 @@ crud.upsert_subscription(
 db.close()
 `);
 }
+
+/** Phase B — removes the no-card trial a signup now starts, reproducing
+ * a workspace created under the earlier card-required contract that never
+ * completed Checkout (no subscription row at all). */
+export function removeSubscription(email: string): void {
+  run(`
+from sqlalchemy import delete
+from app.database import crud
+from app.database.database import SessionLocal
+from app.database.models import Subscription
+
+db = SessionLocal()
+user = crud.get_user_by_email(db, ${JSON.stringify(email)})
+db.execute(delete(Subscription).where(Subscription.tenant_id == user.tenant_id))
+db.commit()
+db.close()
+`);
+}

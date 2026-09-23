@@ -66,6 +66,12 @@ Creates a brand-new company workspace (`Tenant`) and its first user (`role="Owne
 **Response (201)** (`TokenResponse`) — same shape as `/login`, see below.
 **Response (409):** `{ "detail": "Email already registered" }`
 
+**Phase B:** optional `plan` (`starter` | `team` | `pro` | `business`) and `billing_period` (`monthly` | `annual`) carry the pricing-page choice. Signup starts a 14-day no-card trial on that plan (Pro monthly when missing or unknown) — no Stripe object, no payment details (ADR-054).
+
+### `POST /api/v1/billing/trial` — Phase B
+
+Owner only. Starts the 14-day no-card trial for a workspace that has **never** had a subscription (a workspace created under the earlier card-required contract). Optional body `{ "plan": "team", "billing_period": "annual" }`. **201** returns the subscription; **409** when the workspace already has any subscription or used its trial. `GET /api/v1/billing/subscription` now also returns `trial_state` (`active` | `ending_soon` | `expired`, or null) and `trial_days_remaining` for the no-card trial.
+
 ### `POST /api/v1/auth/login`
 
 **Request body** (`LoginRequest`)

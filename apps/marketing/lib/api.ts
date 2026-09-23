@@ -1,8 +1,9 @@
 /**
  * Sprint 041 — the marketing app's first real API calls (previously a
  * fully static site). Deliberately small and hand-rolled rather than a
- * port of apps/web/lib/api.ts: this app only ever calls two public,
- * unauthenticated endpoints (no JWT, no auth-storage, no 401 handling).
+ * port of apps/web/lib/api.ts: this app only ever calls one public,
+ * unauthenticated endpoint (no JWT, no auth-storage, no 401 handling).
+ * Phase B: plans are no longer fetched at runtime — see lib/pricing.ts.
  *
  * Set NEXT_PUBLIC_API_URL in apps/marketing/.env.local to point
  * elsewhere; defaults to the local backend in dev, same convention as
@@ -42,22 +43,6 @@ export interface Plan {
   annual_recommended: boolean;
   trial_days: number | null;
   entitlements: PlanEntitlements;
-}
-
-export async function fetchPlans(): Promise<Plan[]> {
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE_URL}/api/v1/billing/plans`, {
-      // The public pricing page is otherwise statically prerendered;
-      // this one fetch is always live so a locked-price change on the
-      // backend never needs a marketing redeploy to show correctly.
-      cache: "no-store",
-    });
-  } catch {
-    throw new ApiError("Could not reach the API to load pricing.", 0);
-  }
-  if (!res.ok) throw new ApiError(`Failed to load pricing (${res.status})`, res.status);
-  return (await res.json()) as Plan[];
 }
 
 export interface DemoRequestPayload {

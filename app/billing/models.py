@@ -53,6 +53,19 @@ class SubscriptionOut(BaseModel):
     trial_end: datetime | None
     created_at: datetime
     updated_at: datetime
+    # Phase B — set only for a no-card trial GeoCore runs itself:
+    # "active", "ending_soon" (3 days or fewer left) or "expired".
+    # None for paid, grandfathered or Stripe-managed subscriptions.
+    trial_state: str | None = None
+    trial_days_remaining: int | None = None
+
+
+class StartTrialRequest(BaseModel):
+    """Optional plan choice for POST /billing/trial. Lenient like signup:
+    anything unknown falls back to the default trial plan."""
+
+    plan: str | None = None
+    billing_period: str | None = None
 
 
 class PlanEntitlementsOut(BaseModel):

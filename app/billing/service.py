@@ -16,11 +16,12 @@ same event.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.billing.plans import TRIAL_LENGTH_DAYS, plan_and_period_for_price_id, price_id_for
+from app.billing.plans import plan_and_period_for_price_id, price_id_for
+from app.billing.trial import is_app_trial, is_app_trial_expired
 from app.core.config import settings
 from app.database import crud
 from app.database.models import Subscription, Tenant
@@ -83,24 +84,7 @@ class BillingService:
                     "plan": plan,
                     "billing_period": billing_period,
                 },
-                subscription_data={
-                    # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES: the
-                    # owner's decision superseded the old no-card trial
-                    # (app/billing/trial.py, no longer called from signup).
-                    # Stripe's own trial-on-Checkout mechanism collects a
-                    # payment method by default in subscription mode
-                    # (payment_method_collection is "always" unless
-                    # explicitly relaxed, which this never does) — the
-                    # resulting Subscription starts "trialing", not
-                    # "active", and the trial's own card-verification
-                    # authorization is never a subscription charge.
-                    "trial_period_days": TRIAL_LENGTH_DAYS,
-                    "metadata": {
-                        "tenant_id": str(tenant.id),
-                        "plan": plan,
-                        "billing_period": billing_period,
-                    },
-                },
+                subscription_data=self._subscription_data(existing, tenant, plan, billing_period),
                 # GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES: /settings
                 # is a normal workspace route, gated by require_billing_access
                 # — a not-yet-activated tenant returning from Checkout could
@@ -114,6 +98,35 @@ class BillingService:
             raise BillingError(str(exc)) from exc
 
         return session.url
+
+    # Stripe rejects a Checkout `trial_end` less than 48 hours away.
+    _MIN_STRIPE_TRIAL_REMAINING = timedelta(hours=48)
+
+    def _subscription_data(
+        self, existing: Subscription | None, tenant: Tenant, plan: str, billing_period: str
+    ) -> dict:
+        """Phase B — Checkout is where payment details are collected, and
+        it never grants a fresh trial of its own: the one 14-day trial is
+        the no-card trial that starts at signup (app/billing/trial.py).
+
+        A tenant subscribing *during* that trial keeps the days it has
+        left: the Stripe subscription's own trial ends on the same
+        trial_end, so the first charge lands when the free trial would
+        have ended anyway. With under 48 hours left (Stripe's minimum), or
+        no active trial at all, billing starts immediately. Checkout
+        always collects a payment method (the default in subscription
+        mode, never relaxed here)."""
+        data: dict = {
+            "metadata": {
+                "tenant_id": str(tenant.id),
+                "plan": plan,
+                "billing_period": billing_period,
+            },
+        }
+        if is_app_trial(existing) and not is_app_trial_expired(existing):
+            if existing.trial_end - datetime.now(timezone.utc) >= self._MIN_STRIPE_TRIAL_REMAINING:
+                data["trial_end"] = int(existing.trial_end.timestamp())
+        return data
 
     def create_portal_session(self, db: Session, tenant: Tenant) -> str:
         stripe = self._get_stripe()
@@ -189,9 +202,9 @@ class BillingService:
         """Wires up tenant<->Stripe linkage (customer/subscription ids,
         plan/billing_period) from the Checkout Session — the only event
         that carries `client_reference_id`/session-level metadata at all.
-        Deliberately does NOT set `status`: with `trial_period_days` set
-        (see create_checkout_session), the real Subscription this Checkout
-        creates starts "trialing", not "active" — that authoritative
+        Deliberately does NOT set `status`: the real Subscription this
+        Checkout creates may start "trialing" (a carried-over trial_end,
+        see _subscription_data) or "active" — that authoritative
         status (plus trial_start/trial_end) arrives via
         `customer.subscription.created`, handled by
         _handle_subscription_upsert below, which may even land before this

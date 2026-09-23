@@ -1,25 +1,19 @@
-import { expect, request, test } from "@playwright/test";
+import { expect, request, test, type Page } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
+import { removeSubscription } from "./billing-helper";
 import { markVerified } from "./verify-helper";
 
 /**
- * GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. True browser E2E for the
- * locked 4-tier pricing catalogue and the card-required-trial access
- * boundary. Setup (tenant/Owner) goes through the real API directly;
- * the pricing page, the access gate, and checkout's honest "not
- * configured yet" fallback all run through the real Chromium browser
- * against the real Next.js app and real FastAPI server.
+ * Phase B — true browser E2E for the 14-day no-card trial and the locked
+ * 4-tier pricing catalogue. (This spec previously proved the superseded
+ * card-required contract; see git history.) Setup goes through the real
+ * API; the pricing page, trial states, access gate and checkout's honest
+ * "not configured yet" fallback all run in real Chromium against the real
+ * Next.js app and FastAPI server.
  *
- * No real Stripe Checkout is exercised here — Stripe is genuinely
- * unconfigured in this sandbox (no TEST-mode keys available), so this
- * spec proves the product is honest about that rather than faking
- * success (see app/billing/service.py's "ships dark until configured"
- * contract) and proves the access boundary itself holds for a real
- * browser session. A real Stripe TEST Checkout completing end-to-end
- * (card collection, webhook-driven activation) needs to be exercised
- * once on staging, with real Stripe TEST keys configured, by the owner —
- * see the release report's own disclosed limitation.
+ * Stripe is unconfigured in this sandbox, so no real Checkout completes
+ * here; a real Stripe TEST Checkout must be exercised once on staging.
  */
 
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -28,100 +22,82 @@ const OWNER_EMAIL = `pytest-e2e-sprint039-billing-${RUN_ID}@example.invalid`;
 const OWNER_PASSWORD = `Pytest-E2e-Sprint039-Billing-Password-${RUN_ID}!`;
 const OWNER_NAME = "Pytest E2E Billing Owner";
 
-test("a_verified_new_owner_with_no_subscription_lands_on_pricing_and_cannot_bypass_it", async ({
-  page,
-}) => {
+async function signUpAndSignIn(page: Page, { email, company, plan }: { email: string; company: string; plan?: string }) {
   const api = await request.newContext({ baseURL: BACKEND_URL });
-
   const signup = await api.post("/api/v1/auth/signup", {
     data: {
-      company_name: COMPANY_NAME,
+      company_name: company,
       name: OWNER_NAME,
-      email: OWNER_EMAIL,
+      email,
       password: OWNER_PASSWORD,
+      ...(plan ? { plan, billing_period: "monthly" } : {}),
     },
   });
   expect(signup.ok()).toBeTruthy();
-  markVerified(OWNER_EMAIL);
+  await api.dispose();
+  markVerified(email);
+  return async () => {
+    await page.goto("/login");
+    await page.waitForLoadState("networkidle");
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill(OWNER_PASSWORD);
+    await page.getByRole("button", { name: "Sign in" }).click();
+  };
+}
 
-  await page.goto("/login");
+test("a_new_signup_gets_a_no_card_trial_and_reaches_the_workspace", async ({ page }) => {
+  const signIn = await signUpAndSignIn(page, { email: OWNER_EMAIL, company: COMPANY_NAME, plan: "team" });
+  await signIn();
+
+  // No card, no Checkout: straight into the workspace.
+  await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
+  await expect(page.getByText("14 days left")).toBeVisible();
+
+  await page.goto("/pricing");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("Email").fill(OWNER_EMAIL);
-  await page.getByLabel("Password").fill(OWNER_PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  // GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES: a verified account with
-  // no Subscription at all lands on /pricing, not the workspace.
-  await expect(page).toHaveURL(/\/pricing$/, { timeout: 15_000 });
+  await expect(page.getByText("14 days left in your free trial")).toBeVisible();
+  await expect(page.getByText(/card is required/i)).toHaveCount(0);
 
-  // ---- Direct navigation to a protected route redirects back here too
-  // (the gate is not just "don't show a link to it") ----
+  // The locked catalogue; the plan chosen at signup is the trial plan.
+  for (const name of ["GeoCore Starter", "GeoCore Team", "GeoCore Pro", "GeoCore Business", "Enterprise"]) {
+    await expect(page.getByRole("heading", { name })).toBeVisible();
+  }
+  await expect(page.getByText("Your trial", { exact: true })).toBeVisible();
+  // Monthly was chosen at signup, so monthly prices show.
+  await expect(page.getByText("£59").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Subscribe to GeoCore Team" })).toBeVisible();
+});
+
+test("a_workspace_with_no_subscription_lands_on_pricing_and_can_start_the_trial", async ({ page }) => {
+  const email = `pytest-e2e-phaseb-bare-${RUN_ID}@example.invalid`;
+  const signIn = await signUpAndSignIn(page, { email, company: `Pytest E2E Phase B Bare Co ${RUN_ID}` });
+  removeSubscription(email);
+  await signIn();
+
+  await expect(page).toHaveURL(/\/pricing$/, { timeout: 15_000 });
+  // The gate is not just "no link": direct navigation is sent back.
   await page.goto("/customers");
   await page.waitForLoadState("networkidle");
   await expect(page).toHaveURL(/\/pricing$/);
 
-  // ---- The real pricing page, real API-served catalogue ----
-  // By heading: each plan name also appears inside its own "Choose ..."
-  // button, so a plain text match is ambiguous.
-  await expect(page.getByRole("heading", { name: "GeoCore Starter" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "GeoCore Team" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "GeoCore Pro" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "GeoCore Business" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Enterprise" })).toBeVisible();
-
-  // Annual is the default toggle — locked prices, not the old £79/£149.
-  await expect(page.getByText("£290").first()).toBeVisible();
-  await expect(page.getByText("£590").first()).toBeVisible();
-  await expect(page.getByText("£990").first()).toBeVisible();
-  await expect(page.getByText("£1,990").first()).toBeVisible();
-
-  await page.getByRole("button", { name: "Monthly" }).click();
-  await expect(page.getByText("£29").first()).toBeVisible();
-  await expect(page.getByText("£59").first()).toBeVisible();
-  await expect(page.getByText("£99").first()).toBeVisible();
-  await expect(page.getByText("£199").first()).toBeVisible();
-
-  // ---- No automatic trial — the owner's decision superseded the old
-  // no-card trial. No plan is pre-selected, nothing claims "Your trial". ----
-  await expect(page.getByText(/days left in your trial/i)).toHaveCount(0);
-  await expect(page.getByText("Your trial", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /choose geocore pro/i })).toBeVisible();
-
-  await api.dispose();
+  await page.getByRole("button", { name: "Start free trial" }).click();
+  await expect(page).toHaveURL(/\/(onboarding|customers|)$/, { timeout: 15_000 });
+  await page.goto("/customers");
+  await expect(page).toHaveURL(/\/customers$/);
 });
 
 test("checkout_is_honest_about_stripe_not_being_configured_yet", async ({ page }) => {
-  const email = `pytest-e2e-sprint039-billing-checkout-${RUN_ID}@example.invalid`;
-  const api = await request.newContext({ baseURL: BACKEND_URL });
-  const signup = await api.post("/api/v1/auth/signup", {
-    data: {
-      company_name: `Pytest E2E Sprint 039 Checkout Co ${RUN_ID}`,
-      name: OWNER_NAME,
-      email,
-      password: OWNER_PASSWORD,
-    },
-  });
-  expect(signup.ok()).toBeTruthy();
-  markVerified(email);
+  const email = `pytest-e2e-phaseb-checkout-${RUN_ID}@example.invalid`;
+  const signIn = await signUpAndSignIn(page, { email, company: `Pytest E2E Phase B Checkout Co ${RUN_ID}` });
+  await signIn();
+  await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
 
-  await page.goto("/login");
+  await page.goto("/pricing");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(OWNER_PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/pricing$/, { timeout: 15_000 });
+  await page.getByRole("button", { name: /subscribe to geocore business/i }).click();
 
-  // No subscription exists yet, so every plan offers a fresh "Choose",
-  // not an "Upgrade" (that only applies once already on a plan).
-  await page.getByRole("button", { name: /choose geocore business/i }).click();
-
-  // Stripe genuinely isn't configured in this environment — the product
-  // must say so honestly, never fake a successful checkout redirect, and
-  // the owner stays exactly where they were (still gated, not
-  // accidentally let through).
-  await expect(
-    page.getByText(/billing isn't fully configured yet/i)
-  ).toBeVisible();
+  // Stripe genuinely isn't configured here — the product says so and
+  // never fakes a successful checkout.
+  await expect(page.getByText(/billing isn't fully configured yet/i)).toBeVisible();
   await expect(page).toHaveURL(/\/pricing$/);
-
-  await api.dispose();
 });

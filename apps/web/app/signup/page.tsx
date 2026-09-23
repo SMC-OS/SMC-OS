@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
@@ -13,9 +13,41 @@ import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 import { ApiError } from "@/lib/api";
 import { passwordPolicyError } from "@/lib/passwordPolicy";
 
+// Phase B — the plan chosen on the public pricing page arrives as
+// ?plan=&billing_period= and is carried into signup, so the no-card
+// trial starts on it and nobody picks the same plan twice. Only known
+// self-service plans are forwarded; anything else signs up on the
+// default trial plan (the API applies the same rule).
+const TRIAL_PLAN_LABELS: Record<string, string> = {
+  starter: "Starter",
+  team: "Team",
+  pro: "Pro",
+  business: "Business",
+};
+const BILLING_PERIOD_LABELS: Record<string, string> = {
+  monthly: "monthly billing",
+  annual: "annual billing",
+};
+
 export default function SignupPage() {
+  // useSearchParams needs a Suspense boundary in the App Router, same as
+  // app/quotes/new/page.tsx.
+  return (
+    <Suspense fallback={null}>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
   const router = useRouter();
+  const params = useSearchParams();
   const { signup } = useAuth();
+
+  const requestedPlan = params.get("plan") ?? "";
+  const requestedPeriod = params.get("billing_period") ?? "";
+  const plan = requestedPlan in TRIAL_PLAN_LABELS ? requestedPlan : null;
+  const billingPeriod = plan && requestedPeriod in BILLING_PERIOD_LABELS ? requestedPeriod : null;
 
   const [companyName, setCompanyName] = useState("");
   const [name, setName] = useState("");
@@ -42,7 +74,14 @@ export default function SignupPage() {
     setSubmitting(true);
 
     try {
-      const required = await signup({ company_name: companyName, name, email, password });
+      const required = await signup({
+        company_name: companyName,
+        name,
+        email,
+        password,
+        ...(plan ? { plan } : {}),
+        ...(billingPeriod ? { billing_period: billingPeriod } : {}),
+      });
       // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix —
       // a brand-new signup is unverified and must land on the
       // verification screen, not straight into the workspace.
@@ -91,6 +130,20 @@ export default function SignupPage() {
           GeoCore is for construction and renovation businesses — building,
           extensions, kitchens, bathrooms, roofing, electrics, stone and
           everything in between.
+        </p>
+      </div>
+
+      <div
+        className="mb-4 rounded-lg border border-border bg-surface px-4 py-3 text-sm"
+        data-testid="trial-summary"
+      >
+        <p className="font-medium text-foreground">14-day free trial. No card required.</p>
+        <p className="mt-1 text-muted">
+          {plan
+            ? `You're starting a free trial of GeoCore ${TRIAL_PLAN_LABELS[plan]}${
+                billingPeriod ? ` (${BILLING_PERIOD_LABELS[billingPeriod]})` : ""
+              }. Nothing is charged when it ends — choose a plan only if you want to keep going.`
+            : "Your workspace is ready as soon as you verify your email. Nothing is charged when the trial ends — choose a plan only if you want to keep going."}
         </p>
       </div>
 
@@ -151,7 +204,7 @@ export default function SignupPage() {
             )}
 
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating workspace…" : "Create workspace"}
+              {submitting ? "Creating workspace…" : "Create workspace and start free trial"}
             </Button>
           </form>
         </CardContent>

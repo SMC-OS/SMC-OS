@@ -51,6 +51,10 @@ interface AuthContextValue {
   // Sprint 011 — accepting a Staff invitation signs the new user straight
   // in, same shape as login()/signup().
   acceptInvite: (token: string, data: AcceptInvitationRequest) => Promise<AuthRequiredState>;
+  // Phase B — re-reads /auth/me so a change made on the server (starting
+  // the no-card trial, returning from Checkout) unlocks the workspace
+  // without a full page reload.
+  refreshAccess: () => Promise<AuthRequiredState>;
   logout: () => void;
 }
 
@@ -121,6 +125,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
     return () => window.removeEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
   }, []);
+
+  async function refreshAccess(): Promise<AuthRequiredState> {
+    const me = await api.getMe();
+    setVerificationRequired(me.verification_required);
+    setBillingAccessRequired(me.billing_access_required);
+    return {
+      verificationRequired: me.verification_required,
+      billingAccessRequired: me.billing_access_required,
+    };
+  }
 
   async function login(email: string, password: string): Promise<AuthRequiredState> {
     const response = await api.login(email, password);
@@ -203,6 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         signup,
         acceptInvite,
+        refreshAccess,
         logout,
       }}
     >

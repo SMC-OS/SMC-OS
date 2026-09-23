@@ -1,8 +1,9 @@
 /**
- * GeoCore Premium OS Plan 02 (Sprint 041) — the Master Spec's single
- * hardest commercial-copy rule: the trial is card-required, and this app
- * must never say otherwise. Also guards the shape of the Request Demo
- * form (Task 11/18) and the demo success copy (Task 12) staying exact.
+ * Phase B — the trial is a 14-day free trial with NO card required, and
+ * every trial surface must say so and never contradict it. (History: the
+ * Sprint 041 version of this file enforced the opposite, card-required
+ * contract; the owner has since approved the no-card trial.) Also guards
+ * the shape of the Request Demo form and its success copy.
  *
  * Same static source-text pattern as indexability.test.mjs/
  * positioning.test.mjs — cheap in CI, fails on the exact copy or field
@@ -10,49 +11,73 @@
  */
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
-const pricingClient = await readFile(
-  new URL("./app/pricing/page-client.tsx", import.meta.url),
-  "utf8"
-);
-const trialDisclosure = await readFile(
-  new URL("./components/TrialDisclosure.tsx", import.meta.url),
-  "utf8"
-);
-const demoFormClient = await readFile(
-  new URL("./app/request-demo/page-client.tsx", import.meta.url),
-  "utf8"
-);
-const demoApi = await readFile(new URL("./lib/api.ts", import.meta.url), "utf8");
+const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("the trial surfaces never claim the trial requires no card", () => {
-  // "No card required" is a legitimate, true claim about the SEPARATE
-  // Request Demo path (which genuinely needs neither account nor card —
-  // see the homepage's own demo section and request-demo/page-client.tsx)
-  // — it must never appear on the trial/pricing surfaces specifically.
-  for (const [name, source] of [
-    ["pricing page", pricingClient],
-    ["trial disclosure component", trialDisclosure],
-  ]) {
-    assert.doesNotMatch(source, /no card required/i, `${name} must never say "no card required"`);
+const pricingClient = await read("./app/pricing/page-client.tsx");
+const pricingPage = await read("./app/pricing/page.tsx");
+const homepage = await read("./app/page.tsx");
+const trialDisclosure = await read("./components/TrialDisclosure.tsx");
+const demoFormClient = await read("./app/request-demo/page-client.tsx");
+const demoApi = await read("./lib/api.ts");
+
+async function sourceFiles(dir) {
+  const out = [];
+  for (const entry of await readdir(new URL(dir, import.meta.url), { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...(await sourceFiles(path)));
+    else if (/\.(tsx?|mjs)$/.test(entry.name)) out.push(path);
+  }
+  return out;
+}
+
+test("no public surface says the trial needs a card or charges anything up front", async () => {
+  const forbidden = [
+    /card is required/i,
+    /card required to activate/i,
+    /card required, £0/i,
+    /payment method is required/i,
+    /£0 (is )?due today/i,
+    /before you add a card/i,
+  ];
+  for (const path of [...(await sourceFiles("./app")), ...(await sourceFiles("./components"))]) {
+    const source = await read(path);
+    for (const pattern of forbidden) {
+      assert.doesNotMatch(source, pattern, `${path} contradicts the no-card trial (${pattern})`);
+    }
   }
 });
 
-test("the trial disclosure component states £0 due today and the card requirement", () => {
-  assert.match(trialDisclosure, /£0 due today/);
-  assert.match(trialDisclosure, /payment method is required/i);
-  assert.match(trialDisclosure, /will be charged on/i);
-  // The trial length and price both come from the real plan data, never
-  // a hard-coded "14" or "£" literal figure of the component's own.
+test("every trial surface states the 14-day free trial needs no card", () => {
+  for (const [name, source] of [
+    ["pricing page", pricingClient],
+    ["pricing metadata", pricingPage],
+    ["homepage", homepage],
+    ["trial disclosure component", trialDisclosure],
+  ]) {
+    assert.match(source, /No card required/, `${name} must say "No card required"`);
+  }
+  assert.match(homepage, /day free trial\. No card required\./);
+});
+
+test("the trial disclosure never promises an automatic charge", () => {
+  assert.doesNotMatch(trialDisclosure, /will be charged on/i);
+  assert.match(trialDisclosure, /Nothing is charged when your trial ends/);
+  // Trial length and price come from the plan data, never a literal.
   assert.match(trialDisclosure, /plan\.trial_days/);
   assert.doesNotMatch(trialDisclosure, /trial_days\s*=\s*14/);
 });
 
-test("the pricing page states the trial is card-required before any checkout handoff", () => {
-  assert.match(pricingClient, /card is required/i);
-  assert.match(pricingClient, /£0 is due today/i);
+test("pricing is rendered from the drift-tested catalogue, not fetched at runtime", () => {
+  assert.match(pricingClient, /from "@\/lib\/pricing"/);
+  assert.doesNotMatch(pricingClient, /fetchPlans|Loading plans/);
+  assert.doesNotMatch(demoApi, /fetchPlans/);
+});
+
+test("trial CTAs carry the chosen plan and billing period to signup", () => {
+  assert.match(pricingClient, /signup\?plan=\$\{plan\.plan\}&billing_period=\$\{period\}/);
 });
 
 test("the request-demo form does not require an account", () => {

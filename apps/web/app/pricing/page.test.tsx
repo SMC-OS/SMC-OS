@@ -17,7 +17,12 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
-let authState: { isAuthenticated: boolean; role: string | null };
+let authState: {
+  isAuthenticated: boolean;
+  role: string | null;
+  billingAccessRequired?: boolean;
+  refreshAccess?: () => Promise<unknown>;
+};
 vi.mock("@/components/auth/AuthProvider", () => ({
   useAuth: () => authState,
 }));
@@ -84,6 +89,9 @@ beforeEach(() => {
     const url = typeof input === "string" ? input : input.toString();
     if (url.endsWith("/billing/plans")) return jsonResponse(PLANS);
     if (url.endsWith("/billing/subscription")) return jsonResponse(subscriptionResponse);
+    if (url.endsWith("/billing/trial") && init?.method === "POST") {
+      return jsonResponse({ ...(PLANS[2] as object), status: "trialing", trial_state: "active" }, 201);
+    }
     if (url.endsWith("/billing/checkout") && init?.method === "POST") {
       return jsonResponse({ checkout_url: "https://checkout.stripe.com/pay/cs_fake" });
     }
@@ -182,5 +190,89 @@ describe("PricingPage", () => {
     // self-service plan gets the upgrade CTA instead.
     expect(screen.getByRole("button", { name: /trialing this plan/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /upgrade to geocore business/i })).toBeInTheDocument();
+  });
+
+  describe("Phase B — no-card trial states", () => {
+    it("never says a card is required", async () => {
+      authState = { isAuthenticated: true, role: "Owner" };
+      render(<PricingPage />);
+      expect(await screen.findByText(/No card required/)).toBeInTheDocument();
+      expect(screen.queryByText(/card is required/i)).toBeNull();
+    });
+
+    it("shows days left, keeps the chosen billing period and offers to subscribe to the trial plan", async () => {
+      authState = { isAuthenticated: true, role: "Owner" };
+      subscriptionResponse = {
+      id: "sub-1",
+      tenant_id: "tenant-1",
+      plan: "team",
+      billing_period: "monthly",
+      status: "trialing",
+      current_period_end: null,
+      cancel_at_period_end: false,
+      trial_start: new Date().toISOString(),
+      trial_end: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      trial_state: "ending_soon",
+      trial_days_remaining: 2,
+    };
+      render(<PricingPage />);
+
+      expect(await screen.findByText("2 days left in your free trial")).toBeInTheDocument();
+      expect(screen.getByText(/won't be charged until your trial ends/i)).toBeInTheDocument();
+      // The period chosen at signup (monthly) replaces the page's annual
+      // default, so monthly prices show.
+      expect(await screen.findAllByText("/mo")).not.toHaveLength(0);
+      expect(screen.queryAllByText("/yr")).toHaveLength(0);
+      expect(screen.getByRole("button", { name: "Subscribe to GeoCore Team" })).toBeEnabled();
+    });
+
+    it("explains an expired trial without implying data loss", async () => {
+      authState = { isAuthenticated: true, role: "Owner", billingAccessRequired: true };
+      subscriptionResponse = {
+      id: "sub-1",
+      tenant_id: "tenant-1",
+      plan: "team",
+      billing_period: "annual",
+      status: "trialing",
+      current_period_end: null,
+      cancel_at_period_end: false,
+      trial_start: new Date().toISOString(),
+      trial_end: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      trial_state: "expired",
+      trial_days_remaining: 0,
+    };
+      render(<PricingPage />);
+
+      expect(await screen.findByText("Your 14-day free trial has ended.")).toBeInTheDocument();
+      expect(screen.getByText(/nothing has been deleted/i)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /start free trial/i })).toBeNull();
+    });
+
+    it("lets an owner with no subscription start the free trial without a card", async () => {
+      const refreshAccess = vi.fn().mockResolvedValue({ verificationRequired: false, billingAccessRequired: false });
+      authState = { isAuthenticated: true, role: "Owner", billingAccessRequired: true, refreshAccess };
+      subscriptionResponse = null;
+      render(<PricingPage />);
+
+      const start = await screen.findByRole("button", { name: "Start free trial" });
+      await userEvent.click(start);
+
+      await waitFor(() => expect(refreshAccess).toHaveBeenCalled());
+      expect(pushMock).toHaveBeenCalledWith("/onboarding");
+      const trialCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/billing/trial"));
+      expect(trialCall?.[1]?.method).toBe("POST");
+    });
+
+    it("never offers a trial to staff", async () => {
+      authState = { isAuthenticated: true, role: "Staff", billingAccessRequired: true };
+      subscriptionResponse = null;
+      render(<PricingPage />);
+      await screen.findAllByText(/ask your workspace owner/i);
+      expect(screen.queryByRole("button", { name: "Start free trial" })).toBeNull();
+    });
   });
 });

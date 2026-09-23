@@ -45,6 +45,9 @@ class ActivityType(str, Enum):
     # and nothing in app/portal/ ever reads ActivityLog, so recording real
     # cost figures/descriptions here never reaches a customer.
     PROJECT_COST_ADDED = "project_cost_added"
+    # Phase B — a public demo request recorded in GeoCore's own sales
+    # workspace (settings.platform_sales_tenant_id).
+    DEMO_REQUEST_RECEIVED = "demo_request_received"
     PROJECT_COST_EDITED = "project_cost_edited"
     PROJECT_COST_DELETED = "project_cost_deleted"
     VARIATION_CREATED = "variation_created"

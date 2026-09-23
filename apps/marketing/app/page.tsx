@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
+import { PLANS, SELF_SERVICE_PLANS, TRIAL_DAYS, seatsLabel, shortPlanName } from "@/lib/pricing";
 import { EXAMPLE_WORKFLOWS, TRADES } from "@/lib/trades";
 import { APP_URL, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
 
@@ -102,12 +103,13 @@ export default function HomePage() {
         description: SITE_DESCRIPTION,
         url: SITE_URL,
         publisher: { "@id": `${SITE_URL}/#organization` },
-        offers: [
-          { "@type": "Offer", name: "Starter", price: "29", priceCurrency: "GBP" },
-          { "@type": "Offer", name: "Team", price: "59", priceCurrency: "GBP" },
-          { "@type": "Offer", name: "Pro", price: "99", priceCurrency: "GBP" },
-          { "@type": "Offer", name: "Business", price: "199", priceCurrency: "GBP" },
-        ],
+        // Phase B — from the drift-tested plan catalogue, never hand-typed.
+        offers: SELF_SERVICE_PLANS.map((plan) => ({
+          "@type": "Offer",
+          name: shortPlanName(plan),
+          price: String(plan.monthly_price_gbp),
+          priceCurrency: "GBP",
+        })),
       },
     ],
   };
@@ -138,7 +140,7 @@ export default function HomePage() {
             </p>
             <div className="actions">
               <a className="button button--primary" href="/pricing">
-                Start 14-Day Trial
+                Start 14-Day Free Trial
               </a>
               <a className="button button--secondary" href="/request-demo">
                 Request a Demo
@@ -147,6 +149,7 @@ export default function HomePage() {
                 Explore GeoCore
               </a>
             </div>
+            <p className="hero__trial-note">{TRIAL_DAYS}-day free trial. No card required.</p>
           </div>
         </section>
 
@@ -155,7 +158,7 @@ export default function HomePage() {
           <div className="shell trust-bar__grid">
             <p>Tenant-isolated workspace for every business</p>
             <p>Role-based access and full audit history</p>
-            <p>Secure billing via Stripe — card required, £0 due today</p>
+            <p>{TRIAL_DAYS}-day free trial. No card required.</p>
           </div>
         </section>
 
@@ -389,23 +392,22 @@ export default function HomePage() {
           <div className="shell">
             <p className="eyebrow">Pricing</p>
             <h2>Starter, Team, Pro, Business — and Enterprise</h2>
-            <p className="section__lead">£29 to £199 per month. Every self-service plan includes a 14-day free trial.</p>
+            <p className="section__lead">
+              Every self-service plan starts with a {TRIAL_DAYS}-day free trial. No card required.
+            </p>
             <ul className="pricing-teaser">
-              <li>
-                <strong>Starter</strong> £29/mo · 1 user
-              </li>
-              <li>
-                <strong>Team</strong> £59/mo · 3 users
-              </li>
-              <li>
-                <strong>Pro</strong> £99/mo · 10 users
-              </li>
-              <li>
-                <strong>Business</strong> £199/mo · 25 users
-              </li>
-              <li>
-                <strong>Enterprise</strong> Custom · Book a demo
-              </li>
+              {PLANS.map((plan) =>
+                plan.self_service ? (
+                  <li key={plan.plan}>
+                    <strong>{shortPlanName(plan)}</strong> £{plan.monthly_price_gbp}/mo ·{" "}
+                    {seatsLabel(plan)}
+                  </li>
+                ) : (
+                  <li key={plan.plan}>
+                    <strong>{shortPlanName(plan)}</strong> Custom · Book a demo
+                  </li>
+                )
+              )}
             </ul>
             <div className="actions">
               <a className="button button--primary" href="/pricing">
@@ -418,18 +420,18 @@ export default function HomePage() {
         {/* 15. 14-day trial explanation */}
         <section className="section" id="how-it-works">
           <div className="shell">
-            <p className="eyebrow">The 14-Day Trial</p>
-            <h2>No surprises before you add a card</h2>
+            <p className="eyebrow">The {TRIAL_DAYS}-Day Free Trial</p>
+            <h2>{TRIAL_DAYS}-day free trial. No card required.</h2>
             <ul className="trial-points">
-              <li>14-day free trial on every self-service plan</li>
-              <li>£0 due today</li>
-              <li>A payment method is required to activate your trial</li>
-              <li>Cancel before the trial ends to avoid being charged</li>
-              <li>Your first billing date and amount are shown before you confirm</li>
+              <li>Create your account and start using the full product straight away</li>
+              <li>No card and no payment details to start</li>
+              <li>Nothing is ever charged automatically when the trial ends</li>
+              <li>We&apos;ll remind you before your trial ends</li>
+              <li>Choose a plan and add payment details only when you&apos;re ready</li>
             </ul>
             <div className="actions">
               <a className="button button--primary" href="/pricing">
-                Start 14-Day Trial
+                Start 14-Day Free Trial
               </a>
             </div>
           </div>
@@ -456,9 +458,10 @@ export default function HomePage() {
         <section className="section final-cta">
           <div className="shell">
             <h2>Run your business from one connected platform.</h2>
+            <p className="final-cta__note">{TRIAL_DAYS}-day free trial. No card required.</p>
             <div className="actions">
               <a className="button button--primary" href="/pricing">
-                Start 14-Day Trial
+                Start 14-Day Free Trial
               </a>
               <a className="button button--secondary" href="/request-demo">
                 Request a Demo

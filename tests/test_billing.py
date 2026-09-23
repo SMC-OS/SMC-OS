@@ -714,16 +714,10 @@ def _cleanup_trial_signup():
         db.close()
 
 
-def test_signup_starts_no_subscription_and_blocks_workspace_access(client):
-    """GEOCORE V1 — FINAL AUTH + TRIAL ACCESS GATES. The owner's decision
-    superseded the old no-card 14-day trial this test used to assert
-    (see git history for that prior contract): a brand-new signup now
-    gets NO Subscription row at all, and a verified-but-not-yet-activated
-    user is blocked from normal workspace APIs (402) until a real Stripe
-    Checkout completes — see app/auth/dependencies.py::require_billing_access.
-    Plan selection and Checkout initiation themselves
-    (app/billing/router.py) stay reachable throughout, which is exactly
-    why GET /billing/subscription below still returns 200 (null), not 402."""
+def test_signup_starts_a_no_card_trial_on_the_selected_plan(client):
+    """Phase B — a brand-new signup starts a 14-day trial immediately, with
+    no Stripe object and no card, on the plan chosen on the pricing page
+    (carried through signup so it is never chosen twice)."""
     _cleanup_trial_signup()
     try:
         r = client.post(
@@ -733,44 +727,54 @@ def test_signup_starts_no_subscription_and_blocks_workspace_access(client):
                 "name": "Pytest Trial Owner",
                 "email": TRIAL_SIGNUP_EMAIL,
                 "password": "A-Real-Password-123!",
+                "plan": "team",
+                "billing_period": "annual",
             },
         )
         assert r.status_code == 201
-        headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-        # This test's subject is billing/access state, not email
-        # verification — mark verified immediately (same reasoning as
-        # conftest.py's other_tenant_auth_headers) so a 403 from
-        # require_verified_email can never be mistaken for the 402 this
-        # test actually asserts.
-        db = SessionLocal()
-        try:
-            db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).update(
-                {"email_verified_at": datetime.now(timezone.utc)}
-            )
-            db.commit()
-        finally:
-            db.close()
-
-        # No Subscription row exists — Stripe was never contacted.
-        sub_response = client.get("/api/v1/billing/subscription", headers=headers)
-        assert sub_response.status_code == 200
-        assert sub_response.json() is None
+        # Still gated on email verification before billing access matters.
+        assert r.json()["user"]["verification_required"] is True
+        assert r.json()["user"]["billing_access_required"] is False
 
         db = SessionLocal()
         try:
             user = db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).first()
-            assert crud.get_subscription_by_tenant_id(db, user.tenant_id) is None
+            sub = crud.get_subscription_by_tenant_id(db, user.tenant_id)
+            assert sub.plan == "team"
+            assert sub.billing_period == "annual"
+            assert sub.status == "trialing"
+            assert sub.stripe_customer_id is None and sub.stripe_subscription_id is None
+            assert sub.legacy_grandfathered is False
+            assert sub.trial_end - sub.trial_start == timedelta(days=14)
         finally:
             db.close()
-
-        # The actual access boundary: a normal workspace route is blocked,
-        # while account/session management and billing/plan-selection
-        # stay reachable throughout (confirmed above and by /auth/me).
-        assert client.get("/api/v1/customers", headers=headers).status_code == 402
-        assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
     finally:
         _cleanup_trial_signup()
+
+
+def test_signup_without_a_plan_or_with_a_non_self_service_plan_trials_pro(client):
+    for plan in (None, "enterprise", "no-such-plan"):
+        _cleanup_trial_signup()
+        try:
+            body = {
+                "company_name": TRIAL_SIGNUP_COMPANY,
+                "name": "Pytest Trial Owner",
+                "email": TRIAL_SIGNUP_EMAIL,
+                "password": "A-Real-Password-123!",
+                "billing_period": "weekly",
+            }
+            if plan is not None:
+                body["plan"] = plan
+            assert client.post("/api/v1/auth/signup", json=body).status_code == 201
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(User.email == TRIAL_SIGNUP_EMAIL).first()
+                sub = crud.get_subscription_by_tenant_id(db, user.tenant_id)
+                assert (sub.plan, sub.billing_period) == ("pro", "monthly")
+            finally:
+                db.close()
+        finally:
+            _cleanup_trial_signup()
 
 
 def test_a_tenant_never_gets_a_second_trial():

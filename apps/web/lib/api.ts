@@ -296,6 +296,14 @@ export const api = {
       body: JSON.stringify({ plan, billing_period: billingPeriod }),
     }),
 
+  // Phase B — start the 14-day no-card trial for a workspace that has
+  // never had a subscription (new signups get one automatically).
+  startTrial: (plan?: PlanId, billingPeriod?: BillingPeriod) =>
+    request<Subscription>("/billing/trial", {
+      method: "POST",
+      body: JSON.stringify({ plan: plan ?? null, billing_period: billingPeriod ?? null }),
+    }),
+
   createPortalSession: () =>
     request<{ portal_url: string }>("/billing/portal", { method: "POST" }),
 

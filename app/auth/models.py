@@ -37,6 +37,14 @@ class SignupRequest(BaseModel):
     name: str
     email: str
     password: str
+    # Phase B — the plan and billing period chosen on the pricing page,
+    # carried through signup so the trial starts on that plan and the
+    # visitor never picks it twice. Optional and lenient: anything
+    # missing, unknown or not self-service falls back to the default
+    # trial plan (app/billing/trial.py::resolve_trial_plan), so an old or
+    # hand-edited link never blocks a signup.
+    plan: str | None = None
+    billing_period: str | None = None
 
     @field_validator("password")
     @classmethod

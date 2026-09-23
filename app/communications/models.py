@@ -47,6 +47,11 @@ class CommunicationType(str, Enum):
     PROJECT_UPDATE = "project_update"
     PROJECT_COMPLETION = "project_completion"
     REVIEW_REQUEST = "review_request"
+    # Phase B — no-card trial lifecycle and public demo requests.
+    TRIAL_ENDING = "trial_ending"
+    TRIAL_ENDED = "trial_ended"
+    DEMO_REQUEST_SALES_NOTIFICATION = "demo_request_sales_notification"
+    DEMO_REQUEST_CONFIRMATION = "demo_request_confirmation"
 
 
 class FailureCategory(str, Enum):

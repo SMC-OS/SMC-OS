@@ -269,8 +269,19 @@ test("D_tenant_isolation_a_private_surface_and_its_price_are_invisible_to_anothe
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Search", { exact: true }).fill(materialName);
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page.getByText("No surfaces found")).toBeVisible();
+  // Phase A — which empty state shows depends on whether this database
+  // has global reference data loaded ("No surfaces found") or none at all
+  // ("Your material catalogue is empty"); either way Tenant A's private
+  // surface must not appear.
+  await expect(
+    page.getByText(/^(No surfaces found|Your material catalogue is empty)$/)
+  ).toBeVisible();
   await expect(page.getByText(materialName, { exact: true })).not.toBeVisible();
+
+  // Tenant A's private surface never counts towards Tenant B's catalogue.
+  const statusRes = await apiB.get("/api/v1/catalogue/meta/status", { headers: headersB });
+  expect(statusRes.ok()).toBeTruthy();
+  expect((await statusRes.json()).tenant_surfaces).toBe(0);
 
   // Not reachable directly by id either, even knowing it.
   const directRes = await apiB.get(`/api/v1/catalogue/surfaces/${surfaceId}`, {

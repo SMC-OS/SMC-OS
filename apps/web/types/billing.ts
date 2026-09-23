@@ -49,4 +49,9 @@ export interface Subscription {
   trial_end: string | null;
   created_at: string;
   updated_at: string;
+  // Phase B — set only for GeoCore's own no-card trial.
+  trial_state?: TrialState | null;
+  trial_days_remaining?: number | null;
 }
+
+export type TrialState = "active" | "ending_soon" | "expired";

@@ -14,9 +14,10 @@ import { FRONTEND_URL, MARKETING_URL } from "../playwright.config";
  * Four journeys, matching the plan's own acceptance criteria:
  *   A. A visitor understands the product (Homepage -> Product -> Trades
  *      -> Pricing).
- *   B. The trial journey shows the card-required/£0-due-today disclosure
- *      before handing off to the real apps/web signup flow — never
- *      claims "no card required."
+ *   B. The trial journey states "14-day free trial. No card required."
+ *      and hands off to the real apps/web signup flow with the chosen
+ *      plan and billing period (Phase B; this previously asserted the
+ *      superseded card-required contract).
  *   C. Request Demo persists a real row in the database.
  *   D. The same key flow works at a 390px mobile viewport.
  */
@@ -86,24 +87,19 @@ test.describe("GeoCore Premium OS Plan 02 (Sprint 041) — public marketing site
     await expect(page.getByRole("heading", { name: "Enterprise", exact: true })).toBeVisible();
   });
 
-  test("journey_b_the_trial_shows_card_required_and_zero_due_today_before_handoff_to_signup", async ({
-    page,
-  }) => {
+  test("journey_b_the_trial_needs_no_card_and_carries_the_plan_to_signup", async ({ page }) => {
     await page.goto(`${MARKETING_URL}/pricing`);
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText("14-day free trial").first()).toBeVisible();
 
     const starterCard = page.locator(".pricing-card", { hasText: "Starter" });
     await expect(starterCard).toBeVisible();
 
-    // The card-required / £0-due-today disclosure is visible BEFORE any
-    // handoff to card collection — never "no card required."
-    await expect(starterCard.getByText("£0 due today.").first()).toBeVisible();
-    await expect(starterCard.getByText(/payment method is required/i).first()).toBeVisible();
-    await expect(starterCard.getByText(/will be charged on/i).first()).toBeVisible();
-    await expect(page.getByText(/no card required/i)).toHaveCount(0);
+    // The no-card trial is stated before any handoff, and nothing implies
+    // an automatic charge.
+    await expect(starterCard.getByText("14-day free trial. No card required.")).toBeVisible();
+    await expect(page.getByText(/card is required|£0 due today|payment method is required/i)).toHaveCount(0);
 
-    const startTrial = starterCard.getByRole("link", { name: "Start 14-Day Trial" });
+    const startTrial = starterCard.getByRole("link", { name: "Start Free Trial" });
     await expect(startTrial).toHaveAttribute(
       "href",
       new RegExp(`^${FRONTEND_URL}/signup\\?plan=starter&billing_period=monthly$`)
@@ -115,6 +111,8 @@ test.describe("GeoCore Premium OS Plan 02 (Sprint 041) — public marketing site
     await startTrial.click();
     await page.waitForURL(/\/signup/);
     await expect(page.getByLabel("Email")).toBeVisible();
+    // The chosen plan arrives on signup, so it is never chosen twice.
+    await expect(page.getByTestId("trial-summary")).toContainText("free trial of GeoCore Starter");
   });
 
   test("journey_c_request_demo_submits_and_persists_a_real_row", async ({ page }) => {

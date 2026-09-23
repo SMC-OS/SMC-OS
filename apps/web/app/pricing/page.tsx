@@ -22,6 +22,10 @@ function daysRemaining(trialEnd: string): number {
   return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
 }
 
+function dayLabel(days: number): string {
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
 // Sprint 034 (Phase 3) — the Enterprise CTA's fallback destination.
 //
 // Deliberately not a hardcoded address. A `mailto:` on a public pricing page
@@ -43,12 +47,14 @@ const DEMO_BOOKING_URL = process.env.NEXT_PUBLIC_DEMO_BOOKING_URL?.trim() || nul
 
 export default function PricingPage() {
   const router = useRouter();
-  const { isAuthenticated, role } = useAuth();
+  const { isAuthenticated, role, billingAccessRequired, refreshAccess } = useAuth();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [period, setPeriod] = useState<BillingPeriod>("annual");
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [subscriptionLoaded, setSubscriptionLoaded] = useState(false);
+  const [startingTrial, setStartingTrial] = useState(false);
 
   useEffect(() => {
     api.getPlans().then(setPlans).catch(() => setError("Could not load pricing."));
@@ -56,11 +62,44 @@ export default function PricingPage() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    api.getSubscription().then(setSubscription).catch(() => {});
+    api
+      .getSubscription()
+      .then((sub) => {
+        setSubscription(sub);
+        // Phase B — show the period this workspace already chose (on
+        // the public pricing page, carried through signup) rather than
+        // making them pick it again.
+        if (sub?.billing_period) setPeriod(sub.billing_period);
+      })
+      .catch(() => {})
+      .finally(() => setSubscriptionLoaded(true));
   }, [isAuthenticated]);
 
   const canSubscribe = isAuthenticated && role === "Owner";
+  // Phase B — GeoCore's own no-card trial carries trial_state; a
+  // Stripe-managed trial (legacy card-required signups) does not.
+  const trialState = subscription?.trial_state ?? null;
+  const isNoCardTrial = trialState != null;
   const isTrialing = subscription?.status === "trialing";
+  // A workspace created before the no-card trial, which never completed
+  // the old card checkout, has no subscription at all: it may start its
+  // one free trial here.
+  const canStartTrial = canSubscribe && subscriptionLoaded && subscription === null && billingAccessRequired;
+
+  async function handleStartTrial() {
+    setError(null);
+    setStartingTrial(true);
+    try {
+      const started = await api.startTrial();
+      setSubscription(started);
+      await refreshAccess();
+      router.push("/onboarding");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setStartingTrial(false);
+    }
+  }
 
   async function handleSubscribe(planId: string) {
     setError(null);
@@ -96,15 +135,47 @@ export default function PricingPage() {
           GeoCore Pricing
         </h1>
         <p className="mt-2 text-sm text-muted">
-          Simple plans that scale with your team. Every plan starts with a 14-day
-          free trial — a card is required to start, and you won&apos;t be charged
-          until the trial ends. Cancel any time.
+          Simple plans that scale with your team. 14-day free trial. No card required.
+          You only add payment details when you choose a plan.
         </p>
 
-        {isTrialing && subscription?.trial_end && (
+        {trialState === "active" || trialState === "ending_soon" ? (
+          <div
+            className={`mx-auto mt-4 max-w-xl rounded-lg px-4 py-3 text-sm ${
+              trialState === "ending_soon" ? "bg-warning/10 text-warning" : "bg-info/10 text-info"
+            }`}
+            role="status"
+          >
+            <p className="font-medium">
+              {dayLabel(subscription?.trial_days_remaining ?? 0)} left in your free trial
+            </p>
+            <p className="mt-0.5">
+              Subscribe any time — you won&apos;t be charged until your trial ends.
+            </p>
+          </div>
+        ) : trialState === "expired" ? (
+          <div className="mx-auto mt-4 max-w-xl rounded-lg bg-danger/10 px-4 py-3 text-sm text-danger" role="status">
+            <p className="font-medium">Your 14-day free trial has ended.</p>
+            <p className="mt-0.5">
+              Choose a plan to continue. Your workspace and data are safe — nothing has been deleted.
+            </p>
+          </div>
+        ) : isTrialing && subscription?.trial_end ? (
+          // A Stripe-managed trial from the earlier card-required signup
+          // flow: Stripe converts it itself, so just show the countdown.
           <p className="mx-auto mt-4 inline-block rounded-full bg-info/10 px-4 py-1.5 text-sm font-medium text-info">
-            {daysRemaining(subscription.trial_end)} days left in your trial
+            {dayLabel(daysRemaining(subscription.trial_end))} left in your trial
           </p>
+        ) : null}
+
+        {canStartTrial && (
+          <div className="mx-auto mt-6 max-w-xl rounded-lg border border-border bg-surface px-4 py-4 text-sm">
+            <p className="font-medium text-foreground">Start your 14-day free trial</p>
+            <p className="mt-1 text-muted">No card required. Nothing is charged when the trial ends.</p>
+            <Button className="mt-3" onClick={handleStartTrial} disabled={startingTrial}>
+              {startingTrial ? "Starting your trial…" : "Start free trial"}
+            </Button>
+          </div>
         )}
 
         <div className="mt-6 inline-flex items-center gap-1 rounded-full border border-border bg-surface p-1">
@@ -218,7 +289,7 @@ export default function PricingPage() {
                   </ul>
 
                   <div className="mt-6">
-                    {isCurrentPlan ? (
+                    {isCurrentPlan && !isNoCardTrial ? (
                       <Button className="w-full" variant="outline" disabled>
                         {isTrialing ? "Trialing this plan" : "Current plan"}
                       </Button>
@@ -231,9 +302,11 @@ export default function PricingPage() {
                         >
                           {loadingPlan === plan.plan
                             ? "Redirecting…"
-                            : isTrialing
-                              ? `Upgrade to ${plan.name}`
-                              : `Choose ${plan.name}`}
+                            : isNoCardTrial
+                              ? `Subscribe to ${plan.name}`
+                              : isTrialing
+                                ? `Upgrade to ${plan.name}`
+                                : `Choose ${plan.name}`}
                         </Button>
                       ) : isAuthenticated ? (
                         <p className="text-center text-xs text-muted">

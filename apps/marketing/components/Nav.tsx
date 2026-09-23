@@ -52,7 +52,7 @@ export function Nav() {
             Sign in
           </a>
           <a className="button button--primary nav-links__cta" href="/pricing">
-            Start 14-Day Trial
+            Start Free Trial
           </a>
         </nav>
       </div>

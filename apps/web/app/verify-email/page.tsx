@@ -114,7 +114,7 @@ function VerifyEmailContent() {
               <p className="text-sm text-foreground">
                 Your email address has been verified.
               </p>
-              <Button onClick={() => router.push(isAuthenticated ? "/customers" : "/login")}>
+              <Button onClick={() => router.push(isAuthenticated ? "/onboarding" : "/login")}>
                 {isAuthenticated ? "Continue to GeoCore" : "Sign in"}
               </Button>
             </>
@@ -125,7 +125,7 @@ function VerifyEmailContent() {
               <p className="text-sm text-foreground">
                 Your email address is already verified — you&apos;re all set.
               </p>
-              <Button onClick={() => router.push("/customers")}>Continue to GeoCore</Button>
+              <Button onClick={() => router.push("/onboarding")}>Continue to GeoCore</Button>
             </>
           )}
 

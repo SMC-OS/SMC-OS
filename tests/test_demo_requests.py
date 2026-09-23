@@ -1,7 +1,9 @@
 """GeoCore Premium OS Plan 02 (Sprint 041) — public "Request a Demo" lead
 capture. `POST /api/v1/demo-requests` is deliberately public (no account,
 no tenant, no card) and platform-owned: a prospect's contact details are
-never written into any tenant's own CRM data.
+never written into any customer workspace's CRM. Phase B's optional
+follow-up writes only to GeoCore's OWN sales workspace, and only when
+PLATFORM_SALES_TENANT_ID is configured (tests/test_demo_request_follow_up.py).
 
 Every HTTP-level test uses a freshly-generated, per-test-unique email — a
 real module-level `CooldownLimiter` singleton (app.auth.rate_limit,

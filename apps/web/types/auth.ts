@@ -38,4 +38,9 @@ export interface SignupRequest {
   name: string;
   email: string;
   password: string;
+  // Phase B — the plan chosen on the pricing page, carried through signup
+  // so the no-card trial starts on it. Optional; the API falls back to
+  // the default trial plan for anything missing or unknown.
+  plan?: string;
+  billing_period?: string;
 }

@@ -10,8 +10,11 @@ import { ApiError } from "@/lib/api";
 
 const pushMock = vi.fn();
 
+let searchParams = new URLSearchParams();
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
+  useSearchParams: () => searchParams,
 }));
 
 const signupMock = vi.fn();
@@ -25,6 +28,7 @@ import SignupPage from "./page";
 beforeEach(() => {
   pushMock.mockClear();
   signupMock.mockReset();
+  searchParams = new URLSearchParams();
 });
 
 afterEach(() => {
@@ -169,5 +173,45 @@ describe("SignupPage — Sprint 027 full-system journey entry point", () => {
       ).toBeInTheDocument();
     });
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  describe("Phase B — no-card trial and plan carry-through", () => {
+    it("states the free trial needs no card before any details are entered", () => {
+      render(<SignupPage />);
+      expect(screen.getByText("14-day free trial. No card required.")).toBeInTheDocument();
+      expect(screen.queryByText(/card is required|payment method is required/i)).toBeNull();
+    });
+
+    it("carries the plan and billing period chosen on the pricing page into signup", async () => {
+      searchParams = new URLSearchParams("plan=team&billing_period=annual");
+      signupMock.mockResolvedValue({ verificationRequired: true, billingAccessRequired: false });
+
+      render(<SignupPage />);
+      expect(screen.getByTestId("trial-summary")).toHaveTextContent(
+        "free trial of GeoCore Team (annual billing)"
+      );
+      fillForm();
+      fireEvent.click(screen.getByRole("button", { name: /create workspace/i }));
+
+      await waitFor(() => {
+        expect(signupMock).toHaveBeenCalledWith(
+          expect.objectContaining({ plan: "team", billing_period: "annual" })
+        );
+      });
+    });
+
+    it("never forwards an unknown or non-self-service plan", async () => {
+      searchParams = new URLSearchParams("plan=enterprise&billing_period=annual");
+      signupMock.mockResolvedValue({ verificationRequired: true, billingAccessRequired: false });
+
+      render(<SignupPage />);
+      fillForm();
+      fireEvent.click(screen.getByRole("button", { name: /create workspace/i }));
+
+      await waitFor(() => expect(signupMock).toHaveBeenCalled());
+      const payload = signupMock.mock.calls[0][0];
+      expect(payload).not.toHaveProperty("plan");
+      expect(payload).not.toHaveProperty("billing_period");
+    });
   });
 });

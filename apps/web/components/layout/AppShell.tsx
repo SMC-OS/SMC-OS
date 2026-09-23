@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { TrialBanner } from "@/components/billing/TrialBanner";
 
 import { MobileNav } from "./MobileNav";
 import { SidebarProvider } from "./SidebarContext";
@@ -121,6 +122,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
+          <TrialBanner />
 
           <main
             className="min-w-0 flex-1 overflow-y-auto p-4 pb-24 md:pb-8 lg:p-8"

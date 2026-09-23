@@ -302,3 +302,114 @@ def render_review_request(*, tenant_display_name: str, customer_name: str, proje
         ],
     )
     return RenderedEmail(subject=subject, html=html, text=text)
+
+
+_BUTTON_STYLE = (
+    "display:inline-block;background:#173b2c;color:#ffffff;"
+    "text-decoration:none;padding:10px 20px;border-radius:6px;"
+)
+
+
+def render_trial_ending(
+    *, tenant_display_name: str, recipient_name: str, days_remaining: int, trial_end_label: str, upgrade_url: str
+) -> RenderedEmail:
+    """Phase B — sent once when a no-card trial has 3 days or fewer left."""
+    day_word = "day" if days_remaining == 1 else "days"
+    subject = f"Your GeoCore free trial ends in {days_remaining} {day_word}"
+    safe_name = _escape(recipient_name)
+    safe_url = _escape(upgrade_url)
+    safe_end = _escape(trial_end_label)
+    html, text = _wrap(
+        tenant_display_name=tenant_display_name,
+        preheader=f"Your free trial ends on {trial_end_label}",
+        body_html_lines=[
+            f"Hi {safe_name},",
+            f"Your 14-day GeoCore free trial ends on <strong>{safe_end}</strong>.",
+            "To keep using your workspace without interruption, choose a plan and add your payment "
+            "details. Your data stays exactly as it is.",
+            f'<a href="{safe_url}" style="{_BUTTON_STYLE}">Choose a plan</a>',
+            "If you subscribe before the trial ends, you won't be charged until it ends.",
+        ],
+        body_text_lines=[
+            f"Hi {recipient_name},",
+            f"Your 14-day GeoCore free trial ends on {trial_end_label}.",
+            "To keep using your workspace without interruption, choose a plan and add your payment "
+            "details. Your data stays exactly as it is.",
+            f"Choose a plan: {upgrade_url}",
+            "If you subscribe before the trial ends, you won't be charged until it ends.",
+        ],
+    )
+    return RenderedEmail(subject=subject, html=html, text=text)
+
+
+def render_trial_ended(*, tenant_display_name: str, recipient_name: str, upgrade_url: str) -> RenderedEmail:
+    """Phase B — sent once after a no-card trial has ended unconverted."""
+    subject = "Your GeoCore free trial has ended"
+    safe_name = _escape(recipient_name)
+    safe_url = _escape(upgrade_url)
+    html, text = _wrap(
+        tenant_display_name=tenant_display_name,
+        preheader="Choose a plan to pick up where you left off",
+        body_html_lines=[
+            f"Hi {safe_name},",
+            "Your 14-day GeoCore free trial has ended. Your workspace and everything in it are "
+            "kept safe — nothing has been deleted.",
+            "Choose a plan and add your payment details to pick up exactly where you left off.",
+            f'<a href="{safe_url}" style="{_BUTTON_STYLE}">Choose a plan</a>',
+        ],
+        body_text_lines=[
+            f"Hi {recipient_name},",
+            "Your 14-day GeoCore free trial has ended. Your workspace and everything in it are "
+            "kept safe — nothing has been deleted.",
+            "Choose a plan and add your payment details to pick up exactly where you left off.",
+            f"Choose a plan: {upgrade_url}",
+        ],
+    )
+    return RenderedEmail(subject=subject, html=html, text=text)
+
+
+def render_demo_request_sales_notification(
+    *, tenant_display_name: str, summary_lines: list[str], customer_url: str | None
+) -> RenderedEmail:
+    """Phase B — internal alert to GeoCore's own sales workspace owners.
+    `summary_lines` are plain "Label: value" strings, escaped here."""
+    subject = "New GeoCore demo request"
+    html_lines = ["A new demo request has arrived from the GeoCore website."]
+    html_lines += [_escape(line) for line in summary_lines]
+    text_lines = ["A new demo request has arrived from the GeoCore website.", *summary_lines]
+    if customer_url:
+        html_lines.append(f'<a href="{_escape(customer_url)}" style="{_BUTTON_STYLE}">Open in GeoCore</a>')
+        text_lines.append(f"Open in GeoCore: {customer_url}")
+    html, text = _wrap(
+        tenant_display_name=tenant_display_name,
+        preheader="New demo request from the GeoCore website",
+        body_html_lines=html_lines,
+        body_text_lines=text_lines,
+    )
+    return RenderedEmail(subject=subject, html=html, text=text)
+
+
+def render_demo_request_confirmation(*, tenant_display_name: str, recipient_name: str) -> RenderedEmail:
+    """Phase B — confirmation to the prospect who requested a demo. Makes
+    no promise about timing: only that the request arrived."""
+    subject = "We've received your GeoCore demo request"
+    safe_name = _escape(recipient_name)
+    html, text = _wrap(
+        tenant_display_name=tenant_display_name,
+        preheader="Thanks — we'll be in touch to arrange your demo",
+        body_html_lines=[
+            f"Hi {safe_name},",
+            "Thank you for requesting a GeoCore demo. We've received your details and a member of "
+            "the team will be in touch to arrange a time that suits you.",
+            "If you'd like to explore on your own in the meantime, every plan includes a 14-day "
+            "free trial. No card required.",
+        ],
+        body_text_lines=[
+            f"Hi {recipient_name},",
+            "Thank you for requesting a GeoCore demo. We've received your details and a member of "
+            "the team will be in touch to arrange a time that suits you.",
+            "If you'd like to explore on your own in the meantime, every plan includes a 14-day "
+            "free trial. No card required.",
+        ],
+    )
+    return RenderedEmail(subject=subject, html=html, text=text)

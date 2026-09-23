@@ -99,7 +99,7 @@ describe("VerifyEmailPage — confirming a token", () => {
       expect(screen.getByText("Your email address has been verified.")).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "Continue to GeoCore" }));
-    expect(pushMock).toHaveBeenCalledWith("/customers");
+    expect(pushMock).toHaveBeenCalledWith("/onboarding");
   });
 
   it("shows_an_already_verified_state_not_invalid_when_confirm_fails_but_the_session_is_already_verified", async () => {
@@ -120,7 +120,7 @@ describe("VerifyEmailPage — confirming a token", () => {
     });
     expect(screen.queryByText(/invalid or has expired/i)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Continue to GeoCore" }));
-    expect(pushMock).toHaveBeenCalledWith("/customers");
+    expect(pushMock).toHaveBeenCalledWith("/onboarding");
   });
 
   it("shows_the_invalid_state_when_confirm_fails_and_the_session_is_genuinely_still_unverified", async () => {

@@ -205,16 +205,24 @@ def has_active_billing_access(subscription: Subscription | None) -> bool:
       AuthService.create_user()'s own default for a directly-created
       "already established" user — see that method's docstring): always
       True, regardless of `status`, by explicit, permanent grace policy.
-    - Otherwise: `status` must be "trialing" or "active" — both of which,
-      for a NEW tenant, only ever come from a real Stripe Checkout
-      (app/billing/service.py's webhook handlers). No Subscription row at
-      all (the state every new signup is now in until Checkout completes)
-      is `None` here and correctly returns False.
+    - Otherwise: `status` must be "trialing" or "active". Phase B: a new
+      signup starts a no-card "trialing" row (app/billing/trial.py); once
+      that app-run trial's trial_end passes it no longer counts. No
+      Subscription row at all (a pre-Phase-B signup that never completed
+      Checkout) is `None` here and returns False.
     """
     if subscription is None:
         return False
     if subscription.legacy_grandfathered:
         return True
+    # Phase B — a no-card trial is run by GeoCore itself, so nothing
+    # external moves its status on when it ends: an app-run trial past
+    # its trial_end no longer grants access. The tenant keeps reaching
+    # auth and billing routes, so it can still subscribe.
+    from app.billing.trial import is_app_trial_expired
+
+    if is_app_trial_expired(subscription):
+        return False
     return subscription.status in {"trialing", "active"}
 
 
@@ -244,9 +252,15 @@ def require_billing_access(
     """
     subscription = crud.get_subscription_by_tenant_id(db, current_user.tenant_id)
     if not has_active_billing_access(subscription):
+        from app.billing.trial import is_app_trial_expired
+
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Complete billing setup to access your workspace.",
+            detail=(
+                "Your 14-day free trial has ended. Choose a plan to continue."
+                if is_app_trial_expired(subscription)
+                else "Complete billing setup to access your workspace."
+            ),
         )
     return current_user
 

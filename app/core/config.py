@@ -192,6 +192,14 @@ class Settings(BaseSettings):
     # 02). Same CooldownLimiter shape/reasoning as the two settings above.
     demo_request_cooldown_seconds: float = 60.0
 
+    # Phase B — GeoCore's own sales workspace. When set to a real tenant
+    # id, every public demo request also becomes a customer record (plus
+    # an activity entry) in that workspace's existing CRM, its Owners are
+    # emailed, and the prospect gets a confirmation. Unset (the default),
+    # requests are still stored but nobody is emailed — no address or
+    # workspace is ever guessed.
+    platform_sales_tenant_id: str | None = None
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def normalize_cors_allowed_origins(cls, value: object) -> list[str]:

@@ -266,3 +266,14 @@ Run only with explicit owner approval for that specific write. Stop at the first
 Rollback: the seed only inserts global reference rows, so the targeted rollback is to delete the global rows by the slugs in the gate's report; a full restore from the step-1 backup is the fallback. Tenant data is never touched either way.
 
 Use the `railway ssh` pattern in §12 to run these inside `simo-api-production`, which already has the real `DATABASE_URL`; `app/` ships in the image, so no script needs piping.
+
+## 14. Appendix — Phase B: no-card trial and demo follow-up
+
+No migration. Deploying Phase B changes behaviour for **new** signups only; existing subscriptions are untouched (ADR-054).
+
+**New optional variable (API service):** `PLATFORM_SALES_TENANT_ID` — the id of GeoCore's own sales workspace. Unset, demo requests are stored but nobody is emailed. Set it only to a real workspace whose verified Owners should receive demo leads.
+
+**Trial reminders.** They run inside `python -m app.jobs.follow_up`, the start command of `simo-follow-up-production`. That service has **no connected source**, so it keeps running whatever image it was last deployed with: it must be redeployed from the Phase B release before reminders are sent. To send them by hand: `railway ssh --service simo-api-production -- python -m app.jobs.trial_reminders`. Both are idempotent.
+
+**Workspaces created under the card-required trial** that never completed Checkout have no subscription. After Phase B they still land on `/pricing`, which now offers "Start free trial" (`POST /billing/trial`) — one no-card trial, once.
+

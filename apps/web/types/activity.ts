@@ -34,7 +34,9 @@ export type ActivityType =
   | "email_verified"
   // Sprint 039 Production Readiness Defect Gate, Blocker 2
   | "password_reset_requested"
-  | "password_changed";
+  | "password_changed"
+  // Phase B — a website demo request recorded in GeoCore's sales workspace.
+  | "demo_request_received";
 
 export interface ActivityEvent {
   id: string;

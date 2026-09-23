@@ -39,6 +39,16 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"error": str(exc)}), file=sys.stderr)
         return 1
 
+    # Phase B — the daily cron that runs this job also sends the no-card
+    # trial reminders, so they need no new Railway service. Isolated: a
+    # reminder failure is reported but never fails the follow-up run.
+    from app.jobs.trial_reminders import run as run_trial_reminders
+
+    try:
+        trial_reminders: dict = run_trial_reminders(now)
+    except Exception as exc:  # noqa: BLE001 — must not break the follow-up job
+        trial_reminders = {"error": str(exc)}
+
     print(
         json.dumps(
             {
@@ -47,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
                 "skipped_existing": result.skipped_existing,
                 "skipped_not_due": result.skipped_not_due,
                 "skipped_no_recipient": result.skipped_no_recipient,
+                "trial_reminders": trial_reminders,
             }
         )
     )

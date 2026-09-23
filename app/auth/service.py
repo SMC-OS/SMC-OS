@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import has_active_billing_access, is_verification_required
 from app.auth.models import SignupRequest, UserOut, UserRole
 from app.auth.security import hash_password, verify_password
+from app.billing.trial import start_trial_if_eligible
 from app.database import crud
 from app.database.models import Tenant, User
 from app.tenants.models import TenantCreate
@@ -68,7 +69,7 @@ class AuthService:
         `grant_legacy_billing_access` is the exact same reasoning applied
         to Sprint 039's final auth + trial gate: every one of those same
         callers represents a tenant that already exists, not a fresh
-        public signup subject to the new card-required-trial contract, so
+        public signup (which gets a no-card trial instead, see signup()), so
         it defaults to giving the tenant an already-active, grandfathered
         Subscription (idempotent — a no-op if one already exists) rather
         than leaving it to fail the new require_billing_access dependency.
@@ -122,16 +123,16 @@ class AuthService:
             password=data.password,
             role=UserRole.OWNER.value,
             email_verified=False,
-            # Sprint 039 Production Readiness Defect Gate, final auth +
-            # trial gate — the owner's decision superseded the old
-            # no-card 14-day trial (app/billing/trial.py, now unused by
-            # this path): a brand-new workspace gets no Subscription row
-            # at all, and therefore no workspace access
-            # (require_billing_access), until a real Stripe Checkout
-            # completes with a card on file. See
-            # app/auth/dependencies.py::has_active_billing_access.
+            # A new public signup is never a grandfathered legacy tenant.
             grant_legacy_billing_access=False,
         )
+        # Phase B — the 14-day free trial starts with the workspace. No
+        # card, no Stripe Checkout: payment details are only requested
+        # when the owner subscribes (app/billing/trial.py). Workspace
+        # access still waits for email verification (require_verified_email
+        # runs before require_billing_access).
+        start_trial_if_eligible(db, tenant.id, plan=data.plan, billing_period=data.billing_period)
+        db.refresh(user)
         return tenant, user
 
     def build_user_out(self, db: Session, user: User) -> UserOut:

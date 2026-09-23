@@ -919,3 +919,16 @@ fieldset legend {
   justify-content: center;
   margin-top: 1.5rem;
 }
+
+/* Phase B — the "no card required" line directly under trial CTAs. */
+.hero .hero__trial-note,
+.final-cta .final-cta__note {
+  margin: 0.85rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--forest);
+}
+
+.final-cta .final-cta__note {
+  margin: -0.75rem 0 1.25rem;
+}

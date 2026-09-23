@@ -536,3 +536,23 @@ The cheap way to build a "blocked by materials" signal is a query: count project
 - **The seed contains no suppliers.** The two placeholder distributors seeded since Sprint 042 were referenced by no surface, variant or override, yet would have appeared in every workspace's supplier lists. They are removed from the seed, the gate fails if either placeholder slug exists, and supplier search relies solely on real suppliers a tenant configures (its own materials and preferred suppliers).
 
 **Consequences.** Multi-word searches narrow instead of widening. A free-text word that is neither in a name nor a known family/colour word finds nothing, which is the honest result. The gate is deliberately not part of `/ready`: production is currently missing the data, and failing readiness would take the whole API down for a catalogue-only defect.
+
+## ADR-054: The 14-day trial needs no card; payment details are collected only when a workspace subscribes
+
+**Context.** The "GEOCORE V1 final auth + trial gate" made the trial card-required: signup created no subscription, and a Stripe Checkout with `trial_period_days=14` had to complete before any workspace access. The owner has approved reversing that: a 14-day free trial with no card required.
+
+**Decision.**
+- Signup starts the trial (`app/billing/trial.py::start_trial_if_eligible`): a `trialing` Subscription with a 14-day window and **no Stripe objects**. Nothing can be charged, because no payment details exist.
+- The plan and billing period chosen on the public pricing page travel through signup (`?plan=&billing_period=` → `SignupRequest.plan/billing_period`), so the trial runs on that plan and the visitor never picks it twice. Unknown or non-self-service values fall back to Pro monthly.
+- Email verification is still enforced first (`require_verified_email` runs before `require_billing_access`).
+- **Expiry is enforced by GeoCore**, because nothing external moves an app-run trial on: `has_active_billing_access` returns False once an app-run trial's `trial_end` passes (402 "Your 14-day free trial has ended"), while auth and billing routes stay reachable so the owner can subscribe. A Stripe-managed trial is never expired by GeoCore; Stripe moves it on by webhook.
+- **Checkout never grants a fresh trial.** A workspace subscribing during its trial keeps the remaining days (Stripe `subscription_data.trial_end` = the app trial's end, when at least 48 hours away, Stripe's minimum), so it is charged when the free trial would have ended anyway. Otherwise billing starts immediately. Checkout always collects a payment method.
+- **One trial per workspace, ever.** A trial starts only for a tenant with no Subscription row of any kind. Paid, cancelled, past-due, grandfathered and previously trialled workspaces can never receive a new trial or lose entitlements through this path. `POST /billing/trial` (Owner only) exists solely for workspaces created under the card-required contract that never completed Checkout; it returns 409 for everyone else.
+- **Reminders.** `app/billing/trial_reminders.py` emails verified Owners once when 3 or fewer days remain and once after expiry, via `DeliveryService` dedupe keys (no schema change). It runs inside the existing daily `python -m app.jobs.follow_up` cron and standalone as `python -m app.jobs.trial_reminders`.
+- The public pricing page renders from `apps/marketing/lib/plans.json`, generated from `GET /billing/plans` and drift-tested against it (`tests/test_pricing_drift.py`), so it is server-rendered and never empty when the API is unavailable.
+
+**Consequences.** No migration. Every "card required / £0 due today" statement is removed, and `apps/marketing/trial-and-demo-contract.test.mjs` fails if one returns. Trial abuse is bounded by email verification and one trial per workspace; per-person or per-card limits would need a new decision.
+
+## ADR-055: Website demo requests become leads in GeoCore's own sales workspace, not a second CRM
+
+**Decision.** When `PLATFORM_SALES_TENANT_ID` names GeoCore's own sales workspace, each public demo request also becomes a company customer in that workspace's existing CRM (one per prospect email; repeats append to the notes), adds a `demo_request_received` activity, emails that workspace's verified Owners, and sends the prospect a confirmation that promises no timing. Everything after the stored `demo_requests` row is best-effort and can never fail the public form. Unset, only the row is stored and nobody is emailed: no recipient or workspace is guessed. Customer workspaces' CRMs are never written. The in-app `/demo` sandbox is unrelated and unchanged.
