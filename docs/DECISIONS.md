@@ -556,3 +556,12 @@ The cheap way to build a "blocked by materials" signal is a query: count project
 ## ADR-055: Website demo requests become leads in GeoCore's own sales workspace, not a second CRM
 
 **Decision.** When `PLATFORM_SALES_TENANT_ID` names GeoCore's own sales workspace, each public demo request also becomes a company customer in that workspace's existing CRM (one per prospect email; repeats append to the notes), adds a `demo_request_received` activity, emails that workspace's verified Owners, and sends the prospect a confirmation that promises no timing. Everything after the stored `demo_requests` row is best-effort and can never fail the public form. Unset, only the row is stored and nobody is emailed: no recipient or workspace is guessed. Customer workspaces' CRMs are never written. The in-app `/demo` sandbox is unrelated and unchanged.
+
+## ADR-056: Signed-in password change revokes other sessions and keeps the current one
+
+**Decision.** `POST /auth/password/change` changes only the authenticated caller's password: the account comes from the token, and the request model forbids any extra field. The current password is verified with the existing bcrypt helpers, the new one must meet the existing policy and differ from the current one, and failed attempts are throttled per user id with the existing in-process `LoginRateLimiter`. The write reuses `crud.set_user_password`, the reset flow's own write, which increments `token_version`. Every earlier JWT is therefore rejected, and the endpoint returns a fresh token so the device that made the change stays signed in. That device has just proved it knows the current password. The "Your GeoCore password was changed" notice goes to the verified email only after the change commits. It contains no secrets or one-time links, and a provider failure is recorded without rolling back the change.
+
+**Why.** `token_version` is the existing, tested revocation mechanism. There is no per-session store, so "revoke all others, keep this one" is done safely by re-issuing this session's token rather than by inventing session tracking.
+
+**Limits.** The throttle is per process, the same accepted limitation as the login limiter (Sprint 026). There is no list of active sessions and no two-factor authentication.
+

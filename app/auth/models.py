@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.auth.password_policy import validate_password_strength
 
@@ -148,4 +148,24 @@ class ResetPasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def _password_policy(cls, value: str) -> str:
+        return validate_password_strength(value)
+
+
+class ChangePasswordRequest(BaseModel):
+    """Settings > Security "Change password". Deliberately carries no user
+    id or email: the account is always the authenticated caller's own, and
+    `extra="forbid"` rejects any attempt to name a different one."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(max_length=256)
+
+    @field_validator("new_password")
+    @classmethod
+    def _password_policy(cls, value: str) -> str:
+        # bcrypt (app/auth/security.py) refuses input over 72 bytes; say so
+        # as a validation error rather than failing at hash time.
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 bytes long.")
         return validate_password_strength(value)

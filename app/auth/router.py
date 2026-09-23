@@ -7,6 +7,7 @@ from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
 from app.auth.dependencies import get_current_user
 from app.auth.models import (
+    ChangePasswordRequest,
     ForgotPasswordRequest,
     LoginRequest,
     MessageResponse,
@@ -17,10 +18,16 @@ from app.auth.models import (
     VerificationResendResponse,
     VerifyEmailConfirmRequest,
 )
+from app.auth.password_change_service import (
+    CurrentPasswordIncorrectError,
+    PasswordUnchangedError,
+    password_change_service,
+)
 from app.auth.password_reset_service import ResetTokenInvalidError, password_reset_service
 from app.auth.rate_limit import (
     email_verification_resend_limiter,
     login_rate_limiter,
+    password_change_rate_limiter,
     password_reset_request_limiter,
 )
 from app.auth.security import create_access_token
@@ -194,3 +201,53 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
         tenant_id=user.tenant_id,
     )
     return MessageResponse(message="Your password has been reset. Please sign in again.")
+
+
+@router.post("/password/change", response_model=TokenResponse)
+def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Changes the signed-in user's own password (see
+    app/auth/password_change_service.py). Every other session is revoked;
+    the response carries a fresh token so this one stays signed in."""
+    limiter_key = str(current_user.id)
+    password_change_rate_limiter.check(
+        limiter_key,
+        max_attempts=settings.password_change_max_attempts,
+        window_seconds=settings.password_change_window_seconds,
+    )
+    try:
+        user = password_change_service.change_password(
+            db,
+            current_user,
+            current_password=data.current_password,
+            new_password=data.new_password,
+        )
+    except CurrentPasswordIncorrectError:
+        password_change_rate_limiter.record_failure(
+            limiter_key, window_seconds=settings.password_change_window_seconds
+        )
+        # 400, not 401: the session is valid, and a 401 would sign the
+        # client out.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your current password is incorrect.",
+        )
+    except PasswordUnchangedError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Choose a new password that is different from your current one.",
+        )
+    password_change_rate_limiter.reset(limiter_key)
+    activity_service.log(
+        ActivityEventCreate(
+            type=ActivityType.PASSWORD_CHANGED, title="Password changed", description=user.email
+        ),
+        tenant_id=user.tenant_id,
+    )
+    token = create_access_token(
+        subject=str(user.id), tenant_id=str(user.tenant_id), token_version=user.token_version
+    )
+    return TokenResponse(access_token=token, user=auth_service.build_user_out(db, user))

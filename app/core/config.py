@@ -187,6 +187,10 @@ class Settings(BaseSettings):
     # "email doesn't exist" the way a naturally-faster not-found path
     # otherwise would. Not a secret; safe to be a plain setting.
     password_reset_response_floor_seconds: float = 0.3
+    # Settings > Security "Change password": failed current-password
+    # attempts allowed per signed-in user within the window before 429.
+    password_change_max_attempts: int = 5
+    password_change_window_seconds: float = 900.0
 
     # Sprint 041 — public POST /demo-requests (GeoCore Premium OS Plan
     # 02). Same CooldownLimiter shape/reasoning as the two settings above.

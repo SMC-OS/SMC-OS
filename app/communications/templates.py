@@ -147,6 +147,39 @@ def render_password_reset(*, tenant_display_name: str, recipient_name: str, rese
     return RenderedEmail(subject=subject, html=html, text=text)
 
 
+def render_password_changed(
+    *, tenant_display_name: str, recipient_name: str, changed_at_label: str, reset_url: str
+) -> RenderedEmail:
+    """Notice only: carries no password, token or one-time link — just the
+    public forgot-password page for anyone who did not make the change."""
+    subject = "Your GeoCore password was changed"
+    safe_name = _escape(recipient_name)
+    safe_when = _escape(changed_at_label)
+    safe_url = _escape(reset_url)
+
+    html, text = _wrap(
+        tenant_display_name=tenant_display_name,
+        preheader="Your GeoCore password was changed",
+        body_html_lines=[
+            f"Hi {safe_name},",
+            f"The password for your GeoCore account was changed on {safe_when}. "
+            "Other devices signed in to your account have been signed out.",
+            "If you made this change, no action is required.",
+            "If you didn't make this change, secure your account now: reset your "
+            f'password at <a href="{safe_url}">{safe_url}</a> and tell your workspace owner.',
+        ],
+        body_text_lines=[
+            f"Hi {recipient_name},",
+            f"The password for your GeoCore account was changed on {changed_at_label}. "
+            "Other devices signed in to your account have been signed out.",
+            "If you made this change, no action is required.",
+            "If you didn't make this change, secure your account now: reset your "
+            f"password at {reset_url} and tell your workspace owner.",
+        ],
+    )
+    return RenderedEmail(subject=subject, html=html, text=text)
+
+
 def render_quote_sent(*, tenant_display_name: str, customer_name: str, quote_title: str, portal_url: str) -> RenderedEmail:
     subject = f"Your quote from {tenant_display_name}: {quote_title}"
     safe_customer = _escape(customer_name)

@@ -28,8 +28,14 @@ class _Window:
 
 
 class LoginRateLimiter:
-    def __init__(self, *, clock=time.monotonic):
+    def __init__(
+        self,
+        *,
+        clock=time.monotonic,
+        detail: str = "Too many failed login attempts. Try again later.",
+    ):
         self._clock = clock
+        self._detail = detail
         self._lock = threading.Lock()
         self._windows: dict[str, _Window] = {}
 
@@ -48,7 +54,7 @@ class LoginRateLimiter:
                 retry_after = max(0, int(window_seconds - (now - window.started_at)) + 1)
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Too many failed login attempts. Try again later.",
+                    detail=self._detail,
                     headers={"Retry-After": str(retry_after)},
                 )
 
@@ -69,6 +75,12 @@ class LoginRateLimiter:
 
 
 login_rate_limiter = LoginRateLimiter()
+# Settings > Security "Change password" — the same failed-attempt window,
+# keyed on the signed-in user's id (never on anything the client sends),
+# so a stolen session cannot brute-force the current password.
+password_change_rate_limiter = LoginRateLimiter(
+    detail="Too many incorrect attempts. Please wait before trying again."
+)
 
 
 class CooldownLimiter:

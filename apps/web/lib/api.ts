@@ -258,6 +258,15 @@ export const api = {
       body: JSON.stringify({ token, new_password: newPassword }),
     }),
 
+  // Settings > Security. Always the signed-in user's own account — the
+  // body carries no user id or email. Returns a fresh token because the
+  // change signs every other session out.
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<LoginResponse>("/auth/password/change", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+
   // Sprint 011 — Owner-only (require_role(OWNER) server-side; a Staff
   // caller gets a 403 handled by the caller, same as any other ApiError).
   createInvitation: (email: string) =>

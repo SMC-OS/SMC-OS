@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { ChangePasswordCard } from "@/components/settings/ChangePasswordCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -14,12 +15,12 @@ import type { AuthUser } from "@/types/auth";
 /**
  * Security — Sprint 036, Workstream I.
  *
- * Built strictly on what the backend actually supports today, which is:
- * who you are signed in as, what role you hold, and signing out.
+ * Built strictly on what the backend actually supports today: who you are
+ * signed in as, what role you hold, changing your own password (which
+ * signs every other session out), and signing out.
  *
- * There is deliberately no "change password", no "two-factor
- * authentication" and no "active sessions" list, because none of those
- * endpoints exist. A disabled control or a "coming soon" row would tell a
+ * There is deliberately no "two-factor authentication" and no "active
+ * sessions" list, because neither endpoint exists. A disabled control or a "coming soon" row would tell a
  * reader the feature is nearly there; naming the gap plainly tells them
  * the truth and is the honest version of this screen until the endpoints
  * are built (see docs/SPRINTS/sprint-036.md §10).
@@ -113,6 +114,8 @@ export function SecurityCard() {
         </CardContent>
       </Card>
 
+      <ChangePasswordCard />
+
       <Card>
         <CardHeader>
           <CardTitle>Session</CardTitle>
@@ -133,11 +136,11 @@ export function SecurityCard() {
           <InfoIcon className="mt-0.5 h-[18px] w-[18px] shrink-0 text-info" />
           <div>
             <p className="text-sm font-medium text-foreground">
-              Changing your password and two-factor authentication
+              Two-factor authentication
             </p>
             <p className="mt-0.5 text-sm text-muted">
-              These aren&rsquo;t available in GeoCore yet. Contact your workspace owner
-              if you need your access changed in the meantime.
+              This isn&rsquo;t available in GeoCore yet. Use a strong, unique password in
+              the meantime.
             </p>
           </div>
         </CardContent>

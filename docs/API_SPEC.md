@@ -104,6 +104,18 @@ Owner only. Starts the 14-day no-card trial for a workspace that has **never** h
 
 In development/test, one owner account is seeded during lifespan only when `SEED_DATA_ENABLED=true` and the `users` table is empty, using `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD`. Since Sprint 009 this goes through the same `AuthService.signup()` path as a real signup, giving the seeded owner a real "Default Workspace" tenant instead of special-cased logic. Production requires `SEED_DATA_ENABLED=false` and never runs this seeder.
 
+### `POST /api/v1/auth/password/change` — Settings > Security
+
+`Authorization: Bearer <token>` header required. Changes the **signed-in user's own** password only (ADR-056).
+
+**Request:** `{ "current_password": "...", "new_password": "..." }`. Any other field (for example `user_id` or `email`) is rejected with `422`, so the body can never name another account. `new_password` must meet the password policy (`app/auth/password_policy.py`) and be at most 72 bytes.
+
+**Response (200)** (`TokenResponse`): a fresh token for this session plus the user. Every token issued before the change stops working (`token_version` is incremented), so other devices are signed out.
+**Response (400):** `{"detail": "Your current password is incorrect."}`, or `{"detail": "Choose a new password that is different from your current one."}`.
+**Response (401):** no valid session. **Response (422):** policy failure or an unexpected field. **Response (429):** too many incorrect current passwords for this user (`PASSWORD_CHANGE_MAX_ATTEMPTS` within `PASSWORD_CHANGE_WINDOW_SECONDS`; in-process, per instance), with `Retry-After`.
+
+After the change, a `password_changed` activity is logged, and a "Your GeoCore password was changed" notice is sent to the account's email if it is verified. A delivery failure is recorded on the communication row and never undoes the change.
+
 ---
 
 ## Customer routes (`app/customers/router.py`) — added Sprint 004

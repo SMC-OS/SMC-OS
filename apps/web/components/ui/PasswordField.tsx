@@ -20,6 +20,8 @@ export function PasswordField({
   autoComplete,
   required,
   autoFocus,
+  error,
+  disabled,
 }: {
   id: string;
   label: string;
@@ -28,11 +30,13 @@ export function PasswordField({
   autoComplete: "current-password" | "new-password";
   required?: boolean;
   autoFocus?: boolean;
+  error?: string;
+  disabled?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
 
   return (
-    <Field label={label} htmlFor={id}>
+    <Field label={label} htmlFor={id} error={error}>
       <div className="relative">
         <Input
           id={id}
@@ -40,6 +44,9 @@ export function PasswordField({
           required={required}
           autoFocus={autoFocus}
           autoComplete={autoComplete}
+          disabled={disabled}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="pr-24"
@@ -49,6 +56,7 @@ export function PasswordField({
           variant="ghost"
           size="sm"
           onClick={() => setVisible((v) => !v)}
+          aria-controls={id}
           className="absolute inset-y-0 right-1 h-8 self-center px-2 text-xs"
         >
           {visible ? "Hide password" : "Show password"}

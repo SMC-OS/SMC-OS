@@ -52,6 +52,8 @@ class CommunicationType(str, Enum):
     TRIAL_ENDED = "trial_ended"
     DEMO_REQUEST_SALES_NOTIFICATION = "demo_request_sales_notification"
     DEMO_REQUEST_CONFIRMATION = "demo_request_confirmation"
+    # Settings > Security — notification after a signed-in password change.
+    PASSWORD_CHANGED = "password_changed"
 
 
 class FailureCategory(str, Enum):
