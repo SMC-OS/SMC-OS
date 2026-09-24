@@ -43,8 +43,8 @@ PREFIX = f"HOTFIX72 {RUN}"
 VALID = "Hotfix-Valid-Pass-1!"
 VALID_2 = "Hotfix-Other-Pass-2!"
 LONG_ASCII = "Aa1!" + "a" * 69  # 73 bytes
-LONG_UTF8 = "Aa1!" + "é" * 35  # 39 characters, 74 bytes
-OK_72_BYTES = "Aa1!" + "é" * 34  # 38 characters, 72 bytes
+LONG_UTF8 = "Aa1!" + "\u00e9" * 35  # 39 characters, 74 bytes
+OK_72_BYTES = "Aa1!" + "\u00e9" * 34  # 38 characters, 72 bytes
 TOO_LONG_MESSAGE = "Password must be at most 72 bytes long."
 SECRETS = (VALID, VALID_2, LONG_ASCII, LONG_UTF8, OK_72_BYTES)
 
