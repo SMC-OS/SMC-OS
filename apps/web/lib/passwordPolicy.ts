@@ -13,6 +13,15 @@
  */
 
 export const PASSWORD_MIN_LENGTH = 10;
+// bcrypt's input limit, in UTF-8 bytes (not characters). Mirrors
+// PASSWORD_MAX_BYTES in app/auth/password_policy.py. Not shown in the
+// checklist: only reached by very long passphrases.
+export const PASSWORD_MAX_BYTES = 72;
+export const PASSWORD_TOO_LONG_MESSAGE = `Password must be at most ${PASSWORD_MAX_BYTES} bytes long.`;
+
+export function passwordExceedsMaxBytes(password: string): boolean {
+  return new TextEncoder().encode(password).length > PASSWORD_MAX_BYTES;
+}
 
 export interface PasswordRequirement {
   id: string;
@@ -50,10 +59,16 @@ export const PASSWORD_REQUIREMENTS: PasswordRequirement[] = [
 
 /** First unmet requirement's message, or null if the password satisfies all of them. */
 export function passwordPolicyError(password: string): string | null {
+  if (passwordExceedsMaxBytes(password)) {
+    return PASSWORD_TOO_LONG_MESSAGE;
+  }
   const failed = PASSWORD_REQUIREMENTS.find((requirement) => !requirement.test(password));
   return failed ? `Password must include: ${failed.label.toLowerCase()}.` : null;
 }
 
 export function passwordSatisfiesPolicy(password: string): boolean {
-  return PASSWORD_REQUIREMENTS.every((requirement) => requirement.test(password));
+  return (
+    !passwordExceedsMaxBytes(password) &&
+    PASSWORD_REQUIREMENTS.every((requirement) => requirement.test(password))
+  );
 }

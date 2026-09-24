@@ -110,6 +110,8 @@ In development/test, one owner account is seeded during lifespan only when `SEED
 
 **Request:** `{ "current_password": "...", "new_password": "..." }`. Any other field (for example `user_id` or `email`) is rejected with `422`, so the body can never name another account. `new_password` must meet the password policy (`app/auth/password_policy.py`) and be at most 72 bytes.
 
+**Password length, every flow.** Signup, password reset, invitation accept and change password all apply the same policy (`app/auth/password_policy.py`), including a maximum of **72 UTF-8 bytes**, which is bcrypt's input limit. A longer password gets `422` with `"Password must be at most 72 bytes long."` and is never truncated. Logging in with a longer password is a normal `401`. Validation errors never echo `password`, `new_password` or `current_password`.
+
 **Response (200)** (`TokenResponse`): a fresh token for this session plus the user. Every token issued before the change stops working (`token_version` is incremented), so other devices are signed out.
 **Response (400):** `{"detail": "Your current password is incorrect."}`, or `{"detail": "Choose a new password that is different from your current one."}`.
 **Response (401):** no valid session. **Response (422):** policy failure or an unexpected field. **Response (429):** too many incorrect current passwords for this user (`PASSWORD_CHANGE_MAX_ATTEMPTS` within `PASSWORD_CHANGE_WINDOW_SECONDS`; in-process, per instance), with `Retry-After`.

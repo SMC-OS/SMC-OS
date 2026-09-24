@@ -105,8 +105,11 @@ class PasswordResetService:
         if row is None or row.used_at is not None or row.expires_at < now:
             raise ResetTokenInvalidError(raw_token)
 
+        # Hash first: a password the hashing boundary refuses must leave the
+        # token unused and the old password in place.
+        password_hash = hash_password(new_password)
         crud.mark_password_reset_token_used(db, row.id, now)
-        user = crud.set_user_password(db, row.user_id, password_hash=hash_password(new_password))
+        user = crud.set_user_password(db, row.user_id, password_hash=password_hash)
         if user is None:
             # The token's own user_id FK guarantees this row cannot exist
             # without a real user; only reachable if that user row was

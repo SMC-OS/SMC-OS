@@ -18,14 +18,32 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
 
+from app.auth.password_policy import PASSWORD_TOO_LONG_MESSAGE, password_exceeds_max_bytes
 from app.core.config import settings
 
 
+class PasswordTooLongError(ValueError):
+    """A password over bcrypt's 72-byte input limit reached the hashing
+    boundary. Raised before bcrypt is called, so no other bcrypt error is
+    ever reported as this one. Mapped to a 422 in app/core/errors.py."""
+
+    def __init__(self) -> None:
+        super().__init__(PASSWORD_TOO_LONG_MESSAGE)
+
+
 def hash_password(password: str) -> str:
+    # Never truncate: a longer password is refused, not silently shortened.
+    if password_exceeds_max_bytes(password):
+        raise PasswordTooLongError()
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
+    # No stored hash can match over-long input: bcrypt 5 (pinned since the
+    # first requirements.txt) refuses to hash it, so it was never stored.
+    # Answer "no match" instead of letting bcrypt raise.
+    if password_exceeds_max_bytes(password):
+        return False
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
 

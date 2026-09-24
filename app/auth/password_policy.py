@@ -16,6 +16,16 @@ this module has no opinion on historical passwords, only on new ones.
 import re
 
 PASSWORD_MIN_LENGTH = 10
+# bcrypt (app/auth/security.py) accepts at most 72 bytes of input and
+# refuses anything longer. The limit is UTF-8 bytes, not characters: a
+# non-ASCII character takes 2-4 bytes. Checked here so every flow that
+# chooses a new password rejects it with a normal validation error.
+PASSWORD_MAX_BYTES = 72
+PASSWORD_TOO_LONG_MESSAGE = f"Password must be at most {PASSWORD_MAX_BYTES} bytes long."
+
+
+def password_exceeds_max_bytes(password: str) -> bool:
+    return len(password.encode("utf-8")) > PASSWORD_MAX_BYTES
 
 # Order matters: this is also the order failures are reported in, and
 # the frontend's apps/web/lib/passwordPolicy.ts mirrors both the
@@ -39,6 +49,8 @@ def validate_password_strength(password: str) -> str:
     """
     if len(password) < PASSWORD_MIN_LENGTH:
         raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters long.")
+    if password_exceeds_max_bytes(password):
+        raise ValueError(PASSWORD_TOO_LONG_MESSAGE)
     for message, pattern in _REQUIREMENTS:
         if not pattern.search(password):
             raise ValueError(f"Password must contain {message}.")
