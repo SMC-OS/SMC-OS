@@ -148,14 +148,15 @@ export default function StartPage() {
 
       <header className="site-header start-header">
         <div className="shell start-header__inner">
-          <Link className="wordmark" href="/">
+          <Link className="wordmark start-header__brand" href="/">
             <Image
-              src="/brand/horizontal-logo.png"
+              src="/brand/g-mark.png"
               alt={`${SITE_NAME} — back to the main site`}
-              width={200}
-              height={49}
+              width={116}
+              height={116}
               priority
             />
+            <span className="start-header__name">{SITE_NAME}</span>
           </Link>
           <nav className="start-header__nav" aria-label="Account">
             <TrackedAnchor
@@ -221,10 +222,10 @@ export default function StartPage() {
             <div className="start-brand">
               <Image
                 className="start-brand__mark"
-                src="/brand/monogram.png"
+                src="/brand/g-mark.png"
                 alt=""
-                width={48}
-                height={48}
+                width={116}
+                height={116}
               />
               <p className="start-brand__tagline">
                 One system, from first enquiry to final invoice.

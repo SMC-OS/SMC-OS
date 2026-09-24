@@ -965,6 +965,38 @@ fieldset legend {
   height: 1.75rem;
 }
 
+/* G mark + small "GeoCore" text: the official square G, never stretched. */
+.start-header__brand {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  text-decoration: none;
+}
+
+.start-header .start-header__brand img {
+  height: 2.5rem; /* 40px mobile */
+  width: auto;
+}
+
+.start-header__name {
+  font-size: 0.75rem; /* 12px */
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--text);
+}
+
+@media (min-width: 48rem) {
+  .start-header .start-header__brand img {
+    height: 2.75rem; /* 44px desktop */
+  }
+
+  .start-header__name {
+    font-size: 0.8125rem; /* 13px */
+  }
+}
+
 .start-header__nav {
   display: flex;
   align-items: center;
@@ -1052,8 +1084,15 @@ fieldset legend {
 }
 
 .start-brand__mark {
-  height: 3rem;
+  height: 6rem; /* 96px mobile — contained, true proportional G */
   width: auto;
+  align-self: flex-start; /* defeat flex column stretch so width:auto wins */
+}
+
+@media (min-width: 48rem) {
+  .start-brand__mark {
+    height: 8.75rem; /* 140px desktop */
+  }
 }
 
 .start-brand__tagline {
