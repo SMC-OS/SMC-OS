@@ -9,7 +9,15 @@ prints a password, hash or token.
     cat scripts/staging/verify_password_byte_limit.py | \\
       railway ssh --service simo-api-staging --environment staging -- python - --confirm-staging
 
-Refuses to run without --confirm-staging, or when APP_ENV is production.
+Safety guard (checked before any request or write):
+- RAILWAY_ENVIRONMENT_NAME must be exactly "staging";
+- the database host must not be the production database host;
+- the production sales workspace must not exist in the connected database.
+APP_ENV is deliberately NOT used: the staging runbook sets
+APP_ENV=production on staging (production-grade runtime checks), so it
+says nothing about which environment this is.
+
+Refuses to run without --confirm-staging.
 """
 
 from __future__ import annotations
@@ -22,7 +30,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
+from sqlalchemy.engine import make_url
 
 from app.core.config import settings
 from app.database import crud
@@ -37,6 +46,49 @@ from app.database.models import (
     Tenant,
     User,
 )
+
+PRODUCTION_DB_HOST = "simo-postgres-production.railway.internal"
+PRODUCTION_SALES_TENANT_ID = "e36f3837-a9b7-4810-bb10-1fcd919292b5"
+
+
+def safety_refusal(environment_name: str | None, db_host: str | None, production_tenant_present: bool) -> str | None:
+    """Why this run must not proceed, or None when it is safe. Pure, so it
+    is unit-tested without a database. Never includes a secret."""
+    name = (environment_name or "").strip()
+    if not name:
+        return "RAILWAY_ENVIRONMENT_NAME is not set; this is not a known staging container."
+    if name.lower() == "production":
+        return "RAILWAY_ENVIRONMENT_NAME is production."
+    if name != "staging":
+        return f"RAILWAY_ENVIRONMENT_NAME is {name!r}, not 'staging'."
+    if (db_host or "").strip().lower() == PRODUCTION_DB_HOST:
+        return "the database host is the production database."
+    if production_tenant_present:
+        return "the connected database contains the production sales workspace."
+    return None
+
+
+def environment_refusal(db) -> str | None:
+    """Reads only the Railway environment name, the database HOST (never
+    the URL or credentials) and one existence check. The host is checked
+    before any connection is made."""
+    name = os.environ.get("RAILWAY_ENVIRONMENT_NAME")
+    host = make_url(settings.database_url).host
+    early = safety_refusal(name, host, production_tenant_present=False)
+    if early:
+        return early
+    try:
+        present = bool(
+            db.execute(
+                text("select count(*) from tenants where id = :tid"),
+                {"tid": PRODUCTION_SALES_TENANT_ID},
+            ).scalar()
+        )
+    except Exception:
+        db.rollback()
+        return "could not confirm the database is not production (query failed)."
+    return safety_refusal(name, host, production_tenant_present=present)
+
 
 RUN = uuid.uuid4().hex[:8]
 PREFIX = f"HOTFIX72 {RUN}"
@@ -70,14 +122,18 @@ def main(argv: list[str]) -> int:
     if "--confirm-staging" not in argv:
         print("Refusing to run without --confirm-staging.")
         return 2
-    if settings.app_env == "production":
-        print("Refusing to run: APP_ENV is production.")
+    db = SessionLocal()
+    refusal = environment_refusal(db)
+    if refusal:
+        db.close()
+        print(f"Refusing to run: {refusal}")
         return 2
+    print("Safety guard: RAILWAY_ENVIRONMENT_NAME=staging, non-production database host, "
+          "production sales workspace absent. Proceeding.")
 
     port = os.environ.get("PORT", "8000")
     root = httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=60)
     api = httpx.Client(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=60)
-    db = SessionLocal()
     try:
         ready = root.get("/ready")
         check("/ready is ready with the database reachable", ready.status_code == 200 and "reachable" in ready.text, ready.text[:120])
