@@ -49,11 +49,8 @@ class PasswordUnchangedError(Exception):
 
 
 def _matches(password: str, password_hash: str) -> bool:
-    try:
-        return verify_password(password, password_hash)
-    except ValueError:
-        # bcrypt refuses over-long input; it cannot be the stored password.
-        return False
+    # verify_password answers False for input over bcrypt's 72-byte limit.
+    return verify_password(password, password_hash)
 
 
 class PasswordChangeService:

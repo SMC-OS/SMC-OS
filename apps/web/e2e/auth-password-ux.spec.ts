@@ -59,3 +59,38 @@ test("Login password can be shown and hidden before Enter submits", async ({ pag
   await page.getByLabel("Password").press("Enter");
   await expect(page).toHaveURL(/\/customers$/);
 });
+
+// bcrypt accepts at most 72 UTF-8 bytes. 39 characters of "é" are 74
+// bytes: the form must refuse it with a clear message (it used to reach
+// the API and fail with a 500), and the API must answer 422 / 401.
+test("An over-72-byte password is refused cleanly on signup and login", async ({ page, request }) => {
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tooLong = "Aa1!" + "é".repeat(35);
+
+  await page.goto("/signup");
+  await page.getByLabel("Company name").fill(`Byte Limit ${runId}`);
+  await page.getByLabel("Your name").fill("Byte Limit Owner");
+  await page.getByLabel("Email").fill(`byte-limit-${runId}@example.invalid`);
+  await page.getByLabel("Password", { exact: true }).fill(tooLong);
+  await page.getByLabel("Confirm password").fill(tooLong);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByText("Password must be at most 72 bytes long.")).toBeVisible();
+  await expect(page).toHaveURL(/\/signup/);
+
+  const api = "http://127.0.0.1:8000/api/v1/auth";
+  const signup = await request.post(`${api}/signup`, {
+    data: {
+      company_name: `Byte Limit API ${runId}`,
+      name: "Byte Limit",
+      email: `byte-limit-api-${runId}@example.invalid`,
+      password: tooLong,
+    },
+  });
+  expect(signup.status()).toBe(422);
+  expect(await signup.text()).not.toContain(tooLong);
+
+  const login = await request.post(`${api}/login`, {
+    data: { email: `byte-limit-api-${runId}@example.invalid`, password: tooLong },
+  });
+  expect(login.status()).toBe(401);
+});

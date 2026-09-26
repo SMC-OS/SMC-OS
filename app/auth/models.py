@@ -164,8 +164,4 @@ class ChangePasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def _password_policy(cls, value: str) -> str:
-        # bcrypt (app/auth/security.py) refuses input over 72 bytes; say so
-        # as a validation error rather than failing at hash time.
-        if len(value.encode("utf-8")) > 72:
-            raise ValueError("Password must be at most 72 bytes long.")
         return validate_password_strength(value)

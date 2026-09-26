@@ -14,6 +14,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.auth.security import PasswordTooLongError
 from app.core.logging import request_id_context
 from app.core.middleware import matched_route_path
 from app.quotes.calculator import CataloguePriceMissingError
@@ -28,7 +29,7 @@ logger = logging.getLogger("simo_os")
 # messages already say exactly what's missing, so the raw candidate
 # password never needs to appear in a response body a browser, proxy, or
 # log aggregator might capture.
-_SENSITIVE_FIELD_NAMES = {"password", "new_password"}
+_SENSITIVE_FIELD_NAMES = {"password", "new_password", "current_password"}
 
 
 def _redact_sensitive_inputs(errors: list[dict]) -> list[dict]:
@@ -36,6 +37,15 @@ def _redact_sensitive_inputs(errors: list[dict]) -> list[dict]:
         loc = error.get("loc") or []
         if any(str(part) in _SENSITIVE_FIELD_NAMES for part in loc):
             error.pop("input", None)
+            continue
+        # A "missing field" or "extra field" error echoes the whole
+        # containing object, which can carry a password alongside the
+        # field that failed.
+        value = error.get("input")
+        if isinstance(value, dict) and _SENSITIVE_FIELD_NAMES & set(value):
+            error["input"] = {
+                key: val for key, val in value.items() if key not in _SENSITIVE_FIELD_NAMES
+            }
     return errors
 
 
@@ -50,6 +60,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={"detail": "Invalid request", "errors": errors},
+        )
+
+    @app.exception_handler(PasswordTooLongError)
+    async def password_too_long_handler(request: Request, exc: PasswordTooLongError):
+        # Defence in depth: request models reject these first; this only
+        # catches a future flow that reaches hash_password unvalidated.
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": str(exc)},
         )
 
     @app.exception_handler(KeyError)

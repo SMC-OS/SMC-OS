@@ -22,7 +22,8 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import has_active_billing_access, is_verification_required
 from app.auth.models import SignupRequest, UserOut, UserRole
-from app.auth.security import hash_password, verify_password
+from app.auth.password_policy import password_exceeds_max_bytes
+from app.auth.security import PasswordTooLongError, hash_password, verify_password
 from app.billing.trial import start_trial_if_eligible
 from app.database import crud
 from app.database.models import Tenant, User
@@ -113,6 +114,10 @@ class AuthService:
         """
         if crud.get_user_by_email(db, data.email) is not None:
             raise EmailAlreadyRegisteredError(data.email)
+        # Defence in depth behind SignupRequest's validator: an unhashable
+        # password must fail before the tenant is committed, not after.
+        if password_exceeds_max_bytes(data.password):
+            raise PasswordTooLongError()
 
         tenant = tenant_service.create(db, TenantCreate(name=data.company_name))
         user = self.create_user(
