@@ -13,6 +13,61 @@ milestone.
 
 ---
 
+## ⚠ CRITICAL DEPLOYMENT SAFETY
+
+**Read this before any Git push, merge or branch operation in this
+repository.** This is Railway configuration as verified on 2026-09-26
+(read-only `describe-service` for every service). Re-verify it in Railway
+before relying on it.
+
+### Which branch deploys what
+
+| Branch | Railway services connected to it | Effect of a push |
+|---|---|---|
+| `main` | **NONE.** No Railway service in staging or production currently deploys from `main`. | No deployment. |
+| `production-release` | `simo-api-production`, `simo-web-production`, `simo-follow-up-production` | **Can trigger an immediate production deployment.** |
+| `fix/start-logo-mark` | `simo-marketing-production` (`geocore.one`, `www.geocore.one`) **and** `simo-marketing-staging` | Can redeploy **both** staging and production marketing at once. |
+| `claude/geocore-gap-remediation` | `simo-api-staging`, `simo-web-staging` | Can redeploy staging API/web. |
+
+### Rules
+
+- **Treat a push to `production-release` as a production deployment
+  action, not a routine Git operation.** Do not push to it without the
+  owner's explicit approval for that specific deployment.
+- The production API's Railway `preDeployCommand` runs
+  `python -m app.core.runtime_check && alembic upgrade head && alembic current`.
+  **A deployment of `simo-api-production` migrates the production database.**
+- **CI is not confirmed as a deployment gate.** Railway's
+  "wait for CI" (`checkSuites`) is `false` on every connected service.
+  A failing commit can still deploy.
+- **Never reconcile `main` and `production-release` casually.** They have
+  diverged (see CURRENT CHECKPOINT). Any reconciliation requires a dedicated,
+  reviewed deployment plan approved by the owner.
+- Pushing to `fix/start-logo-mark` or `claude/geocore-gap-remediation`
+  also deploys. Treat those branches as deployment branches while they
+  remain connected.
+- `docs/STAGING_RUNBOOK.md` says staging follows `main`. **That is currently
+  stale.** Staging API/web follow `claude/geocore-gap-remediation`.
+
+### Extra production database service `Postgres`
+
+**STATUS: UNIDENTIFIED / DO NOT MODIFY**
+
+Known facts (Railway metadata only):
+
+- Railway Postgres 18 (`postgres-ssl:18` template)
+- created 2026-09-20
+- has its own separate 50 GB volume
+- contains data
+- has no public endpoint (no domain or TCP proxy)
+- its relationship to the production application has **NOT** been
+  established
+
+Do not connect to it, modify it, redeploy it, remove it or point anything at
+it until the owner has identified it.
+
+---
+
 ## 1. Product identity
 
 - **What it is:** GeoCore is a multi-tenant SaaS operating system for
@@ -134,8 +189,8 @@ States: IMPLEMENTED · PARTIAL · BLOCKED · PLANNED · DEPRECATED
   A manual production backup of 2026-09-23 14:03 UK time is designated for
   the first catalogue seed; **do not delete it.** Staging has a
   `Postgres-PITR` bucket. Production contains an extra service named
-  `Postgres`, created 2026-09-20. Its purpose is **not documented**; verify
-  with the owner before touching it.
+  `Postgres`: **UNIDENTIFIED / DO NOT MODIFY** (see CRITICAL DEPLOYMENT
+  SAFETY).
 
 ## 6. Authentication and authorisation
 
@@ -189,17 +244,26 @@ audit): backend 1330 passed / 3 skipped, web 264, Playwright 65.
 
 ## 9. Deployment topology
 
-| Environment | Services (Railway project `simo-os`) |
-|---|---|
-| production | `simo-api-production` (custom domain `api.geocore.one`, upload volume), `simo-web-production` (`app.geocore.one`), `simo-marketing-production` (`geocore.one`, `www.geocore.one`), `simo-follow-up-production` (cron `0 3 * * *`), `simo-postgres-production`, `Postgres` (undocumented, see §5) |
-| staging | `simo-api-staging`, `simo-web-staging`, `simo-marketing-staging`, `simo-postgres-staging`, bucket `Postgres-PITR` |
+Railway project `simo-os`. Source settings verified 2026-09-26. Every
+Git-connected service has `checkSuites: false` (does not wait for CI).
 
-- **Branches:** the production runbook and deployment records show the
-  production app services deploying `production-release`. The runbook says
-  staging deploys from `main`. However, Railway's latest staging API/web
-  deployments were built from `claude/geocore-gap-remediation`, and marketing
-  (staging and production) from feature branches. **Check each service's
-  source settings in Railway before assuming which branch it follows.**
+| Service | Env | Source | Branch | Domain / role |
+|---|---|---|---|---|
+| `simo-api-production` | production | `SMC-OS/SMC-OS` | `production-release` | `api.geocore.one`. API. Upload volume at `/var/lib/simo-os/uploads`. preDeploy runs migrations. |
+| `simo-web-production` | production | `SMC-OS/SMC-OS` | `production-release` | `app.geocore.one` |
+| `simo-follow-up-production` | production | `SMC-OS/SMC-OS` | `production-release` | Cron `0 3 * * *`, `python -m app.jobs.follow_up` |
+| `simo-marketing-production` | production | `SMC-OS/SMC-OS` | `fix/start-logo-mark` | `geocore.one`, `www.geocore.one` |
+| `simo-postgres-production` | production | image `postgres-ssl:18` | — | Production database (50 GB volume) |
+| `Postgres` | production | image `postgres-ssl:18` | — | **UNIDENTIFIED / DO NOT MODIFY** |
+| `simo-api-staging` | staging | `SMC-OS/SMC-OS` | `claude/geocore-gap-remediation` | Staging API (Railway domain only) |
+| `simo-web-staging` | staging | `SMC-OS/SMC-OS` | `claude/geocore-gap-remediation` | Staging app (Railway domain only) |
+| `simo-marketing-staging` | staging | `SMC-OS/SMC-OS` | `fix/start-logo-mark` | Staging marketing (Railway domain only) |
+| `simo-postgres-staging` | staging | image `postgres-ssl:18` | — | Staging database, WAL archiving to bucket `Postgres-PITR` |
+
+- **No service follows `main`.** The staging runbook's statement that
+  staging follows `main` is stale.
+- Branch connections can be changed in Railway at any time. **Re-check the
+  source branch of every affected service before any push.**
 - **Release sequence** (`docs/PRODUCTION_RUNBOOK.md` §2): runtime preflight →
   `alembic upgrade head` (runs in preDeploy) → `alembic current` equals the
   sole head → start → `/health` 200 → `/ready` 200 → authenticated request
@@ -215,8 +279,9 @@ audit): backend 1330 passed / 3 skipped, web 264, Playwright 65.
 
 ## 10. Project-specific safety rules
 
-- Do not push to `production-release` or `main` without explicit approval.
-  Never force-push either.
+- A push to `production-release` is a production deployment (see CRITICAL
+  DEPLOYMENT SAFETY). Never push to it, or to `main`, without explicit
+  approval. Never force-push either.
 - Do not change Railway variables, services, domains, cron schedules or
   volumes during an audit or docs task.
 - Do not run the catalogue seed, QA cleanup, tenant-identity script or any
@@ -234,21 +299,37 @@ audit): backend 1330 passed / 3 skipped, web 264, Playwright 65.
 
 ## CURRENT CHECKPOINT
 
-**Last verified: 2026-09-26** (read-only: Git remote, Railway deployment
-records via API. Live URLs were **not** reachable from the audit sandbox.)
+**Last verified: 2026-09-26.** Evidence was read-only: the Git remote,
+Railway service configuration and deployment records, and Railway metrics.
+Live URLs were **not** reachable from the audit sandbox.
 
-### SOURCE CODE / GIT STATE
-- `main` @ `8a575c8` (2026-09-24): Plans 01–05 merged (PRs #42–#46),
-  post-release remediation, catalogue Phase A, billing Phase B (no-card
-  trial), password change, marketing `/start` campaign page.
-- `production-release` @ `1855657` (2026-09-24) = `main`@`75b6a79` plus
-  **one commit not on `main`**: `1855657` "refuse passwords over 72 bytes"
-  (also on `hotfix/password-72-byte-guard` and
-  `claude/geocore-gap-remediation`).
-- `main` has two marketing commits not on `production-release`: `05faa21`
-  and `8a575c8`.
-- **The branches have diverged. Reconcile by merging, not force-pushing.**
-- Unmerged branches with unique commits:
+### SOURCE CODE STATE
+- Latest completed product work in the repository: Plans 01–05 (adaptive
+  workflows / Project 360, public homepage + demo + trial funnel, master
+  catalogue + stone quote V2, job financials + variations, procurement),
+  post-release remediation, catalogue Phase A, billing Phase B (14-day
+  no-card trial), signed-in password change, marketing `/start` campaign
+  page, and the 72-byte password guard.
+- Repository Alembic head: `3c4d5e6f7a8b`. There have been no migrations
+  since Plan 05.
+
+### GIT STATE
+- `main` @ `8a575c8` (2026-09-24).
+- `production-release` @ `1855657` (2026-09-24).
+- **The branches have diverged:**
+  - `main` contains campaign work not present in `production-release`:
+    `05faa21` "feat(marketing): add paid campaign landing page" and
+    `8a575c8` "fix(marketing): correct campaign logo proportions".
+  - `production-release` contains the password >72-byte hotfix not present
+    in `main`: `1855657` "fix(auth): refuse passwords over 72 bytes instead
+    of returning 500". It is also on `hotfix/password-72-byte-guard` and
+    `claude/geocore-gap-remediation`.
+  - Their common base is `75b6a79`.
+  - **Reconciliation requires a dedicated, reviewed deployment plan.** Any
+    push to `production-release` deploys production (see CRITICAL
+    DEPLOYMENT SAFETY).
+- Unmerged branches with unique commits. They may hold the only copy of
+  that work, so do not delete or merge them without review:
   - `sprint-039-communications-ai-pipeline` (5 commits: Communications
     Centre, notification preferences, AI drafting, pipeline V2)
   - `tools/hotfix72-staging-verifier` (3 commits beyond `1855657`: staging
@@ -256,66 +337,85 @@ records via API. Live URLs were **not** reachable from the audit sandbox.)
   - `claude/sprint-036-geocore-product-eoqkqb` (1 docs commit)
 
 ### DATABASE STATE
-- Repository Alembic head: `3c4d5e6f7a8b` (no migrations since Plan 05).
-- Applied head on staging/production: **not directly verified**. It is
-  implied only by successful preDeploy (`alembic upgrade head`) on the
-  production API deploy of `1855657`. Confirm with `alembic current` via
-  `railway ssh` before any schema work.
-- Production catalogue reference data: seeded or not is **not verified**.
-  Check with `python -m app.catalogue.reference_data`.
+- Applied Alembic revision in staging and production: **not directly
+  verified.** It is implied only by a successful preDeploy
+  (`alembic upgrade head`) on the `1855657` API deployments. Confirm with
+  `alembic current` inside each environment before any schema work.
+- Production catalogue reference data (38/47/7/3/0): **not verified.**
+- Extra production `Postgres` service: **UNIDENTIFIED / DO NOT MODIFY.**
 
 ### DEPLOYMENT STATE (Railway records)
-- production `simo-api`, `simo-web`, `simo-follow-up`: `1855657` from
-  `production-release`, deployed 2026-09-24 21:40 UTC, `SUCCESS`.
-- production `simo-marketing`: `8a575c8` from `fix/start-logo-mark`,
-  2026-09-26 03:41 UTC, `SUCCESS`.
-- staging `simo-api`/`simo-web`: `1855657` from
-  `claude/geocore-gap-remediation`, 2026-09-24 21:07 UTC, `SUCCESS`.
-- staging `simo-marketing`: `8a575c8`, 2026-09-24 21:40 UTC, `SUCCESS`.
-- `simo-follow-up-production` cron is `0 3 * * *` again. The runbook §14
-  note says it was `null` on 2026-09-23. Whether `RESEND_API_KEY` and the
-  related variables are now set on it is **not verified**.
-- Both environments show an empty staged patch in Railway (no pending
-  changes).
+
+| Service | Deployed commit | Source branch | When (UTC) | Status |
+|---|---|---|---|---|
+| `simo-api-production` | `1855657` | `production-release` | 2026-09-24 21:40 | SUCCESS |
+| `simo-web-production` | `1855657` | `production-release` | 2026-09-24 21:40 | SUCCESS |
+| `simo-follow-up-production` | `1855657` | `production-release` | 2026-09-24 21:40 | SUCCESS |
+| `simo-marketing-production` | `8a575c8` | `fix/start-logo-mark` | 2026-09-26 03:41 | SUCCESS |
+| `simo-api-staging` | `1855657` | `claude/geocore-gap-remediation` | 2026-09-24 21:07 | SUCCESS |
+| `simo-web-staging` | `1855657` | `claude/geocore-gap-remediation` | 2026-09-24 21:07 | SUCCESS |
+| `simo-marketing-staging` | `8a575c8` | `fix/start-logo-mark` | 2026-09-24 21:40 | SUCCESS |
+
+- `simo-follow-up-production` cron is `0 3 * * *`. The runbook §14 note
+  says it was `null` on 2026-09-23. The variable *name* `RESEND_API_KEY`
+  exists on the service; `EMAIL_SENDING_DOMAIN` is not among its variable
+  names.
+- No staged Railway changes were pending in either environment.
 
 ### LIVE PRODUCTION STATE
-- **Not verified in this session** (egress to `*.geocore.one` was blocked).
-  Next session: check `/health`, `/ready`, sign-in, and `/pricing` on the
-  live domains.
+- **Not verified.** Egress to `*.geocore.one` was blocked from the audit
+  sandbox. A `SUCCESS` deployment record is not proof of a verified live
+  release. Verify `/health`, `/ready`, sign-in and `/pricing` on the live
+  domains.
 
 ### Known blockers / debt
-- Branch divergence (`main` ⟂ `production-release`).
-- Owner-gated items: production catalogue seed run, Stripe live activation
-  status, follow-up job email variables, tenant statutory details, DNS items
-  in `docs/DNS_GEOCORE_ONE.md`.
-- Stale docs: `SYSTEM_ARCHITECTURE.md`, `ROADMAP.md` (stops at 036), and
-  sprint 040–044 header statuses.
+- Branch divergence (`main` ⟂ `production-release`), and no CI gate on
+  deployments.
+- The extra production `Postgres` service is unidentified.
+- Owner-gated items: production catalogue seed, Stripe live-activation
+  status, follow-up job email variables, tenant statutory details, and the
+  DNS items in `docs/DNS_GEOCORE_ONE.md`.
+- Stale docs: `SYSTEM_ARCHITECTURE.md`, `ROADMAP.md` (stops at 036),
+  `STAGING_RUNBOOK.md` (claims staging follows `main`), and the sprint
+  040–044 header statuses.
 - `VERSION` file not bumped.
 - No error monitoring or product analytics.
 
 ## WHERE TO RESUME
 
-- **Checkpoint:** production = `production-release`@`1855657`; `main` =
-  `8a575c8`; Alembic head `3c4d5e6f7a8b`.
+- **Checkpoint:**
+  - production app services = `production-release`@`1855657`
+  - production marketing = `8a575c8`
+  - `main` = `8a575c8`
+  - Alembic head `3c4d5e6f7a8b`
 - **Most recently completed:** 72-byte password hotfix deployed to
   production (2026-09-24). Campaign landing page deployed to marketing
   (2026-09-26).
 - **Remains:**
-  1. Bring `1855657` into `main` via a reviewed PR, with no force-push.
-  2. Decide the fate of `sprint-039-communications-ai-pipeline` and
+  1. Plan the `main` / `production-release` reconciliation. It needs a
+     dedicated, reviewed deployment plan approved by the owner; do not do
+     it ad hoc.
+  2. Owner identifies the extra production `Postgres` service.
+  3. Decide the fate of `sprint-039-communications-ai-pipeline` and
      `tools/hotfix72-staging-verifier`.
-  3. Owner-approved production catalogue seed (runbook §13.1).
-  4. Confirm follow-up-job email variables.
-  5. Refresh `ROADMAP.md` and `SYSTEM_ARCHITECTURE.md`.
-  6. Plan 06 has not been started or defined in the repository.
-- **Verify first:** `git fetch`, then compare
-  `origin/main..origin/production-release` both ways. Railway latest
-  deployment per service. `alembic current` in each environment. Live
-  `/health` and `/ready`.
-- **Safest next action:** a docs-only PR refreshing `ROADMAP.md` from Git
-  history, or a PR merging `production-release` into `main`. Both are
-  non-deploying if the services are not following `main`, so check the
-  Railway source settings first.
-- **Do NOT change yet:** Railway service sources, variables or cron. Production
-  data. The unexplained `Postgres` service. The unmerged branches. Any Alembic
-  migration. Infrastructure identifiers named `simo-*`.
+  4. Owner-approved production catalogue seed (runbook §13.1).
+  5. Confirm the follow-up job's email variables.
+  6. Refresh the stale docs listed above.
+  7. Plan 06 has not been started or defined in the repository.
+- **Verify first:**
+  - `git fetch`, then compare `origin/main` and `origin/production-release`
+    both ways
+  - the Railway source branch and latest deployment of every service
+  - `alembic current` in each environment
+  - live `/health` and `/ready`
+- **Safest next action:** documentation-only work on a branch that no
+  Railway service follows. Confirm this in Railway first.
+- **Do NOT change yet:**
+  - `production-release`, `fix/start-logo-mark` and
+    `claude/geocore-gap-remediation`: pushing to any of them deploys
+  - Railway service sources, variables, cron schedules or volumes
+  - production data
+  - the `Postgres` service
+  - the unmerged branches
+  - any Alembic migration
+  - infrastructure identifiers named `simo-*`
