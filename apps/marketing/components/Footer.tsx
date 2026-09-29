@@ -41,6 +41,10 @@ export function Footer() {
             </li>
           </ul>
         </div>
+        <div>
+          <p className="footer-heading">Legal</p>
+          <ul><li><Link href="/legal">Legal Centre</Link></li><li><a href="mailto:privacy@geocore.one">Privacy contact</a></li><li><a href="mailto:copyright@geocore.one">Copyright reports</a></li></ul>
+        </div>
       </div>
     </footer>
   );

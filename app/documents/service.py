@@ -60,6 +60,10 @@ class DocumentNotFoundError(Exception):
     """Unknown id, or an id that belongs to a different tenant."""
 
 
+class DocumentDeleteError(Exception):
+    """The document could not be removed without leaving metadata behind."""
+
+
 class DocumentService:
     def upload_document(
         self,
@@ -121,6 +125,17 @@ class DocumentService:
 
     def file_path(self, row: Document) -> Path:
         return Path(settings.upload_dir) / row.storage_filename
+
+    def delete_document(self, db: Session, tenant_id: uuid.UUID, document_id: uuid.UUID) -> None:
+        """Delete only a caller-visible document. A missing byte is harmless:
+        the authoritative metadata is still removed, making retries safe."""
+        row = self.get_document(db, tenant_id, document_id)
+        try:
+            self.file_path(row).unlink(missing_ok=True)
+        except OSError as exc:
+            raise DocumentDeleteError() from exc
+        db.delete(row)
+        db.commit()
 
 
 document_service = DocumentService()

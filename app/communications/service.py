@@ -23,9 +23,12 @@ Ordering inside `send()` matters and is deliberate:
    the real outcome.
 """
 
+import hashlib
+import secrets
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.communications.models import CommunicationType, FailureCategory
@@ -38,7 +41,31 @@ from app.communications.provider import (
     resolve_sender_identity,
 )
 from app.database import crud
-from app.database.models import Communication
+from app.database.models import Communication, MarketingPreference
+from app.database.models import MarketingUnsubscribeToken
+from app.core.config import settings
+
+# Classification is deliberately at the individual flow level. Optional
+# review requests and automated quote follow-ups are marketing. Verification,
+# password/security, invitation, quote delivery, demo-request confirmation,
+# sales-owner notification, and trial/billing service messages remain
+# transactional and are not governed by a marketing preference.
+MARKETING_TYPES = frozenset({CommunicationType.REVIEW_REQUEST, CommunicationType.QUOTE_FOLLOW_UP})
+
+
+def _marketing_footer(unsubscribe_url: str) -> tuple[str, str]:
+    """Return the one reusable footer for marketing-classified messages."""
+    return (
+        (
+            '<p style="font-size:12px;color:#666">GeoCore OS LTD, Vincent Gardens, '
+            'NW2 7RP, United Kingdom. '
+            f'<a href="{unsubscribe_url}">Unsubscribe from marketing</a>.</p>'
+        ),
+        (
+            "GeoCore OS LTD, Vincent Gardens, NW2 7RP, United Kingdom. "
+            f"Unsubscribe: {unsubscribe_url}"
+        ),
+    )
 
 
 class DeliveryService:
@@ -76,6 +103,8 @@ class DeliveryService:
 
         recipient_normalized = recipient.strip().lower()
         suppression = crud.get_email_suppression(db, tenant_id, recipient_normalized)
+        is_marketing = message_type in MARKETING_TYPES
+        preference = db.scalars(select(MarketingPreference).where(MarketingPreference.tenant_id == tenant_id, MarketingPreference.email == recipient_normalized)).first()
         sender_identity, reply_to = resolve_sender_identity(tenant)
 
         row = crud.create_communication(
@@ -98,16 +127,28 @@ class DeliveryService:
             automation_run_id=automation_run_id,
         )
 
-        if suppression is not None:
+        if suppression is not None or (is_marketing and preference is not None and not preference.enabled):
             return crud.update_communication_result(
                 db,
                 row.id,
                 status="suppressed",
                 failure_category=FailureCategory.SUPPRESSED.value,
-                failure_detail="This address is on the suppression list and was not sent to.",
+                failure_detail="This recipient is suppressed for this communication and was not sent to.",
                 last_attempted_at=datetime.now(timezone.utc),
             )
 
+        headers = None
+        if is_marketing:
+            # The endpoint is intentionally public but the path includes only
+            # an opaque, purpose-specific credential — never a tenant, user,
+            # customer, or internal database identifier.
+            token = secrets.token_urlsafe(32)
+            db.add(MarketingUnsubscribeToken(id=uuid.uuid4(), tenant_id=tenant_id, email=recipient_normalized, token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest()))
+            unsubscribe_url = f"{settings.public_api_base_url.rstrip('/')}/api/v1/privacy/marketing-unsubscribe/{token}"
+            headers = {"List-Unsubscribe": f"<{unsubscribe_url}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}
+            footer_html, footer_text = _marketing_footer(unsubscribe_url)
+            html += footer_html
+            text += f"\n\n{footer_text}"
         message = EmailMessage(
             recipient=recipient_normalized,
             sender_identity=sender_identity,
@@ -116,6 +157,7 @@ class DeliveryService:
             html=html,
             text=text,
             idempotency_key=f"{tenant_id}:{dedupe_key}",
+            headers=headers,
         )
         return self._attempt(db, row, message)
 

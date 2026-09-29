@@ -1589,3 +1589,9 @@ fieldset legend {
   line-height: 1;
   cursor: pointer;
 }
+
+.consent-banner { position: fixed; z-index: 100; inset: auto 1rem 1rem; max-width: 46rem; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); box-shadow: 0 .5rem 2rem rgba(0,0,0,.18); }
+.consent-banner p { margin: 0 0 .75rem; color: var(--text-muted); }
+.consent-banner div { display: flex; flex-wrap: wrap; gap: .5rem; }
+.consent-banner button { border: 1px solid var(--border); border-radius: .4rem; padding: .55rem .75rem; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.consent-banner button:last-child { background: var(--forest); color: white; }

@@ -112,6 +112,12 @@ export class ApiError extends Error {
   }
 }
 
+export type MarketingPreference = {
+  enabled: boolean;
+  source: string;
+  updated_at: string | null;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
 
@@ -228,6 +234,15 @@ export const api = {
     }),
 
   getMe: () => request<AuthUser>("/auth/me"),
+
+  getMarketingPreference: () =>
+    request<MarketingPreference>("/privacy/marketing-preference"),
+
+  setMarketingPreference: (enabled: boolean) =>
+    request<MarketingPreference>("/privacy/marketing-preference", {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    }),
 
   // Sprint 039 Production Readiness Defect Gate, Blocker 1. `already_verified`
   // (Blocker 2 follow-up, verification resend/token hotfix) is the only way

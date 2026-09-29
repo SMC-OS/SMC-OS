@@ -280,23 +280,26 @@ export function BillingCard() {
                         Current plan
                       </Badge>
                     ) : plan.self_service ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={busy}
-                        className="self-start"
-                        onClick={() =>
-                          run(async () => {
-                            const { checkout_url } = await api.createCheckoutSession(
-                              plan.plan,
-                              period
-                            );
-                            window.location.assign(checkout_url);
-                          }, "Card payments aren't switched on for this workspace yet. Get in touch and we'll set your plan up directly.")
-                        }
-                      >
-                        Choose {plan.name}
-                      </Button>
+                      <>
+                        <p className="text-xs text-muted">£{price?.toLocaleString("en-GB")} per {period === "annual" ? "year" : "month"}. This is a recurring subscription; cancel through the billing portal.</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          className="self-start"
+                          onClick={() =>
+                            run(async () => {
+                              const { checkout_url } = await api.createCheckoutSession(
+                                plan.plan,
+                                period
+                              );
+                              window.location.assign(checkout_url);
+                            }, "Card payments aren't switched on for this workspace yet. Get in touch and we'll set your plan up directly.")
+                          }
+                        >
+                          Continue to secure checkout
+                        </Button>
+                      </>
                     ) : (
                       <Link href="/pricing" className="self-start">
                         <Button variant="outline" size="sm">

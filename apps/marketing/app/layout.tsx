@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 
 import { IS_INDEXABLE, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
+import { ConsentBanner } from "@/components/ConsentBanner";
 
 import "./globals.css";
 
@@ -53,7 +54,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en-GB" className={geistSans.variable}>
-      <body>{children}</body>
+      <body>{children}<ConsentBanner /></body>
     </html>
   );
 }

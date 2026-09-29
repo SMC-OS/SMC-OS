@@ -16,12 +16,14 @@ from app.calendar.router import router as calendar_router
 from app.billing.router import router as billing_router
 from app.catalogue.router import router as catalogue_router
 from app.communications.router import router as communications_router
+from app.compliance.router import router as compliance_router
 from app.customers.router import router as customers_router
 from app.dashboard.router import router as dashboard_router
 from app.demo_requests.router import router as demo_requests_router
 from app.documents.router import router as documents_router
 from app.financials.router import router as financials_router
 from app.procurement.router import router as procurement_router
+from app.privacy.router import router as privacy_router
 from app.invitations.router import router as invitations_router
 from app.messages.router import router as messages_router
 from app.portal.router import router as portal_router
@@ -43,6 +45,7 @@ api_router.include_router(billing_router)
 api_router.include_router(calendar_router)
 api_router.include_router(catalogue_router)
 api_router.include_router(communications_router)
+api_router.include_router(compliance_router)
 api_router.include_router(customers_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(demo_requests_router)
@@ -52,6 +55,7 @@ api_router.include_router(invitations_router)
 api_router.include_router(messages_router)
 api_router.include_router(portal_router)
 api_router.include_router(procurement_router)
+api_router.include_router(privacy_router)
 api_router.include_router(projects_router)
 api_router.include_router(quotes_router)
 api_router.include_router(tasks_router)
