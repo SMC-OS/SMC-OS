@@ -24,6 +24,10 @@ export const BACKEND_URL = "http://127.0.0.1:8000";
 export const MARKETING_URL = "http://localhost:3001";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
+// Playwright launches these commands through a fresh shell, which otherwise
+// resolves the host's pnpm 11.  Invoke the packageManager-pinned pnpm 9
+// explicitly. This is test-server-only and does not alter global tooling.
+const PLAYWRIGHT_PNPM = "corepack pnpm@9.0.0";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -62,14 +66,14 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      command: "pnpm run dev",
+      command: `${PLAYWRIGHT_PNPM} --version && ${PLAYWRIGHT_PNPM} run dev`,
       cwd: __dirname,
       url: FRONTEND_URL,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },
     {
-      command: "pnpm run dev",
+      command: `${PLAYWRIGHT_PNPM} --version && ${PLAYWRIGHT_PNPM} run dev`,
       cwd: path.resolve(__dirname, "..", "marketing"),
       url: MARKETING_URL,
       reuseExistingServer: !process.env.CI,

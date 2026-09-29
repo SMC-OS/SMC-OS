@@ -48,10 +48,23 @@ test("X-Frame-Options denies framing", () => {
   assert.match(nextConfig, /X-Frame-Options[\s\S]{0,20}DENY/);
 });
 
-test("Content-Security-Policy restricts framing only, not script or style", () => {
-  assert.match(nextConfig, /Content-Security-Policy[\s\S]{0,60}frame-ancestors 'none'/);
-  assert.doesNotMatch(nextConfig, /script-src/);
-  assert.doesNotMatch(nextConfig, /style-src/);
+test("Content-Security-Policy keeps production framing, script, and connection restrictions", () => {
+  assert.match(nextConfig, /Content-Security-Policy[\s\S]{0,240}frame-ancestors 'none'/);
+  assert.match(nextConfig, /script-src \$\{scriptSrc\}/);
+  assert.match(nextConfig, /style-src 'self' 'unsafe-inline'/);
+  assert.match(nextConfig, /connect-src \$\{connectSrc\}/);
+
+  // Next development and the local E2E API need bounded compatibility
+  // allowances. The production alternatives deliberately retain the Phase 2
+  // policy: no unsafe-eval and no loopback HTTP connection target.
+  assert.match(
+    nextConfig,
+    /const scriptSrc[\s\S]{0,180}\? "'self' 'unsafe-inline'"[\s\S]{0,100}: "'self' 'unsafe-inline' 'unsafe-eval'"/,
+  );
+  assert.match(
+    nextConfig,
+    /const connectSrc[\s\S]{0,160}\? "'self' https:"[\s\S]{0,100}: "'self' https: http:\/\/127\.0\.0\.1:8000"/,
+  );
 });
 
 test("web security-headers contract is reproducibly invoked by package scripts and CI", async () => {

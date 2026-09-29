@@ -141,10 +141,14 @@ test("settings_sections_are_navigable_and_billing_has_its_own_place", async ({ p
   await expect(page.getByText(/days left in your free trial/i)).toBeVisible({ timeout: 10_000 });
 
   // Stripe is not configured in this environment, and the product says
-  // so plainly rather than faking a checkout. Pro is the trial plan the
-  // Owner is already on (its card shows "Current plan" instead of a
-  // "Choose" button), so exercise checkout on a different plan.
-  await page.getByRole("button", { name: /choose geocore business/i }).first().click();
+  // so plainly rather than faking a checkout. Phase 2 makes the recurring
+  // price and cancellation route visible before this approved checkout
+  // handoff. Pro is the trial plan the Owner is already on, so exercise the
+  // disclosed checkout action on a different plan.
+  const businessPlan = page.getByText("GeoCore Business").locator("..").locator("..");
+  await expect(businessPlan).toContainText("£199 per month");
+  await expect(businessPlan).toContainText(/recurring subscription; cancel through the billing portal/i);
+  await businessPlan.getByRole("button", { name: "Continue to secure checkout" }).click();
   // Matched without the apostrophe: the copy uses a straight quote and a
   // curly one in the test would silently never match.
   // Next.js renders its own empty role="alert" route announcer, so this
