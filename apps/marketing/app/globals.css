@@ -1595,6 +1595,7 @@ fieldset legend {
 .consent-banner div { display: flex; flex-wrap: wrap; gap: .5rem; }
 .consent-banner button { border: 1px solid var(--border); border-radius: .4rem; padding: .55rem .75rem; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
 .consent-banner button:last-child { background: var(--forest); color: white; }
+.consent-manage { position: fixed; z-index: 100; right: 1rem; bottom: 1rem; border: 1px solid var(--border); border-radius: .4rem; padding: .55rem .75rem; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; box-shadow: 0 .25rem 1rem rgba(0,0,0,.12); }
 
 /* Legal Centre uses the public site's restrained, content-led visual system. */
 .legal-index { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
