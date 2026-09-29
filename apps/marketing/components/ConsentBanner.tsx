@@ -11,6 +11,9 @@ export function ConsentBanner() {
       <div><button type="button" onClick={() => { saveConsent({ preferences: false, analytics: false, marketing: false }, "banner"); setVisible(false); }}>Use essential only</button>
       <button type="button" onClick={() => { saveConsent({ preferences: true, analytics: true, marketing: true }, "banner"); setVisible(false); }}>Accept optional technologies</button></div>
     </section>}
-    {!visible && <button className="consent-manage" type="button" onClick={() => setVisible(true)}>Cookie preferences</button>}
+    {!visible && <button className="consent-manage" type="button" aria-label="Cookie preferences" onClick={() => setVisible(true)}>
+      <span aria-hidden="true">⚙</span>
+      <span className="consent-manage__label">Cookie preferences</span>
+    </button>}
   </>;
 }

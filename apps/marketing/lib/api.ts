@@ -77,7 +77,7 @@ export async function submitDemoRequest(payload: DemoRequestPayload): Promise<vo
   }
 
   if (res.status === 429) {
-    throw new ApiError("You've already sent a request recently — please wait a moment and try again.", 429);
+    throw new ApiError("You've already sent a request recently. Please wait a moment and try again.", 429);
   }
   if (res.status === 422) {
     const body = await res.json().catch(() => null);

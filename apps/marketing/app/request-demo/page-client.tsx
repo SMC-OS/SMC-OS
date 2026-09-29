@@ -140,7 +140,7 @@ export function RequestDemoPageClient() {
             <p className="eyebrow">Request a Demo</p>
             <h1>See GeoCore run your own kind of job</h1>
             <p className="section__lead">
-              Tell us about your business and we&apos;ll get in touch — no account and no card
+              Tell us about your business and we&apos;ll get in touch. No account and no card
               required.
             </p>
           </div>

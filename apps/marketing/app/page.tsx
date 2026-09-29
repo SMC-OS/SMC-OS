@@ -8,7 +8,7 @@ import { EXAMPLE_WORKFLOWS, TRADES } from "@/lib/trades";
 import { APP_URL, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+  title: `${SITE_NAME}: ${SITE_TAGLINE}`,
   description: SITE_DESCRIPTION,
   alternates: { canonical: "/" },
   openGraph: {
@@ -27,27 +27,27 @@ export const metadata: Metadata = {
 const MODULES: { title: string; body: string; status?: "planned" | "coming" }[] = [
   {
     title: "Command Center",
-    body: "One business-wide view: pipeline by stage, quoted and approved value, site visits and follow-ups that need attention — across every trade at once.",
+    body: "One business-wide view: pipeline by stage, quoted and approved value, site visits and follow-ups that need attention across every trade at once.",
   },
   {
     title: "Project 360",
-    body: "Every job's single workspace — Overview, Workflow, Schedule, Team, Tasks and Timeline — instead of scattered notes, spreadsheets and inboxes.",
+    body: "Every job has one workspace for Overview, Workflow, Schedule, Team, Tasks and Timeline, instead of scattered notes, spreadsheets and inboxes.",
   },
   { title: "Customers", body: "Every enquiry, job and conversation tied to one customer record." },
   {
     title: "Quotes",
-    body: "Multi-line quotes for labour, materials and other works — plus a specialist slab calculator for stone.",
+    body: "Multi-line quotes for labour, materials and other works, plus a specialist slab calculator for stone.",
   },
   { title: "Projects", body: "Approved quotes become projects automatically, ready to move through their trade's own workflow." },
   {
     title: "Trade Workflows",
-    body: "27 trades, each with its own real operational sequence — never one stone-shaped pipeline forced onto every job.",
+    body: "27 trades, each with its own real operational sequence. No stone-shaped pipeline is forced onto every job.",
   },
   { title: "Schedule", body: "Site visits, surveys and key dates tracked against the job they belong to." },
   { title: "Tasks", body: "Project-linked tasks assigned to the right person, with due dates that don't get lost." },
   { title: "Team", body: "Assign the right person to the right job and keep everyone working from the same record." },
   { title: "Automations", body: "Trigger follow-ups and internal notifications from the events already happening in your workspace." },
-  { title: "GeoCore AI", body: "AI-assisted quote drafting and project context — grounded in your own data, never inventing figures." },
+  { title: "GeoCore AI", body: "AI-assisted quote drafting and project context, grounded in your own data and never inventing figures." },
   { title: "Documents", body: "Upload and store the drawings, approvals and paperwork each project needs." },
   {
     title: "Materials / Procurement",
@@ -168,7 +168,7 @@ export default function HomePage() {
             <p className="eyebrow">What&apos;s inside GeoCore</p>
             <h2>The operating system behind every job</h2>
             <p className="section__lead">
-              This is the account you&apos;re creating — real modules, honestly labelled. Nothing
+              This is the account you&apos;re creating. Real modules are honestly labelled. Nothing
               below is advertised as live unless it already is.
             </p>
             <ul className="grid grid--modules">
@@ -196,7 +196,7 @@ export default function HomePage() {
             <p className="section__lead">
               A stone job on &ldquo;Fabrication&rdquo; and an electrical job on &ldquo;First
               Fix&rdquo; both count toward the same company-wide &ldquo;In Progress&rdquo; number
-              — semantic roles, not raw stage labels, are what the Command Center reports on.
+              Semantic roles, not raw stage labels, are what the Command Center reports on.
             </p>
             <ul className="pill-row">
               {COMMAND_CENTRE_ROLES.map((role) => (
@@ -214,7 +214,7 @@ export default function HomePage() {
             <p className="eyebrow">Project 360</p>
             <h2>Every job, one workspace</h2>
             <p className="section__lead">
-              Open a project and find everything about it — no digging through spreadsheets or
+              Open a project and find everything about it. No digging through spreadsheets or
               separate systems.
             </p>
             <ul className="pill-row">
@@ -234,7 +234,7 @@ export default function HomePage() {
               <p className="eyebrow">Quotes</p>
               <h2>Quote any job, the same reliable way</h2>
               <p>
-                Universal line items — labour, materials, other works, quantity and unit price —
+                Universal line items for labour, materials, other works, quantity and unit price
                 plus a specialist slab calculator when the job is stone.
               </p>
             </div>
@@ -256,7 +256,7 @@ export default function HomePage() {
             <h2>Each trade gets its own operational workflow.</h2>
             <p className="section__lead">
               27 trades, each with a real stage sequence that matches how that work actually
-              happens — never one stone-shaped pipeline forced onto every job.
+              happens. No stone-shaped pipeline is forced onto every job.
             </p>
             <div className="workflow-examples">
               {EXAMPLE_WORKFLOWS.map((example) => (
@@ -314,7 +314,7 @@ export default function HomePage() {
             <h2>General construction is first-class, not an afterthought</h2>
             <p className="section__lead">
               General Building, Renovation, Extensions, Roofing, Electrical, Plumbing, Carpentry,
-              Bathrooms, Kitchens and Flooring all run on their own real workflow — with quote
+              Bathrooms, Kitchens and Flooring all run on their own real workflow, with quote
               lines that never force stone terminology onto a construction job.
             </p>
             <ul className="pill-row">
@@ -333,7 +333,7 @@ export default function HomePage() {
             <div>
               <p className="eyebrow">Scheduling &amp; Tasks</p>
               <h2>Site visits and tasks, tied to the job</h2>
-              <p>Surveys, installations and key dates tracked against the project they belong to — with tasks assigned to the right person.</p>
+              <p>Surveys, installations and key dates are tracked against the project they belong to, with tasks assigned to the right person.</p>
             </div>
             <div>
               <p className="eyebrow">Team</p>
@@ -349,8 +349,8 @@ export default function HomePage() {
             <p className="eyebrow">Automations</p>
             <h2>Let the events you already track do the work</h2>
             <p className="section__lead">
-              Automations trigger from real workspace events — a quote approved, a stage entered
-              — so follow-ups and internal notifications happen without anyone remembering to
+              Automations trigger from real workspace events, such as a quote approved or a stage entered,
+              so follow-ups and internal notifications happen without anyone remembering to
               send them.
             </p>
           </div>
@@ -363,7 +363,7 @@ export default function HomePage() {
             <h2>Know what&apos;s quoted, approved and moving</h2>
             <p className="section__lead">
               The Command Center shows quoted and approved value across your pipeline, and every
-              project tracks its own contract value, variations and recorded cost — with margin
+              project tracks its own contract value, variations and recorded cost, with margin
               visible as the job progresses.
             </p>
           </div>
@@ -382,7 +382,7 @@ export default function HomePage() {
               ))}
             </ul>
             <p className="trade-tag-list__cta">
-              <Link href="/request-demo">Don&apos;t see your trade? Ask us — we&apos;re adding more.</Link>
+              <Link href="/request-demo">Don&apos;t see your trade? Ask us. We&apos;re adding more.</Link>
             </p>
           </div>
         </section>
@@ -391,7 +391,7 @@ export default function HomePage() {
         <section className="section section--alt" id="pricing">
           <div className="shell">
             <p className="eyebrow">Pricing</p>
-            <h2>Starter, Team, Pro, Business — and Enterprise</h2>
+            <h2>Starter, Team, Pro, Business and Enterprise</h2>
             <p className="section__lead">
               Every self-service plan starts with a {TRIAL_DAYS}-day free trial. No card required.
             </p>
@@ -443,7 +443,7 @@ export default function HomePage() {
             <p className="eyebrow">Not ready for a trial?</p>
             <h2>Request a Demo</h2>
             <p className="section__lead">
-              No account and no card required — tell us about your business and we&apos;ll show
+              No account and no card required. Tell us about your business and we&apos;ll show
               you GeoCore running your own kind of job.
             </p>
             <div className="actions">
