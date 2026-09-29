@@ -1595,3 +1595,15 @@ fieldset legend {
 .consent-banner div { display: flex; flex-wrap: wrap; gap: .5rem; }
 .consent-banner button { border: 1px solid var(--border); border-radius: .4rem; padding: .55rem .75rem; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
 .consent-banner button:last-child { background: var(--forest); color: white; }
+
+/* Legal Centre uses the public site's restrained, content-led visual system. */
+.legal-index { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.legal-index__item { border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; background: var(--surface); }
+.legal-index__item h2 { font-size: 1.15rem; margin: 0 0 0.5rem; }
+.legal-index__item p { margin: 0 0 1rem; color: var(--text-muted); }
+.legal-document { max-width: 48rem; }
+.legal-document section { border-top: 1px solid var(--border); padding: 1.5rem 0; }
+.legal-document h2 { font-size: 1.35rem; margin: 0 0 0.75rem; }
+.legal-document p, .legal-document li { color: var(--text-muted); line-height: 1.7; }
+.legal-document ul { padding-left: 1.25rem; }
+@media (max-width: 40rem) { .legal-index { grid-template-columns: 1fr; } .legal-index__item { padding: 1rem; } }
