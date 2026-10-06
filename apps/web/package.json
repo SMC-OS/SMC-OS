@@ -15,7 +15,8 @@
     "test:e2e": "playwright test",
     "test:robots": "node --test app/robots.test.mjs",
     "test:sales-cta": "node --test app/pricing/sales-cta.test.mjs",
-    "test:positioning": "node --test app/positioning.test.mjs"
+    "test:positioning": "node --test app/positioning.test.mjs",
+    "test:e2e:traffic-gate": "playwright test unauthenticated-redirect.spec.ts demo-workspace.spec.ts traffic-mobile.spec.ts general-quoting.spec.ts quote-handoff.spec.ts full-system-journey.spec.ts trade-workflows.spec.ts project-operations.spec.ts site-visit-scheduling.spec.ts job-financials-variations.spec.ts procurement-materials-operations.spec.ts geocore-ai-and-settings.spec.ts"
   },
   "dependencies": {
     "next": "16.2.12",

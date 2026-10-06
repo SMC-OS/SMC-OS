@@ -35,8 +35,27 @@ import { Topbar } from "./Topbar";
  * bounces to /login, which is a dead end for exactly the audience this
  * entry point targets. It renders standalone instead, with no chrome
  * pointing anywhere but itself.
+ *
+ * Pre-traffic repair — the same boundary now covers every public and
+ * auth-lifecycle route, not just /demo. A logged-out visitor on /login,
+ * /signup, /pricing or an invite/portal link must never see authenticated
+ * tenant chrome (Sidebar, Topbar, MobileNav, account menu, trial/billing
+ * banner): those surfaces advertise routes the visitor cannot use and
+ * leak the fact that a tenant session shape exists at all. This is a UX
+ * boundary only — the backend access controls (app/auth/dependencies.py)
+ * remain the real authorization layer and are untouched.
  */
-const STANDALONE_ROUTES = ["/demo"];
+const STANDALONE_ROUTES = [
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+  "/invite",
+  "/portal",
+  "/pricing",
+  "/demo",
+];
 
 // Sprint 039 Production Readiness Defect Gate, Blocker 2 hotfix — routes an
 // unverified-but-authenticated user must still be able to reach: signing in
@@ -111,7 +130,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     router.replace("/pricing");
   }, [isReady, isAuthenticated, verificationRequired, billingAccessRequired, pathname, router]);
 
-  if (isStandaloneRoute(pathname)) {
+  if (isStandaloneRoute(pathname) || (isReady && !isAuthenticated)) {
     return <div className="min-h-screen overflow-y-auto bg-background">{children}</div>;
   }
 
