@@ -283,7 +283,7 @@ function GeoCoreAIContent() {
       </form>
 
       <p className="pb-1 pt-2 text-center text-xs text-muted">
-        GeoCore AI answers questions. It can&rsquo;t create, edit or send anything for you.
+        GeoCore AI answers questions. It can&rsquo;t create, edit or send anything for you. When an AI provider is enabled, the question and the workspace information needed to answer it are processed by that server-side provider.
       </p>
     </div>
   );

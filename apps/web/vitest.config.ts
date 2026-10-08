@@ -14,6 +14,10 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     include: ["**/*.test.{ts,tsx}"],
+    // Component tests share a single browser-like event loop.  Running test
+    // files concurrently intermittently starved user-event's queued input
+    // in GeneralQuoteBuilder; keep this small suite serial and deterministic.
+    fileParallelism: false,
   },
   resolve: {
     alias: {

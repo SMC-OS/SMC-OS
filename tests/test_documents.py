@@ -136,6 +136,28 @@ def test_download_unknown_document_returns_404(client, auth_headers):
     assert r.status_code == 404
 
 
+def test_delete_document_removes_own_document(client, auth_headers, created_customer):
+    upload = client.post(
+        f"/api/v1/documents?customer_id={created_customer['id']}",
+        files={"file": ("contract.pdf", io.BytesIO(_pdf_bytes()), "application/pdf")},
+        headers=auth_headers,
+    )
+    document_id = upload.json()["id"]
+    assert client.delete(f"/api/v1/documents/{document_id}", headers=auth_headers).status_code == 204
+    assert client.get(f"/api/v1/documents/{document_id}/download", headers=auth_headers).status_code == 404
+
+
+def test_delete_document_cannot_cross_tenant(client, auth_headers, other_tenant_auth_headers, created_customer):
+    upload = client.post(
+        f"/api/v1/documents?customer_id={created_customer['id']}",
+        files={"file": ("contract.pdf", io.BytesIO(_pdf_bytes()), "application/pdf")},
+        headers=auth_headers,
+    )
+    document_id = upload.json()["id"]
+    assert client.delete(f"/api/v1/documents/{document_id}", headers=other_tenant_auth_headers).status_code == 404
+    assert client.get(f"/api/v1/documents/{document_id}/download", headers=auth_headers).status_code == 200
+
+
 def test_portal_lists_only_that_customers_documents(client, auth_headers, created_customer):
     client.post(
         f"/api/v1/documents?customer_id={created_customer['id']}",

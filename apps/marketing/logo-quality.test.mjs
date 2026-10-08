@@ -25,8 +25,8 @@ const nav = await readFile(new URL("./components/Nav.tsx", import.meta.url), "ut
 
 test("the header logo requests full quality from the Next.js image optimizer", () => {
   const headerImage = nav.slice(
-    nav.indexOf('src="/brand/horizontal-logo.png"'),
-    nav.indexOf("/>", nav.indexOf('src="/brand/horizontal-logo.png"'))
+    nav.indexOf('src="/brand/g-mark.png"'),
+    nav.indexOf("/>", nav.indexOf('src="/brand/g-mark.png"'))
   );
   assert.match(headerImage, /quality=\{100\}/);
 });

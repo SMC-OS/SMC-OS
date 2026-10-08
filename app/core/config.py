@@ -139,6 +139,13 @@ class Settings(BaseSettings):
     # completion/cancellation — the deployed frontend's own origin.
     frontend_base_url: str = "http://localhost:3000"
 
+    # Public origin of this FastAPI service. Marketing unsubscribe links are
+    # consumed outside an authenticated browser session, so they must target
+    # the API's public origin rather than assume that the web frontend proxies
+    # /api/v1 in every deployment topology. The opaque path token is the only
+    # credential included in the URL.
+    public_api_base_url: str = "http://localhost:8000"
+
     # Sprint 038 — transactional email (Resend). Same "ships dark until
     # configured" pattern as openai_api_key/stripe_secret_key above: the
     # app runs fully normally with both unset, and
@@ -203,6 +210,10 @@ class Settings(BaseSettings):
     # requests are still stored but nobody is emailed — no address or
     # workspace is ever guessed.
     platform_sales_tenant_id: str | None = None
+
+    # Dedicated internal boundary for compliance jobs. It is deliberately
+    # unrelated to tenant users or JWTs and defaults to unavailable.
+    internal_compliance_token: str | None = None
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

@@ -17,13 +17,13 @@ import { StickyCta } from "./sticky-cta";
 const START_CANONICAL = `${SITE_URL}/start`;
 
 export const metadata: Metadata = {
-  title: "GeoCore — Run your stone & construction business from one place",
-  description: `GeoCore connects customers, quotes, projects, costs, materials and workflows in one place — built for stone fabricators, worktop companies and construction teams. Start free for ${TRIAL_DAYS} days. No card required.`,
+  title: "GeoCore: run your stone & construction business from one place",
+  description: `GeoCore connects customers, quotes, projects, costs, materials and workflows in one place. Built for stone fabricators, worktop companies and construction teams. Start free for ${TRIAL_DAYS} days. No card required.`,
   robots: { index: false, follow: true },
   alternates: { canonical: START_CANONICAL },
   openGraph: {
-    title: "GeoCore — Run your stone & construction business from one place",
-    description: `Customers, quotes, projects, costs, materials and workflows — one system for stone & construction businesses. ${TRIAL_DAYS}-day free trial, no card required.`,
+    title: "GeoCore: run your stone & construction business from one place",
+    description: `Customers, quotes, projects, costs, materials and workflows in one system for stone & construction businesses. ${TRIAL_DAYS}-day free trial, no card required.`,
     url: START_CANONICAL,
     images: [`${SITE_URL}/brand/og-image.png`],
   },
@@ -63,7 +63,7 @@ const FEATURES = [
   },
   {
     title: "Quote faster",
-    body: "Professional quotes with real material and slab calculations, priced consistently and sent in minutes — not evenings.",
+    body: "Professional quotes with real material and slab calculations, priced consistently and sent in minutes, not evenings.",
   },
   {
     title: "Control every project",
@@ -75,7 +75,7 @@ const FEATURES = [
   },
   {
     title: "Automate the admin",
-    body: "Follow-ups, status updates and document chasing happen in the background — less time on the laptop, more on the job.",
+    body: "Follow-ups, status updates and document chasing happen in the background. Spend less time on the laptop and more on the job.",
   },
   {
     title: "Keep everything together",
@@ -84,11 +84,11 @@ const FEATURES = [
 ];
 
 const OUTCOMES = [
-  "Less admin — the repetitive chasing is handled for you.",
-  "Faster quoting — from enquiry to sent quote in minutes.",
-  "Clearer projects — everyone sees the same plan, from office to site.",
-  "Better cost control — margins and variations visible on every job.",
-  "One place for the whole operation — no more switching between tools.",
+  "Less admin. The repetitive chasing is handled for you.",
+  "Faster quoting, from enquiry to sent quote in minutes.",
+  "Clearer projects. Everyone sees the same plan, from office to site.",
+  "Better cost control, with margins and variations visible on every job.",
+  "One place for the whole operation, with no more switching between tools.",
 ];
 
 const FAQ_ITEMS: FaqItem[] = [
@@ -100,7 +100,7 @@ const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Who is it built for?",
     answer:
-      "Stone fabricators, worktop companies, builders, construction contractors and multi-trade teams — including electricians, plumbers, carpenters and roofers. If you quote jobs and run projects, GeoCore is built for you.",
+      "Stone fabricators, worktop companies, builders, construction contractors and multi-trade teams, including electricians, plumbers, carpenters and roofers. If you quote jobs and run projects, GeoCore is built for you.",
   },
   {
     question: "Is there a free trial?",
@@ -108,7 +108,7 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     question: "Do I need a credit card?",
-    answer: `No. You can start the ${TRIAL_DAYS}-day trial without entering any payment details — no card required. You only add payment if you choose a plan at the end.`,
+    answer: `No. You can start the ${TRIAL_DAYS}-day trial without entering any payment details. No card needed. You only add payment if you choose a plan at the end.`,
   },
   {
     question: "Can I use it for construction as well as stone?",
@@ -118,16 +118,16 @@ const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Can my team use it?",
     answer:
-      "Yes. Plans include multiple users — from 1 user on Starter up to 25 on Business — so office staff and site teams can work from the same system.",
+      "Yes. Plans include multiple users, from 1 user on Starter up to 25 on Business, so office staff and site teams can work from the same system.",
   },
   {
     question: "Can I manage quotes and projects together?",
     answer:
-      "Yes — that's the point. An approved quote becomes a project with tasks, scheduling, documents, photos and costs attached, so nothing gets re-typed or lost between tools.",
+      "Yes. That is the point. An approved quote becomes a project with tasks, scheduling, documents, photos and costs attached, so nothing gets re-typed or lost between tools.",
   },
   {
     question: "What happens after my trial?",
-    answer: `When the ${TRIAL_DAYS} days are up, nothing is charged — we never took your card. You simply choose the plan that fits your team. Your data stays in your workspace — nothing is deleted when the trial ends.`,
+    answer: `When the ${TRIAL_DAYS} days are up, nothing is charged because we never took your card. You simply choose the plan that fits your team. Your data stays in your workspace. Nothing is deleted when the trial ends.`,
   },
   {
     question: "Can I change plans later?",
@@ -137,7 +137,7 @@ const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Is it available on mobile, tablet and desktop?",
     answer:
-      "Yes. GeoCore is a responsive web app — it runs in the browser on phones, tablets and desktops, with nothing to install.",
+      "Yes. GeoCore is a responsive web app. It runs in the browser on phones, tablets and desktops, with nothing to install.",
   },
 ];
 
@@ -151,7 +151,7 @@ export default function StartPage() {
           <Link className="wordmark start-header__brand" href="/">
             <Image
               src="/brand/g-mark.png"
-              alt={`${SITE_NAME} — back to the main site`}
+              alt={`${SITE_NAME}, back to the main site`}
               width={116}
               height={116}
               priority
@@ -186,7 +186,7 @@ export default function StartPage() {
             <h1>Run your stone &amp; construction business from one place.</h1>
             <p className="start-hero__lead">
               GeoCore connects customers, quotes, projects, costs, materials
-              and workflows — so you stop jumping between disconnected
+              and workflows, so you stop jumping between disconnected
               software and get on with the job.
             </p>
             <div className="actions">
@@ -265,8 +265,8 @@ export default function StartPage() {
           <div className="shell">
             <h2>From enquiry to completion. One system.</h2>
             <p className="section__lead">
-              Every job follows the same clear path — and everyone can see
-              exactly where it is.
+              Every job follows the same clear path. Everyone can see exactly
+              where it is.
             </p>
             <ol className="start-steps">
               {WORKFLOW_STEPS.map((step, index) => (
@@ -303,7 +303,7 @@ export default function StartPage() {
           <div className="shell">
             <h2>See the whole job at a glance</h2>
             <p className="section__lead">
-              Quoting, project tracking and the numbers behind every job —
+              Quoting, project tracking and the numbers behind every job are
               designed for the trade, not for accountants.
             </p>
             <div className="start-showcase">
@@ -350,7 +350,7 @@ export default function StartPage() {
                 </div>
                 <figcaption>
                   <strong>Know your numbers.</strong> Costs, variations and
-                  margins per project — no end-of-month surprises.
+                  margins per project, with no end-of-month surprises.
                 </figcaption>
               </figure>
             </div>
@@ -371,7 +371,7 @@ export default function StartPage() {
           <div className="shell">
             <h2>Why GeoCore</h2>
             <p className="section__lead">
-              Not more software to manage — less managing, more building.
+              Not more software to manage. Less managing, more building.
             </p>
             <ul className="start-outcomes">
               {OUTCOMES.map((outcome) => (
@@ -455,8 +455,8 @@ export default function StartPage() {
               one job.
             </h2>
             <p className="section__lead">
-              Bring customers, quotes, projects and costs together — and give
-              every job one clear path from enquiry to completion.
+              Bring customers, quotes, projects and costs together. Give every
+              job one clear path from enquiry to completion.
             </p>
             <div className="actions">
               <TrackedLink

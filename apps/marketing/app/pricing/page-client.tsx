@@ -145,7 +145,7 @@ export function PricingPageClient() {
               </dd>
               <dt>What happens after {TRIAL_DAYS} days?</dt>
               <dd>
-                Nothing is charged — we never took your card. We&apos;ll remind you before the
+                Nothing is charged. We never took your card. We&apos;ll remind you before the
                 trial ends. To keep using GeoCore, choose a plan and add your payment details;
                 your workspace and data stay exactly as you left them.
               </dd>
@@ -156,7 +156,7 @@ export function PricingPageClient() {
               </dd>
               <dt>Is Enterprise self-service?</dt>
               <dd>
-                No — Enterprise pricing is custom.{" "}
+                No. Enterprise pricing is custom.{" "}
                 <a href="/request-demo">Request a demo</a> and we&apos;ll put together a plan
                 for your team.
               </dd>

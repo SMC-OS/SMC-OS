@@ -8,6 +8,7 @@
  * attribute the conversion. Nothing sensitive ever goes into a URL — only
  * the five standard, non-PII campaign parameters.
  */
+import { hasConsent } from "@/lib/consent";
 
 export const UTM_KEYS = [
   "utm_source",
@@ -49,6 +50,9 @@ function readUrlUtm(): UtmParams {
 export function captureUtmParams(): UtmParams {
   if (!isBrowser()) return {};
   const fromUrl = readUrlUtm();
+  // URL attribution remains functional, but persistent attribution is an
+  // optional preference and is never written before that preference is on.
+  if (!hasConsent("preferences")) return fromUrl;
   let stored: UtmParams = {};
   try {
     stored = {
@@ -71,6 +75,7 @@ export function captureUtmParams(): UtmParams {
 
 export function getStoredUtm(): UtmParams {
   if (!isBrowser()) return {};
+  if (!hasConsent("preferences")) return readUrlUtm();
   try {
     return {
       ...JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}"),
@@ -107,7 +112,7 @@ let pixelLoaded = false;
 
 /** Load the Meta Pixel (fbevents) only when an ID is configured. */
 function ensureMetaPixel(): void {
-  if (!isBrowser() || !META_PIXEL_ID || pixelLoaded) return;
+  if (!isBrowser() || !META_PIXEL_ID || !hasConsent("marketing") || pixelLoaded) return;
   pixelLoaded = true;
 
   const w = window as Window & { _fbq?: Window["fbq"] };
@@ -132,10 +137,10 @@ function ensureMetaPixel(): void {
 
 /** Push an event to the dataLayer and, when configured, the Meta Pixel. */
 export function track(event: string, props: Record<string, unknown> = {}): void {
-  if (!isBrowser()) return;
+  if (!isBrowser() || !hasConsent("analytics")) return;
   window.dataLayer = window.dataLayer ?? [];
   window.dataLayer.push({ event, page: "/start", ...props });
-  if (META_PIXEL_ID) {
+  if (META_PIXEL_ID && hasConsent("marketing")) {
     ensureMetaPixel();
     window.fbq?.("trackCustom", event, props);
   }
@@ -148,7 +153,7 @@ export function initStartTracking(): void {
   if (!isBrowser() || initialised) return;
   initialised = true;
   const utm = captureUtmParams();
-  if (META_PIXEL_ID) ensureMetaPixel();
+  if (META_PIXEL_ID && hasConsent("marketing")) ensureMetaPixel();
   track("campaign_landing_view", {
     ...utm,
     has_utm: Object.keys(utm).length > 0,

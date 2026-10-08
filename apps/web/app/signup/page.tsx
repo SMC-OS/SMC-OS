@@ -12,6 +12,7 @@ import { PasswordField } from "@/components/ui/PasswordField";
 import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 import { ApiError } from "@/lib/api";
 import { passwordPolicyError } from "@/lib/passwordPolicy";
+import { legalUrl } from "@/lib/legal";
 
 // Phase B — the plan chosen on the public pricing page arrives as
 // ?plan=&billing_period= and is carried into signup, so the no-card
@@ -210,6 +211,9 @@ function SignupForm() {
         </CardContent>
       </Card>
 
+      <p className="mt-4 text-center text-sm text-muted">
+        By creating a workspace, you confirm you are at least 18 and using GeoCore for business or professional purposes. Read the <a className="text-accent hover:underline" href={legalUrl("/terms-of-service")}>Terms of Service</a> and <a className="text-accent hover:underline" href={legalUrl("/privacy-policy")}>Privacy Policy</a>.
+      </p>
       <p className="mt-4 text-center text-sm text-muted">
         Already have an account?{" "}
         <Link href="/login" className="text-accent hover:underline">
