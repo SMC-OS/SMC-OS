@@ -1,6 +1,8 @@
 # GeoCore launch: integrated release candidate
 
-**Status:** release candidate built and verified. **Not promoted to production.**
+**Status:** promoted to production on 8 Oct 2026. Deployment, health, schema and
+public-surface verification passed; no rollback. Authenticated production
+acceptance is **outstanding** (section 9).
 
 ## 1. Why the traffic-readiness candidate was rebuilt
 
@@ -106,10 +108,85 @@ was not redeployed as part of this work.
 The local E2E ran against pre-warmed dev servers, because this machine could not
 start the Next.js dev servers inside Playwright's 60 s window; CI starts its own.
 
-## 8. Not done
+## 8. Redeploy warning
 
-Production has not been promoted, redeployed or modified. `production-release`
-was not touched and remains at `1855657`, which is **not a safe redeploy
+`production-release` before the launch (`1855657`) is **not a safe redeploy
 target**: it lacks migration `4d5e6f7a8b9c`, so a build from it aborts at the
-migration gate against the production database. See
-`docs/RELEASES/launch-promotion-plan.md` for the next step.
+migration gate against the production database. `production-release` now equals
+the release SHA.
+
+## 9. Production launch record (8 Oct 2026)
+
+Release SHA: `f7a1eaa9e13c0fd8aeb9ff34ce0bfb7034ee2b10`
+(PR #47 merge on `main`; GitHub CI run 37759850504, success).
+
+| Item | Value |
+| --- | --- |
+| Promotion (UTC) | 2026-10-08T12:44:14Z, fast-forward push, no force |
+| `production-release` | `1855657` to `f7a1eaa` |
+| Railway project / environment | `simo-os` / `production` (`c5f88dea-...`) |
+| API (`simo-api-production`) | `668cd773` to `9feb6436`, SUCCESS 12:45:56Z |
+| Web (`simo-web-production`) | `11b82c4b` to `26be82a4`, SUCCESS 12:45:17Z |
+| Follow-up cron (`simo-follow-up-production`) | `bb5cd9bc` to `7278d4ee`, SUCCESS 12:45:55Z, schedule `0 3 * * *` unchanged |
+| Marketing (`simo-marketing-production`) | not deployed: tree identical to the build already live (`d1f0c2c5`, `d8f6627`) |
+| Alembic before / after | `4d5e6f7a8b9c` / `4d5e6f7a8b9c` (no migration ran) |
+| Rollback | not required, not used |
+
+**Pre-launch backup.** Taken 2026-10-08T12:43:09Z with
+`pg_dump --format=custom --no-owner` run inside the production Postgres container
+(18.6; Docker was unavailable on the operator workstation, and the client there
+must match the server major). Exit 0, 241,855 bytes, SHA-256
+`c06e5529be3cc5343af0612ea7be8fa87015529871c18f6d102ebb17a5ffdca6`. In-container
+`pg_restore --list` read 387 entries, including `alembic_version` and the
+compliance tables, with no errors. The off-host copy is byte-identical (same
+size and SHA-256) and is kept outside the repository on the operator workstation.
+It was never restored. A local `pg_restore` 16 cannot read the format 1.16
+archive that PostgreSQL 18 writes; restore tooling must be 18.x.
+
+**Verified after the deployment:**
+
+- `https://api.geocore.one/health` 200 `healthy`; `/ready` 200, database reachable.
+- `/docs`, `/redoc`, `/openapi.json` now 404 (200 before the launch);
+  `/api/v1/billing/plans` still 200.
+- Schema unchanged: 52 tables, the five compliance tables present, no migration
+  executed. Data intact (23 tenants, 23 users, 7 customers, 5 projects, 3 quotes).
+- Catalogue 7 manufacturers, 3 brands, 38 surfaces, 47 variants, 0 suppliers.
+- `app.core.staging_fixture` refuses in production.
+- Startup logs: migration gate ran `alembic upgrade head` as a no-op, then
+  `4d5e6f7a8b9c (head)`, then a healthy Uvicorn start; no 5xx in the launch
+  window; web started on Next.js and was ready.
+- `app.geocore.one`: login, signup (with Terms and Privacy Policy links), pricing
+  (real prices from the API) render; protected routes redirect to `/login` with no
+  loop; browser console clean.
+- `www.geocore.one`: the home, pricing, request-demo, start and legal pages, plus
+  all seven policies (privacy, terms, cookies, acceptable use, copyright takedown,
+  data processing, subprocessors) return 200.
+- Follow-up cron: new deployment healthy and ready, schedule intact, one service.
+  Its first run on the new image is the next 03:00 UTC; the last run before the
+  launch (8 Oct 03:00Z) succeeded.
+
+**Not performed (outstanding).** Live signup, email verification, login, the genuine
+14-day no-card trial, the compliance Settings controls, and creating a customer,
+project and quote on production require creating a production account and entering
+a password, which the launch automation was not permitted to do. They should be run
+by the owner with one disposable synthetic tenant, never with the staging fixture.
+The customer portal, command centre and notifications surfaces were not exercised
+for the same reason.
+
+**Finding unrelated to this release.** The apex `https://geocore.one` presents a
+certificate that does not match (Railway shows its certificate as `ISSUING` and the
+apex CNAME as unset), while `https://www.geocore.one` is valid. This predates the
+launch, marketing was not touched, and DNS was not changed. It needs the owner's
+DNS/certificate attention (see `docs/DNS_GEOCORE_ONE.md`).
+
+**Rollback target.** Railway rollback to the previous API (`668cd773`) and web
+(`11b82c4b`) deployments while they remain rollback-able; otherwise redeploy commit
+`d8f6627`, which contains migration `4d5e6f7a8b9c`. Never `1855657`. The database
+stays at `4d5e6f7a8b9c`; no downgrade.
+
+**Accepted exception.** `logs_request_ids` remains blocked by design. Request IDs
+were observed naturally in the production logs; no failure was induced.
+
+**Verdict.** Production promotion succeeded and the deployed release is healthy.
+Full launch verification is **not yet complete** until the owner-run authenticated
+acceptance above passes.

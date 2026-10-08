@@ -1,7 +1,9 @@
 # GeoCore launch: production promotion plan
 
-**Status:** prepared, **not executed**. Production promotion needs explicit owner
-authorisation. Evidence for the candidate: `docs/RELEASES/launch-integrated-release.md`.
+**Status:** executed on 8 Oct 2026 (see section 9 of
+`docs/RELEASES/launch-integrated-release.md` for the actual record, deployment ids
+and the outstanding authenticated acceptance). Kept as the procedure reference.
+Evidence for the candidate: `docs/RELEASES/launch-integrated-release.md`.
 
 ## 1. What is being promoted
 
