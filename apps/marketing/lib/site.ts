@@ -27,6 +27,11 @@ export const SITE_URL = origin(process.env.NEXT_PUBLIC_SITE_URL, "https://www.ge
 export const APP_URL = origin(process.env.NEXT_PUBLIC_APP_URL, "https://app.geocore.one");
 
 export const SITE_NAME = "GeoCore";
+// "GeoCore" alone competes with unrelated results in search. Public metadata
+// (titles, Open Graph, structured data) uses the disambiguated brand instead:
+// "GeoCore OS" everywhere, and the long form where there is room for it.
+export const SEO_NAME = "GeoCore OS";
+export const SEO_LONG_NAME = "GeoCore OS — Stone & Construction Operating System";
 // GeoCore Premium OS Plan 02 (Sprint 041) / Master Spec §25 — the
 // positioning is revised from Sprint 039 Blocker 7's "construction and
 // renovation businesses in general" (which named no trade at all) to the
@@ -38,7 +43,7 @@ export const SITE_NAME = "GeoCore";
 // rewritten rather than routed around.
 export const SITE_TAGLINE = "The Operating System for Stone & Construction";
 export const SITE_DESCRIPTION =
-  "GeoCore is the operating system for Stone & Construction businesses. Run enquiries, quotes, projects, materials, teams, site operations and profitability from one connected platform.";
+  "GeoCore OS is the operating system for Stone & Construction businesses. Run enquiries, customers, quotes, materials, projects, documents and your team from one connected platform.";
 
 /**
  * Whether this deployment should allow indexing. Only the production

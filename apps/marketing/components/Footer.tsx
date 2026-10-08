@@ -31,6 +31,9 @@ export function Footer() {
           <p className="footer-heading">Get started</p>
           <ul>
             <li>
+              <Link href="/founding-100">Join the Founding 100</Link>
+            </li>
+            <li>
               <Link href="/pricing">Start 14-day trial</Link>
             </li>
             <li>
