@@ -245,6 +245,16 @@ class Settings(BaseSettings):
         self._validate_production_storage_and_database()
         return self
 
+    @property
+    def api_docs_enabled(self) -> bool:
+        """Whether the interactive API documentation (/docs, /redoc and
+        /openapi.json) is served. It is a development aid: in production it
+        would publish the full route map of a public API, and nothing in the
+        product consumes it. Keyed on APP_ENV, which Railway staging also sets
+        to "production", so staging stops serving it too after its next
+        deployment."""
+        return self.app_env is not AppEnvironment.PRODUCTION
+
     def _validate_production_secrets(self) -> None:
         normalized_jwt_secret = self.jwt_secret_key.strip()
         normalized_seed_email = self.seed_admin_email.strip()
