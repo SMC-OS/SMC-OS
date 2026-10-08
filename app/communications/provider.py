@@ -46,6 +46,7 @@ class EmailMessage:
     text: str
     idempotency_key: str
     reply_to: str | None = None
+    headers: dict[str, str] | None = None
 
 
 class SendOutcome(str, Enum):
@@ -107,6 +108,8 @@ class ResendEmailProvider(EmailProvider):
         }
         if message.reply_to:
             payload["reply_to"] = message.reply_to
+        if message.headers:
+            payload["headers"] = message.headers
 
         try:
             response = client.post(

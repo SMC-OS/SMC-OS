@@ -18,6 +18,7 @@ from app.documents.service import (
     CustomerNotFoundError,
     DisallowedFileTypeError,
     DocumentNotFoundError,
+    DocumentDeleteError,
     FileTooLargeError,
     document_service,
 )
@@ -78,3 +79,17 @@ def download_document(
         media_type=row.content_type,
         filename=row.original_filename,
     )
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: uuid.UUID,
+    current_user: User = Depends(require_billing_access),
+    db: Session = Depends(get_db),
+):
+    try:
+        document_service.delete_document(db, current_user.tenant_id, document_id)
+    except DocumentNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    except DocumentDeleteError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document could not be deleted")

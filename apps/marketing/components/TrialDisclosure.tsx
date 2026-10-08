@@ -1,4 +1,5 @@
 import type { Plan } from "@/lib/api";
+import Link from "next/link";
 
 function amountFor(plan: Plan, period: "monthly" | "annual"): number | null {
   return period === "monthly" ? plan.monthly_price_gbp : plan.annual_price_gbp;
@@ -27,6 +28,9 @@ export function TrialDisclosure({ plan, period }: { plan: Plan; period: "monthly
           £{amount}/{period === "monthly" ? "month" : "year"}
         </strong>{" "}
         and add your payment details then.
+      </p>
+      <p className="trial-disclosure__legal">
+        See our <Link href="/legal/terms-of-service">Terms of Service</Link> and <Link href="/legal/privacy-policy">Privacy Policy</Link>.
       </p>
     </div>
   );

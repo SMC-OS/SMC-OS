@@ -60,6 +60,23 @@ db.close()
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 test.describe("GeoCore Premium OS Plan 02 (Sprint 041) — public marketing site", () => {
+  test("legal_centre_lists_each policy with published metadata", async ({ page }) => {
+    await page.goto(`${MARKETING_URL}/legal`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("heading", { name: "Clear information for using GeoCore" })).toBeVisible();
+    for (const [name, path] of [
+      ["Privacy Policy", "privacy-policy"], ["Terms of Service", "terms-of-service"],
+      ["Cookie Policy", "cookie-policy"], ["Acceptable Use Policy", "acceptable-use-policy"],
+      ["Copyright / Takedown Policy", "copyright-takedown-policy"],
+      ["Data Processing Agreement", "data-processing-agreement"], ["Subprocessor Information", "subprocessors"],
+    ]) {
+      await expect(page.getByRole("link", { name: `Read ${name}` })).toHaveAttribute("href", `/legal/${path}`);
+    }
+    await page.goto(`${MARKETING_URL}/legal/privacy-policy`);
+    await expect(page.getByText(/Version 1\.0/)).toBeVisible();
+    await expect(page.getByText(/30-day recovery period/i)).toBeVisible();
+  });
+
   test("journey_a_a_visitor_understands_the_product_through_homepage_product_trades_pricing", async ({
     page,
   }) => {

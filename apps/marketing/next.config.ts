@@ -16,13 +16,23 @@ const nextConfig: NextConfig = {
     // only under APP_ENV=production for the same reason as there: sending
     // it over plain HTTP in development makes browsers cache a forced-HTTPS
     // policy for localhost.
+    // Next's development runtime uses eval for diagnostics. The local E2E
+    // browser also submits the public demo form to the loopback API. Keep
+    // both compatibility allowances out of the production policy.
+    const isProduction = process.env.APP_ENV === "production";
+    const scriptSrc = isProduction
+      ? "'self' 'unsafe-inline' https://connect.facebook.net"
+      : "'self' 'unsafe-inline' 'unsafe-eval' https://connect.facebook.net";
+    const connectSrc = isProduction
+      ? "'self' https://connect.facebook.net"
+      : "'self' https://connect.facebook.net http://127.0.0.1:8000";
     const headers = [
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "X-Frame-Options", value: "DENY" },
-      { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+      { key: "Content-Security-Policy", value: `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src ${connectSrc}` },
     ];
-    if (process.env.APP_ENV === "production") {
+    if (isProduction) {
       headers.push({
         key: "Strict-Transport-Security",
         value: "max-age=63072000; includeSubDomains",

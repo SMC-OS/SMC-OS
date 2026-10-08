@@ -113,10 +113,10 @@ export const EXAMPLE_WORKFLOWS: { trade: string; sequence: string[] }[] = [
 
 export const TEAM_SIZE_OPTIONS: { value: string; label: string }[] = [
   { value: "1", label: "Just me" },
-  { value: "2-3", label: "2–3 people" },
-  { value: "4-10", label: "4–10 people" },
-  { value: "11-25", label: "11–25 people" },
-  { value: "26-50", label: "26–50 people" },
+  { value: "2-3", label: "2 to 3 people" },
+  { value: "4-10", label: "4 to 10 people" },
+  { value: "11-25", label: "11 to 25 people" },
+  { value: "26-50", label: "26 to 50 people" },
   { value: "50+", label: "50+ people" },
 ];
 

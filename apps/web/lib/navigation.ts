@@ -118,6 +118,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: "Your account and active session.",
     icon: ShieldIcon,
   },
+  { key: "privacy", label: "Privacy & communications", description: "Consent and marketing communication preferences.", icon: ShieldIcon },
 ];
 
 export const SETTINGS_ICON = SettingsIcon;

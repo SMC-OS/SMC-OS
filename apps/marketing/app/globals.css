@@ -1589,3 +1589,172 @@ fieldset legend {
   line-height: 1;
   cursor: pointer;
 }
+
+.consent-banner { position: fixed; z-index: 100; inset: auto 1rem 1rem; max-width: 46rem; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); box-shadow: 0 .5rem 2rem rgba(0,0,0,.18); }
+.consent-banner p { margin: 0 0 .75rem; color: var(--text-muted); }
+.consent-banner div { display: flex; flex-wrap: wrap; gap: .5rem; }
+.consent-banner button { border: 1px solid var(--border); border-radius: .4rem; padding: .55rem .75rem; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.consent-banner button:last-child { background: var(--forest); color: white; }
+.consent-manage { position: fixed; z-index: 100; right: 1rem; bottom: 1rem; border: 1px solid var(--border); border-radius: .4rem; padding: .55rem .75rem; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; box-shadow: 0 .25rem 1rem rgba(0,0,0,.12); }
+
+/* Legal Centre uses the public site's restrained, content-led visual system. */
+.legal-index { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.legal-index__item { border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; background: var(--surface); }
+.legal-index__item h2 { font-size: 1.15rem; margin: 0 0 0.5rem; }
+.legal-index__item p { margin: 0 0 1rem; color: var(--text-muted); }
+.legal-document { max-width: 48rem; }
+.legal-document section { border-top: 1px solid var(--border); padding: 1.5rem 0; }
+.legal-document h2 { font-size: 1.35rem; margin: 0 0 0.75rem; }
+.legal-document p, .legal-document li { color: var(--text-muted); line-height: 1.7; }
+.legal-document ul { padding-left: 1.25rem; }
+@media (max-width: 40rem) { .legal-index { grid-template-columns: 1fr; } .legal-index__item { padding: 1rem; } }
+
+/* --------------------------------------------------------------------------
+   Bright architectural refresh
+   A limestone field, pine ink and a small brass datum replace the old
+   full-viewport dark treatment. These overrides deliberately share the same
+   tokens across the product, legal and campaign surfaces.
+   -------------------------------------------------------------------------- */
+:root {
+  --forest-deep: #12352b;
+  --forest: #245943;
+  --sage: #b8cbb9;
+  --sand: #b88a43;
+  --cream: #f7f4ec;
+  --bg: #f7f4ec;
+  --surface: #fffdf8;
+  --text: #17352c;
+  --text-muted: #4f6259;
+  --border: #ded8c9;
+  --stone-line: #e9e2d4;
+}
+
+/* The public site is intentionally light in every system appearance. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #f7f4ec;
+    --surface: #fffdf8;
+    --text: #17352c;
+    --text-muted: #4f6259;
+    --border: #ded8c9;
+    color-scheme: light;
+  }
+}
+
+body {
+  background:
+    linear-gradient(90deg, transparent calc(50% - 34rem), rgba(184, 138, 67, .13) calc(50% - 34rem), rgba(184, 138, 67, .13) calc(50% - 33.94rem), transparent calc(50% - 33.94rem)),
+    var(--bg);
+  color: var(--text);
+}
+
+.shell { max-width: 74rem; padding-inline: clamp(1.1rem, 4vw, 2.25rem); }
+
+.site-header {
+  padding: .85rem 0;
+  background: rgba(247, 244, 236, .94);
+  backdrop-filter: blur(14px);
+  border-bottom-color: var(--stone-line);
+}
+.wordmark { min-height: 3.35rem; }
+.wordmark__desktop { display: inline-flex; align-items: center; gap: .62rem; color: var(--forest-deep); }
+.wordmark__desktop-mark { display: block; height: 3.05rem !important; width: 3.05rem !important; object-fit: contain; }
+.wordmark__name { font-size: 1.8rem; font-weight: 800; letter-spacing: -.075em; line-height: 1; }
+.wordmark__mobile { display: none; height: 3.1rem; width: 3.1rem; object-fit: contain; }
+.nav-links { gap: 1.25rem; font-size: .9rem; }
+.nav-links a { color: var(--text-muted); }
+.nav-links a:hover { color: var(--forest-deep); }
+.nav-links__signin { color: var(--forest-deep) !important; }
+.nav-toggle { border-radius: .75rem; width: 2.85rem; height: 2.85rem; background: var(--surface); box-shadow: 0 5px 14px rgba(24, 53, 44, .08); }
+
+.hero { padding: clamp(4.75rem, 9vw, 8rem) 0 clamp(4rem, 8vw, 6.5rem); }
+.hero h1 { max-width: 18ch; font-size: clamp(2.65rem, 6.4vw, 5.35rem); letter-spacing: -.055em; }
+.hero p { max-width: 58ch; color: var(--text-muted); font-size: clamp(1.08rem, 1.65vw, 1.28rem); }
+.eyebrow { border: 0; border-radius: 0; padding: 0 0 .45rem; margin-bottom: 1.4rem; background: transparent; color: var(--forest); letter-spacing: .13em; font-weight: 750; }
+.eyebrow::after { content: ""; display: inline-block; width: 2.6rem; height: 2px; margin-left: .75rem; vertical-align: middle; background: var(--sand); }
+.rule { width: 4.25rem; height: 2px; background: var(--sand); }
+
+.button { min-height: 3.05rem; border-radius: .7rem; padding-inline: 1.35rem; box-shadow: none; }
+.button--primary { background: var(--forest-deep); color: #fffdf8; box-shadow: 0 10px 22px rgba(18, 53, 43, .16); }
+.button--primary:hover { background: #1e4a3b; opacity: 1; }
+.button--secondary, .button--tertiary { border-color: #cfc6b4; background: var(--surface); color: var(--forest-deep); }
+
+.section { padding-block: clamp(4.25rem, 8vw, 7rem); }
+.section--alt, .pricing-teaser, .start-pricing { background: #eeeadf; }
+.section h2, .legal-document h1, .legal-index + h1 { letter-spacing: -.035em; }
+.section__lead { max-width: 60ch; }
+.grid { gap: 1.15rem; }
+.card, .pricing-card, .legal-index__item, .demo-form, .start-plan, .start-faq__item {
+  background: var(--surface);
+  border-color: var(--border);
+  border-radius: .95rem;
+  box-shadow: 0 10px 30px rgba(33, 50, 40, .055);
+}
+.card { padding: 1.55rem; }
+.card__header { border-bottom-color: var(--stone-line); }
+.tag, .pill, .trade-tag, .start-chip { background: #e7eee5; border-color: #cbd9c9; color: var(--forest-deep); }
+.pricing-card--highlight { border: 2px solid var(--forest); box-shadow: 0 16px 38px rgba(18, 53, 43, .12); }
+.final-cta, .start-final { background: var(--forest-deep); color: #fffdf8; border-radius: 1.1rem; margin-inline: auto; max-width: 70rem; }
+.final-cta p, .start-final p { color: #d8e4d6; }
+
+.site-footer { background: #e8e2d6; border-top-color: #d2c8b6; color: var(--text-muted); }
+.footer-brand, .footer-heading { color: var(--forest-deep); }
+.footer-grid { gap: 2.5rem; }
+
+.start-page { background: var(--bg); }
+.start-header { background: rgba(247, 244, 236, .94); border-bottom-color: var(--stone-line); }
+.start-hero { padding-block: clamp(3.75rem, 8vw, 7rem); }
+.start-brand { background: var(--forest-deep); border-radius: 1.1rem; box-shadow: 0 18px 45px rgba(18, 53, 43, .16); }
+.start-showcase, .start-viz { background: var(--surface); }
+.start-step__number { background: var(--sand); color: #fffdf8; }
+
+.legal-index { gap: 1.2rem; }
+.legal-index__item { padding: 1.5rem; }
+.legal-document section { border-top-color: var(--stone-line); }
+
+.consent-banner {
+  max-width: 34rem;
+  padding: 1.15rem;
+  border-color: #cabda6;
+  border-radius: 1rem;
+  background: #fffdf8;
+  box-shadow: 0 16px 44px rgba(18, 53, 43, .18);
+}
+.consent-banner button { border-radius: .65rem; padding: .65rem .85rem; }
+.consent-banner button:last-child { background: var(--forest-deep); }
+.consent-manage {
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  border-color: #bfcdbb;
+  border-radius: 999px;
+  padding: .5rem .8rem;
+  background: #eef4eb;
+  color: var(--forest-deep);
+  font-size: .82rem;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(18, 53, 43, .12);
+}
+
+:focus-visible { outline: 3px solid #b88a43; outline-offset: 3px; }
+
+@media (max-width: 860px) {
+  .wordmark__desktop { display: none; }
+  .wordmark__mobile { display: block; }
+  .nav-links { background: #fffdf8; border-bottom-color: var(--stone-line); padding: .7rem 1.25rem 1.25rem; box-shadow: 0 18px 28px rgba(18, 53, 43, .08); }
+  .nav-links a { padding-block: .9rem; }
+}
+@media (max-width: 430px) {
+  .shell { padding-inline: 1rem; }
+  .hero { padding-top: 3.6rem; }
+  .hero h1 { font-size: clamp(2.35rem, 12vw, 3.25rem); }
+  .actions { display: grid; grid-template-columns: 1fr; }
+  .actions .button { width: 100%; }
+  .card, .pricing-card, .legal-index__item { padding: 1.2rem; }
+  .consent-banner { inset: auto .75rem max(.75rem, env(safe-area-inset-bottom)); }
+  .consent-manage { bottom: max(.7rem, env(safe-area-inset-bottom)); right: .7rem; width: 2.65rem; height: 2.65rem; justify-content: center; padding: 0; font-size: .95rem; }
+  .consent-manage__label { display: none; }
+  .start-sticky { padding-inline: .7rem; }
+}

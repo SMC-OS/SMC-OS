@@ -10,6 +10,8 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +44,20 @@ class SmokeHttpError(Exception):
         self.method, self.route, self.status_code = method, route, status_code
 
 
+class FixtureVerificationError(Exception):
+    """The operator fixture could not verify the run's synthetic users."""
+
+
+_ID_SEGMENT = re.compile(r"^(?:[0-9a-fA-F-]{32,36}|[A-Za-z0-9_-]{20,})$")
+
+
+def safe_route(path: str) -> str:
+    """A route fit for a report: no query string, and every id / portal token
+    segment replaced, so evidence never carries a credential or a record id."""
+    segments = path.split("?", 1)[0].split("/")
+    return "/".join("{id}" if _ID_SEGMENT.match(segment) else segment for segment in segments)
+
+
 def validate_public_https_origin(value: str) -> str:
     parsed = urlsplit(value)
     if (
@@ -70,11 +86,15 @@ def sanitize_evidence(value: Any) -> Any:
 
 
 class SmokeRunner:
-    def __init__(self, web_url: str, api_url: str, *, allow_restart: bool, timeout: float, quote_material: str | None = None, quote_thickness: str | None = None) -> None:
+    def __init__(self, web_url: str, api_url: str, *, allow_restart: bool, timeout: float, quote_material: str | None = None, quote_thickness: str | None = None, fixture_verifier: Callable[[str], None] | None = None) -> None:
         self.web_url = validate_public_https_origin(web_url)
         self.api_url = validate_public_https_origin(api_url)
         self.allow_restart, self.timeout = allow_restart, timeout
         self.quote_material, self.quote_thickness = quote_material, quote_thickness
+        # Marks this run's own synthetic users verified (see
+        # app/core/staging_fixture.py). Never a public API: staging's database
+        # is private, so it is reached by an operator command next to it.
+        self.fixture_verifier = fixture_verifier
         self.prefix = f"s019-{uuid.uuid4().hex[:12]}"
         self.results: list[dict[str, Any]] = []
         self.created: list[dict[str, str]] = []
@@ -92,11 +112,32 @@ class SmokeRunner:
 
     def request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         response = self.client.request(method, f"{self.api_url}{path}", timeout=self.timeout, follow_redirects=False, **kwargs)
-        response.raise_for_status()
+        if response.is_error:
+            # Keep only the status code and a redacted route: raise_for_status()
+            # collapsed every failure into an opaque HTTPStatusError, and its
+            # message embeds the full URL (ids, portal tokens, query strings).
+            raise SmokeHttpError(method, safe_route(path), response.status_code)
         return response
 
     def headers(self, tenant: str = "a") -> dict[str, str]:
         return {"Authorization": f"Bearer {self.state[f'{tenant}_token']}"}
+
+    def workspace_gate(self, name: str, action: Callable[[], dict[str, Any]], *, requires: tuple[str, ...] = ()) -> None:
+        """A gate that drives authenticated workspace routes.
+
+        Those routes are refused to an unverified user by design, so without
+        the operator fixture the gate is BLOCKED (not FAILED). And a gate
+        whose prerequisite record an earlier gate never created is BLOCKED
+        too, naming what is missing: the failing upstream gate stays the one
+        visible root cause instead of a trail of unrelated KeyError failures."""
+        if not self.state.get("fixture_verified", False):
+            self.blocked(name, "requires operator fixture email verification: signup users are correctly unverified, so workspace routes are refused")
+            return
+        missing = [key for key in requires if key not in self.state]
+        if missing:
+            self.blocked(name, f"prerequisite not created by an earlier gate: {', '.join(missing)}")
+            return
+        self.gate(name, action)
 
     def gate(self, name: str, action: Callable[[], dict[str, Any]]) -> None:
         try:
@@ -121,7 +162,49 @@ class SmokeRunner:
         # created by this harness, keeping its footprint minimal).
         self.state[f"{tenant}_user_id"] = login["user"]["id"]
         self.created.append({"kind": "tenant_user", "synthetic_prefix": self.prefix, "tenant": tenant})
-        return {"signup_status": signup.status_code, "login_token_received": bool(login.get("access_token"))}
+        # A fresh signup is unverified, and the product must refuse it
+        # workspace data until it verifies (require_verified_email).
+        unverified = self.client.get(f"{self.api_url}/api/v1/customers", headers=self.headers(tenant), timeout=self.timeout)
+        return {
+            "signup_status": signup.status_code,
+            "login_token_received": bool(login.get("access_token")),
+            "unverified_status_code": unverified.status_code,
+            "unverified_access_rejected": unverified.status_code == 403,
+        }
+
+    def signup_and_prepare(self) -> dict[str, Any]:
+        """Sign up both synthetic workspaces, prove each is refused while
+        unverified, then (only with the operator fixture) verify them and
+        prove the real no-card trial is untouched and access now works."""
+        first, second = self.signup("a"), self.signup("b")
+        evidence: dict[str, Any] = {
+            "signup_status": second["signup_status"],
+            "login_token_received": second["login_token_received"],
+            "unverified_status_code": second["unverified_status_code"],
+            "unverified_access_rejected": first["unverified_access_rejected"] and second["unverified_access_rejected"],
+        }
+        if self.fixture_verifier is None:
+            evidence["fixture_verification"] = "unavailable"
+            return evidence
+        try:
+            self.fixture_verifier(self.prefix)
+        except FixtureVerificationError:
+            return {**evidence, "fixture_verification": "failed", "fixture_verified": False}
+        self.state["fixture_verified"] = True
+        evidence["fixture_verification"] = "applied"
+        statuses, trials = [], []
+        for tenant in ("a", "b"):
+            access = self.client.get(f"{self.api_url}/api/v1/customers", headers=self.headers(tenant), timeout=self.timeout)
+            subscription = self.client.get(f"{self.api_url}/api/v1/billing/subscription", headers=self.headers(tenant), timeout=self.timeout)
+            body = subscription.json() if subscription.status_code == 200 and subscription.content else None
+            statuses.append(access.status_code)
+            # The no-card trial signup started, as-is: still trialing, with real
+            # trial dates, and never swapped for a grandfathered/paid exemption.
+            trials.append(bool(body) and body.get("status") == "trialing" and body.get("trial_state") in {"active", "ending_soon"} and bool(body.get("trial_start")) and bool(body.get("trial_end")))
+        evidence["verified_access_status_codes"] = statuses
+        evidence["verified_access_allowed"] = all(code == 200 for code in statuses)
+        evidence["trial_retained"] = all(trials)
+        return evidence
 
     def customer(self) -> dict[str, Any]:
         row = self.request("POST", "/api/v1/customers", headers=self.headers(), json={"name": f"{self.prefix}-customer"}).json()
@@ -301,30 +384,33 @@ class SmokeRunner:
             self.gate("postgresql", lambda: self.health("/ready", {"status": "ready", "database": "reachable"}))
             self.blocked("migration", "requires separately recorded remote alembic current evidence")
             self.blocked("no_seeding", "requires operator comparison against a known seed inventory")
-            self.gate("signup_login_auth", lambda: (self.signup("a"), self.signup("b"))[1])
-            for name, action in (("customer", self.customer), ("project", self.project)):
-                self.gate(name, action)
+            self.gate("signup_login_auth", self.signup_and_prepare)
+            self.workspace_gate("customer", self.customer)
+            self.workspace_gate("project", self.project, requires=("customer_id",))
             if self.quote_material and self.quote_thickness:
-                self.gate("quote_invoice", self.quote_invoice)
+                self.workspace_gate("quote_invoice", self.quote_invoice, requires=("customer_id",))
             else:
                 self.blocked("quote_invoice", "requires --quote-material and --quote-thickness")
-            for name, action in (("staff_document", self.document), ("portal_token", self.portal), ("portal_documents", self.portal_documents), ("portal_messaging", self.portal_messages), ("token_enforcement", self.token_enforcement)):
-                self.gate(name, action)
-            if "quote_id" in self.state:
-                self.gate("tenant_isolation", self.tenant_isolation)
+            for name, action, needs in (
+                ("staff_document", self.document, ("customer_id",)),
+                ("portal_token", self.portal, ("customer_id",)),
+                ("portal_documents", self.portal_documents, ("portal_token", "document_id")),
+                ("portal_messaging", self.portal_messages, ("portal_token", "customer_id")),
+                ("token_enforcement", self.token_enforcement, ("portal_id", "portal_token")),
+            ):
+                self.workspace_gate(name, action, requires=needs)
+            if self.quote_material and self.quote_thickness:
+                self.workspace_gate("tenant_isolation", self.tenant_isolation, requires=("customer_id", "project_id", "quote_id"))
             else:
                 self.blocked("tenant_isolation", "partial customer/project checks cannot satisfy full quote isolation coverage")
             # Sprint 027 — see SmokeRunner.quote_approve_handoff/appointment/
             # project_assignment_status/command_centre docstrings above.
-            if "quote_id" in self.state:
-                self.gate("quote_approve_handoff", self.quote_approve_handoff)
+            if self.quote_material and self.quote_thickness:
+                self.workspace_gate("quote_approve_handoff", self.quote_approve_handoff, requires=("quote_id",))
             else:
                 self.blocked("quote_approve_handoff", "requires --quote-material and --quote-thickness")
-            self.gate("appointment", self.appointment)
-            if "booked_project_id" in self.state:
-                self.gate("project_assignment_status", self.project_assignment_status)
-            else:
-                self.blocked("project_assignment_status", "requires quote_approve_handoff to have produced a booked project")
+            self.workspace_gate("appointment", self.appointment, requires=("project_id",))
+            self.workspace_gate("project_assignment_status", self.project_assignment_status, requires=("booked_project_id", "a_user_id"))
             self.blocked(
                 "follow_up_notification",
                 "no HTTP trigger exists by design (app/jobs/follow_up.py is a "
@@ -332,7 +418,7 @@ class SmokeRunner:
                 "verify separately via `railway ssh` running "
                 "`python -m app.jobs.follow_up`, per docs/SPRINTS/sprint-027.md §6",
             )
-            self.gate("command_centre", self.command_centre)
+            self.workspace_gate("command_centre", self.command_centre)
             for name, action in (("cors_allowed", lambda: self.cors(True)), ("cors_denied", lambda: self.cors(False))):
                 self.gate(name, action)
             self.blocked("restart_persistence", "requires a configured bounded API-only Railway restart command" if self.allow_restart else "requires --allow-restart and a configured bounded API-only Railway restart command")
@@ -348,6 +434,42 @@ class SmokeRunner:
         return sanitize_evidence({"run_id": self.prefix, "started_at": datetime.now(timezone.utc).isoformat(), "web_url": self.web_url, "api_url": self.api_url, "gates": self.results, "totals": totals, "synthetic_cleanup": {"created": self.created, "status": "tracked; API deletion is unavailable for all created records"}})
 
 
+_RAILWAY_ARGUMENT = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_RUN_PREFIX = re.compile(r"^s019-[0-9a-f]{12}$")
+FIXTURE_TIMEOUT_SECONDS = 180
+
+
+def railway_fixture_verifier(project_id: str, service: str, api_url: str) -> Callable[[str], None]:
+    """An operator-only way to mark this run's synthetic users verified.
+
+    Runs `python -m app.core.staging_fixture` inside the staging API
+    container over `railway ssh`. The environment is hard-coded to
+    "staging" (it cannot be pointed anywhere else), the API origin must be a
+    staging host, and the container-side module independently refuses
+    unless Railway reports its own environment as "staging"."""
+    if not _RAILWAY_ARGUMENT.match(project_id) or not _RAILWAY_ARGUMENT.match(service):
+        raise ValueError("railway project and service must be plain identifiers")
+    if "staging" not in (urlsplit(api_url).hostname or ""):
+        raise ValueError("fixture verification is only allowed against a staging API origin")
+    railway = shutil.which("railway")
+    if railway is None:
+        raise ValueError("the railway CLI is required for fixture verification")
+
+    def verify(run_prefix: str) -> None:
+        if not _RUN_PREFIX.match(run_prefix):
+            raise FixtureVerificationError("not a smoke run prefix")
+        command = [railway, "ssh", "--project", project_id, "--environment", "staging", "--service", service, "--",
+                   "python", "-m", "app.core.staging_fixture", "verify-email", "--run-prefix", run_prefix]
+        try:
+            done = subprocess.run(command, capture_output=True, text=True, timeout=FIXTURE_TIMEOUT_SECONDS, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise FixtureVerificationError(type(exc).__name__) from None
+        if done.returncode != 0:
+            raise FixtureVerificationError(f"fixture command exited {done.returncode}")
+
+    return verify
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the secret-safe Sprint 019 staging smoke matrix.")
     parser.add_argument("--web-url", required=True, help="Public HTTPS web origin (no path).")
@@ -358,6 +480,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--quote-material", help="Existing staging catalog material for quote verification.")
     parser.add_argument("--quote-thickness", help="Matching existing staging catalog thickness.")
     parser.add_argument("--timeout-seconds", type=float, default=DEFAULT_TIMEOUT_SECONDS, help="Per-request timeout (1-60 seconds).")
+    parser.add_argument("--fixture-verify-railway-project", help="Railway project id: lets the run verify its own synthetic users inside the STAGING API container (environment is fixed to 'staging').")
+    parser.add_argument("--fixture-verify-railway-service", help="Railway staging API service name or id (with --fixture-verify-railway-project).")
     return parser
 
 
@@ -368,8 +492,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--timeout-seconds must be between 1 and 60")
     if bool(args.quote_material) != bool(args.quote_thickness):
         parser.error("--quote-material and --quote-thickness must be supplied together")
+    if bool(args.fixture_verify_railway_project) != bool(args.fixture_verify_railway_service):
+        parser.error("--fixture-verify-railway-project and --fixture-verify-railway-service must be supplied together")
     try:
-        runner = SmokeRunner(args.web_url, args.api_url, allow_restart=args.allow_restart, timeout=args.timeout_seconds, quote_material=args.quote_material, quote_thickness=args.quote_thickness)
+        verifier = railway_fixture_verifier(args.fixture_verify_railway_project, args.fixture_verify_railway_service, args.api_url) if args.fixture_verify_railway_project and not args.dry_run else None
+        runner = SmokeRunner(args.web_url, args.api_url, allow_restart=args.allow_restart, timeout=args.timeout_seconds, quote_material=args.quote_material, quote_thickness=args.quote_thickness, fixture_verifier=verifier)
     except ValueError as exc:
         parser.error(str(exc))
     report = runner.run(dry_run=args.dry_run)

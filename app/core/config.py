@@ -139,6 +139,13 @@ class Settings(BaseSettings):
     # completion/cancellation — the deployed frontend's own origin.
     frontend_base_url: str = "http://localhost:3000"
 
+    # Public origin of this FastAPI service. Marketing unsubscribe links are
+    # consumed outside an authenticated browser session, so they must target
+    # the API's public origin rather than assume that the web frontend proxies
+    # /api/v1 in every deployment topology. The opaque path token is the only
+    # credential included in the URL.
+    public_api_base_url: str = "http://localhost:8000"
+
     # Sprint 038 — transactional email (Resend). Same "ships dark until
     # configured" pattern as openai_api_key/stripe_secret_key above: the
     # app runs fully normally with both unset, and
@@ -204,6 +211,10 @@ class Settings(BaseSettings):
     # workspace is ever guessed.
     platform_sales_tenant_id: str | None = None
 
+    # Dedicated internal boundary for compliance jobs. It is deliberately
+    # unrelated to tenant users or JWTs and defaults to unavailable.
+    internal_compliance_token: str | None = None
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def normalize_cors_allowed_origins(cls, value: object) -> list[str]:
@@ -233,6 +244,16 @@ class Settings(BaseSettings):
         self._validate_production_cors()
         self._validate_production_storage_and_database()
         return self
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        """Whether the interactive API documentation (/docs, /redoc and
+        /openapi.json) is served. It is a development aid: in production it
+        would publish the full route map of a public API, and nothing in the
+        product consumes it. Keyed on APP_ENV, which Railway staging also sets
+        to "production", so staging stops serving it too after its next
+        deployment."""
+        return self.app_env is not AppEnvironment.PRODUCTION
 
     def _validate_production_secrets(self) -> None:
         normalized_jwt_secret = self.jwt_secret_key.strip()

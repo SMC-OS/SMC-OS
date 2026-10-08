@@ -38,7 +38,7 @@ export const SITE_NAME = "GeoCore";
 // rewritten rather than routed around.
 export const SITE_TAGLINE = "The Operating System for Stone & Construction";
 export const SITE_DESCRIPTION =
-  "GeoCore is the operating system for Stone & Construction businesses — run enquiries, quotes, projects, materials, teams, site operations and profitability from one connected platform.";
+  "GeoCore is the operating system for Stone & Construction businesses. Run enquiries, quotes, projects, materials, teams, site operations and profitability from one connected platform.";
 
 /**
  * Whether this deployment should allow indexing. Only the production

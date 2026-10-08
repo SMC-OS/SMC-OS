@@ -10,6 +10,7 @@ import { BrandingCard } from "@/components/settings/BrandingCard";
 import { NotificationsCard } from "@/components/settings/NotificationsCard";
 import { SecurityCard } from "@/components/settings/SecurityCard";
 import { TeamCard } from "@/components/settings/TeamCard";
+import { PrivacyCard } from "@/components/settings/PrivacyCard";
 import { Card, CardContent } from "@/components/ui/Card";
 import { SETTINGS_SECTIONS } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
@@ -133,6 +134,7 @@ function SettingsContent() {
                   {section.key === "billing" && <BillingCard />}
                   {section.key === "notifications" && <NotificationsCard />}
                   {section.key === "security" && <SecurityCard />}
+                  {section.key === "privacy" && <PrivacyCard />}
                 </div>
               )
           )}

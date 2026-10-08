@@ -63,11 +63,16 @@ def create_app(
 ) -> FastAPI:
     """Assemble an app whose runtime initialization runs during lifespan."""
     runtime_settings = settings_override or settings
+    docs_enabled = runtime_settings.api_docs_enabled
     application = FastAPI(
         title="GeoCore",
         version="0.1.0",
         description="AI Operating System",
         lifespan=create_runtime_lifespan(runtime_settings),
+        # None removes the route entirely (a 404), not a login wall.
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
     )
 
     application.add_middleware(

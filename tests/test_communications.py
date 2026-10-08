@@ -27,7 +27,15 @@ from app.communications.templates import render_invitation
 from app.core.config import settings
 from app.database import crud
 from app.database.database import SessionLocal
-from app.database.models import ActivityLog, Communication, EmailSuppression, Subscription, Tenant
+from app.database.models import (
+    ActivityLog,
+    Communication,
+    EmailSuppression,
+    MarketingPreference,
+    MarketingUnsubscribeToken,
+    Subscription,
+    Tenant,
+)
 from app.tenants.models import TenantCreate
 from app.tenants.service import tenant_service
 
@@ -42,6 +50,8 @@ def _cleanup():
             tenant = db.query(Tenant).filter(Tenant.name == name).first()
             if tenant is not None:
                 db.execute(delete(EmailSuppression).where(EmailSuppression.tenant_id == tenant.id))
+                db.execute(delete(MarketingUnsubscribeToken).where(MarketingUnsubscribeToken.tenant_id == tenant.id))
+                db.execute(delete(MarketingPreference).where(MarketingPreference.tenant_id == tenant.id))
                 db.execute(delete(Communication).where(Communication.tenant_id == tenant.id))
                 db.execute(delete(ActivityLog).where(ActivityLog.tenant_id == tenant.id))
                 db.execute(delete(Subscription).where(Subscription.tenant_id == tenant.id))
@@ -194,6 +204,62 @@ class TestDeliveryServiceSend:
         assert row.status == "suppressed"
 
 
+class TestMarketingControls:
+    def _send_marketing(self, db, tenant, provider, *, recipient="customer@example.invalid", dedupe_key="test:marketing"):
+        return DeliveryService(provider=provider).send(
+            db,
+            tenant=tenant,
+            message_type=CommunicationType.REVIEW_REQUEST,
+            recipient=recipient,
+            subject="How was your project?",
+            html="<p>Tell us about it.</p>",
+            text="Tell us about it.",
+            dedupe_key=dedupe_key,
+        )
+
+    def test_marketing_adds_opaque_unsubscribe_headers_and_reusable_footer(self, db, tenant, monkeypatch):
+        monkeypatch.setattr(settings, "public_api_base_url", "https://api.example.test")
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="marketing_1"))
+
+        row = self._send_marketing(db, tenant, provider)
+
+        assert row.status == "sent"
+        message = provider.calls[0]
+        assert message.headers is not None
+        url = message.headers["List-Unsubscribe"].strip("<>")
+        assert url.startswith("https://api.example.test/api/v1/privacy/marketing-unsubscribe/")
+        assert message.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+        assert str(tenant.id) not in url
+        assert "GeoCore OS LTD, Vincent Gardens, NW2 7RP, United Kingdom" in message.text
+        assert "Unsubscribe: https://api.example.test" in message.text
+        assert db.query(MarketingUnsubscribeToken).filter_by(tenant_id=tenant.id).count() == 1
+
+    def test_disabled_marketing_blocks_marketing_but_not_transactional(self, db, tenant):
+        recipient = "preference@example.invalid"
+        db.add(MarketingPreference(id=uuid.uuid4(), tenant_id=tenant.id, email=recipient, enabled=False, source="test"))
+        db.commit()
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="message_1"))
+
+        marketing = self._send_marketing(db, tenant, provider, recipient=recipient, dedupe_key="test:preference-marketing")
+        transactional = _send(db, tenant, DeliveryService(provider=provider), dedupe_key="test:preference-transactional", recipient=recipient)
+
+        assert marketing.status == "suppressed"
+        assert transactional.status == "sent"
+        assert len(provider.calls) == 1
+
+    def test_bounce_suppression_remains_stronger_than_marketing_opt_in(self, db, tenant):
+        recipient = "bounced@example.invalid"
+        crud.create_email_suppression(db, id=uuid.uuid4(), tenant_id=tenant.id, email=recipient, reason="hard_bounce")
+        db.add(MarketingPreference(id=uuid.uuid4(), tenant_id=tenant.id, email=recipient, enabled=True, source="test_opt_in"))
+        db.commit()
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="message_2"))
+
+        row = self._send_marketing(db, tenant, provider, recipient=recipient, dedupe_key="test:bounce-precedence")
+
+        assert row.status == "suppressed"
+        assert provider.calls == []
+
+
 class TestCommunicationHistoryTenantIsolation:
     def test_list_history_never_returns_another_tenants_rows(self, db, tenant):
         other_tenant = tenant_service.create(db, TenantCreate(name=OTHER_TENANT_NAME))
@@ -314,6 +380,14 @@ class TestResendEmailProvider:
             text="hi",
             idempotency_key="tenant:key",
         )
+
+    def test_passes_marketing_unsubscribe_headers_only_when_supplied(self):
+        client = _FakeHttpClient(_FakeHttpResponse(200, {"id": "email_test"}))
+        provider = ResendEmailProvider(http_client=client)
+        message = self._message()
+        result = provider.send(EmailMessage(**{**message.__dict__, "headers": {"List-Unsubscribe": "<https://example.test/u/token>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}}))
+        assert result.outcome == SendOutcome.ACCEPTED
+        assert client.calls[0]["json"]["headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
 
     def test_2xx_is_accepted(self):
         client = _FakeHttpClient(_FakeHttpResponse(200, {"id": "resend_msg_1"}))

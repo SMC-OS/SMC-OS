@@ -21,11 +21,25 @@ export function Nav() {
     <header className="site-header">
       <div className="shell nav-shell">
         <Link className="wordmark" href="/">
+          <span className="wordmark__desktop">
+            <Image
+              className="wordmark__desktop-mark"
+              src="/brand/g-mark.png"
+              alt=""
+              width={56}
+              height={56}
+              priority
+              quality={100}
+            />
+            <span className="wordmark__name">{SITE_NAME}</span>
+            <span className="sr-only">{`, ${SITE_TAGLINE}`}</span>
+          </span>
           <Image
-            src="/brand/horizontal-logo.png"
-            alt={`${SITE_NAME} — ${SITE_TAGLINE}`}
-            width={200}
-            height={49}
+            className="wordmark__mobile"
+            src="/brand/g-mark.png"
+            alt="GeoCore"
+            width={56}
+            height={56}
             priority
             quality={100}
           />
