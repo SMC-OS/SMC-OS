@@ -7,6 +7,9 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    # Normal runs take 5-7 minutes. A hung runner (one e2e job sat 88 minutes
+    # on a browser install) must fail fast instead of blocking the release.
+    timeout-minutes: 25
 
     services:
       postgres:
@@ -47,6 +50,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # normal run: ~1.5 minutes
 
     steps:
       - uses: actions/checkout@v4
@@ -115,6 +119,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30 # normal run: ~9 minutes
 
     services:
       postgres:

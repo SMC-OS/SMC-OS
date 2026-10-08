@@ -1,4 +1,4 @@
-import { expect, request, test } from "@playwright/test";
+import { expect, request, test, type Page } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
 import { grantBillingAccess, startRealTrial } from "./billing-helper";
@@ -20,7 +20,26 @@ function uniqueRunId(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function signUpAndLogIn(page: import("@playwright/test").Page, runId: string) {
+/**
+ * Signs in through the real form. The form is client-rendered, so instead of
+ * waiting for the network to go quiet (a Next dev server's HMR socket can keep
+ * it from ever settling, which timed out CI), wait for the form itself and
+ * fill until the values actually stick, then submit.
+ */
+async function signIn(page: Page, email: string, password: string) {
+  await page.goto("/login");
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible({ timeout: 15_000 });
+  await expect(async () => {
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill(password);
+    await expect(page.getByLabel("Email")).toHaveValue(email);
+    await expect(page.getByLabel("Password")).toHaveValue(password);
+  }).toPass({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
+}
+
+async function signUpAndLogIn(page: Page, runId: string) {
   const ownerEmail = `pytest-e2e-shell-${runId}@example.invalid`;
   const ownerPassword = `Pytest-E2e-Shell-Password-${runId}!`;
 
@@ -40,12 +59,7 @@ async function signUpAndLogIn(page: import("@playwright/test").Page, runId: stri
   // same way any other "not this test's subject" fixture does.
   grantBillingAccess(ownerEmail);
 
-  await page.goto("/login");
-  await page.waitForLoadState("networkidle");
-  await page.getByLabel("Email").fill(ownerEmail);
-  await page.getByLabel("Password").fill(ownerPassword);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
+  await signIn(page, ownerEmail, ownerPassword);
 
   return { api };
 }
@@ -56,9 +70,8 @@ test("geocore_ai_holds_a_conversation_and_never_shows_developer_internals", asyn
   const { api } = await signUpAndLogIn(page, uniqueRunId("ai"));
 
   await page.goto("/ai");
-  await page.waitForLoadState("networkidle");
 
-  await expect(page.getByRole("heading", { name: "GeoCore AI" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "GeoCore AI" })).toBeVisible({ timeout: 15_000 });
   // The old page named its own endpoint and implementation class in
   // product copy. Nothing here may.
   await expect(page.getByText(/BrainManager/i)).toHaveCount(0);
@@ -110,15 +123,9 @@ test("settings_sections_are_navigable_and_billing_has_its_own_place", async ({ p
   // exemption every other test in this file uses.
   startRealTrial(ownerEmail);
 
-  await page.goto("/login");
-  await page.waitForLoadState("networkidle");
-  await page.getByLabel("Email").fill(ownerEmail);
-  await page.getByLabel("Password").fill(ownerPassword);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
+  await signIn(page, ownerEmail, ownerPassword);
 
   await page.goto("/settings");
-  await page.waitForLoadState("networkidle");
 
   const sectionNav = page.getByRole("navigation", { name: "Settings sections" });
   for (const section of [
@@ -129,7 +136,7 @@ test("settings_sections_are_navigable_and_billing_has_its_own_place", async ({ p
     "Notifications",
     "Security",
   ]) {
-    await expect(sectionNav.getByRole("button", { name: section })).toBeVisible();
+    await expect(sectionNav.getByRole("button", { name: section })).toBeVisible({ timeout: 15_000 });
   }
 
   // Billing is a section of its own now, not the fourth card down a
@@ -160,7 +167,6 @@ test("settings_sections_are_navigable_and_billing_has_its_own_place", async ({ p
   // A section is linkable, because it lives in the URL rather than in
   // component state — someone can send a colleague straight to billing.
   await page.goto("/settings?section=billing");
-  await page.waitForLoadState("networkidle");
   // By role: the section's own description paragraph also contains the
   // words "Your plan".
   await expect(page.getByRole("heading", { name: "Your plan" })).toBeVisible({
