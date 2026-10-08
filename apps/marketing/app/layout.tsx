@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 
-import { IS_INDEXABLE, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
+import { IS_INDEXABLE, SEO_LONG_NAME, SEO_NAME, SITE_DESCRIPTION, SITE_TAGLINE, SITE_URL } from "@/lib/site";
 import { ConsentBanner } from "@/components/ConsentBanner";
 
 import "./globals.css";
@@ -15,11 +15,11 @@ const geistSans = Geist({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME}: ${SITE_TAGLINE}`,
-    template: `%s | ${SITE_NAME}`,
+    default: `${SEO_NAME}: ${SITE_TAGLINE}`,
+    template: `%s | ${SEO_NAME}`,
   },
   description: SITE_DESCRIPTION,
-  applicationName: SITE_NAME,
+  applicationName: SEO_NAME,
   alternates: { canonical: "/" },
   manifest: "/manifest.webmanifest",
   icons: {
@@ -30,15 +30,15 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     url: SITE_URL,
-    siteName: SITE_NAME,
-    title: `${SITE_NAME}: ${SITE_TAGLINE}`,
+    siteName: SEO_NAME,
+    title: SEO_LONG_NAME,
     description: SITE_DESCRIPTION,
     locale: "en_GB",
     images: [`${SITE_URL}/brand/og-image.png`],
   },
   twitter: {
     card: "summary_large_image",
-    title: `${SITE_NAME}: ${SITE_TAGLINE}`,
+    title: SEO_LONG_NAME,
     description: SITE_DESCRIPTION,
     images: [`${SITE_URL}/brand/og-image.png`],
   },

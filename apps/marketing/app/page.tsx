@@ -5,13 +5,22 @@ import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
 import { PLANS, SELF_SERVICE_PLANS, TRIAL_DAYS, seatsLabel, shortPlanName } from "@/lib/pricing";
 import { EXAMPLE_WORKFLOWS, TRADES } from "@/lib/trades";
-import { APP_URL, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
+import { APP_URL, SEO_LONG_NAME, SEO_NAME, SITE_DESCRIPTION, SITE_TAGLINE, SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: `${SITE_NAME}: ${SITE_TAGLINE}`,
+  title: `${SEO_NAME}: ${SITE_TAGLINE}`,
   description: SITE_DESCRIPTION,
   alternates: { canonical: "/" },
+  // A page-level openGraph replaces the layout's whole object (Next merges
+  // metadata shallowly), so the fields a social preview needs are restated
+  // here rather than left to disappear.
   openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: SEO_NAME,
+    title: SEO_LONG_NAME,
+    description: SITE_DESCRIPTION,
+    locale: "en_GB",
     images: [`${SITE_URL}/brand/og-image.png`],
   },
 };
@@ -81,7 +90,8 @@ export default function HomePage() {
       {
         "@type": "Organization",
         "@id": `${SITE_URL}/#organization`,
-        name: SITE_NAME,
+        name: SEO_NAME,
+        alternateName: SEO_LONG_NAME,
         url: SITE_URL,
         description: SITE_DESCRIPTION,
         logo: `${SITE_URL}/brand/horizontal-logo.png`,
@@ -90,14 +100,15 @@ export default function HomePage() {
         "@type": "WebSite",
         "@id": `${SITE_URL}/#website`,
         url: SITE_URL,
-        name: SITE_NAME,
+        name: SEO_NAME,
         description: SITE_DESCRIPTION,
         publisher: { "@id": `${SITE_URL}/#organization` },
         inLanguage: "en-GB",
       },
       {
         "@type": "SoftwareApplication",
-        name: SITE_NAME,
+        name: SEO_NAME,
+        alternateName: SEO_LONG_NAME,
         applicationCategory: "BusinessApplication",
         operatingSystem: "Web",
         description: SITE_DESCRIPTION,

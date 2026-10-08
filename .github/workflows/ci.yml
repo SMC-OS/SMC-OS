@@ -114,6 +114,11 @@ jobs:
       - name: Test marketing trade-neutral positioning
         run: pnpm --filter marketing test:positioning
 
+      # Founding 100 launch page: approved offer, CTA hierarchy, no invented
+      # proof, GeoCore OS metadata, indexability and sitemap/footer wiring.
+      - name: Test Founding 100 page contract
+        run: pnpm --filter marketing test:founding-100
+
       - name: Build
         run: pnpm build
 
