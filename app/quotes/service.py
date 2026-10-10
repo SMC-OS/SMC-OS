@@ -26,6 +26,7 @@ from app.quotes.general import (
     price as price_general_quote,
 )
 from app.quotes.models import QuoteRequest
+from app.quotes.pdf import build_line_items
 from app.tenants.service import tenant_service
 from app.trades.catalogue import default_quote_kind
 
@@ -72,6 +73,24 @@ class QuoteRecipientMissingError(Exception):
 # Sprint 036. A tuple, not a set literal inline at the call site, so the
 # lifecycle is stated in one readable place.
 _APPROVABLE_STATUSES = frozenset({"draft", "sent"})
+
+
+def build_handoff_notes(quote) -> str | None:
+    """Snapshot the agreed work for the job team. The linked quote remains
+    authoritative; private project notes are not exposed by the portal.
+    Include line annotations so layout/extras do not vanish at handoff.
+    """
+    sections = []
+    for field, label in [("scope_of_works", "Scope of works"), ("exclusions", "Exclusions"),
+                         ("terms", "Terms"), ("notes", "Internal instructions")]:
+        value = getattr(quote, field, None)
+        if value:
+            sections.append(f"{label}:\n{value}")
+    if getattr(quote, "items", None):
+        descriptions = [row["description"] for row in build_line_items(quote)]
+        sections.append("Agreed quote items:\n" + "\n".join(descriptions))
+    return "\n\n".join(sections) or None
+
 
 
 class QuoteService:
@@ -157,7 +176,7 @@ class QuoteService:
             tenant_id=tenant_id,
             name=name,
             customer_id=quote.customer_id,
-            notes=None,
+            notes=build_handoff_notes(quote),
             status=ProjectStatus.BOOKED.value,
             quote_id=quote.id,
             workflow_template_id=workflow_template_id,
