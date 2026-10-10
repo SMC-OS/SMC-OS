@@ -442,3 +442,22 @@ def test_create_portal_link_activity_not_visible_to_other_tenant(
     )
     events = r.json()
     assert not any(e["description"] == TEST_CUSTOMER_NAME for e in events)
+
+
+def test_portal_includes_general_quote_and_preserves_currency(client, auth_headers, created_portal_link, created_customer):
+    response = client.post("/api/v1/quotes", headers=auth_headers, json={
+        "customer_id": created_customer["id"], "title": "Synthetic construction portal quote",
+        "site_postcode": TEST_QUOTE_POSTCODE,
+        "lines": [{"line_kind": "labour", "description": "Synthetic fitting", "quantity": 1, "unit": "item", "unit_price": 100}],
+    })
+    assert response.status_code == 201, response.text
+    quote = response.json()
+    portal = client.get(f"/api/v1/portal-links/token/{created_portal_link['token']}")
+    assert portal.status_code == 200, portal.text
+    public = next(item for item in portal.json()["quotes"] if item["id"] == quote["id"])
+    assert public["quote_kind"] == "general"
+    assert public["title"] == "Synthetic construction portal quote"
+    assert public["currency"] == quote["currency"]
+    assert public["material"] is None
+    assert public["total"] == quote["total"]
+    assert not ({"tenant_id", "customer_id", "notes"} & public.keys())

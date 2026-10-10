@@ -29,9 +29,12 @@ export interface PortalProjectOut {
  * customer_id or other internal cross-references. */
 export interface PortalQuoteOut {
   id: string;
-  material: string;
-  thickness: string;
-  kitchen_length: number;
+  quote_kind?: "stone" | "general";
+  title?: string | null;
+  currency?: string;
+  material: string | null;
+  thickness: string | null;
+  kitchen_length: number | null;
   price_before_vat: number;
   vat: number;
   total: number;
