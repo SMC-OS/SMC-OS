@@ -51,6 +51,8 @@ def _describe_stone_item(item) -> str:
 
     if item.length_mm is not None and item.width_mm is not None:
         label += f", {item.quantity:g} x {item.length_mm:g}mm x {item.width_mm:g}mm"
+    if getattr(item, "notes", None):
+        label += f". {item.notes}"
     return label
 
 
@@ -95,6 +97,22 @@ def build_line_items(quote) -> list[dict]:
         }
         for item in quote.items
     ]
+
+
+def build_document_fields(quote) -> dict:
+    """Only agreed customer-facing contract fields; never internal notes."""
+    return {
+        "site_address": ", ".join(str(value) for value in [
+            getattr(quote, "site_address_line1", None),
+            getattr(quote, "site_address_line2", None),
+            getattr(quote, "site_city", None),
+            getattr(quote, "site_postcode", None) or getattr(quote, "postcode", None),
+        ] if value),
+        "valid_until": getattr(quote, "valid_until", None),
+        "scope_of_works": getattr(quote, "scope_of_works", None),
+        "exclusions": getattr(quote, "exclusions", None),
+        "terms": getattr(quote, "terms", None),
+    }
 
 
 def _escape(value: str) -> str:
@@ -143,6 +161,17 @@ class PDFGenerator:
             story.append(Paragraph(f"All amounts in {_escape(currency)}", styles["Normal"]))
         story.append(Paragraph(f"Date: {invoice['created_at']:%d %B %Y}", styles["Normal"]))
         story.append(Paragraph(f"Customer: {_escape(invoice['customer'])}", styles["Normal"]))
+        if invoice.get("site_address"):
+            story.append(Paragraph(f"Site: {_escape(str(invoice['site_address']))}", styles["Normal"]))
+        if invoice.get("valid_until"):
+            story.append(Paragraph(f"Valid until: {invoice['valid_until']:%d %B %Y}", styles["Normal"]))
+        for key, label in [("scope_of_works", "Scope of works"), ("exclusions", "Exclusions"), ("terms", "Terms")]:
+            value = invoice.get(key)
+            if value:
+                story.append(Spacer(1, 8))
+                story.append(Paragraph(label, styles["Heading3"]))
+                for line in str(value).splitlines():
+                    story.append(Paragraph(_escape(line) or "<br/>", styles["Normal"]))
         story.append(Spacer(1, 16))
 
         # VAT breakdown table — one row per line item (Sprint 033), then

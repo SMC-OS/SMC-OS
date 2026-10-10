@@ -130,6 +130,7 @@ class CostSummary(BaseModel):
     forecast_cost: float
     cost_data_status: str
     cost_entry_count: int
+    actual_cost_recorded: bool = False
 
 
 class ContractSummary(BaseModel):
@@ -143,6 +144,7 @@ class ContractSummary(BaseModel):
     base_contract_source: str | None
     approved_variations_total: float
     current_contract_value: float | None
+    net_contract_value: float | None = None
 
 
 class ProfitabilitySummary(BaseModel):

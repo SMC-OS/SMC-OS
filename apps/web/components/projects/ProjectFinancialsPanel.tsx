@@ -207,10 +207,10 @@ export function ProjectFinancialsPanel({ projectId }: { projectId: string }) {
             <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
-                  Forecast
+                  Forecast from recorded costs
                 </p>
                 <SummaryRow
-                  label="Gross profit"
+                  label="Gross profit (excl. VAT)"
                   value={
                     profitability.forecast_gross_profit !== null
                       ? formatCurrencyGBP(profitability.forecast_gross_profit)
@@ -228,10 +228,10 @@ export function ProjectFinancialsPanel({ projectId }: { projectId: string }) {
               </div>
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
-                  Actual
+                  Actual to date
                 </p>
                 <SummaryRow
-                  label="Gross profit"
+                  label="Gross profit (excl. VAT)"
                   value={
                     profitability.actual_gross_profit !== null
                       ? formatCurrencyGBP(profitability.actual_gross_profit)

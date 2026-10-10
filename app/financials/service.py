@@ -93,11 +93,13 @@ def build_cost_summary(cost_sums: dict[str, float], entry_count: int, workflow_r
         forecast_cost=forecast,
         cost_data_status=status,
         cost_entry_count=entry_count,
+        actual_cost_recorded="actual" in cost_sums,
     )
 
 
 def build_contract_summary(
-    base_contract_value: float | None, base_contract_source: str | None, approved_variations_total: float
+    base_contract_value: float | None, base_contract_source: str | None, approved_variations_total: float,
+    *, vat_amount: float = 0.0
 ) -> ContractSummary:
     """Current Contract Value = Base Contract + SUM(approved variations),
     always *derived*, never maintained by incrementing a counter (Task
@@ -116,6 +118,7 @@ def build_contract_summary(
         base_contract_source=base_contract_source,
         approved_variations_total=approved_variations_total,
         current_contract_value=current,
+        net_contract_value=round(current - vat_amount, 2) if current is not None else None,
     )
 
 
@@ -127,14 +130,16 @@ def build_profitability_summary(contract: ContractSummary, costs: CostSummary) -
     Actual and forecast are computed independently and never conflated —
     an `actual_gross_margin_percent` reflects only `actual_cost`, even
     while budgeted/committed rows exist for the same project."""
-    current = contract.current_contract_value
+    # Contract display remains VAT-inclusive; profitability compares net
+    # revenue to the cost ledger, whose unit_cost/total_cost exclude VAT.
+    current = contract.net_contract_value
     has_cost_data = costs.cost_entry_count > 0
     can_compute = current is not None and current > 0 and has_cost_data
 
     forecast_profit = round(current - costs.forecast_cost, 2) if can_compute else None
     forecast_margin = round(forecast_profit / current * 100, 2) if can_compute else None
-    actual_profit = round(current - costs.actual_cost, 2) if can_compute else None
-    actual_margin = round(actual_profit / current * 100, 2) if can_compute else None
+    actual_profit = round(current - costs.actual_cost, 2) if can_compute and costs.actual_cost_recorded else None
+    actual_margin = round(actual_profit / current * 100, 2) if actual_profit is not None else None
 
     margin_risk = forecast_margin is not None and forecast_margin < MARGIN_RISK_THRESHOLD_PERCENT
 
@@ -163,7 +168,8 @@ class FinancialsService:
         base_contract_value, base_contract_source = resolve_base_contract(project, quote)
         approved_variations_total = crud.sum_approved_variations_total(db, project_id, tenant_id)
         contract = build_contract_summary(
-            base_contract_value, base_contract_source, approved_variations_total
+            base_contract_value, base_contract_source, approved_variations_total,
+            vat_amount=(quote.vat or 0.0) + crud.sum_approved_variations_vat(db, project_id, tenant_id) if quote is not None else 0.0,
         )
 
         cost_sums = crud.sum_cost_by_state(db, project_id, tenant_id)

@@ -2504,6 +2504,17 @@ def sum_approved_variations_total(db: Session, project_id: uuid.UUID, tenant_id:
     return float(total) if total is not None else 0.0
 
 
+
+def sum_approved_variations_vat(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> float:
+    """Only approved, same-tenant variation VAT contributes to contract VAT."""
+    value = db.query(func.sum(Variation.vat)).filter(
+        Variation.project_id == project_id,
+        Variation.tenant_id == tenant_id,
+        Variation.status == "approved",
+    ).scalar()
+    return float(value) if value is not None else 0.0
+
+
 def sum_approved_variations_total_for_tenant(db: Session, tenant_id: uuid.UUID) -> float:
     total = (
         db.query(func.sum(Variation.total))
