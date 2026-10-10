@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from app.catalogue.models import CustomMaterialCreate
 
 # Sprint 033 (Workstream C). Plain strings (no native enum), same
 # convention as Quote.status etc. — validated here at the Pydantic
@@ -28,6 +29,7 @@ class QuoteItemRequest(BaseModel):
     unit_input: str = "mm"
 
     notes: str | None = None
+    custom_material: CustomMaterialCreate | None = None
 
     # Sprint 042 (GeoCore Premium OS Plan 03) — Stone Quote Engine V2.
     # Both optional and additive: when `catalogue_surface_id` is set,
@@ -40,6 +42,15 @@ class QuoteItemRequest(BaseModel):
     # existing free-text path changes when this is omitted.
     catalogue_surface_id: uuid.UUID | None = None
     catalogue_variant_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _custom_is_quote_only(self):
+        if self.custom_material is not None:
+            if self.custom_material.save_to_catalogue:
+                raise ValueError("Inline custom material cannot save to the catalogue")
+            if self.catalogue_surface_id is not None or self.catalogue_variant_id is not None:
+                raise ValueError("Choose either a catalogue material or an inline custom material")
+        return self
 
     @field_validator("item_type")
     @classmethod

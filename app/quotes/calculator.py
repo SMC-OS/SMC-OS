@@ -69,7 +69,31 @@ class QuoteCalculator:
         price_before_vat = 0.0
 
         for item in quote.items:
-            if getattr(item, "catalogue_surface_id", None) is not None:
+            custom = getattr(item, "custom_material", None)
+            if custom is not None:
+                if tenant_id is None:
+                    raise KeyError("Quote-only custom materials require an authenticated workspace")
+                price_per_slab = resolve_price_per_slab(SimpleNamespace(
+                    selling_price_per_slab=custom.selling_price_per_slab,
+                    buy_cost_per_slab=custom.buy_cost_per_slab,
+                    default_markup_percent=custom.default_markup_percent,
+                    target_margin_percent=None,
+                ))
+                if price_per_slab is None:
+                    raise CataloguePriceMissingError(custom.canonical_name)
+                variant = custom.variant
+                slab_size = f"{variant.slab_length_mm:g}x{variant.slab_width_mm:g}" if variant.slab_length_mm and variant.slab_width_mm else None
+                adapter = SimpleNamespace(slab_size=slab_size)
+                snapshot = {
+                    "source": "quote_custom", "canonical_name": custom.canonical_name,
+                    "supplier_name": custom.supplier_name, "manufacturer_name": custom.manufacturer_name,
+                    "material_family": custom.material_family, "thickness_mm": variant.thickness_mm,
+                    "finish": variant.finish, "slab_size": slab_size,
+                    "buy_cost_per_slab": custom.buy_cost_per_slab,
+                    "selling_price_per_slab": price_per_slab,
+                    "default_markup_percent": custom.default_markup_percent,
+                }
+            elif getattr(item, "catalogue_surface_id", None) is not None:
                 price_per_slab, snapshot = self._resolve_catalogue_item(db, item, tenant_id)
                 adapter = SimpleNamespace(slab_size=snapshot["slab_size"])
             else:
@@ -93,7 +117,7 @@ class QuoteCalculator:
             item_results.append(
                 {
                     "item_type": item.item_type,
-                    "material": item.material,
+                    "material": custom.canonical_name if custom is not None else item.material,
                     "thickness": item.thickness,
                     "quantity": item.quantity,
                     "length_mm": item.length_mm,

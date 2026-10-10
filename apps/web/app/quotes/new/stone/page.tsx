@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
@@ -13,6 +13,8 @@ import { ExtrasPicker } from "@/components/quotes/ExtrasPicker";
 import { LayoutPicker } from "@/components/quotes/LayoutPicker";
 import { MaterialCatalogueSearch } from "@/components/quotes/MaterialCatalogueSearch";
 import { ApiError, api } from "@/lib/api";
+import { readQuoteCustomMaterial } from "@/lib/quote-custom-material";
+import type { CustomMaterialInput } from "@/types/catalogue";
 import { formatCurrencyGBP } from "@/lib/utils";
 import {
   EXTRA_LABELS,
@@ -46,6 +48,7 @@ interface ItemRow {
   catalogue_variant_id: string | null;
   // Post-release remediation §4 — optional, descriptive-only fields.
   // Recorded on the submitted item's `notes`; never affect pricing.
+  custom_material: CustomMaterialInput | null;
   layout: LayoutOption | "";
   extras: ExtraOption[];
 }
@@ -67,6 +70,7 @@ function blankItem(overrides: Partial<ItemRow> = {}): ItemRow {
     width_mm: "650",
     catalogue_surface_id: null,
     catalogue_variant_id: null,
+    custom_material: null,
     layout: "",
     extras: [],
     ...overrides,
@@ -98,21 +102,53 @@ function draftToRow(draft: AIQuoteItemDraft): ItemRow {
 export default function NewQuotePage() {
   return (
     <Suspense fallback={null}>
-      <NewQuotePageInner />
+      <NewQuotePageEntry />
     </Suspense>
   );
 }
 
-function NewQuotePageInner() {
-  const { isAuthenticated } = useAuth();
+// Resolve browser draft data before mounting the editor. No post-mount
+// setState overwrites the user's edits, and SSR never reads tab storage.
+const subscribeHydration = () => () => {};
+function NewQuotePageEntry() {
   const searchParams = useSearchParams();
+  const ready = useSyncExternalStore(subscribeHydration, () => true, () => false);
+  if (!ready) return <p role="status">Loading quote editor…</p>;
+  let initialItem: Partial<ItemRow> = {};
+  let initialError: string | null = null;
+  const customId = searchParams.get("custom_material_id");
+  if (customId) {
+    try {
+      const custom = readQuoteCustomMaterial(customId);
+      initialItem = {
+        material: custom.canonical_name,
+        thickness: custom.variant?.thickness_mm ? `${custom.variant.thickness_mm}mm` : "20mm",
+        custom_material: custom,
+      };
+    } catch (err) {
+      initialError = err instanceof Error ? err.message : "This custom material draft could not be loaded.";
+    }
+  } else if (searchParams.get("catalogue_surface_id")) {
+    initialItem = {
+      catalogue_surface_id: searchParams.get("catalogue_surface_id"),
+      catalogue_variant_id: searchParams.get("catalogue_variant_id"),
+      material: searchParams.get("material") ?? MATERIAL_OPTIONS[0],
+      thickness: searchParams.get("thickness") ?? THICKNESS_OPTIONS[0],
+    };
+  }
+  return <NewQuotePageInner key={searchParams.toString()} initialItem={initialItem} initialError={initialError} />;
+}
+
+function NewQuotePageInner({ initialItem, initialError }: { initialItem: Partial<ItemRow>; initialError: string | null }) {
+  const { isAuthenticated } = useAuth();
   const [customer, setCustomer] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [postcode, setPostcode] = useState("");
-  const [items, setItems] = useState<ItemRow[]>([blankItem()]);
+  const [items, setItems] = useState<ItemRow[]>(() => [blankItem(initialItem)]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const customMaterialError = initialError;
   const [result, setResult] = useState<QuoteResult | null>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -129,31 +165,6 @@ function NewQuotePageInner() {
     if (!isAuthenticated) return;
     api.getCustomers().then(setCustomers).catch(() => {});
   }, [isAuthenticated]);
-
-  // Sprint 042 (GeoCore Premium OS Plan 03), Task 14 — arriving here from
-  // /catalogue's "Use in a stone quote" pre-fills the first item with the
-  // chosen surface/variant rather than requiring it be re-typed. Runs
-  // once on mount only: it seeds the initial blank row, it never fights
-  // the user's own edits afterwards.
-  useEffect(() => {
-    const surfaceId = searchParams.get("catalogue_surface_id");
-    if (!surfaceId) return;
-    const variantId = searchParams.get("catalogue_variant_id");
-    const material = searchParams.get("material");
-    const thickness = searchParams.get("thickness");
-    // One-time sync from the URL on mount — same justified pattern as
-    // AuthProvider's mount effect.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setItems([
-      blankItem({
-        catalogue_surface_id: surfaceId,
-        catalogue_variant_id: variantId,
-        material: material ?? MATERIAL_OPTIONS[0],
-        thickness: thickness ?? THICKNESS_OPTIONS[0],
-      }),
-    ]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   function handleCustomerSelect(id: string) {
     const selected = customers.find((c) => c.id === id);
@@ -212,6 +223,7 @@ function NewQuotePageInner() {
           length_mm: Number(row.length_mm) || 0,
           width_mm: Number(row.width_mm) || 650,
           unit_input: "mm",
+          custom_material: row.custom_material,
           catalogue_surface_id: row.catalogue_surface_id,
           catalogue_variant_id: row.catalogue_variant_id,
           notes: composeItemNotes(row),
@@ -269,6 +281,13 @@ function NewQuotePageInner() {
       setDownloading(false);
     }
   }
+
+  if (customMaterialError) return (
+    <Card><CardContent className="py-6">
+      <p role="alert">{customMaterialError}</p>
+      <Link href="/catalogue" className="mt-4 inline-block underline">Return to the Catalogue</Link>
+    </CardContent></Card>
+  );
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -518,7 +537,7 @@ function NewQuotePageInner() {
                     </Select>
                   </Field>
 
-                  {row.catalogue_surface_id ? (
+                  {row.catalogue_surface_id || row.custom_material ? (
                     <Field label="Material" htmlFor={`${row.key}-material`}>
                       <div className="flex h-10 items-center justify-between gap-2 rounded-lg border border-border bg-surface-hover px-3 text-sm text-foreground">
                         <span className="truncate" id={`${row.key}-material`}>
@@ -529,7 +548,8 @@ function NewQuotePageInner() {
                           className="tap-link shrink-0 text-xs text-accent hover:underline"
                           onClick={() =>
                             updateItem(row.key, {
-                              catalogue_surface_id: null,
+                              custom_material: null,
+                            catalogue_surface_id: null,
                               catalogue_variant_id: null,
                               material: MATERIAL_OPTIONS[0],
                             })
@@ -558,7 +578,7 @@ function NewQuotePageInner() {
                   )}
 
                   <Field label="Thickness" htmlFor={`${row.key}-thickness`}>
-                    {row.catalogue_surface_id ? (
+                    {row.catalogue_surface_id || row.custom_material ? (
                       <div className="flex h-10 items-center rounded-lg border border-border bg-surface-hover px-3 text-sm text-foreground">
                         {row.thickness}
                       </div>
