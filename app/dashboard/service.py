@@ -14,6 +14,7 @@ from app.dashboard.models import (
     QuotedValue,
     SiteVisitCounts,
 )
+from app.money import totals_by_currency
 from app.database import crud
 from app.financials.service import financials_service
 from app.projects.models import ProjectStatus
@@ -29,21 +30,28 @@ def _build_financial_signals(db: Session, tenant_id: uuid.UUID) -> FinancialSign
     Scoped to projects with a real base contract only — an enquiry with
     no quote yet has nothing meaningful to report."""
     projects = crud.list_projects_with_a_base_contract(db, tenant_id)
-    approved_contract_value = 0.0
+    currency = crud.tenant_currency(db, tenant_id)
+    contract_rows = []
     margin_risk_count = 0
     missing_cost_data_count = 0
     for project in projects:
         summary = financials_service.get_summary(db, project.id, tenant_id)
         if summary.contract.current_contract_value is not None:
-            approved_contract_value += summary.contract.current_contract_value
+            quote = crud.get_quote_by_id(db, project.quote_id, tenant_id)
+            contract_rows.append((quote.currency if quote is not None else currency, summary.contract.current_contract_value))
         if summary.profitability.margin_risk:
             margin_risk_count += 1
         if summary.costs.cost_data_status == "none":
             missing_cost_data_count += 1
 
+    contract_totals = totals_by_currency(contract_rows)
+    variation_totals = crud.approved_variations_by_currency(db, tenant_id)
     return FinancialSignals(
-        approved_contract_value=round(approved_contract_value, 2),
-        approved_variations_value=crud.sum_approved_variations_total_for_tenant(db, tenant_id),
+        currency=currency,
+        approved_contract_value_by_currency=contract_totals,
+        approved_variations_value_by_currency=variation_totals,
+        approved_contract_value=contract_totals.get(currency, 0.0),
+        approved_variations_value=variation_totals.get(currency, 0.0),
         projects_with_margin_risk=margin_risk_count,
         projects_with_missing_cost_data=missing_cost_data_count,
         projects_with_a_contract=len(projects),
@@ -108,6 +116,9 @@ def build_command_centre(db: Session, tenant_id: uuid.UUID) -> CommandCentreResp
             handed_off=crud.count_handed_off_projects(db, tenant_id),
         ),
         value=QuotedValue(
+            currency=crud.tenant_currency(db, tenant_id),
+            quoted_value_by_currency=crud.quote_values_by_currency(db, tenant_id),
+            approved_quoted_value_by_currency=crud.quote_values_by_currency(db, tenant_id, "approved"),
             quoted_value=crud.sum_quotes_revenue(db, tenant_id),
             approved_quoted_value=crud.sum_approved_quotes_value(db, tenant_id),
         ),

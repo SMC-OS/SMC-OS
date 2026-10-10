@@ -504,12 +504,17 @@ def test_empty_tenant_gets_all_zeros_not_nulls_or_500(client):
                 "cancelled": 0,
             },
             "quotes": {"draft": 0, "approved": 0, "handed_off": 0},
-            "value": {"quoted_value": 0.0, "approved_quoted_value": 0.0},
+            "value": {"quoted_value": 0.0, "approved_quoted_value": 0.0,
+                      "currency": "GBP", "quoted_value_by_currency": {},
+                      "approved_quoted_value_by_currency": {}},
             "site_visits": {"scheduled": 0, "completed": 0, "cancelled": 0},
             "follow_up": {"unread_follow_ups": 0},
             # GeoCore Premium OS Plan 04 (Sprint 043), Task 20 — additive,
             # same never-null empty-state contract as everything above.
             "financials": {
+                "currency": "GBP",
+                "approved_contract_value_by_currency": {},
+                "approved_variations_value_by_currency": {},
                 "approved_contract_value": 0.0,
                 "approved_variations_value": 0.0,
                 "projects_with_margin_risk": 0,

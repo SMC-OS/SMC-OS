@@ -6,7 +6,7 @@ import { AlertCircleIcon } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useCommandCentre } from "@/hooks/useCommandCentre";
-import { formatCurrencyGBP } from "@/lib/utils";
+import { CurrencyTotals } from "@/components/ui/CurrencyTotals";
 import { WORKFLOW_ROLES, WORKFLOW_ROLE_LABELS } from "@/types/workflow";
 
 // GeoCore Premium OS Plan 01 (Sprint 040, Task 9) — the Pipeline card
@@ -122,10 +122,11 @@ export function CommandCentrePanel() {
             <CountRow label="Approved" value={data.quotes.approved} />
             <CountRow label="Handed off" value={data.quotes.handed_off} />
             <div className="mt-3 border-t border-border pt-3">
-              <CountRowValue label="Quoted value" value={data.value.quoted_value} />
+              <CountRowValue label="Quoted value" value={data.value.quoted_value} currency={data.value.currency} amounts={data.value.quoted_value_by_currency} />
               <CountRowValue
                 label="Approved quote value"
                 value={data.value.approved_quoted_value}
+                currency={data.value.currency} amounts={data.value.approved_quoted_value_by_currency}
               />
             </div>
           </CardContent>
@@ -171,10 +172,12 @@ export function CommandCentrePanel() {
             <CountRowValue
               label="Approved contract value"
               value={data.financials.approved_contract_value}
+              currency={data.financials.currency} amounts={data.financials.approved_contract_value_by_currency}
             />
             <CountRowValue
               label="Approved variations value"
               value={data.financials.approved_variations_value}
+              currency={data.financials.currency} amounts={data.financials.approved_variations_value_by_currency}
             />
             <div className="mt-3 border-t border-border pt-3">
               <CountRow
@@ -226,11 +229,11 @@ export function CommandCentrePanel() {
   );
 }
 
-function CountRowValue({ label, value }: { label: string; value: number }) {
+function CountRowValue({ label, value, currency, amounts }: { label: string; value: number; currency?: string; amounts?: Record<string, number> }) {
   return (
     <div className="flex items-center justify-between py-1 text-sm">
       <span className="text-muted">{label}</span>
-      <span className="font-medium text-foreground">{formatCurrencyGBP(value)}</span>
+      <span className="font-medium text-foreground"><CurrencyTotals amounts={amounts} value={value} currency={currency} /></span>
     </div>
   );
 }

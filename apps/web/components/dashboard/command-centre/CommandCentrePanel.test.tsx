@@ -132,6 +132,24 @@ afterEach(() => {
 });
 
 describe("CommandCentrePanel — business command centre (Sprint 025)", () => {
+  it("renders stored currency groups from the API without relabelling them", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+      ...FULL_STATS,
+      value: { currency: "EUR", quoted_value: 200, approved_quoted_value: 200,
+        quoted_value_by_currency: { GBP: 100, EUR: 200 },
+        approved_quoted_value_by_currency: { GBP: 100, EUR: 200 } },
+      financials: { ...FULL_STATS.financials, currency: "EUR",
+        approved_contract_value: 210, approved_variations_value: 10,
+        approved_contract_value_by_currency: { GBP: 110, EUR: 210 },
+        approved_variations_value_by_currency: { GBP: 10, EUR: 10 } },
+    })));
+    render(<CommandCentrePanel />);
+    await screen.findByText("£110");
+    expect(screen.getByText("€210")).toBeInTheDocument();
+    expect(screen.getAllByText("£100")).toHaveLength(2);
+    expect(screen.getAllByText("€200")).toHaveLength(2);
+    expect(screen.queryByText("€300")).not.toBeInTheDocument();
+  });
   it("renders_real_metrics_from_the_command_centre_endpoint", async () => {
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
