@@ -45,6 +45,23 @@ export const ACTIVITY_ICON: Record<ActivityType, typeof BotIcon> = {
   password_reset_requested: InfoIcon,
   password_changed: CheckCircleIcon,
   demo_request_received: UsersIcon,
+  project_cost_added: FileTextIcon,
+  project_cost_edited: FileTextIcon,
+  project_cost_deleted: AlertTriangleIcon,
+  variation_created: FileTextIcon,
+  variation_sent: FileTextIcon,
+  variation_approved: CheckCircleIcon,
+  variation_rejected: AlertTriangleIcon,
+  variation_voided: AlertTriangleIcon,
+  material_requirement_created: FileTextIcon,
+  material_requirement_edited: FileTextIcon,
+  material_requirement_cancelled: AlertTriangleIcon,
+  purchase_order_created: FileTextIcon,
+  purchase_order_approved: CheckCircleIcon,
+  purchase_order_ordered: FileTextIcon,
+  purchase_order_cancelled: AlertTriangleIcon,
+  purchase_order_receipt_recorded: FileTextIcon,
+  material_allocated: CheckCircleIcon,
 };
 
 export const ACTIVITY_TONE: Record<ActivityType, string> = {
@@ -77,4 +94,31 @@ export const ACTIVITY_TONE: Record<ActivityType, string> = {
   password_reset_requested: "bg-info/10 text-info",
   password_changed: "bg-success/10 text-success",
   demo_request_received: "bg-info/10 text-info",
+  project_cost_added: "bg-info/10 text-info",
+  project_cost_edited: "bg-info/10 text-info",
+  project_cost_deleted: "bg-info/10 text-info",
+  variation_created: "bg-info/10 text-info",
+  variation_sent: "bg-info/10 text-info",
+  variation_approved: "bg-info/10 text-info",
+  variation_rejected: "bg-info/10 text-info",
+  variation_voided: "bg-info/10 text-info",
+  material_requirement_created: "bg-info/10 text-info",
+  material_requirement_edited: "bg-info/10 text-info",
+  material_requirement_cancelled: "bg-info/10 text-info",
+  purchase_order_created: "bg-info/10 text-info",
+  purchase_order_approved: "bg-info/10 text-info",
+  purchase_order_ordered: "bg-info/10 text-info",
+  purchase_order_cancelled: "bg-info/10 text-info",
+  purchase_order_receipt_recorded: "bg-info/10 text-info",
+  material_allocated: "bg-info/10 text-info",
 };
+
+// Runtime responses can advance before the web bundle during a rolling release.
+// Keep the event itself visible; an unfamiliar category gets neutral styling.
+export function activityPresentation(type: string) {
+  const known = Object.hasOwn(ACTIVITY_ICON, type);
+  return {
+    Icon: known ? ACTIVITY_ICON[type as ActivityType] : InfoIcon,
+    tone: known ? ACTIVITY_TONE[type as ActivityType] : "bg-surface-hover text-muted",
+  };
+}

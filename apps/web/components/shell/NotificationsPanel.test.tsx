@@ -172,3 +172,24 @@ describe("NotificationsPanel — follow-up automation (Sprint 024)", () => {
     );
   });
 });
+
+// Stone-Hard DEF011: automation notifications emit customer and quote sources.
+describe("notification source contract", () => {
+  it.each(["customer", "quote"])("opens a %s automation notification", async (source) => {
+    currentNotifications = [makeNotification({ source_type: source, source_id: "entity-1" })];
+    render(<NotificationsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: /notifications/i }));
+    await userEvent.click(await screen.findByText("Enquiry needs follow-up"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith(`/${source}s/entity-1`));
+  });
+  it.each(["variation", "cost_entry", "future_source", "__proto__", "constructor"])("keeps %s notifications readable without inventing an entity URL", async (source) => {
+    currentNotifications = [makeNotification({ source_type: source, source_id: "entity-1" })];
+    render(<NotificationsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: /notifications/i }));
+    await userEvent.click(await screen.findByText("Enquiry needs follow-up"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/notifications/notification-1/read"), expect.objectContaining({ method: "PATCH" })
+    ));
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+});

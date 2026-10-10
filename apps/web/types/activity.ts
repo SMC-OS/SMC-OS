@@ -36,7 +36,24 @@ export type ActivityType =
   | "password_reset_requested"
   | "password_changed"
   // Phase B — a website demo request recorded in GeoCore's sales workspace.
-  | "demo_request_received";
+  | "demo_request_received"
+  | "project_cost_added"
+  | "project_cost_edited"
+  | "project_cost_deleted"
+  | "variation_created"
+  | "variation_sent"
+  | "variation_approved"
+  | "variation_rejected"
+  | "variation_voided"
+  | "material_requirement_created"
+  | "material_requirement_edited"
+  | "material_requirement_cancelled"
+  | "purchase_order_created"
+  | "purchase_order_approved"
+  | "purchase_order_ordered"
+  | "purchase_order_cancelled"
+  | "purchase_order_receipt_recorded"
+  | "material_allocated";
 
 export interface ActivityEvent {
   id: string;
