@@ -29,13 +29,16 @@ export function ProjectForm({
   submitLabel,
   initialCustomerId,
   onSubmit,
+  currency: projectCurrency,
 }: {
   initial?: Partial<ProjectCreate>;
   submitLabel: string;
   initialCustomerId?: string;
   onSubmit: (values: ProjectCreate) => Promise<void>;
+  currency?: string;
 }) {
-  const { currency } = useWorkspace();
+  const { currency: workspaceCurrency } = useWorkspace();
+  const currency = projectCurrency ?? workspaceCurrency;
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
 

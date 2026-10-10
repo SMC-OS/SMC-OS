@@ -220,6 +220,8 @@ class TestMarketingControls:
     def test_marketing_adds_opaque_unsubscribe_headers_and_reusable_footer(self, db, tenant, monkeypatch):
         monkeypatch.setattr(settings, "public_api_base_url", "https://api.example.test")
         provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="marketing_1"))
+        db.add(MarketingPreference(id=uuid.uuid4(), tenant_id=tenant.id, email="customer@example.invalid", enabled=True, source="test_explicit_opt_in"))
+        db.commit()
 
         row = self._send_marketing(db, tenant, provider)
 
@@ -233,6 +235,24 @@ class TestMarketingControls:
         assert "GeoCore OS LTD, Vincent Gardens, NW2 7RP, United Kingdom" in message.text
         assert "Unsubscribe: https://api.example.test" in message.text
         assert db.query(MarketingUnsubscribeToken).filter_by(tenant_id=tenant.id).count() == 1
+
+    def test_absent_marketing_consent_blocks_provider_but_not_transactional(self, db, tenant):
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="transactional_only"))
+        marketing = self._send_marketing(db, tenant, provider, dedupe_key="test:no-consent")
+        transactional = _send(db, tenant, DeliveryService(provider=provider), dedupe_key="test:no-consent-transactional")
+        assert marketing.status == "suppressed"
+        assert transactional.status == "sent"
+        assert len(provider.calls) == 1
+        assert db.query(MarketingUnsubscribeToken).filter_by(tenant_id=tenant.id).count() == 0
+
+    def test_another_tenants_opt_in_does_not_authorize_marketing(self, db, tenant):
+        other = tenant_service.create(db, TenantCreate(name=OTHER_TENANT_NAME))
+        db.add(MarketingPreference(id=uuid.uuid4(), tenant_id=other.id, email="customer@example.invalid", enabled=True, source="test_other_tenant_opt_in"))
+        db.commit()
+        provider = FakeProvider(SendResult(outcome=SendOutcome.ACCEPTED, provider_message_id="must_not_send"))
+        row = self._send_marketing(db, tenant, provider, dedupe_key="test:foreign-opt-in")
+        assert row.status == "suppressed"
+        assert provider.calls == []
 
     def test_disabled_marketing_blocks_marketing_but_not_transactional(self, db, tenant):
         recipient = "preference@example.invalid"

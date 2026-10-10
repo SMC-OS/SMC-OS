@@ -38,7 +38,7 @@ from app.portal.service import (
     PortalLinkNotFoundError,
     portal_service,
 )
-from app.quotes.pdf import PDFGenerator, build_line_items
+from app.quotes.pdf import PDFGenerator, build_line_items, build_document_fields
 from app.tenants import identity as tenant_identity
 from app.tenants.service import tenant_service
 
@@ -126,6 +126,7 @@ def download_portal_invoice(token: str, quote_id: uuid.UUID, db: Session = Depen
             # (there is no authenticated user on a portal route).
             "company": tenant_identity.resolve(tenant_service.get(db, quote.tenant_id)),
             "line_items": build_line_items(quote),
+            **build_document_fields(quote),
             "price_before_vat": quote.price_before_vat,
             "vat": quote.vat,
             "total": quote.total,

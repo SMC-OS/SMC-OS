@@ -10,6 +10,8 @@ import { useClickOutside } from "@/hooks/useClickOutside";
 
 export function UserProfileMenu() {
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, () => setOpen(false));
   const router = useRouter();
@@ -21,10 +23,18 @@ export function UserProfileMenu() {
   const displayRole = role ?? "";
   const displayTenant = tenantName ?? "";
 
-  function handleSignOut() {
-    logout();
-    setOpen(false);
-    router.push("/login");
+  async function handleSignOut() {
+    setSigningOut(true);
+    setLogoutError(null);
+    try {
+      await logout();
+      setOpen(false);
+      router.push("/login");
+    } catch {
+      setLogoutError("Could not sign out. Check your connection and try again.");
+    } finally {
+      setSigningOut(false);
+    }
   }
 
   return (
@@ -74,11 +84,13 @@ export function UserProfileMenu() {
           <button
             type="button"
             onClick={handleSignOut}
+            disabled={signingOut}
             className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground hover:bg-surface-hover"
           >
             <LogOutIcon className="h-4 w-4" />
-            Sign out
+            {signingOut ? "Signing out…" : "Sign out"}
           </button>
+          {logoutError && <p role="alert" className="px-2.5 py-2 text-xs text-danger">{logoutError}</p>}
         </div>
       )}
     </div>

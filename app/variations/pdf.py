@@ -59,7 +59,9 @@ def build_variation_pdf(variation, items, *, project, customer, tenant) -> bytes
         story.append(Paragraph(_escape(variation.description), styles["Normal"]))
     story.append(Spacer(1, 16))
 
-    symbol = _CURRENCY_SYMBOLS.get((tenant.currency if tenant is not None else None) or "GBP", "")
+    currency = getattr(project, "currency", None) or (tenant.currency if tenant is not None else None) or "GBP"
+    symbol = _CURRENCY_SYMBOLS.get(currency, currency + " ")
+    story.append(Paragraph(f"Currency: {_escape(currency)}", styles["Normal"]))
 
     def money(amount: float) -> str:
         return f"{symbol}{amount:,.2f}"

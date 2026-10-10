@@ -8,7 +8,6 @@ import { CheckCircleIcon } from "@/components/ui/icons";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 import { ApiError, api } from "@/lib/api";
-import { setToken } from "@/lib/auth-storage";
 import { passwordPolicyError } from "@/lib/passwordPolicy";
 
 type Errors = { current?: string; next?: string; confirm?: string; form?: string };
@@ -51,7 +50,6 @@ export function ChangePasswordCard() {
     setSubmitting(true);
     try {
       const response = await api.changePassword(current, next);
-      setToken(response.access_token);
       setCurrent("");
       setNext("");
       setConfirm("");

@@ -1,16 +1,9 @@
-/**
- * Sprint 034 (Phase 2) — the SIMO OS → GeoCore rebrand renamed three
- * localStorage keys that already exist in real browsers.
- *
- * The one that matters is the auth token. If `getToken()` stopped finding
- * the JWT sitting under the old key, the rebrand deploy would log out every
- * signed-in user at once — a self-inflicted outage that looks exactly like
- * a broken auth system. These tests are the guard against that.
- */
+/** Theme rebrand migration stays compatible. SEC001 deliberately retires
+ * both historical bearer stores: browser authentication is now HttpOnly. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearToken, getToken, setToken } from "@/lib/auth-storage";
+import { clearToken, clearLegacyTokens, getToken, setToken } from "@/lib/auth-storage";
 import {
   LEGACY_THEME_KEY,
   LEGACY_TOKEN_KEY,
@@ -20,6 +13,7 @@ import {
 } from "@/lib/storage-keys";
 
 beforeEach(() => {
+  clearToken();
   window.localStorage.clear();
 });
 
@@ -73,13 +67,14 @@ describe("readMigratedValue", () => {
   });
 });
 
-describe("auth token across the rebrand", () => {
-  it("a_user_signed_in_before_the_rebrand_stays_signed_in", () => {
+describe("retired browser bearer stores", () => {
+  it("legacy_browser_bearers_are_discarded_and_never_restored", () => {
     // Exactly the state a real browser is in at deploy time.
     window.localStorage.setItem(LEGACY_TOKEN_KEY, "pre-rebrand-jwt");
 
-    expect(getToken()).toBe("pre-rebrand-jwt");
-    expect(window.localStorage.getItem(TOKEN_KEY)).toBe("pre-rebrand-jwt");
+    clearLegacyTokens();
+    expect(getToken()).toBeNull();
+    expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(window.localStorage.getItem(LEGACY_TOKEN_KEY)).toBeNull();
   });
 
@@ -96,10 +91,11 @@ describe("auth token across the rebrand", () => {
     expect(window.localStorage.getItem(LEGACY_TOKEN_KEY)).toBeNull();
   });
 
-  it("writes_new_tokens_under_the_new_key_only", () => {
+  it("explicit_memory_bearers_never_write_browser_storage", () => {
     setToken("fresh-jwt");
 
-    expect(window.localStorage.getItem(TOKEN_KEY)).toBe("fresh-jwt");
+    expect(getToken()).toBe("fresh-jwt");
+    expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(window.localStorage.getItem(LEGACY_TOKEN_KEY)).toBeNull();
   });
 });

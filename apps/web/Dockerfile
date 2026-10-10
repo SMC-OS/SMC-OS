@@ -16,8 +16,10 @@ COPY . ./
 RUN pnpm install --frozen-lockfile
 
 ARG NEXT_PUBLIC_API_URL
+ARG API_PROXY_URL
 ENV APP_ENV=production \
-    NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+    NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    API_PROXY_URL=$API_PROXY_URL
 
 RUN pnpm --filter web build
 

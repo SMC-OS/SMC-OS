@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/componen
 import { Field, Input, Select } from "@/components/ui/Field";
 import { AlertTriangleIcon, PlusIcon, TrashIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
-import { formatCurrencyGBP, formatDate } from "@/lib/utils";
+import { formatCurrency, formatMoney, formatDate } from "@/lib/utils";
 import {
   COST_CATEGORIES,
   COST_CATEGORY_LABELS,
@@ -129,6 +129,8 @@ export function ProjectFinancialsPanel({ projectId }: { projectId: string }) {
   }
 
   const { contract, costs: costSummary, profitability } = summary;
+  const currency = summary.currency ?? "GBP";
+  const money = (value: number) => Number.isInteger(value) ? formatCurrency(value, currency) : formatMoney(value, currency);
 
   return (
     <div className="space-y-4">
@@ -144,20 +146,20 @@ export function ProjectFinancialsPanel({ projectId }: { projectId: string }) {
               label="Base contract"
               value={
                 contract.base_contract_value !== null
-                  ? formatCurrencyGBP(contract.base_contract_value)
+                  ? money(contract.base_contract_value)
                   : "Unknown — no approved quote linked"
               }
             />
             <SummaryRow
               label="Approved variations"
-              value={formatCurrencyGBP(contract.approved_variations_total)}
+              value={money(contract.approved_variations_total)}
             />
             <div className="mt-2 border-t border-border pt-2">
               <SummaryRow
                 label="Current contract value"
                 value={
                   contract.current_contract_value !== null
-                    ? formatCurrencyGBP(contract.current_contract_value)
+                    ? money(contract.current_contract_value)
                     : "Unknown"
                 }
               />
@@ -177,11 +179,11 @@ export function ProjectFinancialsPanel({ projectId }: { projectId: string }) {
             </Badge>
           </CardHeader>
           <CardContent>
-            <SummaryRow label="Budgeted" value={formatCurrencyGBP(costSummary.budgeted_cost)} />
-            <SummaryRow label="Committed" value={formatCurrencyGBP(costSummary.committed_cost)} />
-            <SummaryRow label="Actual" value={formatCurrencyGBP(costSummary.actual_cost)} />
+            <SummaryRow label="Budgeted" value={money(costSummary.budgeted_cost)} />
+            <SummaryRow label="Committed" value={money(costSummary.committed_cost)} />
+            <SummaryRow label="Actual" value={money(costSummary.actual_cost)} />
             <div className="mt-2 border-t border-border pt-2">
-              <SummaryRow label="Forecast cost" value={formatCurrencyGBP(costSummary.forecast_cost)} />
+              <SummaryRow label="Forecast cost" value={money(costSummary.forecast_cost)} />
             </div>
           </CardContent>
         </Card>
@@ -207,13 +209,13 @@ export function ProjectFinancialsPanel({ projectId }: { projectId: string }) {
             <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
-                  Forecast
+                  Forecast from recorded costs
                 </p>
                 <SummaryRow
-                  label="Gross profit"
+                  label="Gross profit (excl. VAT)"
                   value={
                     profitability.forecast_gross_profit !== null
-                      ? formatCurrencyGBP(profitability.forecast_gross_profit)
+                      ? money(profitability.forecast_gross_profit)
                       : "Unknown"
                   }
                 />
@@ -228,13 +230,13 @@ export function ProjectFinancialsPanel({ projectId }: { projectId: string }) {
               </div>
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
-                  Actual
+                  Actual to date
                 </p>
                 <SummaryRow
-                  label="Gross profit"
+                  label="Gross profit (excl. VAT)"
                   value={
                     profitability.actual_gross_profit !== null
-                      ? formatCurrencyGBP(profitability.actual_gross_profit)
+                      ? money(profitability.actual_gross_profit)
                       : "Unknown"
                   }
                 />
@@ -303,7 +305,7 @@ export function ProjectFinancialsPanel({ projectId }: { projectId: string }) {
                   ))}
                 </Select>
               </Field>
-              <Field label="Total cost" htmlFor="costTotal">
+              <Field label={`Total cost (${currency})`} htmlFor="costTotal">
                 <Input
                   id="costTotal"
                   type="number"
@@ -368,7 +370,7 @@ export function ProjectFinancialsPanel({ projectId }: { projectId: string }) {
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <span className="text-sm font-medium text-foreground">
-                      {formatCurrencyGBP(entry.total_cost)}
+                      {money(entry.total_cost)}
                     </span>
                     <Button
                       variant="ghost"

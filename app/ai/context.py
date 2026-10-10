@@ -27,6 +27,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.money import totals_by_currency
 from app.database import crud
 
 _HEADLINE_LIMIT = 5
@@ -57,6 +58,8 @@ def build(db: Session, tenant_id: uuid.UUID) -> dict:
         if workflow is not None:
             project_role[workflow["role"]] = project_role.get(workflow["role"], 0) + 1
 
+    currency = crud.tenant_currency(db, tenant_id)
+    quote_totals = totals_by_currency((q.currency, q.total) for q in quotes)
     return {
         "customers": crud.count_customers(db, tenant_id),
         "open_tasks": crud.count_open_tasks(db, tenant_id),
@@ -66,7 +69,9 @@ def build(db: Session, tenant_id: uuid.UUID) -> dict:
             # A quote total is a price offered or committed to, never
             # recognised revenue — the Sprint 025 distinction, restated
             # here in the key name so a model cannot read it as income.
-            "quoted_value_recent": round(sum(q.total or 0 for q in quotes), 2),
+            "currency": currency,
+            "quoted_value_recent": quote_totals.get(currency, 0.0),
+            "quoted_value_recent_by_currency": quote_totals,
         },
         "projects": {
             "total_recent": len(projects),

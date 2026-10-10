@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useActivity } from "@/hooks/useActivity";
-import { ACTIVITY_ICON, ACTIVITY_TONE } from "@/lib/activity";
+import { activityPresentation } from "@/lib/activity";
 import { formatRelativeTime } from "@/lib/utils";
 
 export function RecentActivityPanel() {
@@ -29,12 +29,12 @@ export function RecentActivityPanel() {
 
         <ul className="space-y-1">
           {events.map((event) => {
-            const EventIcon = ACTIVITY_ICON[event.type];
+            const { Icon: EventIcon, tone } = activityPresentation(event.type);
 
             return (
               <li key={event.id} className="flex items-start gap-3 rounded-lg px-1 py-2">
                 <div
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${ACTIVITY_TONE[event.type]}`}
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone}`}
                 >
                   <EventIcon className="h-4 w-4" />
                 </div>

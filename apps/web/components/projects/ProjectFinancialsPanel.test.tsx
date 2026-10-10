@@ -86,6 +86,15 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it("uses the persisted project currency and retains sub-unit costs", async () => {
+  getProjectFinancialSummaryMock.mockResolvedValue({ ...summary(), currency: "EUR" });
+  getProjectCostsMock.mockResolvedValue([costEntry({ total_cost: 0.02 })]);
+  render(<ProjectFinancialsPanel projectId="project-eur" />);
+  expect(await screen.findByText("€24,000")).toBeInTheDocument();
+  expect(screen.getByText("€0.02")).toBeInTheDocument();
+  expect(screen.queryByText("£24,000")).not.toBeInTheDocument();
+});
+
 describe("ProjectFinancialsPanel", () => {
   it("renders_contract_cost_and_profitability_summaries_from_real_data", async () => {
     getProjectFinancialSummaryMock.mockResolvedValue(summary());
@@ -173,7 +182,7 @@ describe("ProjectFinancialsPanel", () => {
     fireEvent.change(screen.getByLabelText("Description"), {
       target: { value: "New worktop" },
     });
-    fireEvent.change(screen.getByLabelText("Total cost"), { target: { value: "500" } });
+    fireEvent.change(screen.getByLabelText("Total cost (GBP)"), { target: { value: "500" } });
     fireEvent.click(screen.getByRole("button", { name: /save cost/i }));
 
     await waitFor(() => {

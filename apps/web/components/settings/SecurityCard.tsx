@@ -28,11 +28,12 @@ import type { AuthUser } from "@/types/auth";
 export function SecurityCard() {
   const { logout, role } = useAuth();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [identityError, setIdentityError] = useState(false);
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendMessage, setResendMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    api.getMe().then(setUser).catch(() => {});
+    api.getMe().then(setUser).catch(() => setIdentityError(true));
   }, []);
 
   async function handleResend() {
@@ -61,6 +62,7 @@ export function SecurityCard() {
           <CardTitle>Your account</CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
+          {identityError && <p role="alert" className="mb-3 text-sm text-danger">Could not load your account details. Refresh to try again.</p>}
           <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="min-w-0">
               <dt className="text-xs font-medium text-muted">Name</dt>
@@ -79,8 +81,8 @@ export function SecurityCard() {
             <div className="min-w-0">
               <dt className="text-xs font-medium text-muted">Email verification</dt>
               <dd className="text-sm text-foreground">
-                <Badge tone={isVerified ? "success" : "warning"}>
-                  {isVerified ? "Verified" : "Unverified"}
+                <Badge tone={!user ? "neutral" : isVerified ? "success" : "warning"}>
+                  {!user ? (identityError ? "Unavailable" : "Loading…") : isVerified ? "Verified" : "Unverified"}
                 </Badge>
               </dd>
             </div>

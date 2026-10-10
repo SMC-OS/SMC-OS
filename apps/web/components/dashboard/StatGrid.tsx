@@ -51,7 +51,8 @@ export function StatGrid() {
         label="Quoted value"
         value={data.quoted_value}
         format="currency"
-        currency={currency}
+        currency={data.currency ?? currency}
+        amountsByCurrency={data.quoted_value_by_currency}
         icon={TrendingUpIcon}
         caption="Total quoted — a price offered, not income"
         href="/quotes"

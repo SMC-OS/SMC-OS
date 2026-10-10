@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ComponentType, SVGProps } from "react";
 
+import { CurrencyTotals } from "@/components/ui/CurrencyTotals";
 import { Card } from "@/components/ui/Card";
 import { useCountUp } from "@/hooks/useCountUp";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -14,6 +15,7 @@ interface StatCardProps {
   /** The workspace's currency. Required when format is "currency" — a
    * money figure with an assumed currency is a wrong figure. */
   currency?: string;
+  amountsByCurrency?: Record<string, number>;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   /** One short line saying what this number actually is. Sprint 036
    * (Workstream C): a metric with no definition invites the reader to
@@ -29,6 +31,7 @@ export function StatCard({
   value,
   format = "number",
   currency = "GBP",
+  amountsByCurrency,
   icon: StatIcon,
   caption,
   href,
@@ -56,7 +59,7 @@ export function StatCard({
           loading && "opacity-40"
         )}
       >
-        {display}
+        {amountsByCurrency ? <CurrencyTotals amounts={amountsByCurrency} value={value} currency={currency} /> : display}
       </p>
       {caption && <p className="mt-1 text-xs text-muted">{caption}</p>}
     </>

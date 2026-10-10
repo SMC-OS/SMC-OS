@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { CurrencyTotals } from "@/components/ui/CurrencyTotals";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/components/ui/Card";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { api } from "@/lib/api";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatMoney, formatDate } from "@/lib/utils";
 import type { CustomerContext } from "@/types/customer";
 import type { ProjectStatus } from "@/types/project";
 import { QUOTE_STATUS_LABELS, type QuoteStatus } from "@/types/quote";
@@ -73,14 +74,14 @@ export function CustomerContextPanel({ customerId }: { customerId: string }) {
         <Card className="p-4">
           <p className="text-xs font-medium text-muted">Quoted</p>
           <p className="mt-1 text-xl font-semibold text-foreground">
-            {formatCurrency(context.quoted_value, currency)}
+            <CurrencyTotals amounts={context.quoted_value_by_currency} value={context.quoted_value} currency={context.currency ?? currency} />
           </p>
           <p className="mt-0.5 text-xs text-muted">Across {context.quotes.length} quote{context.quotes.length === 1 ? "" : "s"}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs font-medium text-muted">Agreed</p>
           <p className="mt-1 text-xl font-semibold text-foreground">
-            {formatCurrency(context.approved_value, currency)}
+            <CurrencyTotals amounts={context.approved_value_by_currency} value={context.approved_value} currency={context.currency ?? currency} />
           </p>
           <p className="mt-0.5 text-xs text-muted">Approved quotes</p>
         </Card>
@@ -136,7 +137,7 @@ export function CustomerContextPanel({ customerId }: { customerId: string }) {
                     <span className="shrink-0 text-sm font-medium text-foreground">
                       {quote.total === null
                         ? "—"
-                        : formatCurrency(quote.total, quote.currency)}
+                        : formatMoney(quote.total, quote.currency)}
                     </span>
                     <Badge tone={QUOTE_TONE[quote.status as QuoteStatus] ?? "neutral"}>
                       {QUOTE_STATUS_LABELS[quote.status as QuoteStatus] ?? quote.status}

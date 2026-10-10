@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/componen
 import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
 import { SearchIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
+import { writeQuoteCustomMaterial } from "@/lib/quote-custom-material";
 import { formatCurrencyGBP } from "@/lib/utils";
 import {
   MATERIAL_FAMILIES,
@@ -238,10 +239,38 @@ export default function CataloguePage() {
     router.push(`/quotes/new/stone?${params.toString()}`);
   }
 
+  function customMaterialPayload() {
+    return {
+        canonical_name: customForm.canonical_name,
+        supplier_name: customForm.supplier_name || null,
+        manufacturer_name: customForm.manufacturer_name || null,
+        material_family: customForm.material_family,
+        variant: {
+          thickness_mm: customForm.thickness_mm ? Number(customForm.thickness_mm) : null,
+          finish: customForm.finish || null,
+          slab_length_mm: customForm.slab_length_mm ? Number(customForm.slab_length_mm) : null,
+          slab_width_mm: customForm.slab_width_mm ? Number(customForm.slab_width_mm) : null,
+        },
+        buy_cost_per_slab: customForm.buy_cost_per_slab ? Number(customForm.buy_cost_per_slab) : null,
+        selling_price_per_slab: customForm.selling_price_per_slab
+          ? Number(customForm.selling_price_per_slab)
+          : null,
+        save_to_catalogue: customForm.save_to_catalogue,
+    };
+  }
+
   function goToQuoteWithCustomMaterial(result: CustomMaterialResult) {
     const params = new URLSearchParams();
     if (result.surface_id) params.set("catalogue_surface_id", result.surface_id);
     if (result.variant_id) params.set("catalogue_variant_id", result.variant_id);
+    if (!result.surface_id) {
+      try {
+        params.set("custom_material_id", writeQuoteCustomMaterial(customMaterialPayload()));
+      } catch {
+        setCustomError("Could not retain this draft in your browser. Enable tab storage and try again.");
+        return;
+      }
+    }
     params.set("material", result.canonical_name);
     if (customForm.thickness_mm) params.set("thickness", `${customForm.thickness_mm}mm`);
     router.push(`/quotes/new/stone?${params.toString()}`);
@@ -278,23 +307,7 @@ export default function CataloguePage() {
     setCustomError(null);
     setCustomResult(null);
     try {
-      const result = await api.createCustomMaterial({
-        canonical_name: customForm.canonical_name,
-        supplier_name: customForm.supplier_name || null,
-        manufacturer_name: customForm.manufacturer_name || null,
-        material_family: customForm.material_family,
-        variant: {
-          thickness_mm: customForm.thickness_mm ? Number(customForm.thickness_mm) : null,
-          finish: customForm.finish || null,
-          slab_length_mm: customForm.slab_length_mm ? Number(customForm.slab_length_mm) : null,
-          slab_width_mm: customForm.slab_width_mm ? Number(customForm.slab_width_mm) : null,
-        },
-        buy_cost_per_slab: customForm.buy_cost_per_slab ? Number(customForm.buy_cost_per_slab) : null,
-        selling_price_per_slab: customForm.selling_price_per_slab
-          ? Number(customForm.selling_price_per_slab)
-          : null,
-        save_to_catalogue: customForm.save_to_catalogue,
-      });
+      const result = await api.createCustomMaterial(customMaterialPayload());
       setCustomResult(result);
       if (result.saved_to_catalogue) {
         runSearch();

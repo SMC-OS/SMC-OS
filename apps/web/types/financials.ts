@@ -75,6 +75,7 @@ export interface CostSummary {
   forecast_cost: number;
   cost_data_status: CostDataStatus;
   cost_entry_count: number;
+  actual_cost_recorded?: boolean;
 }
 
 /** base_contract_value/current_contract_value are null when there is no
@@ -85,6 +86,7 @@ export interface ContractSummary {
   base_contract_source: string | null;
   approved_variations_total: number;
   current_contract_value: number | null;
+  net_contract_value?: number | null;
 }
 
 /** null on any figure that would otherwise be fabricated. forecast_* and
@@ -99,6 +101,7 @@ export interface ProfitabilitySummary {
 
 export interface ProjectFinancialSummary {
   project_id: string;
+  currency?: string;
   contract: ContractSummary;
   costs: CostSummary;
   profitability: ProfitabilitySummary;

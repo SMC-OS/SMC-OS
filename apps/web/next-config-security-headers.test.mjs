@@ -63,7 +63,7 @@ test("Content-Security-Policy keeps production framing, script, and connection r
   );
   assert.match(
     nextConfig,
-    /const connectSrc[\s\S]{0,160}\? "'self' https:"[\s\S]{0,100}: "'self' https: http:\/\/127\.0\.0\.1:8000"/,
+    /const connectSrc[\s\S]{0,160}\? "'self' https:"[\s\S]{0,100}: "'self' https: http:\/\/127\.0\.0\.1:8000 http:\/\/localhost:8000"/,
   );
 });
 
@@ -78,4 +78,12 @@ test("web security-headers contract is reproducibly invoked by package scripts a
     "node --test next-config-security-headers.test.mjs",
   );
   assert.match(ci, /pnpm --filter web test:security-headers/);
+});
+
+
+test("development CSP allows the actual HttpOnly-session API host", async () => {
+  const runtimeConfig = await readFile(new URL("./lib/runtime-config.ts", import.meta.url), "utf8");
+  const api = runtimeConfig.match(/DEVELOPMENT_API_BASE_URL = "([^"]+)"/)[1];
+  const developmentConnections = nextConfig.match(/const connectSrc[\s\S]*?: "([^"]+)"/)[1];
+  assert.ok(developmentConnections.split(" ").includes(api));
 });

@@ -232,7 +232,10 @@ export function ProjectMaterialsPanel({
   async function createPurchaseOrder(event: React.FormEvent) {
     event.preventDefault();
     const validItems = poItems.filter((item) => item.description.trim());
-    if (validItems.length === 0) return;
+    if (validItems.length === 0) {
+      setError("Add at least one item description before saving the purchase order.");
+      return;
+    }
     setSavingPo(true);
     setError(null);
     try {
@@ -582,6 +585,27 @@ export function ProjectMaterialsPanel({
               <div className="space-y-3">
                 {poItems.map((item, index) => (
                   <div key={index} className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    <Select
+                      className="col-span-2 sm:col-span-5"
+                      aria-label={`Requirement for item ${index + 1}`}
+                      value={item.material_requirement_id ?? ""}
+                      onChange={(e) => {
+                        const linked = requirements?.find((req) => req.id === e.target.value);
+                        updatePoItem(index, linked ? {
+                          material_requirement_id: linked.id,
+                          description: linked.description,
+                          quantity: linked.required_quantity ?? item.quantity,
+                          unit: linked.unit ?? item.unit,
+                          catalogue_surface_id: linked.catalogue_surface_id,
+                          catalogue_variant_id: linked.catalogue_variant_id,
+                        } : { material_requirement_id: null });
+                      }}
+                    >
+                      <option value="">No linked requirement</option>
+                      {(requirements ?? []).filter((req) => req.status !== "cancelled").map((req) => (
+                        <option key={req.id} value={req.id}>{req.description}</option>
+                      ))}
+                    </Select>
                     <Input
                       className="sm:col-span-2"
                       aria-label="Item description"
@@ -628,7 +652,7 @@ export function ProjectMaterialsPanel({
               </Button>
 
               <div className="mt-4 flex gap-2">
-                <Button type="submit" disabled={savingPo}>
+                <Button type="submit" disabled={savingPo || !poItems.some((item) => item.description.trim())}>
                   {savingPo ? "Saving…" : "Save draft"}
                 </Button>
                 <Button type="button" variant="ghost" onClick={() => setShowPoForm(false)}>

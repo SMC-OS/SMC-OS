@@ -43,6 +43,27 @@ test("logging_out_terminates_the_session_and_protected_routes_redirect_to_login"
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/customers$/);
 
+  // SEC001: a real browser receives host-only HttpOnly cookies, never a
+  // JavaScript-readable bearer credential. Reload restores via /auth/me.
+  const cookies = await page.context().cookies(BACKEND_URL);
+  const session = cookies.find((cookie) => cookie.name === "geocore_session");
+  expect(session).toBeDefined();
+  expect(session!.httpOnly).toBe(true);
+  expect(session!.sameSite).toBe("Lax");
+  expect(session!.domain).toBe("localhost");
+  const browserTokens = await page.evaluate(() => ({
+    current: localStorage.getItem("geocore-token"),
+    legacy: localStorage.getItem("simo-os-token"),
+    session: sessionStorage.getItem("geocore-token"),
+    cookies: document.cookie,
+  }));
+  expect(browserTokens.current).toBeNull();
+  expect(browserTokens.legacy).toBeNull();
+  expect(browserTokens.session).toBeNull();
+  expect(browserTokens.cookies).not.toContain("geocore_session=");
+  await page.reload();
+  await expect(page).toHaveURL(/\/customers$/);
+
   // ---- UAT-001 regression: the header shows the real signed-in identity ----
   const profileButton = page.getByRole("button", { name: new RegExp(OWNER_NAME, "i") });
   await expect(profileButton).toBeVisible();
@@ -57,5 +78,19 @@ test("logging_out_terminates_the_session_and_protected_routes_redirect_to_login"
   await page.waitForLoadState("networkidle");
   await expect(page).toHaveURL(/\/login$/);
 
+  // The old credential is rejected server-side, even outside the browser.
+  const replay = await api.get("/api/v1/auth/me", {
+    headers: { Authorization: `Bearer ${session!.value}` },
+  });
+  expect(replay.status()).toBe(401);
+  expect((await page.context().cookies(BACKEND_URL)).some((cookie) => cookie.name === "geocore_session")).toBe(false);
+  await page.goBack();
+  await page.waitForLoadState("networkidle");
+  await expect(page).toHaveURL(/\/login$/);
+  await page.goForward();
+  await page.waitForLoadState("networkidle");
+  await expect(page).toHaveURL(/\/login$/);
+  await page.reload();
+  await expect(page).toHaveURL(/\/login$/);
   await api.dispose();
 });

@@ -51,6 +51,7 @@ function VerifyEmailContent() {
     token ? "pending" : "success"
   );
   const [resendState, setResendState] = useState<ResendState>("idle");
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -90,9 +91,14 @@ function VerifyEmailContent() {
     }
   }
 
-  function handleLogout() {
-    logout();
-    router.push("/login");
+  async function handleLogout() {
+    setLogoutError(null);
+    try {
+      await logout();
+      router.push("/login");
+    } catch {
+      setLogoutError("Could not sign out. Check your connection and try again.");
+    }
   }
 
   return (
@@ -182,6 +188,7 @@ function VerifyEmailContent() {
               )}
             </>
           )}
+          {logoutError && <p role="alert" className="text-sm text-danger">{logoutError}</p>}
         </CardContent>
       </Card>
     </div>

@@ -10,11 +10,13 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearToken, setToken } from "@/lib/auth-storage";
+import { clearToken } from "@/lib/auth-storage";
 
 import { NotificationsPanel } from "./NotificationsPanel";
 
 const pushMock = vi.fn();
+const authState = vi.hoisted(() => ({ isReady: true, isAuthenticated: true }));
+vi.mock("@/components/auth/AuthProvider", () => ({ useAuth: () => authState }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
@@ -59,7 +61,9 @@ beforeEach(() => {
     throw new Error(`Unexpected fetch in test: ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock);
-  setToken("pytest-owner-token");
+  clearToken();
+  authState.isReady = true;
+  authState.isAuthenticated = true;
   pushMock.mockClear();
 });
 
@@ -70,6 +74,23 @@ afterEach(() => {
 });
 
 describe("NotificationsPanel — follow-up automation (Sprint 024)", () => {
+  it("does not poll while signed out", async () => {
+    authState.isAuthenticated = false;
+    render(<NotificationsPanel />);
+    await userEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("waits for server-confirmed cookie session readiness", async () => {
+    authState.isReady = false;
+    const view = render(<NotificationsPanel />);
+    await userEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    authState.isReady = true;
+    view.rerender(<NotificationsPanel />);
+    await screen.findByText("Enquiry needs follow-up");
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/notifications"),
+      expect.objectContaining({ credentials: "include" }));
+  });
   it("clicking_a_sourced_notification_marks_it_read_and_navigates_to_the_project", async () => {
     render(<NotificationsPanel />);
 
@@ -170,5 +191,26 @@ describe("NotificationsPanel — follow-up automation (Sprint 024)", () => {
       expect.stringContaining("/read"),
       expect.anything()
     );
+  });
+});
+
+// Stone-Hard DEF011: automation notifications emit customer and quote sources.
+describe("notification source contract", () => {
+  it.each(["customer", "quote"])("opens a %s automation notification", async (source) => {
+    currentNotifications = [makeNotification({ source_type: source, source_id: "entity-1" })];
+    render(<NotificationsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: /notifications/i }));
+    await userEvent.click(await screen.findByText("Enquiry needs follow-up"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith(`/${source}s/entity-1`));
+  });
+  it.each(["variation", "cost_entry", "future_source", "__proto__", "constructor"])("keeps %s notifications readable without inventing an entity URL", async (source) => {
+    currentNotifications = [makeNotification({ source_type: source, source_id: "entity-1" })];
+    render(<NotificationsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: /notifications/i }));
+    await userEvent.click(await screen.findByText("Enquiry needs follow-up"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/notifications/notification-1/read"), expect.objectContaining({ method: "PATCH" })
+    ));
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });

@@ -91,6 +91,7 @@ class ProjectOut(ProjectCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    currency: str = "GBP"
     status: ProjectStatus
     created_at: datetime
     quote_id: uuid.UUID | None = None
