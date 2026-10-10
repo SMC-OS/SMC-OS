@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { api } from "@/lib/api";
 import { clearToken, clearLegacyTokens, TOKEN_CLEARED_EVENT } from "@/lib/auth-storage";
@@ -66,6 +67,28 @@ interface AuthRequiredState {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  // The standalone synthetic demo must never read or mutate a real session.
+  // Unmount the session provider here so its bootstrap and downstream
+  // workspace/notification effects cannot contact the tenant API.
+  if (pathname === "/demo") {
+    return <AuthContext.Provider value={DEMO_AUTH}>{children}</AuthContext.Provider>;
+  }
+  return <SessionAuthProvider>{children}</SessionAuthProvider>;
+}
+
+const demoSessionAction = async (): Promise<never> => {
+  throw new Error("Authentication actions are unavailable in the synthetic demo");
+};
+const DEMO_AUTH: AuthContextValue = {
+  isAuthenticated: false, isReady: true, tenantName: null, role: null,
+  userId: null, name: null, email: null, verificationRequired: false,
+  billingAccessRequired: false, login: demoSessionAction, signup: demoSessionAction,
+  acceptInvite: demoSessionAction, refreshAccess: demoSessionAction,
+  logout: demoSessionAction,
+};
+
+function SessionAuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [tenantName, setTenantName] = useState<string | null>(null);
