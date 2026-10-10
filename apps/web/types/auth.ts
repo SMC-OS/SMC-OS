@@ -27,7 +27,7 @@ export interface AuthUser {
 }
 
 export interface LoginResponse {
-  access_token: string;
+  access_token?: string | null;
   token_type: string;
   user: AuthUser;
 }

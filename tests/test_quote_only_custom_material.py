@@ -62,7 +62,10 @@ def test_quote_only_custom_material_is_persisted_only_inside_its_quote(client, a
         row = saved.json()["items"][0]
         assert row["material"] == "Synthetic private quartz"
         assert row["catalogue_surface_id"] is None
-        assert row["catalogue_snapshot"]["source"] == "quote_custom"
+        with SessionLocal() as db:
+            persisted = db.query(QuoteItem).filter(QuoteItem.quote_id == uuid.UUID(quote_id)).one()
+            assert persisted.catalogue_snapshot["source"] == "quote_custom"
+            assert persisted.catalogue_snapshot["selling_price_per_slab"] == 600
         assert row["price_per_slab"] == 600
         assert saved.json()["total"] == 720
     finally:

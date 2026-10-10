@@ -1,3 +1,4 @@
+import uuid
 """Password hashing and JWT issuance/validation.
 
 Sprint 003 — basic JWT auth (ADR-011). Uses bcrypt directly rather than
@@ -62,6 +63,7 @@ def create_access_token(subject: str, tenant_id: str, token_version: int = 0) ->
     # full story of that first, wrong design).
     payload = {
         "sub": subject,
+        "jti": str(uuid.uuid4()),
         "tenant_id": tenant_id,
         "token_version": token_version,
         "iat": now,

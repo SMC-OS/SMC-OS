@@ -81,6 +81,7 @@ def create_app(
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-CSRF-Token"],
     )
     # Added after CORS so request context is the outer user middleware and
     # therefore also covers preflight responses.

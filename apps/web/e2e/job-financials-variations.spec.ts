@@ -235,10 +235,11 @@ test("forecast_profit_and_margin_recalculate_as_costs_are_added", async ({ page 
   await page.getByLabel("Total cost").fill("10000");
   await page.getByRole("button", { name: /save cost/i }).click();
 
-  // Forecast profit = 20000 - 10000 = 10000; margin = 50% (forecast and
-  // actual coincide here, since the only cost recorded is itself actual).
-  await expect(page.getByText("£10,000").first()).toBeVisible();
-  await expect(page.getByText("50.0%").first()).toBeVisible();
+  // The £20,000 contract includes 20% VAT. Net revenue is £16,666.67,
+  // so £10,000 net cost yields £6,666.67 profit / 40.0% margin.
+  // Forecast and actual coincide because the only cost is itself actual.
+  await expect(page.getByText("£6,667").first()).toBeVisible();
+  await expect(page.getByText("40.0%").first()).toBeVisible();
 
   // Add a further cost that pushes margin below the risk threshold.
   await page.getByRole("button", { name: /add cost/i }).click();
@@ -248,15 +249,17 @@ test("forecast_profit_and_margin_recalculate_as_costs_are_added", async ({ page 
   await page.getByLabel("Total cost").fill("8500");
   await page.getByRole("button", { name: /save cost/i }).click();
 
-  // Forecast cost now 18500; profit 1500; margin 7.5% — below the 15%
-  // conservative default, so the margin-risk badge appears.
+  // Forecast net cost now £18,500 exceeds £16,666.67 net revenue:
+  // £1,833.33 loss. The risk badge must appear, not a fictitious VAT profit.
   await expect(page.getByText("Margin risk")).toBeVisible();
 
   const summaryRes = await api.get(`/api/v1/projects/${projectId}/financials/summary`, {
     headers: authHeaders,
   });
   const summary = await summaryRes.json();
-  expect(summary.profitability.forecast_gross_profit).toBe(1500);
+  expect(summary.contract.current_contract_value).toBe(20000);
+  expect(summary.contract.net_contract_value).toBe(16666.67);
+  expect(summary.profitability.forecast_gross_profit).toBe(-1833.33);
   expect(summary.profitability.margin_risk).toBe(true);
 
   await api.dispose();

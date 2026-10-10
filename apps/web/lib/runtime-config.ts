@@ -1,4 +1,5 @@
-const DEVELOPMENT_API_BASE_URL = "http://127.0.0.1:8000";
+// Keep the dev API on the frontend's localhost site for HttpOnly SameSite cookies.
+const DEVELOPMENT_API_BASE_URL = "http://localhost:8000";
 const RAW_HTTPS_ORIGIN = /^https:\/\/[^/?#\\\s]+\/?$/i;
 
 function isLoopbackHostname(hostname: string): boolean {

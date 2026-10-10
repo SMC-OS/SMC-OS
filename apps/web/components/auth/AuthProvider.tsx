@@ -3,13 +3,13 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
-import { clearToken, getToken, setToken, TOKEN_CLEARED_EVENT } from "@/lib/auth-storage";
+import { clearToken, clearLegacyTokens, TOKEN_CLEARED_EVENT } from "@/lib/auth-storage";
 import type { SignupRequest } from "@/types/auth";
 import type { AcceptInvitationRequest } from "@/types/invitation";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
-  // False until the localStorage check below has run. Consumers must wait
+  // False until the server session check below has run. Consumers must wait
   // for this before deciding to redirect — child effects fire before this
   // provider's own mount effect, so isAuthenticated is still its initial
   // `false` on the very first pass even for an already-logged-in user.
@@ -55,7 +55,7 @@ interface AuthContextValue {
   // the no-card trial, returning from Checkout) unlocks the workspace
   // without a full page reload.
   refreshAccess: () => Promise<AuthRequiredState>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 interface AuthRequiredState {
@@ -77,23 +77,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [billingAccessRequired, setBillingAccessRequired] = useState(false);
 
   useEffect(() => {
-    // One-time sync from a browser-only API (localStorage isn't available
-    // during SSR) — same justified pattern as ThemeProvider's mount effect.
-    const token = getToken();
-    if (token === null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsReady(true);
-      return;
-    }
-
-    setIsAuthenticated(true);
-    // Sprint 009 — a stored token alone doesn't tell us the company name,
-    // so it's resolved once via /auth/me on mount (also doubles as the
-    // token-still-valid check request() already handles via clearToken()
-    // on a 401).
+    // Discard the retired browser bearer store, then validate the HttpOnly
+    // session with the server before revealing any authenticated surface.
+    clearLegacyTokens();
     api
       .getMe()
       .then((me) => {
+        setIsAuthenticated(true);
         setTenantName(me.tenant_name);
         setRole(me.role);
         setUserId(me.id);
@@ -138,7 +128,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function login(email: string, password: string): Promise<AuthRequiredState> {
     const response = await api.login(email, password);
-    setToken(response.access_token);
     setIsAuthenticated(true);
     setTenantName(response.user.tenant_name);
     setRole(response.user.role);
@@ -155,7 +144,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function signup(data: SignupRequest): Promise<AuthRequiredState> {
     const response = await api.signup(data);
-    setToken(response.access_token);
     setIsAuthenticated(true);
     setTenantName(response.user.tenant_name);
     setRole(response.user.role);
@@ -175,7 +163,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     data: AcceptInvitationRequest
   ): Promise<AuthRequiredState> {
     const response = await api.acceptInvitation(token, data);
-    setToken(response.access_token);
     setIsAuthenticated(true);
     setTenantName(response.user.tenant_name);
     setRole(response.user.role);
@@ -190,7 +177,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }
 
-  function logout() {
+  async function logout() {
+    await api.logout();
     clearToken();
     setIsAuthenticated(false);
     setTenantName(null);
