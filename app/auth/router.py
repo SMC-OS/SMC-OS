@@ -59,7 +59,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _FORGOT_PASSWORD_MESSAGE = "If an account exists for that email, we've sent a reset link."
 
 
-@router.post("/signup", response_model=TokenResponse, response_model_exclude_none=True, status_code=status.HTTP_201_CREATED)
+@router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def signup(data: SignupRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     validate_browser_session_request(request)
     try:
@@ -132,7 +132,7 @@ def confirm_email_verification(data: VerifyEmailConfirmRequest, db: Session = De
     return MessageResponse(message="Email verified.")
 
 
-@router.post("/login", response_model=TokenResponse, response_model_exclude_none=True)
+@router.post("/login", response_model=TokenResponse)
 def login(credentials: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     validate_browser_session_request(request)
     login_rate_limiter.check(
@@ -216,7 +216,7 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
     return MessageResponse(message="Your password has been reset. Please sign in again.")
 
 
-@router.post("/password/change", response_model=TokenResponse, response_model_exclude_none=True)
+@router.post("/password/change", response_model=TokenResponse)
 def change_password(
     data: ChangePasswordRequest,
     request: Request,

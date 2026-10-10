@@ -151,7 +151,7 @@ def get_invitation_by_token(token: str, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/token/{token}/accept", response_model=TokenResponse, response_model_exclude_none=True)
+@router.post("/token/{token}/accept", response_model=TokenResponse)
 def accept_invitation(token: str, data: AcceptInvitationRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     validate_browser_session_request(request)
     try:

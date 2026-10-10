@@ -92,7 +92,7 @@ class UserOut(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str | None = None
+    access_token: str | None = Field(default=None, exclude_if=lambda value: value is None)
     token_type: str = "bearer"
     user: UserOut
 

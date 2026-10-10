@@ -111,7 +111,7 @@ def test_cookie_quote_creation_keeps_workspace_ownership_and_csrf(client):
 
 
 def test_cookie_password_change_rotates_session_and_revokes_old_credentials(client, other_tenant_auth_headers):
-    from conftest import OTHER_TENANT_EMAIL, OTHER_TENANT_PASSWORD
+    from tests.conftest import OTHER_TENANT_EMAIL, OTHER_TENANT_PASSWORD
     from app.auth.cookie_sessions import session_cookie_name
     signed_in = client.post("/api/v1/auth/login", headers=BROWSER_HEADERS,
         json={"email": OTHER_TENANT_EMAIL, "password": OTHER_TENANT_PASSWORD})
@@ -140,3 +140,16 @@ def test_cookie_csrf_unicode_input_is_rejected_without_server_error():
     with pytest.raises(HTTPException) as error:
         validate_cookie_write(request)
     assert error.value.status_code == 403
+
+
+def test_cookie_token_response_omits_only_access_token_not_nullable_user_fields():
+    from datetime import datetime, timezone
+    from app.auth.models import TokenResponse, UserOut
+    user = UserOut(id=uuid.uuid4(), tenant_id=uuid.uuid4(), tenant_name="Synthetic", name="Owner",
+        email="synthetic@example.invalid", role="Owner", created_at=datetime.now(timezone.utc),
+        email_verified_at=None, verification_required=True, billing_access_required=False)
+    result = TokenResponse(token_type="cookie", user=user).model_dump(mode="json")
+    assert "access_token" not in result
+    assert "email_verified_at" in result["user"]
+    assert result["user"]["email_verified_at"] is None
+    assert result["user"]["verification_required"] is True

@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
     // development-only connection target out of the production CSP.
     const connectSrc = process.env.APP_ENV === "production"
       ? "'self' https:"
-      : "'self' https: http://127.0.0.1:8000";
+      : "'self' https: http://127.0.0.1:8000 http://localhost:8000";
     const headers = [
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
