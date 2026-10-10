@@ -95,7 +95,7 @@ def download_export(export_id: uuid.UUID, current_user: User = Depends(require_r
 @router.get("/marketing-preference", response_model=MarketingPreferenceOut)
 def get_marketing_preference(current_user: User = Depends(require_role_and_billing(UserRole.OWNER, UserRole.STAFF)), db: Session = Depends(get_db)):
     row = db.scalars(select(MarketingPreference).where(MarketingPreference.tenant_id == current_user.tenant_id, MarketingPreference.email == current_user.email.lower())).first()
-    return MarketingPreferenceOut(enabled=True if row is None else row.enabled, source="default" if row is None else row.source, updated_at=None if row is None else row.updated_at)
+    return MarketingPreferenceOut(enabled=False if row is None else row.enabled, source="default" if row is None else row.source, updated_at=None if row is None else row.updated_at)
 
 
 @router.put("/marketing-preference", response_model=MarketingPreferenceOut)
