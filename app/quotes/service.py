@@ -179,6 +179,7 @@ class QuoteService:
             notes=build_handoff_notes(quote),
             status=ProjectStatus.BOOKED.value,
             quote_id=quote.id,
+            currency=quote.currency,
             workflow_template_id=workflow_template_id,
             workflow_stage_id=workflow_stage_id,
             # Sprint 036 (Workstream F) — carry what the quote already

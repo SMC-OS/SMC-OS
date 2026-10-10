@@ -3,14 +3,20 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 const loadRuntimeConfig = createRequire(__filename);
-const { resolveApiBaseUrl } = loadRuntimeConfig(
+const { resolveApiBaseUrl, resolveApiProxyTarget } = loadRuntimeConfig(
   path.join(__dirname, "lib", "runtime-config.ts"),
 ) as typeof import("./lib/runtime-config");
 
 resolveApiBaseUrl();
+const apiProxyTarget = resolveApiProxyTarget();
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  async rewrites() {
+    return apiProxyTarget
+      ? [{ source: "/api/v1/:path*", destination: `${apiProxyTarget}/api/v1/:path*` }]
+      : [];
+  },
   async headers() {
     // Sprint 031 — mirrors app/core/middleware.py's SecurityHeadersMiddleware
     // (Sprint 026 Contract C) for the Web response. Strict-Transport-Security

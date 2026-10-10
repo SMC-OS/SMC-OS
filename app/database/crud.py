@@ -476,6 +476,7 @@ def create_project(
     notes: str | None,
     status: str,
     quote_id: uuid.UUID | None = None,
+    currency: str | None = None,
     # Sprint 036 (Workstream F). Keyword-only with defaults, so the
     # quote-handoff caller and every existing test keep working with the
     # original signature.
@@ -505,6 +506,7 @@ def create_project(
         notes=notes,
         status=status,
         quote_id=quote_id,
+        currency=currency or tenant_currency(db, tenant_id),
         project_type=project_type,
         description=description,
         site_address_line1=site_address_line1,
@@ -2524,11 +2526,9 @@ def sum_approved_variations_vat(db: Session, project_id: uuid.UUID, tenant_id: u
 
 
 def approved_variations_by_currency(db: Session, tenant_id: uuid.UUID) -> dict[str, float]:
-    currency = func.coalesce(Quote.currency, Tenant.currency)
+    currency = Project.currency
     rows = (db.query(currency, func.sum(Variation.total)).select_from(Variation)
         .join(Project, (Project.id == Variation.project_id) & (Project.tenant_id == tenant_id))
-        .join(Tenant, Tenant.id == Variation.tenant_id)
-        .outerjoin(Quote, (Quote.id == Project.quote_id) & (Quote.tenant_id == tenant_id))
         .filter(Variation.tenant_id == tenant_id, Variation.status == 'approved')
         .group_by(currency).all())
     return totals_by_currency(rows)

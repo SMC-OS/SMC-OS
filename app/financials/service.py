@@ -180,7 +180,7 @@ class FinancialsService:
         profitability = build_profitability_summary(contract, costs)
 
         return ProjectFinancialSummary(
-            project_id=project_id, contract=contract, costs=costs, profitability=profitability
+            project_id=project_id, currency=project.currency, contract=contract, costs=costs, profitability=profitability
         )
 
     def list_cost_entries(
@@ -214,7 +214,7 @@ class FinancialsService:
             ActivityEventCreate(
                 type=ActivityType.PROJECT_COST_ADDED,
                 title="Cost recorded",
-                description=f"{project.name} — {entry.description} (£{entry.total_cost:,.2f})",
+                description=f"{project.name} — {entry.description} ({project.currency} {entry.total_cost:,.2f})",
             ),
             tenant_id=tenant_id,
         )
@@ -244,7 +244,7 @@ class FinancialsService:
             ActivityEventCreate(
                 type=ActivityType.PROJECT_COST_EDITED,
                 title="Cost edited",
-                description=f"{project.name} — {entry.description} (£{entry.total_cost:,.2f})",
+                description=f"{project.name} — {entry.description} ({project.currency} {entry.total_cost:,.2f})",
             ),
             tenant_id=tenant_id,
         )
@@ -269,7 +269,7 @@ class FinancialsService:
             ActivityEventCreate(
                 type=ActivityType.PROJECT_COST_DELETED,
                 title="Cost deleted",
-                description=f"{project.name} — {description} (£{total_cost:,.2f})",
+                description=f"{project.name} — {description} ({project.currency} {total_cost:,.2f})",
             ),
             tenant_id=tenant_id,
         )

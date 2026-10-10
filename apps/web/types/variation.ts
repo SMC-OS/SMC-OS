@@ -63,6 +63,7 @@ export interface Variation {
   id: string;
   project_id: string;
   reference: string;
+  currency?: string;
   title: string;
   description: string | null;
   status: VariationStatus;

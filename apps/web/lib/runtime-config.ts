@@ -74,3 +74,21 @@ export function resolveApiBaseUrl(
 
   return url.origin;
 }
+
+/** Optional fixed server-side upstream for same-origin API transport.
+ * No request parameter can choose a destination. It shares the strict
+ * HTTPS-origin validation and never relaxes production cookie flags. */
+export function resolveApiProxyTarget(
+  candidate = process.env.API_PROXY_URL,
+  browserBase = resolveApiBaseUrl(),
+): string | null {
+  if (!candidate) return null;
+  let target: string;
+  try {
+    target = resolveApiBaseUrl("production", candidate);
+  } catch {
+    throw new Error("API_PROXY_URL must be a non-loopback absolute HTTPS origin");
+  }
+  if (target === browserBase) throw new Error("API_PROXY_URL cannot proxy back to the browser API origin");
+  return target;
+}

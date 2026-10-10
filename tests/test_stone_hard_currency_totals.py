@@ -32,6 +32,9 @@ def test_http_dashboard_ai_customer_and_contract_totals_keep_currencies_isolated
         customer = client.post('/api/v1/customers', headers=headers, json={'name': 'Currency regression synthetic only'})
         assert customer.status_code == 201
         customer_id = customer.json()['id']
+        standalone = client.post('/api/v1/projects', headers=headers, json={'name': 'Standalone currency fixture'})
+        assert standalone.status_code == 201
+        assert standalone.json()['currency'] == 'GBP'
         for currency, amount in [('GBP', 100), ('EUR', 200), ('USD', 0.02)]:
             with SessionLocal() as db:
                 db.get(Tenant, tenant_id).currency = currency
@@ -46,9 +49,19 @@ def test_http_dashboard_ai_customer_and_contract_totals_keep_currencies_isolated
             assert client.post(f'/api/v1/quotes/{quote_id}/approve', headers=headers).status_code == 200
             project = client.post(f'/api/v1/quotes/{quote_id}/handoff', headers=headers)
             assert project.status_code == 200
+            assert project.json()['currency'] == currency
+            # A later default change must not re-denominate this project's
+            # cost ledger or the next variation entered against it.
+            with SessionLocal() as db:
+                db.get(Tenant, tenant_id).currency = 'EUR'
+                db.commit()
+            financials = client.get(f"/api/v1/projects/{project.json()['id']}/financials/summary", headers=headers)
+            assert financials.status_code == 200
+            assert financials.json()['currency'] == currency
             variation = client.post(f"/api/v1/projects/{project.json()['id']}/variations", headers=headers,
                 json={'title': 'Synthetic addition', 'vat_rate': 0, 'items': [{'description': 'Addition', 'unit_price': 10}]})
             assert variation.status_code == 201
+            assert variation.json()['currency'] == currency
             assert client.post(f"/api/v1/variations/{variation.json()['id']}/approve", headers=headers).status_code == 200
         # Current workspace EUR must not re-denominate GBP/USD contracts.
         with SessionLocal() as db:
@@ -59,6 +72,8 @@ def test_http_dashboard_ai_customer_and_contract_totals_keep_currencies_isolated
             'lines': [{'line_kind': 'labour', 'description': 'Other work', 'quantity': 1, 'unit': 'job', 'unit_price': 9999}],
         })
         assert unrelated.status_code == 201
+        standalone_after_change = client.get(f"/api/v1/projects/{standalone.json()['id']}", headers=headers)
+        assert standalone_after_change.json()['currency'] == 'GBP'
         totals = {'GBP': 100.0, 'EUR': 200.0, 'USD': 0.02}
         dashboard = client.get('/api/v1/dashboard', headers=headers)
         assert dashboard.status_code == 200
@@ -88,3 +103,26 @@ def test_http_dashboard_ai_customer_and_contract_totals_keep_currencies_isolated
                 db.execute(delete(Variation).where(Variation.tenant_id == cleanup_id))
                 db.commit()
             _cleanup_tenant(cleanup_id)
+
+
+def test_variation_pdf_uses_project_denomination_not_current_workspace(monkeypatch):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from app.variations import pdf
+    from app.tenants.identity import CompanyIdentity
+    import app.tenants.identity
+    monkeypatch.setattr(app.tenants.identity, 'resolve', lambda tenant: CompanyIdentity(display_name='Synthetic QA'))
+    real_table = pdf.Table
+    rendered_rows = []
+    def capture_table(rows, **kwargs):
+        rendered_rows.extend(rows)
+        return real_table(rows, **kwargs)
+    monkeypatch.setattr(pdf, 'Table', capture_table)
+    variation = SimpleNamespace(reference='V-001', title='Synthetic QA', created_at=datetime.now(timezone.utc),
+        status='draft', description=None, subtotal=0.02, vat_rate=0, vat=0, total=0.02)
+    item = SimpleNamespace(description='Synthetic item', quantity=1, unit_price=0.02, line_total=0.02)
+    result = pdf.build_variation_pdf(variation, [item], project=SimpleNamespace(name='Synthetic job', currency='USD'),
+        customer=None, tenant=SimpleNamespace(currency='EUR'))
+    assert result.startswith(b'%PDF')
+    assert rendered_rows[-1][-1] == '$0.02'
+    assert all('€' not in str(row) for row in rendered_rows)

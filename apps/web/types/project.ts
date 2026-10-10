@@ -56,6 +56,7 @@ export type ProjectUpdate = Partial<Omit<ProjectCreate, never>>;
 export interface Project extends ProjectCreate {
   id: string;
   quote_id: string | null;
+  currency?: string;
   status: ProjectStatus;
   created_at: string;
   assigned_user_id: string | null;

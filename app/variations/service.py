@@ -133,7 +133,7 @@ class VariationService:
             ActivityEventCreate(
                 type=ActivityType.VARIATION_CREATED,
                 title="Variation created",
-                description=f"{project.name} — {variation.reference}: {variation.title} (£{variation.total:,.2f})",
+                description=f"{project.name} — {variation.reference}: {variation.title} ({project.currency} {variation.total:,.2f})",
             ),
             tenant_id=tenant_id,
         )
@@ -237,7 +237,7 @@ class VariationService:
             ActivityEventCreate(
                 type=ActivityType.VARIATION_APPROVED,
                 title="Variation approved",
-                description=f"{project.name} — {variation.reference}: {variation.title} (£{variation.total:,.2f})",
+                description=f"{project.name} — {variation.reference}: {variation.title} ({project.currency} {variation.total:,.2f})",
             ),
             tenant_id=tenant_id,
         )

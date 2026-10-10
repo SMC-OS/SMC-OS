@@ -37,8 +37,7 @@ def _build_financial_signals(db: Session, tenant_id: uuid.UUID) -> FinancialSign
     for project in projects:
         summary = financials_service.get_summary(db, project.id, tenant_id)
         if summary.contract.current_contract_value is not None:
-            quote = crud.get_quote_by_id(db, project.quote_id, tenant_id)
-            contract_rows.append((quote.currency if quote is not None else currency, summary.contract.current_contract_value))
+            contract_rows.append((project.currency, summary.contract.current_contract_value))
         if summary.profitability.margin_risk:
             margin_risk_count += 1
         if summary.costs.cost_data_status == "none":

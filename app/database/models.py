@@ -430,6 +430,10 @@ class Project(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     target_completion_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # Captured on creation/handoff; immutable denomination for values, costs
+    # and variations even after the workspace default currency changes.
+    currency: Mapped[str] = mapped_column(String, nullable=False, server_default="GBP")
+
     # What this job is worth. Populated automatically from the originating
     # quote's total on handoff, and editable afterwards — a project's value
     # legitimately moves as variations are agreed, and the quote it came

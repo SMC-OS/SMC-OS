@@ -101,6 +101,7 @@ export interface ProfitabilitySummary {
 
 export interface ProjectFinancialSummary {
   project_id: string;
+  currency?: string;
   contract: ContractSummary;
   costs: CostSummary;
   profitability: ProfitabilitySummary;

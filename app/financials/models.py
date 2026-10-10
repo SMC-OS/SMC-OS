@@ -162,6 +162,7 @@ class ProfitabilitySummary(BaseModel):
 
 class ProjectFinancialSummary(BaseModel):
     project_id: uuid.UUID
+    currency: str = "GBP"
     contract: ContractSummary
     costs: CostSummary
     profitability: ProfitabilitySummary
