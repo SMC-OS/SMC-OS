@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearToken, setToken } from "@/lib/auth-storage";
 
 import NewQuotePage from "./page";
+import { writeQuoteCustomMaterial } from "@/lib/quote-custom-material";
 
 // Sprint 042 (GeoCore Premium OS Plan 03) — the page now reads
 // catalogue_surface_id/catalogue_variant_id/material/thickness from the
@@ -519,4 +520,27 @@ describe("NewQuotePage — post-release remediation (§4): layout picker and ext
     const values = Array.from(thicknessSelect.options).map((o) => o.value);
     expect(values).toEqual(["20mm", "30mm"]);
   });
+});
+
+it("keeps a quote-only custom material in the submitted stone quote", async () => {
+  const custom = { canonical_name: "Synthetic private quartz", material_family: "quartz" as const, variant: { thickness_mm: 20, slab_length_mm: 3000, slab_width_mm: 1400 }, buy_cost_per_slab: 400, selling_price_per_slab: 600, save_to_catalogue: false };
+  currentSearch = `custom_material_id=${writeQuoteCustomMaterial(custom)}`;
+  render(<NewQuotePage />);
+  expect(await screen.findByText("Synthetic private quartz")).toBeVisible();
+  await userEvent.type(screen.getByLabelText("Customer name"), "Synthetic customer");
+  await userEvent.type(screen.getByLabelText("Length (mm)"), "2400");
+  await userEvent.click(screen.getByRole("button", { name: /calculate quote/i }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+    expect.stringContaining("/quote"),
+    expect.objectContaining({ body: expect.stringContaining('"custom_material":') })
+  ));
+  const call = fetchMock.mock.calls.find(([url, options]) => String(url).endsWith("/quote") && options?.method === "POST");
+  expect(JSON.parse(String(call?.[1]?.body)).items[0]).toEqual(expect.objectContaining({ material: custom.canonical_name, custom_material: custom, catalogue_surface_id: null }));
+});
+it("blocks a lost quote-only draft and provides a real Catalogue return link", async () => {
+  currentSearch = `custom_material_id=${crypto.randomUUID()}`;
+  render(<NewQuotePage />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/no longer has/);
+  expect(screen.getByRole("link", { name: "Return to the Catalogue" })).toHaveAttribute("href", "/catalogue");
+  expect(screen.queryByRole("button", { name: /calculate quote/i })).not.toBeInTheDocument();
 });

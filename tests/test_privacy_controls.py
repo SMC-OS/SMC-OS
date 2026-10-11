@@ -132,7 +132,7 @@ def test_other_tenant_cannot_download_export(client, workspace):
 
 def test_marketing_preference_and_opaque_unsubscribe_are_idempotent(client, workspace):
     headers, tenant_id, email = workspace
-    assert client.get("/api/v1/privacy/marketing-preference", headers=headers).json()["enabled"] is True
+    assert client.get("/api/v1/privacy/marketing-preference", headers=headers).json()["enabled"] is False
     disabled = client.put("/api/v1/privacy/marketing-preference", headers=headers, json={"enabled": False})
     assert disabled.status_code == 200 and disabled.json()["enabled"] is False
     assert client.put("/api/v1/privacy/marketing-preference", headers=headers, json={"enabled": True}).json()["enabled"] is True

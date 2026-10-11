@@ -40,7 +40,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Request, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -55,6 +55,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=F
 
 
 def get_current_user(
+    request: Request = None,
     token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:
     credentials_error = HTTPException(
@@ -62,6 +63,11 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if token is None and request is not None:
+        from app.auth.cookie_sessions import session_cookie_name, validate_cookie_write
+        token = request.cookies.get(session_cookie_name())
+        if token:
+            validate_cookie_write(request)
     if token is None:
         raise credentials_error
     try:
@@ -69,6 +75,10 @@ def get_current_user(
         user_uuid = uuid.UUID(payload["sub"])
         uuid.UUID(payload["tenant_id"])  # present and well-formed; DB row is authoritative
     except (jwt.PyJWTError, ValueError, KeyError):
+        raise credentials_error
+
+    from app.database.models import RevokedBrowserSession
+    if payload.get("jti") and db.get(RevokedBrowserSession, payload["jti"]) is not None:
         raise credentials_error
 
     user = crud.get_user_by_id(db, user_uuid)
@@ -94,23 +104,20 @@ def get_current_user(
 
 
 def get_current_user_optional(
+    request: Request = None,
     token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User | None:
-    """Like get_current_user, but never raises — a missing, malformed, or
-    expired token just means "anonymous" (returns None) rather than a 401.
-
-    Only for routes that are genuinely allowed to be called without auth
-    but want to opportunistically attribute the action to a tenant when a
-    valid token happens to be presented (Sprint 012, ADR-029)."""
-    if token is None:
-        return None
+    """Public endpoints may be anonymous, but valid browser/API sessions
+    retain canonical tenant, active-user and token-revocation checks.
+    Cookie writes still require CSRF protection; a failed CSRF check must
+    never silently turn an authenticated mutation into an anonymous one.
+    """
     try:
-        payload = decode_access_token(token)
-        user_uuid = uuid.UUID(payload["sub"])
-        uuid.UUID(payload["tenant_id"])
-    except (jwt.PyJWTError, ValueError, KeyError):
+        return get_current_user(request=request, token=token, db=db)
+    except HTTPException as error:
+        if error.status_code != status.HTTP_401_UNAUTHORIZED:
+            raise
         return None
-    return crud.get_user_by_id(db, user_uuid)
 
 
 def require_role(*allowed_roles: UserRole):

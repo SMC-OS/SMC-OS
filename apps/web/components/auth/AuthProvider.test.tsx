@@ -13,6 +13,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider, useAuth } from "@/components/auth/AuthProvider";
 import { clearToken, setToken } from "@/lib/auth-storage";
+import { api } from "@/lib/api";
+const route = vi.hoisted(() => ({ pathname: "/customers" }));
+vi.mock("next/navigation", () => ({ usePathname: () => route.pathname }));
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -44,6 +47,25 @@ afterEach(() => {
 });
 
 describe("AuthProvider — reacts to a token becoming invalid mid-session", () => {
+  it("isolates the synthetic demo without contacting the tenant API", async () => {
+    route.pathname = "/demo";
+    vi.mocked(api.getMe).mockClear();
+    const view = render(<AuthProvider><Probe /></AuthProvider>);
+    expect(screen.getByTestId("authed")).toHaveTextContent("false");
+    await act(async () => {});
+    expect(api.getMe).not.toHaveBeenCalled();
+    route.pathname = "/customers";
+    view.rerender(<AuthProvider><Probe /></AuthProvider>);
+    await screen.findByText("true", { selector: '[data-testid="ready"]' });
+    expect(api.getMe).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("authed")).toHaveTextContent("true");
+    route.pathname = "/demo";
+    view.rerender(<AuthProvider><Probe /></AuthProvider>);
+    expect(screen.getByTestId("authed")).toHaveTextContent("false");
+    expect(screen.getByTestId("name")).toHaveTextContent("none");
+    expect(api.getMe).toHaveBeenCalledTimes(1);
+    route.pathname = "/customers";
+  });
   it("flips isAuthenticated to false and clears the displayed user when the token is cleared after mount", async () => {
     setToken("a-valid-looking-token");
 

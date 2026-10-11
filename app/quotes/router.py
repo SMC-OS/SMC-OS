@@ -26,7 +26,7 @@ from app.database.models import User
 from app.projects.models import ProjectOut
 from app.quotes.ai_draft import AIDraftError, AIDraftUnavailable, ai_draft_service
 from app.quotes.ai_models import AIDraftRequest, AIQuoteDraft
-from app.quotes.pdf import PDFGenerator, build_line_items
+from app.quotes.pdf import PDFGenerator, build_line_items, build_document_fields
 from app.tenants import identity as tenant_identity
 from app.tenants.service import tenant_service
 
@@ -379,6 +379,7 @@ def download_invoice(
                 tenant_service.get(db, current_user.tenant_id)
             ),
             "line_items": build_line_items(quote),
+            **build_document_fields(quote),
             "price_before_vat": quote.price_before_vat,
             "vat": quote.vat,
             "total": quote.total,

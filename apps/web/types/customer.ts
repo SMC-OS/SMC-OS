@@ -70,6 +70,9 @@ export interface CustomerContext {
   customer: Customer;
   quotes: CustomerQuoteSummary[];
   projects: CustomerProjectSummary[];
+  currency?: string;
+  quoted_value_by_currency?: Record<string, number>;
+  approved_value_by_currency?: Record<string, number>;
   quoted_value: number;
   approved_value: number;
   open_projects: number;

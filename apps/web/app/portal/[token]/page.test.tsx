@@ -152,3 +152,16 @@ describe("ClientPortalPage — Sprint 027 customer journey entry point", () => {
     });
   });
 });
+
+it("renders a construction quote title and its stored currency", async () => {
+  getPortalByTokenMock.mockResolvedValue(portal({ quotes: [{
+    id: "general-1", quote_kind: "general", title: "Synthetic kitchen renovation",
+    currency: "EUR", material: null, thickness: null, kitchen_length: null,
+    total: 120.02, price_before_vat: 100.02, vat: 20,
+    created_at: new Date().toISOString(),
+  }] }));
+  render(<ClientPortalPage />);
+  expect(await screen.findByText("Synthetic kitchen renovation")).toBeVisible();
+  expect(screen.getByText("€120.02")).toBeVisible();
+  expect(screen.queryByText("—")).not.toBeInTheDocument();
+});

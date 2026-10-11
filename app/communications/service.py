@@ -127,7 +127,9 @@ class DeliveryService:
             automation_run_id=automation_run_id,
         )
 
-        if suppression is not None or (is_marketing and preference is not None and not preference.enabled):
+        # Optional communication requires recorded affirmative consent.
+        # No preference row is absence of consent, not permission to send.
+        if suppression is not None or (is_marketing and (preference is None or not preference.enabled)):
             return crud.update_communication_result(
                 db,
                 row.id,

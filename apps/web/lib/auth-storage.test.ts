@@ -10,9 +10,10 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { clearToken, setToken, TOKEN_CLEARED_EVENT } from "@/lib/auth-storage";
+import { clearToken, setToken, getToken, clearLegacyTokens, TOKEN_CLEARED_EVENT } from "@/lib/auth-storage";
 
 afterEach(() => {
+  clearToken();
   window.localStorage.clear();
 });
 
@@ -35,4 +36,18 @@ describe("auth-storage — token-cleared notification", () => {
 
     expect(window.localStorage.getItem("geocore-token")).toBeNull();
   });
+});
+
+it("never persists the explicit in-memory bearer seam in browser storage", () => {
+  setToken("synthetic-private-token");
+  expect(getToken()).toBe("synthetic-private-token");
+  expect(localStorage.getItem("geocore-token")).toBeNull();
+  expect(sessionStorage.getItem("geocore-token")).toBeNull();
+});
+it("discards old bearer storage without authenticating from it", () => {
+  localStorage.setItem("geocore-token", "retired-token");
+  localStorage.setItem("simo-os-token", "retired-legacy-token");
+  expect(getToken()).toBeNull();
+  clearLegacyTokens();
+  expect(localStorage.getItem("geocore-token")).toBeNull();
 });

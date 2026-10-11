@@ -23,12 +23,13 @@ create response) is unchanged either way.
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_billing_access, require_role_and_billing
 from app.auth.models import TokenResponse, UserRole
 from app.auth.security import create_access_token
+from app.auth.cookie_sessions import session_token_response, validate_browser_session_request
 from app.auth.service import auth_service
 from app.billing.entitlements import require_seat_available
 from app.database import crud
@@ -151,7 +152,8 @@ def get_invitation_by_token(token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/token/{token}/accept", response_model=TokenResponse)
-def accept_invitation(token: str, data: AcceptInvitationRequest, db: Session = Depends(get_db)):
+def accept_invitation(token: str, data: AcceptInvitationRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    validate_browser_session_request(request)
     try:
         tenant, user = invitation_service.accept_invitation(
             db, token, name=data.name, password=data.password
@@ -170,4 +172,4 @@ def accept_invitation(token: str, data: AcceptInvitationRequest, db: Session = D
     access_token = create_access_token(
         subject=str(user.id), tenant_id=str(tenant.id), token_version=user.token_version
     )
-    return TokenResponse(access_token=access_token, user=auth_service.build_user_out(db, user))
+    return session_token_response(request, response, access_token, auth_service.build_user_out(db, user))

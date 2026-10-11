@@ -37,6 +37,9 @@ export interface QuoteFunnel {
 }
 
 export interface QuotedValue {
+  currency?: string;
+  quoted_value_by_currency?: Record<string, number>;
+  approved_quoted_value_by_currency?: Record<string, number>;
   quoted_value: number;
   approved_quoted_value: number;
 }
@@ -57,6 +60,9 @@ export interface FollowUpAttention {
  * company-wide margin percentage — only honest counts, since some
  * projects' cost data may be incomplete. */
 export interface FinancialSignals {
+  currency?: string;
+  approved_contract_value_by_currency?: Record<string, number>;
+  approved_variations_value_by_currency?: Record<string, number>;
   approved_contract_value: number;
   approved_variations_value: number;
   projects_with_margin_risk: number;

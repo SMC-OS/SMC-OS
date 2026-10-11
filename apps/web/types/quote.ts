@@ -1,3 +1,5 @@
+import type { CustomMaterialInput } from "@/types/catalogue";
+
 // Sprint 005: mirrors the seeded catalogue in app/materials/seed.py.
 // Materials stay internal (no GET /api/v1/materials this sprint), so this
 // list is hand-kept in sync the same way the previous 3-item list was.
@@ -95,6 +97,7 @@ export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
 export interface QuoteItemRequest {
   item_type: ItemType;
   material: string;
+  custom_material?: CustomMaterialInput | null;
   thickness: string;
   quantity: number;
   length_mm: number;

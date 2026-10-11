@@ -19,6 +19,7 @@ from app.customers.models import (
     CustomerQuoteSummary,
     CustomerUpdate,
 )
+from app.money import totals_by_currency
 from app.database import crud
 from app.database.models import Customer
 
@@ -51,14 +52,18 @@ class CustomerService:
         quotes = crud.list_quotes_by_customer(db, tenant_id, customer_id)
         projects = crud.list_projects_by_customer(db, tenant_id, customer_id)
 
+        currency = crud.tenant_currency(db, tenant_id)
+        quoted_totals = totals_by_currency((q.currency, q.total) for q in quotes)
+        approved_totals = totals_by_currency((q.currency, q.total) for q in quotes if q.status == "approved")
         return CustomerContextOut(
+            currency=currency,
+            quoted_value_by_currency=quoted_totals,
+            approved_value_by_currency=approved_totals,
             customer=customer,
             quotes=[CustomerQuoteSummary.model_validate(q) for q in quotes],
             projects=[CustomerProjectSummary.model_validate(p) for p in projects],
-            quoted_value=sum(q.total or 0.0 for q in quotes),
-            approved_value=sum(
-                q.total or 0.0 for q in quotes if q.status == "approved"
-            ),
+            quoted_value=quoted_totals.get(currency, 0.0),
+            approved_value=approved_totals.get(currency, 0.0),
             open_projects=sum(
                 1 for p in projects if p.status not in self._CLOSED_PROJECT_STATUSES
             ),

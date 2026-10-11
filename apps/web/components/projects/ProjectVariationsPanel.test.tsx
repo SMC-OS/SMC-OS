@@ -37,6 +37,13 @@ vi.mock("@/lib/api", async () => {
 
 import { ProjectVariationsPanel } from "./ProjectVariationsPanel";
 
+it("renders the variation's stored denomination and exact pence", async () => {
+  getProjectVariationsMock.mockResolvedValue([variation({ currency: "USD", total: 0.02 })]);
+  render(<ProjectVariationsPanel projectId="project-usd" />);
+  expect(await screen.findByText("US$0.02 total")).toBeInTheDocument();
+  expect(screen.queryByText("£0 total")).not.toBeInTheDocument();
+});
+
 function variation(overrides: Partial<Variation> = {}): Variation {
   return {
     id: "variation-1",

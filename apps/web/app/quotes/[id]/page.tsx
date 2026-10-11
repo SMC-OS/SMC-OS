@@ -33,7 +33,7 @@ const STATUS_TONE: Record<QuoteStatus, "neutral" | "info" | "success"> = {
  * quote's, so a future quote mixing a worktop with two days of fitting
  * labour renders both correctly with no further change here.
  */
-function describeLine(item: QuoteItem): { title: string; detail: string } {
+function describeLine(item: QuoteItem, currency: string): { title: string; detail: string } {
   if (item.line_kind === "stone") {
     const material = item.material
       ? `${item.material}${item.thickness ? ` (${item.thickness})` : ""}`
@@ -42,17 +42,19 @@ function describeLine(item: QuoteItem): { title: string; detail: string } {
       title: [ITEM_TYPE_LABELS[item.item_type] ?? item.item_type, material]
         .filter(Boolean)
         .join(" — "),
-      detail:
+      detail: [
         item.length_mm !== null && item.width_mm !== null
           ? `${item.quantity} × ${item.length_mm}mm × ${item.width_mm}mm`
           : `${item.quantity}`,
+        item.notes,
+      ].filter(Boolean).join(". "),
     };
   }
 
   return {
     title: item.description ?? "Line item",
     detail: `${item.quantity} ${item.unit ?? "item"}${
-      item.unit_price !== null ? ` @ ${formatMoney(item.unit_price, "GBP")}` : ""
+      item.unit_price !== null ? ` @ ${formatMoney(item.unit_price, currency)}` : ""
     }`,
   };
 }
@@ -303,7 +305,7 @@ export default function QuoteDetailPage() {
             <CardContent className="pt-4">
               <ul className="flex flex-col gap-2">
                 {quote.items.map((item) => {
-                  const { title, detail } = describeLine(item);
+                  const { title, detail } = describeLine(item, currency);
                   return (
                     <li
                       key={item.id}
