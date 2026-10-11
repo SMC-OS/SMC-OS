@@ -238,7 +238,7 @@ test("forecast_profit_and_margin_recalculate_as_costs_are_added", async ({ page 
   // The £20,000 contract includes 20% VAT. Net revenue is £16,666.67,
   // so £10,000 net cost yields £6,666.67 profit / 40.0% margin.
   // Forecast and actual coincide because the only cost is itself actual.
-  await expect(page.getByText("£6,667").first()).toBeVisible();
+  await expect(page.getByText("£6,666.67").first()).toBeVisible();
   await expect(page.getByText("40.0%").first()).toBeVisible();
 
   // Add a further cost that pushes margin below the risk threshold.
