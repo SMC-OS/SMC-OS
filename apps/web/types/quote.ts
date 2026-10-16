@@ -36,13 +36,19 @@ export const MATERIAL_OPTIONS = [
 // chosen surface's real variant, never from this list.
 export const THICKNESS_OPTIONS = ["20mm", "30mm"] as const;
 
-// Post-release remediation §4 — a visual layout picker for the shape of
-// a worktop run. Deliberately a small closed set of icon-backed choices
-// rather than a freeform diagram editor: it labels the job for the
-// quote's notes, it does not attempt to compute geometry or price from
-// the shape (pricing stays exactly the existing per-item slab-area
-// calculation, unaffected by this field).
-export const LAYOUT_OPTIONS = ["straight", "l_shape", "u_shape", "island", "peninsula"] as const;
+// Reference-led worktop layouts. Each labelled piece is submitted as its own
+// measured stone line; existing stored layout keys remain compatible.
+export const LAYOUT_OPTIONS = [
+  "l_shape",
+  "l_shape_island",
+  "u_shape",
+  "u_shape_island",
+  "straight",
+  "island",
+  "galley",
+  "galley_island",
+  "peninsula",
+] as const;
 export type LayoutOption = (typeof LAYOUT_OPTIONS)[number];
 export const LAYOUT_LABELS: Record<LayoutOption, string> = {
   straight: "Straight run",
@@ -50,6 +56,10 @@ export const LAYOUT_LABELS: Record<LayoutOption, string> = {
   u_shape: "U-shape",
   island: "Island",
   peninsula: "Peninsula",
+  l_shape_island: "L-shape + island",
+  u_shape_island: "U-shape + island",
+  galley: "Galley shape",
+  galley_island: "Galley shape + island",
 };
 
 // Post-release remediation §4 — common add-ons a customer expects to see
@@ -57,7 +67,12 @@ export const LAYOUT_LABELS: Record<LayoutOption, string> = {
 // recorded on the line's notes for transparency, not priced separately
 // — a real extras pricing model is a materially larger change than this
 // reconstruction's scope and is not invented here.
-export const EXTRA_OPTIONS = ["cutout", "upstand_included", "splashback_included", "polished_edge"] as const;
+export const EXTRA_OPTIONS = [
+  "cutout",
+  "upstand_included",
+  "splashback_included",
+  "polished_edge",
+] as const;
 export type ExtraOption = (typeof EXTRA_OPTIONS)[number];
 export const EXTRA_LABELS: Record<ExtraOption, string> = {
   cutout: "Sink / hob cutout",
