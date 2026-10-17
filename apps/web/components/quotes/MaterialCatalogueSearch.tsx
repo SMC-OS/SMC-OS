@@ -195,15 +195,15 @@ export function MaterialCatalogueSearch({
       {open && (
         <ul className="mt-3 grid max-h-96 grid-cols-1 gap-3 overflow-auto rounded-lg border border-border bg-background p-3 text-sm sm:grid-cols-2">
           {results.map((r) => (
-            <li key={r.id}>
+            <li key={r.id} className="min-w-0">
               <button
                 type="button"
-                className="tap-link block h-full w-full overflow-hidden rounded-lg border border-border text-left hover:border-accent hover:bg-surface-hover"
+                className="block h-full w-full overflow-hidden rounded-lg border border-border text-left hover:border-accent hover:bg-surface-hover"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleSelect(r)}
               >
                 <MaterialPhoto url={r.image_url} name={r.canonical_name} />
-                <span className="block px-3 py-2 font-medium text-foreground">
+                <span className="block break-words px-3 py-2 font-medium text-foreground">
                   {r.canonical_name}
                 </span>
                 {(r.brand_name || r.manufacturer_name) && (
