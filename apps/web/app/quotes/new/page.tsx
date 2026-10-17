@@ -34,7 +34,10 @@ function NewQuoteContent() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <Link href="/quotes" className="tap-link text-sm text-muted hover:text-foreground">
+        <Link
+          href="/quotes"
+          className="tap-link text-sm text-muted hover:text-foreground"
+        >
           &larr; Quotes
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
@@ -45,7 +48,10 @@ function NewQuoteContent() {
         </p>
       </div>
 
-      <Link href="/quotes/new/stone" className="mb-6 block">
+      <Link
+        href={`/quotes/new/stone${params.get("customer") ? `?customer=${encodeURIComponent(params.get("customer")!)}` : ""}`}
+        className="mb-6 block"
+      >
         <Card className="transition-colors hover:border-border-strong hover:bg-surface-hover">
           <CardContent className="flex items-center gap-3 py-4">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-champagne-subtle text-champagne">
@@ -56,15 +62,17 @@ function NewQuoteContent() {
                 Quoting stone or worktops?
               </p>
               <p className="text-sm text-muted">
-                Use the specialist template — it prices by slab from your material
-                catalogue.
+                Use the specialist template — it prices by slab from your
+                material catalogue.
               </p>
             </div>
           </CardContent>
         </Card>
       </Link>
 
-      <GeneralQuoteBuilder initialCustomerId={params.get("customer") ?? undefined} />
+      <GeneralQuoteBuilder
+        initialCustomerId={params.get("customer") ?? undefined}
+      />
     </div>
   );
 }

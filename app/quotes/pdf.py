@@ -51,6 +51,9 @@ def _describe_stone_item(item) -> str:
 
     if item.length_mm is not None and item.width_mm is not None:
         label += f", {item.quantity:g} x {item.length_mm:g}mm x {item.width_mm:g}mm"
+    allocation = (getattr(item, "catalogue_snapshot", None) or {}).get("slab_allocation")
+    if allocation:
+        label += f", shared material-area estimate ({allocation['group_slabs']} slabs across layout)"
     if getattr(item, "notes", None):
         label += f". {item.notes}"
     return label

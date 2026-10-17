@@ -1,4 +1,7 @@
 import uuid
+import json
+import math
+from decimal import Decimal, ROUND_DOWN
 from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
@@ -6,8 +9,8 @@ from sqlalchemy.orm import Session
 from app.catalogue.service import resolve_price_per_slab
 from app.database import crud
 from app.materials.service import material_service
-from app.quotes.slab_calculator import calculate_slabs
-from app.quotes.validator import validate_dimensions
+from app.quotes.slab_calculator import calculate_slabs, _parse_slab_size, WASTAGE_FACTOR
+from app.quotes.validator import validate_dimensions, DimensionError
 
 
 class CataloguePriceMissingError(Exception):
@@ -66,6 +69,7 @@ class QuoteCalculator:
         validate_dimensions(quote)
 
         item_results = []
+        slab_groups = {}
         price_before_vat = 0.0
 
         for item in quote.items:
@@ -114,6 +118,11 @@ class QuoteCalculator:
             line_total = round(material_price + surcharge, 2)
             price_before_vat += line_total
 
+            group = getattr(item, "slab_group", None)
+            if group:
+                signature = (item.material.strip().casefold(), item.thickness, str(getattr(item, "catalogue_surface_id", None)), str(getattr(item, "catalogue_variant_id", None)), price_per_slab, json.dumps(snapshot, sort_keys=True), adapter.slab_size)
+                slab_groups.setdefault(group, []).append((len(item_results), item, signature))
+
             item_results.append(
                 {
                     "item_type": item.item_type,
@@ -134,7 +143,31 @@ class QuoteCalculator:
                 }
             )
 
-        price_before_vat = round(price_before_vat, 2)
+        # Pool only explicitly grouped, identically resolved materials. This is an
+        # area-and-waste estimate, not a cutting/nesting or grain-matching promise.
+        for group, entries in slab_groups.items():
+            if any(entry[2] != entries[0][2] for entry in entries[1:]):
+                raise DimensionError("Shared slab pieces must use the same material, thickness, variant and price.")
+            slab_length, slab_width = _parse_slab_size(entries[0][2][-1])
+            areas = [entry[1].length_mm * entry[1].width_mm * entry[1].quantity / 1_000_000 for entry in entries]
+            total_area = sum(areas)
+            shared_slabs = max(1, math.ceil(total_area * WASTAGE_FACTOR / (slab_length * slab_width)))
+            price = entries[0][2][4]
+            total_pence = int(round(price * shared_slabs * 100))
+            allocated_pence = 0
+            for offset, (index, item, _) in enumerate(entries):
+                # Allocate whole pennies and put the rounding remainder on the last
+                # line so displayed line totals always reconcile to the quote total.
+                pence = total_pence - allocated_pence if offset == len(entries) - 1 else int((Decimal(total_pence) * Decimal(str(areas[offset])) / Decimal(str(total_area))).quantize(Decimal("1"), rounding=ROUND_DOWN))
+                allocated_pence += pence
+                row = item_results[index]
+                row["slabs"] = shared_slabs if offset == 0 else 0
+                row["line_total"] = round(pence / 100 + _ITEM_TYPE_SURCHARGES.get(item.item_type, 0) * item.quantity, 2)
+                allocation = {"group": group, "group_slabs": shared_slabs, "method": "area_with_15_percent_waste", "material_allocation": pence / 100}
+                row["slab_allocation"] = allocation
+                row["catalogue_snapshot"] = {**(row["catalogue_snapshot"] or {}), "slab_allocation": allocation}
+
+        price_before_vat = round(sum(row["line_total"] for row in item_results), 2)
         vat = round(price_before_vat * 0.20, 2)
         summary = summarize_items(item_results)
 

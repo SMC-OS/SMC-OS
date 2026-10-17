@@ -43,6 +43,7 @@ export interface SurfaceSearchResult {
   thicknesses_mm: number[];
   finishes: string[];
   has_tenant_price: boolean;
+  image_url?: string | null;
 }
 
 // Phase A — lets a zero-result search say why it is empty.
@@ -82,11 +83,13 @@ export interface TenantOverride {
   lead_time_days: number | null;
   tenant_active: boolean;
   private_notes: string | null;
+  image_url?: string | null;
   resolved_price_per_slab: number | null;
   updated_at: string;
 }
 
 export interface TenantOverrideInput {
+  image_url?: string | null;
   surface_variant_id?: string | null;
   buy_cost_per_slab?: number | null;
   default_markup_percent?: number | null;
@@ -122,6 +125,7 @@ export interface SurfaceDetail {
   source_name: string | null;
   source_url: string | null;
   source_verified_at: string | null;
+  image_url?: string | null;
   variants: SurfaceVariant[];
   tenant_override: TenantOverride | null;
 }

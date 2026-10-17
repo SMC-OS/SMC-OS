@@ -48,7 +48,10 @@ const STALE_PROJECT_NAME = `Pytest E2E Sprint 027 Journey Stale Enquiry ${RUN_ID
 // Sprint 039 Production Readiness Defect Gate, Blocker 1 — see
 // e2e/project-operations.spec.ts's identical helper for the full
 // rationale (inviting a teammate now requires a verified email).
-async function verifyOwnerEmail(api: import("@playwright/test").APIRequestContext, email: string) {
+async function verifyOwnerEmail(
+  api: import("@playwright/test").APIRequestContext,
+  email: string,
+) {
   const script = `
 import hashlib, secrets, uuid
 from datetime import datetime, timedelta, timezone
@@ -66,7 +69,10 @@ crud.create_email_verification_token(
 db.close()
 print(raw_token)
 `.trim();
-  const rawToken = execFileSync("python", ["-c", script], { cwd: REPO_ROOT, encoding: "utf-8" })
+  const rawToken = execFileSync("python", ["-c", script], {
+    cwd: REPO_ROOT,
+    encoding: "utf-8",
+  })
     .trim()
     .split("\n")
     .pop() as string;
@@ -76,20 +82,30 @@ print(raw_token)
   expect(confirm.ok()).toBeTruthy();
 }
 
-function runFollowUpAutomation(now: string): { examined: number; created: number } {
+function runFollowUpAutomation(now: string): {
+  examined: number;
+  created: number;
+} {
   // Same real-subprocess pattern as e2e/follow-up-automation.spec.ts —
   // --now is app/jobs/follow_up.py's own documented verification-only
   // escape hatch, not a test-only seam.
-  const output = execFileSync("python", ["-m", "app.jobs.follow_up", "--now", now], {
-    cwd: REPO_ROOT,
-    encoding: "utf-8",
-  });
+  const output = execFileSync(
+    "python",
+    ["-m", "app.jobs.follow_up", "--now", now],
+    {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    },
+  );
   return JSON.parse(output.trim().split("\n").pop() as string);
 }
 
 test.setTimeout(180_000);
 
-test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ browser, page }) => {
+test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({
+  browser,
+  page,
+}) => {
   const api = await request.newContext({ baseURL: BACKEND_URL });
 
   // ==== 1. Signup through the real UI (no prior spec ever did this) ====
@@ -125,9 +141,18 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   // prove the lead-to-project pipeline, not the wizard, and a setup step
   // that could not be skipped would be a defect in its own right.
   await expect(page).toHaveURL(/\/onboarding$/, { timeout: 15_000 });
-  await page.getByRole("button", { name: /^skip$/i }).first().click();
-  await page.getByRole("button", { name: /^skip$/i }).first().click();
-  await page.getByRole("button", { name: /^skip$/i }).first().click();
+  await page
+    .getByRole("button", { name: /^skip$/i })
+    .first()
+    .click();
+  await page
+    .getByRole("button", { name: /^skip$/i })
+    .first()
+    .click();
+  await page
+    .getByRole("button", { name: /^skip$/i })
+    .first()
+    .click();
   await page.getByRole("button", { name: /go to geocore/i }).click();
   await expect(page).toHaveURL(/localhost:3000\/$/, { timeout: 15_000 });
 
@@ -142,7 +167,9 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
     data: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
   });
   expect(ownerLogin.ok()).toBeTruthy();
-  const ownerHeaders = { Authorization: `Bearer ${(await ownerLogin.json()).access_token}` };
+  const ownerHeaders = {
+    Authorization: `Bearer ${(await ownerLogin.json()).access_token}`,
+  };
 
   // A real Staff user, via a real invitation accept — needed for step 8.
   const invitation = await api.post("/api/v1/invitations", {
@@ -151,9 +178,12 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   });
   expect(invitation.ok()).toBeTruthy();
   const { token: invitationToken } = await invitation.json();
-  const accepted = await api.post(`/api/v1/invitations/token/${invitationToken}/accept`, {
-    data: { name: STAFF_NAME, password: STAFF_PASSWORD },
-  });
+  const accepted = await api.post(
+    `/api/v1/invitations/token/${invitationToken}/accept`,
+    {
+      data: { name: STAFF_NAME, password: STAFF_PASSWORD },
+    },
+  );
   expect(accepted.ok()).toBeTruthy();
 
   // ==== 3. Create a Customer through the UI ====
@@ -170,7 +200,9 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Project name").fill(PROJECT_NAME);
   await page.getByLabel("Customer").selectOption({ label: CUSTOMER_NAME });
-  await page.getByRole("button", { name: /save project|create project/i }).click();
+  await page
+    .getByRole("button", { name: /save project|create project/i })
+    .click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/, { timeout: 15_000 });
   await expect(page.getByText("Enquiry", { exact: true })).toBeVisible();
 
@@ -182,7 +214,8 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.getByRole("button", { name: "Schedule Site Visit" }).click();
   await page.getByLabel("Date & time").fill("2030-06-15T10:30");
   const appointmentCreated = page.waitForResponse(
-    (res) => res.url().includes("/appointments") && res.request().method() === "POST"
+    (res) =>
+      res.url().includes("/appointments") && res.request().method() === "POST",
   );
   await page.getByRole("button", { name: "Save site visit" }).click();
   await appointmentCreated;
@@ -190,7 +223,9 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   const completeButton = page.getByRole("button", { name: "Complete" });
   await expect(completeButton).toBeVisible();
   const appointmentCompleted = page.waitForResponse(
-    (res) => /\/appointments\/[0-9a-f-]+\/status$/.test(res.url()) && res.request().method() === "PATCH"
+    (res) =>
+      /\/appointments\/[0-9a-f-]+\/status$/.test(res.url()) &&
+      res.request().method() === "PATCH",
   );
   await completeButton.click();
   await appointmentCompleted;
@@ -202,10 +237,16 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.getByLabel("Link to existing customer (optional)").selectOption({
     label: CUSTOMER_NAME,
   });
+  await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("3200");
   const quoteCreated = page.waitForResponse(
-    (res) => res.url().endsWith("/api/v1/quote") && res.request().method() === "POST"
+    (res) =>
+      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
+  await page
+    .getByRole("button", { name: "Next: Design details", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Next: Review", exact: true }).click();
   await page.getByRole("button", { name: "Calculate Quote" }).click();
   const quoteResponse = await quoteCreated;
   expect(quoteResponse.status()).toBe(200);
@@ -215,7 +256,9 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.waitForLoadState("networkidle");
   await expect(page.getByText("Draft", { exact: true })).toBeVisible();
   const approveResponse = page.waitForResponse(
-    (res) => res.url().endsWith(`/api/v1/quotes/${quoteId}/approve`) && res.request().method() === "POST"
+    (res) =>
+      res.url().endsWith(`/api/v1/quotes/${quoteId}/approve`) &&
+      res.request().method() === "POST",
   );
   await page.getByRole("button", { name: "Approve" }).click();
   await approveResponse;
@@ -223,7 +266,9 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
 
   // ==== 7. Turn the approved Quote into the Project ====
   const handoffResponse = page.waitForResponse(
-    (res) => res.url().endsWith(`/api/v1/quotes/${quoteId}/handoff`) && res.request().method() === "POST"
+    (res) =>
+      res.url().endsWith(`/api/v1/quotes/${quoteId}/handoff`) &&
+      res.request().method() === "POST",
   );
   await page.getByRole("button", { name: "Create the project" }).click();
   const handoff = await handoffResponse;
@@ -242,11 +287,15 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   // Team and Workflow tabs (Task 8) ====
   await page.goto(`/projects/${handedOffProject.id}`);
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText("Enquiry", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText("Enquiry", { exact: true }).first(),
+  ).toBeVisible();
 
   await page.getByRole("tab", { name: /^team$/i }).click();
   const assignResponse = page.waitForResponse(
-    (res) => res.url().endsWith(`/api/v1/projects/${handedOffProject.id}/assign`) && res.request().method() === "PATCH"
+    (res) =>
+      res.url().endsWith(`/api/v1/projects/${handedOffProject.id}/assign`) &&
+      res.request().method() === "PATCH",
   );
   await page.getByLabel("Assigned to").selectOption({ label: STAFF_NAME });
   await assignResponse;
@@ -269,12 +318,17 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
     "Snagging",
     "Complete",
   ]) {
-    const moveButton = page.getByRole("button", { name: `Move to ${stageLabel}` });
+    const moveButton = page.getByRole("button", {
+      name: `Move to ${stageLabel}`,
+    });
     await expect(moveButton).toBeVisible();
     const transitionResponse = page.waitForResponse(
       (res) =>
-        res.url().endsWith(`/api/v1/projects/${handedOffProject.id}/workflow/transition`) &&
-        res.request().method() === "POST"
+        res
+          .url()
+          .endsWith(
+            `/api/v1/projects/${handedOffProject.id}/workflow/transition`,
+          ) && res.request().method() === "POST",
     );
     await moveButton.click();
     await transitionResponse;
@@ -286,9 +340,14 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await page.goto(`/customers/${customerId}`);
   await page.waitForLoadState("networkidle");
   const tmpFile = path.join(os.tmpdir(), `sprint027-journey-${RUN_ID}.txt`);
-  fs.writeFileSync(tmpFile, `Sprint 027 full-system journey document ${RUN_ID}`);
+  fs.writeFileSync(
+    tmpFile,
+    `Sprint 027 full-system journey document ${RUN_ID}`,
+  );
   const documentUploaded = page.waitForResponse(
-    (res) => res.url().includes("/api/v1/documents?") && res.request().method() === "POST"
+    (res) =>
+      res.url().includes("/api/v1/documents?") &&
+      res.request().method() === "POST",
   );
   await page.locator('input[type="file"]').setInputFiles(tmpFile);
   const uploadResponse = await documentUploaded;
@@ -298,7 +357,9 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   // ==== 10. Portal link + customer portal view, in a second, ====
   // ====     unauthenticated browser context                 ====
   const portalLinkCreated = page.waitForResponse(
-    (res) => res.url().endsWith("/api/v1/portal-links") && res.request().method() === "POST"
+    (res) =>
+      res.url().endsWith("/api/v1/portal-links") &&
+      res.request().method() === "POST",
   );
   await page.getByRole("button", { name: "Generate portal link" }).click();
   const portalLinkResponse = await portalLinkCreated;
@@ -309,13 +370,18 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   await customerPage.goto(`/portal/${portalLink.token}`);
   await customerPage.waitForLoadState("networkidle");
   await expect(customerPage.getByText(PROJECT_NAME)).toBeVisible();
-  await expect(customerPage.getByText(`sprint027-journey-${RUN_ID}.txt`)).toBeVisible();
+  await expect(
+    customerPage.getByText(`sprint027-journey-${RUN_ID}.txt`),
+  ).toBeVisible();
 
   // ==== 11. Messaging — customer sends, staff sees and replies ====
   const customerMessagePosted = customerPage.waitForResponse(
-    (res) => res.url().includes("/messages") && res.request().method() === "POST"
+    (res) =>
+      res.url().includes("/messages") && res.request().method() === "POST",
   );
-  await customerPage.getByPlaceholder("Write a message…").fill("When can you start?");
+  await customerPage
+    .getByPlaceholder("Write a message…")
+    .fill("When can you start?");
   await customerPage.getByRole("button", { name: /^send$/i }).click();
   await customerMessagePosted;
   await expect(customerPage.getByText("When can you start?")).toBeVisible();
@@ -343,17 +409,23 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   // STALE_ENQUIRY_THRESHOLD (app/notifications/follow_up_service.py) is 7
   // days; 30 days ahead is comfortably past it regardless of the
   // threshold's exact value.
-  const farFuture = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const farFuture = new Date(
+    Date.now() + 30 * 24 * 60 * 60 * 1000,
+  ).toISOString();
   const followUpResult = runFollowUpAutomation(farFuture);
   expect(followUpResult.created).toBeGreaterThanOrEqual(1);
 
   await page.goto("/customers");
   await page.waitForLoadState("networkidle");
-  const notificationsButton = page.getByRole("button", { name: /notifications/i });
+  const notificationsButton = page.getByRole("button", {
+    name: /notifications/i,
+  });
   await notificationsButton.click();
   await expect(page.getByText(STALE_PROJECT_NAME)).toBeVisible();
   await page.getByText(STALE_PROJECT_NAME).click();
-  await expect(page).toHaveURL(new RegExp(`/projects/${staleProjectId}$`), { timeout: 15_000 });
+  await expect(page).toHaveURL(new RegExp(`/projects/${staleProjectId}$`), {
+    timeout: 15_000,
+  });
 
   // ==== 13. Command Centre reflects the state built above ====
   await page.goto("/");
@@ -365,11 +437,15 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   const commandCentre = page
     .getByRole("heading", { name: "Business Command Centre" })
     .locator("xpath=..");
-  await expect(commandCentre.getByText("Handed off", { exact: true })).toBeVisible();
+  await expect(
+    commandCentre.getByText("Handed off", { exact: true }),
+  ).toBeVisible();
 
   // ==== 14. Revoke the portal link; the customer context sees it die ====
   const revokeResponse = page.waitForResponse(
-    (res) => res.url().includes("/portal-links/") && res.request().method() === "DELETE"
+    (res) =>
+      res.url().includes("/portal-links/") &&
+      res.request().method() === "DELETE",
   );
   await page.goto(`/customers/${customerId}`);
   await page.waitForLoadState("networkidle");
@@ -378,7 +454,9 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
 
   await customerPage.reload();
   await customerPage.waitForLoadState("networkidle");
-  await expect(customerPage.getByText(/This link has been revoked/)).toBeVisible();
+  await expect(
+    customerPage.getByText(/This link has been revoked/),
+  ).toBeVisible();
 
   await customerContext.close();
   await api.dispose();
