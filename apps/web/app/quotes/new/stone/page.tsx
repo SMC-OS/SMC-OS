@@ -234,10 +234,18 @@ function NewQuotePageInner({
     if (!isAuthenticated) return;
     api
       .getCustomers()
-      .then((rows) => {
+      .then(async (rows) => {
         setCustomers(rows);
         const selected = rows.find((row) => row.id === initialCustomerId);
-        if (selected) setCustomer(selected.name);
+        if (selected) {
+          setCustomer(selected.name);
+        } else if (initialCustomerId) {
+          try {
+            const initialCustomer = await api.getCustomer(initialCustomerId);
+            setCustomers([...rows, initialCustomer]);
+            setCustomer(initialCustomer.name);
+          } catch {}
+        }
       })
       .catch(() => {});
   }, [isAuthenticated, initialCustomerId]);

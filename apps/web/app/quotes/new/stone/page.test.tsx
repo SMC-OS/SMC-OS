@@ -82,6 +82,14 @@ beforeEach(() => {
     if (url.includes("/customers?")) {
       return jsonResponse([]);
     }
+    if (url.endsWith("/customers/customer-outside-page")) {
+      return jsonResponse({
+        id: "customer-outside-page",
+        name: "Sarah Whitfield",
+        customer_type: "individual",
+        created_at: new Date().toISOString(),
+      });
+    }
     if (url.endsWith("/quotes/ai-draft") && init?.method === "POST") {
       const parsedBody = JSON.parse(String(init.body));
       if (parsedBody.text === "missing product") {
@@ -228,6 +236,28 @@ afterEach(() => {
 });
 
 describe("NewQuotePage — multi-item editor (Sprint 033)", () => {
+  it("loads the forwarded customer when it is outside the initial customer page", async () => {
+    currentSearch = "customer=customer-outside-page";
+    renderEditor();
+
+    expect(await screen.findByLabelText("Customer name")).toHaveValue(
+      "Sarah Whitfield",
+    );
+    const customerSelect = await screen.findByLabelText(
+      "Link to existing customer (optional)",
+    );
+    expect(customerSelect).toHaveValue("customer-outside-page");
+    expect(
+      within(customerSelect).getByRole("option", {
+        name: "Sarah Whitfield",
+      }),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/customers\/customer-outside-page$/),
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
   it("starts with a single item row and submits it as `items`", async () => {
     renderEditor();
 
