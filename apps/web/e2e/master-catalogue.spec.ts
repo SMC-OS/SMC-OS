@@ -3,6 +3,7 @@ import { expect, request, test } from "@playwright/test";
 import { BACKEND_URL } from "../playwright.config";
 import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
+import { showAllStoneQuoteSections } from "./stone-quote-helper";
 
 /**
  * Sprint 042 (GeoCore Premium OS Plan 03) — Master Materials & Supplier
@@ -96,11 +97,12 @@ test("A_stone_catalogue_quote_prices_from_the_surface_and_its_snapshot_survives_
 
   await page.getByRole("button", { name: "Use in a stone quote" }).click();
   await page.waitForURL(/\/quotes\/new\/stone\?/);
+  await showAllStoneQuoteSections(page);
 
   // ---- The stone quote form is pre-filled from the catalogue ----
   await expect(page.getByText("From catalogue")).toBeVisible();
-  await expect(page.getByText(materialName)).toBeVisible();
-  await expect(page.getByText("20mm")).toBeVisible();
+  await expect(page.getByText(materialName).first()).toBeVisible();
+  await expect(page.getByText("20mm").first()).toBeVisible();
 
   await page.getByLabel("Customer name").fill(`Journey A Customer ${runId}`);
   await page.getByLabel("Length (mm)").fill("2400");
@@ -179,6 +181,7 @@ test("B_a_tenant_can_set_their_own_price_and_a_new_quote_reflects_it", async ({ 
   // ---- A new quote uses that price ----
   await page.getByRole("button", { name: "Use in a stone quote" }).click();
   await page.waitForURL(/\/quotes\/new\/stone\?/);
+  await showAllStoneQuoteSections(page);
   await page.getByLabel("Customer name").fill(`Journey B Customer ${runId}`);
   await page.getByLabel("Length (mm)").fill("2000");
 
@@ -219,6 +222,7 @@ test("C_a_custom_material_saved_to_the_catalogue_is_immediately_reusable_from_se
   // ---- Immediately reusable from a fresh search ----
   await page.getByRole("button", { name: "Use in a stone quote" }).click();
   await page.waitForURL(/\/quotes\/new\/stone\?/);
+  await showAllStoneQuoteSections(page);
   await expect(page.getByText("From catalogue")).toBeVisible();
 
   await page.getByLabel("Customer name").fill(`Journey C Customer ${runId}`);
@@ -330,6 +334,7 @@ test("E_construction_quoting_is_untouched_alongside_a_stone_catalogue_quote_in_t
   // ---- A plain, non-catalogue stone quote in the same session still works ----
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
+  await showAllStoneQuoteSections(page);
   await expect(page.getByText("From catalogue")).not.toBeVisible();
   await page.getByLabel("Customer name").fill(`Journey E Stone Customer ${runId}`);
   await page.getByLabel("Length (mm)").fill("2400");

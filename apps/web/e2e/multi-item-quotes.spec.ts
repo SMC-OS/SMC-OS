@@ -3,6 +3,7 @@ import { expect, request, test } from "@playwright/test";
 import { BACKEND_URL } from "../playwright.config";
 import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
+import { showAllStoneQuoteSections } from "./stone-quote-helper";
 /**
  * Sprint 033 (Workstream C) — true multi-line-item quotes, through the
  * real browser against the real Next.js app and real FastAPI server (see
@@ -59,6 +60,7 @@ test("a_three_item_quote_can_be_created_manually_and_remains_accessible", async 
 
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
+  await showAllStoneQuoteSections(page);
 
   await page.getByLabel("Customer name").fill(`Pytest Multi-Item Customer ${runId}`);
 
@@ -196,6 +198,7 @@ test("a_multi_item_quote_can_be_generated_through_simo_ai", async ({ page }) => 
 
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
+  await page.getByText("Draft with AI (optional)", { exact: true }).click();
 
   await page
     .getByPlaceholder(/calacatta oro 20mm/i)
@@ -206,6 +209,7 @@ test("a_multi_item_quote_can_be_generated_through_simo_ai", async ({ page }) => 
 
   await expect(page.getByText("Interpreted 3 items")).toBeVisible();
   await page.getByRole("button", { name: "Use these items" }).click();
+  await showAllStoneQuoteSections(page);
 
   await expect(page.getByText("Item 3", { exact: true })).toBeVisible();
   await expect(page.locator("[id$='-length']").nth(0)).toHaveValue("2400");

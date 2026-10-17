@@ -3,6 +3,7 @@ import { expect, request, test } from "@playwright/test";
 import { BACKEND_URL } from "../playwright.config";
 import { grantBillingAccess } from "./billing-helper";
 import { markVerified } from "./verify-helper";
+import { showAllStoneQuoteSections } from "./stone-quote-helper";
 
 /**
  * Post-release remediation (§3/§4) — through the real browser against
@@ -79,6 +80,7 @@ test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links
 
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
+  await showAllStoneQuoteSections(page);
 
   // Type straight into the inline Material search on this page — never
   // navigating to /catalogue at all.
@@ -107,14 +109,19 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
 
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
+  await showAllStoneQuoteSections(page);
 
-  await page.getByRole("radio", { name: "U-shape" }).click();
+  await page.getByLabel("Worktop layout").selectOption("u_shape");
   // The checkbox itself is visually hidden (sr-only) — its <label> is the
   // real click target, same as everywhere else this pattern is used.
   await page.getByText("Sink / hob cutout").click();
 
   await page.getByLabel("Customer name").fill(`Pytest Layout Customer ${runId}`);
   await page.getByLabel("Length (mm)").first().fill("2400");
+  await page.getByLabel("Piece B length (mm)").fill("1800");
+  await page.getByLabel("Piece B width (mm)").fill("650");
+  await page.getByLabel("Piece C length (mm)").fill("1800");
+  await page.getByLabel("Piece C width (mm)").fill("650");
   await page.getByRole("button", { name: "Calculate Quote" }).click();
 
   // Assert on the itemised RESULT, not the form: the picker labels stay
