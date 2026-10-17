@@ -33,7 +33,10 @@ function uniqueRunId(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function signUpAndLogIn(page: import("@playwright/test").Page, runId: string) {
+async function signUpAndLogIn(
+  page: import("@playwright/test").Page,
+  runId: string,
+) {
   const companyName = `Pytest E2E Sprint 042 Co ${runId}`;
   const ownerEmail = `pytest-e2e-sprint042-${runId}@example.invalid`;
   const ownerPassword = `Pytest-E2e-Sprint042-Password-${runId}!`;
@@ -76,7 +79,12 @@ test("A_stone_catalogue_quote_prices_from_the_surface_and_its_snapshot_survives_
     data: {
       canonical_name: materialName,
       material_family: "quartz",
-      variant: { thickness_mm: 20, finish: "Polished", slab_length_mm: 3200, slab_width_mm: 1600 },
+      variant: {
+        thickness_mm: 20,
+        finish: "Polished",
+        slab_length_mm: 3200,
+        slab_width_mm: 1600,
+      },
       buy_cost_per_slab: 800,
       selling_price_per_slab: 1200,
       save_to_catalogue: true,
@@ -103,11 +111,17 @@ test("A_stone_catalogue_quote_prices_from_the_surface_and_its_snapshot_survives_
   await expect(page.getByText("20mm")).toBeVisible();
 
   await page.getByLabel("Customer name").fill(`Journey A Customer ${runId}`);
+  await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2400");
 
   const quoteCreated = page.waitForResponse(
-    (res) => res.url().endsWith("/api/v1/quote") && res.request().method() === "POST"
+    (res) =>
+      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
+  await page
+    .getByRole("button", { name: "Next: Design details", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Next: Review", exact: true }).click();
   await page.getByRole("button", { name: "Calculate Quote" }).click();
   const created = await (await quoteCreated).json();
 
@@ -119,28 +133,47 @@ test("A_stone_catalogue_quote_prices_from_the_surface_and_its_snapshot_survives_
   // ---- Reopen the quote: the same price is shown ----
   await page.goto(`/quotes/${created.id}`);
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText(`£${originalLineTotal.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`).first()).toBeVisible();
+  await expect(
+    page
+      .getByText(
+        `£${originalLineTotal.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`,
+      )
+      .first(),
+  ).toBeVisible();
 
   // ---- Change the catalogue price AFTER the quote exists ----
-  const overrideRes = await api.put(`/api/v1/catalogue/surfaces/${surfaceId}/override`, {
-    headers: authHeaders,
-    data: { selling_price_per_slab: 9999 },
-  });
+  const overrideRes = await api.put(
+    `/api/v1/catalogue/surfaces/${surfaceId}/override`,
+    {
+      headers: authHeaders,
+      data: { selling_price_per_slab: 9999 },
+    },
+  );
   expect(overrideRes.ok()).toBeTruthy();
 
   // ---- The already-created quote's price is unchanged (Task 7) ----
   await page.reload();
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText(`£${originalLineTotal.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`).first()).toBeVisible();
+  await expect(
+    page
+      .getByText(
+        `£${originalLineTotal.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`,
+      )
+      .first(),
+  ).toBeVisible();
   await expect(page.getByText(/9,999/)).not.toBeVisible();
 
-  const reopened = await api.get(`/api/v1/quotes/${created.id}`, { headers: authHeaders });
+  const reopened = await api.get(`/api/v1/quotes/${created.id}`, {
+    headers: authHeaders,
+  });
   const reopenedBody = await reopened.json();
   expect(reopenedBody.items[0].price_per_slab).toBe(1200);
   expect(reopenedBody.items[0].line_total).toBe(originalLineTotal);
 });
 
-test("B_a_tenant_can_set_their_own_price_and_a_new_quote_reflects_it", async ({ page }) => {
+test("B_a_tenant_can_set_their_own_price_and_a_new_quote_reflects_it", async ({
+  page,
+}) => {
   const runId = uniqueRunId("journey-b");
   const { api, authHeaders } = await signUpAndLogIn(page, runId);
   const materialName = `Journey B Granite ${runId}`;
@@ -180,11 +213,17 @@ test("B_a_tenant_can_set_their_own_price_and_a_new_quote_reflects_it", async ({ 
   await page.getByRole("button", { name: "Use in a stone quote" }).click();
   await page.waitForURL(/\/quotes\/new\/stone\?/);
   await page.getByLabel("Customer name").fill(`Journey B Customer ${runId}`);
+  await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2000");
 
   const quoteCreated = page.waitForResponse(
-    (res) => res.url().endsWith("/api/v1/quote") && res.request().method() === "POST"
+    (res) =>
+      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
+  await page
+    .getByRole("button", { name: "Next: Design details", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Next: Review", exact: true }).click();
   await page.getByRole("button", { name: "Calculate Quote" }).click();
   const created = await (await quoteCreated).json();
 
@@ -201,11 +240,15 @@ test("C_a_custom_material_saved_to_the_catalogue_is_immediately_reusable_from_se
 
   await page.goto("/catalogue");
   await page.waitForLoadState("networkidle");
-  await page.getByRole("button", { name: "Can't find your stone? Add custom material" }).click();
+  await page
+    .getByRole("button", { name: "Can't find your stone? Add custom material" })
+    .click();
 
   // Scoped to the custom-material form: its own "Material family" select
   // shares a label with the search filter's, which is still on screen.
-  const customForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Add material" }) });
+  const customForm = page
+    .locator("form")
+    .filter({ has: page.getByRole("button", { name: "Add material" }) });
   await customForm.getByLabel("Material name").fill(materialName);
   await customForm.getByLabel("Material family").selectOption("granite");
   await customForm.getByLabel("Thickness (mm)").fill("20");
@@ -214,7 +257,9 @@ test("C_a_custom_material_saved_to_the_catalogue_is_immediately_reusable_from_se
   // "Save to my private catalogue" is checked by default.
   await customForm.getByRole("button", { name: "Add material" }).click();
 
-  await expect(page.getByText(/has been saved to your private catalogue/)).toBeVisible();
+  await expect(
+    page.getByText(/has been saved to your private catalogue/),
+  ).toBeVisible();
 
   // ---- Immediately reusable from a fresh search ----
   await page.getByRole("button", { name: "Use in a stone quote" }).click();
@@ -222,11 +267,17 @@ test("C_a_custom_material_saved_to_the_catalogue_is_immediately_reusable_from_se
   await expect(page.getByText("From catalogue")).toBeVisible();
 
   await page.getByLabel("Customer name").fill(`Journey C Customer ${runId}`);
+  await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("1800");
 
   const quoteCreated = page.waitForResponse(
-    (res) => res.url().endsWith("/api/v1/quote") && res.request().method() === "POST"
+    (res) =>
+      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
+  await page
+    .getByRole("button", { name: "Next: Design details", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Next: Review", exact: true }).click();
   await page.getByRole("button", { name: "Calculate Quote" }).click();
   const created = await (await quoteCreated).json();
   expect(created.items[0].catalogue_surface_id).toBeTruthy();
@@ -247,7 +298,10 @@ test("D_tenant_isolation_a_private_surface_and_its_price_are_invisible_to_anothe
   const runId = uniqueRunId("journey-d");
   const materialName = `Journey D Secret Onyx ${runId}`;
 
-  const { api: apiA, authHeaders: headersA } = await signUpAndLogIn(page, `${runId}-a`);
+  const { api: apiA, authHeaders: headersA } = await signUpAndLogIn(
+    page,
+    `${runId}-a`,
+  );
   const customMaterial = await apiA.post("/api/v1/catalogue/custom-materials", {
     headers: headersA,
     data: {
@@ -263,7 +317,10 @@ test("D_tenant_isolation_a_private_surface_and_its_price_are_invisible_to_anothe
 
   // Fresh page/session for Tenant B — logging in again overwrites the
   // stored token, same as any other cross-tenant-boundary spec.
-  const { api: apiB, authHeaders: headersB } = await signUpAndLogIn(page, `${runId}-b`);
+  const { api: apiB, authHeaders: headersB } = await signUpAndLogIn(
+    page,
+    `${runId}-b`,
+  );
 
   await page.goto("/catalogue");
   await page.waitForLoadState("networkidle");
@@ -274,12 +331,14 @@ test("D_tenant_isolation_a_private_surface_and_its_price_are_invisible_to_anothe
   // ("Your material catalogue is empty"); either way Tenant A's private
   // surface must not appear.
   await expect(
-    page.getByText(/^(No surfaces found|Your material catalogue is empty)$/)
+    page.getByText(/^(No surfaces found|Your material catalogue is empty)$/),
   ).toBeVisible();
   await expect(page.getByText(materialName, { exact: true })).not.toBeVisible();
 
   // Tenant A's private surface never counts towards Tenant B's catalogue.
-  const statusRes = await apiB.get("/api/v1/catalogue/meta/status", { headers: headersB });
+  const statusRes = await apiB.get("/api/v1/catalogue/meta/status", {
+    headers: headersB,
+  });
   expect(statusRes.ok()).toBeTruthy();
   expect((await statusRes.json()).tenant_surfaces).toBe(0);
 
@@ -302,7 +361,9 @@ test("E_construction_quoting_is_untouched_alongside_a_stone_catalogue_quote_in_t
   // ---- A general construction quote — no catalogue anywhere ----
   await page.goto("/quotes/new");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("Quote title").fill(`Electrical rewire, Journey E ${runId}`);
+  await page
+    .getByLabel("Quote title")
+    .fill(`Electrical rewire, Journey E ${runId}`);
   await page.getByLabel("Type of work").selectOption("electrical");
   await page.getByLabel("Description").fill("First and second fix rewire");
   await page.getByLabel("Quantity").fill("1");
@@ -310,7 +371,8 @@ test("E_construction_quoting_is_untouched_alongside_a_stone_catalogue_quote_in_t
   await page.getByLabel("Rate (£)").fill("2400");
 
   const generalQuoteCreated = page.waitForResponse(
-    (res) => res.url().endsWith("/api/v1/quotes") && res.request().method() === "POST"
+    (res) =>
+      res.url().endsWith("/api/v1/quotes") && res.request().method() === "POST",
   );
   await page.getByRole("button", { name: /create quote/i }).click();
   const generalQuote = await (await generalQuoteCreated).json();
@@ -331,12 +393,20 @@ test("E_construction_quoting_is_untouched_alongside_a_stone_catalogue_quote_in_t
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
   await expect(page.getByText("From catalogue")).not.toBeVisible();
-  await page.getByLabel("Customer name").fill(`Journey E Stone Customer ${runId}`);
+  await page
+    .getByLabel("Customer name")
+    .fill(`Journey E Stone Customer ${runId}`);
+  await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2400");
 
   const stoneQuoteCreated = page.waitForResponse(
-    (res) => res.url().endsWith("/api/v1/quote") && res.request().method() === "POST"
+    (res) =>
+      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
+  await page
+    .getByRole("button", { name: "Next: Design details", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Next: Review", exact: true }).click();
   await page.getByRole("button", { name: "Calculate Quote" }).click();
   const stoneQuote = await (await stoneQuoteCreated).json();
   expect(stoneQuote.items[0].catalogue_surface_id ?? null).toBeNull();
