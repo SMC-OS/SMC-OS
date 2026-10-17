@@ -7,6 +7,7 @@ import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
 import { grantBillingAccess } from "./billing-helper";
+import { prepareStoneQuoteEditor } from "./quote-editor-helper";
 
 /**
  * Sprint 027 (docs/SPRINTS/sprint-027.md §6.14/§7) — the centrepiece of
@@ -199,6 +200,7 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({ b
   // ==== 6. Create a Quote linked to the Customer; approve it ====
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
+  await prepareStoneQuoteEditor(page);
   await page.getByLabel("Link to existing customer (optional)").selectOption({
     label: CUSTOMER_NAME,
   });

@@ -2,6 +2,7 @@ import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
 import { grantBillingAccess } from "./billing-helper";
+import { prepareStoneQuoteEditor } from "./quote-editor-helper";
 import { markVerified } from "./verify-helper";
 /**
  * Sprint 033 (Workstream C) — true multi-line-item quotes, through the
@@ -59,6 +60,7 @@ test("a_three_item_quote_can_be_created_manually_and_remains_accessible", async 
 
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
+  await prepareStoneQuoteEditor(page);
 
   await page.getByLabel("Customer name").fill(`Pytest Multi-Item Customer ${runId}`);
 
@@ -197,6 +199,7 @@ test("a_multi_item_quote_can_be_generated_through_simo_ai", async ({ page }) => 
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
 
+  await prepareStoneQuoteEditor(page, { openAiDraft: true });
   await page
     .getByPlaceholder(/calacatta oro 20mm/i)
     .fill(

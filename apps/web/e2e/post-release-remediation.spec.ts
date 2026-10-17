@@ -2,6 +2,7 @@ import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
 import { grantBillingAccess } from "./billing-helper";
+import { prepareStoneQuoteEditor } from "./quote-editor-helper";
 import { markVerified } from "./verify-helper";
 
 /**
@@ -79,6 +80,7 @@ test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links
 
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
+  await prepareStoneQuoteEditor(page);
 
   // Type straight into the inline Material search on this page — never
   // navigating to /catalogue at all.
@@ -107,6 +109,7 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
 
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
+  await prepareStoneQuoteEditor(page);
 
   await page.getByRole("radio", { name: "U-shape" }).click();
   // The checkbox itself is visually hidden (sr-only) — its <label> is the
