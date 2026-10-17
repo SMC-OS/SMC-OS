@@ -61,6 +61,7 @@ def _serialize_search_result(db: Session, surface: CatalogueSurface, tenant_id: 
         is_tenant_private=surface.tenant_id is not None,
         thicknesses_mm=sorted({v.thickness_mm for v in variants if v.thickness_mm is not None}),
         finishes=sorted({v.finish for v in variants if v.finish}),
+        image_url=override.image_url if override else None,
         has_tenant_price=resolve_price_per_slab(override) is not None,
     )
 
@@ -165,6 +166,7 @@ def get_surface_detail(
         source_name=surface.source_name,
         source_url=surface.source_url,
         source_verified_at=surface.source_verified_at,
+        image_url=override.image_url if override else None,
         variants=variants,
         tenant_override=override_out,
     )

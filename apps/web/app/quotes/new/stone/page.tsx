@@ -391,6 +391,7 @@ function NewQuotePageInner({
                   Number(
                     piece.label === "A" ? row.width_mm : measured?.width,
                   ) || 650,
+                slab_group: row.layout ? row.key : undefined,
                 unit_input: "mm" as const,
                 custom_material: row.custom_material,
                 catalogue_surface_id: row.catalogue_surface_id,
@@ -419,6 +420,7 @@ function NewQuotePageInner({
                 quantity: Number(row.quantity),
                 length_mm: Number(row.designDetails[`${kind}Length`]),
                 width_mm: Number(row.designDetails[`${kind}Height`]),
+                slab_group: row.layout ? row.key : undefined,
                 unit_input: "mm" as const,
                 custom_material: row.custom_material,
                 catalogue_surface_id: row.catalogue_surface_id,
@@ -947,10 +949,10 @@ function NewQuotePageInner({
                     {row.layout && (
                       <p className="mt-4 text-sm text-muted">
                         Enter the finished size of each piece. Measurements are
-                        in millimetres. The estimate allows whole slabs per
-                        piece, including waste. Pieces are not combined onto
-                        shared slabs; review the cutting plan before issuing a
-                        final price.
+                        in millimetres. Pieces in this layout share a
+                        material-area estimate including 15% waste. This is not
+                        a cutting or grain-matching plan; review slab fit before
+                        issuing a final price.
                       </p>
                     )}
                     {row.layout &&
@@ -1146,9 +1148,10 @@ function NewQuotePageInner({
                 ))}
               </ul>
               <p className="mt-4 text-sm text-muted">
-                The estimate uses your catalogue prices and GeoCore’s existing
-                slab calculation for each piece separately. Measured upstands
-                and splashbacks add separate lines. Cut-out, tap-hole and
+                The estimate uses your catalogue prices and pools the material
+                area of each selected layout, including 15% waste. Review the
+                cutting plan before issuing a final price. Measured upstands and
+                splashbacks add separate lines. Cut-out, tap-hole and
                 polished-edge selections are specifications only. Calculating
                 creates a saved quote; it does not send it to the customer.
               </p>
@@ -1229,7 +1232,9 @@ function NewQuotePageInner({
                     </p>
                     <p className="text-xs text-muted">
                       {item.quantity} x {item.length_mm}mm x {item.width_mm}mm ·{" "}
-                      {item.slabs} slab{item.slabs === 1 ? "" : "s"}
+                      {item.slab_allocation
+                        ? `shares ${item.slab_allocation.group_slabs} slab${item.slab_allocation.group_slabs === 1 ? "" : "s"} across the layout`
+                        : `${item.slabs} slab${item.slabs === 1 ? "" : "s"}`}
                     </p>
                     {item.notes && (
                       <p className="mt-1 text-xs text-muted">{item.notes}</p>

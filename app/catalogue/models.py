@@ -5,6 +5,7 @@ convention as everywhere else in this schema.
 """
 
 import uuid
+from urllib.parse import urlsplit
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -21,6 +22,20 @@ MATERIAL_FAMILIES = {
     "other_natural_stone",
     "other_engineered_surface",
 }
+
+
+class PhotoInput(BaseModel):
+    image_url: str | None = Field(default=None, max_length=2048)
+
+    @field_validator("image_url")
+    @classmethod
+    def _https_photo(cls, value):
+        if not value:
+            return None
+        parsed = urlsplit(value)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("Material photos must use a public HTTPS URL without credentials")
+        return value
 
 
 class SupplierOut(BaseModel):
@@ -93,11 +108,12 @@ class TenantOverrideOut(BaseModel):
     lead_time_days: int | None
     tenant_active: bool
     private_notes: str | None
+    image_url: str | None = None
     resolved_price_per_slab: float | None = None
     updated_at: datetime
 
 
-class TenantOverrideIn(BaseModel):
+class TenantOverrideIn(PhotoInput):
     """A tenant Owner's own commercial data for one surface (Task 3) —
     every field optional; setting nothing simply leaves the price
     unresolved (Task 8: never fabricated)."""
@@ -149,6 +165,7 @@ class SurfaceSearchResult(BaseModel):
     is_tenant_private: bool
     thicknesses_mm: list[float]
     finishes: list[str]
+    image_url: str | None = None
     has_tenant_price: bool
 
 
@@ -175,6 +192,7 @@ class SurfaceDetailOut(BaseModel):
     source_name: str | None
     source_url: str | None
     source_verified_at: datetime | None
+    image_url: str | None = None
     variants: list[SurfaceVariantOut]
     tenant_override: TenantOverrideOut | None
 

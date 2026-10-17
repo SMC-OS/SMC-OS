@@ -2,15 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Input } from "@/components/ui/Field";
+import { Input, Select } from "@/components/ui/Field";
 import { ApiError, api } from "@/lib/api";
-import type { CatalogueStatus, SurfaceSearchResult } from "@/types/catalogue";
+import {
+  MATERIAL_FAMILIES,
+  MATERIAL_FAMILY_LABELS,
+  type MaterialFamily,
+  type CatalogueStatus,
+  type SurfaceSearchResult,
+} from "@/types/catalogue";
 
 interface MaterialCatalogueSearchProps {
   id: string;
   value: string;
   onFreeTextChange: (text: string) => void;
-  onSelectSurface: (surface: SurfaceSearchResult, thicknessLabel: string, variantId: string | null) => void;
+  onSelectSurface: (
+    surface: SurfaceSearchResult,
+    thicknessLabel: string,
+    variantId: string | null,
+  ) => void;
 }
 
 /** Post-release remediation (§4) — the stone quote Material field
@@ -25,7 +35,12 @@ interface MaterialCatalogueSearchProps {
  * catalogue has not been loaded, nothing matched, or the search itself
  * failed. Every case is explicit that the typed text still quotes as
  * free text, so an empty catalogue never looks like a broken form. */
-type Outcome = "idle" | "results" | "no_match" | "catalogue_empty" | "unavailable";
+type Outcome =
+  | "idle"
+  | "results"
+  | "no_match"
+  | "catalogue_empty"
+  | "unavailable";
 
 export function MaterialCatalogueSearch({
   id,
@@ -33,6 +48,7 @@ export function MaterialCatalogueSearch({
   onFreeTextChange,
   onSelectSurface,
 }: MaterialCatalogueSearchProps) {
+  const [family, setFamily] = useState<MaterialFamily | "">("");
   const [results, setResults] = useState<SurfaceSearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -51,7 +67,9 @@ export function MaterialCatalogueSearch({
       }
     }
     const status = statusRef.current;
-    return status.global_surfaces + status.tenant_surfaces === 0 ? "catalogue_empty" : "no_match";
+    return status.global_surfaces + status.tenant_surfaces === 0
+      ? "catalogue_empty"
+      : "no_match";
   }
 
   useEffect(() => {
@@ -73,7 +91,11 @@ export function MaterialCatalogueSearch({
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const found = await api.searchCatalogueSurfaces({ q: text.trim(), limit: 8 });
+        const found = await api.searchCatalogueSurfaces({
+          q: text.trim(),
+          limit: 24,
+          material_family: family || undefined,
+        });
         setResults(found);
         setOpen(found.length > 0);
         setOutcome(found.length > 0 ? "results" : await explainEmptyResult());
@@ -90,18 +112,40 @@ export function MaterialCatalogueSearch({
     }, 300);
   }
 
+  async function browseMaterials() {
+    setLoading(true);
+    try {
+      const found = await api.searchCatalogueSurfaces({
+        material_family: family || undefined,
+        limit: 24,
+      });
+      setResults(found);
+      setOpen(found.length > 0);
+      setOutcome(found.length ? "results" : await explainEmptyResult());
+    } catch {
+      setOutcome("unavailable");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleSelect(surface: SurfaceSearchResult) {
     setOpen(false);
     setResults([]);
     setOutcome("idle");
     let variantId: string | null = null;
-    let thicknessLabel = surface.thicknesses_mm.length > 0 ? `${surface.thicknesses_mm[0]}mm` : "20mm";
+    let thicknessLabel =
+      surface.thicknesses_mm.length > 0
+        ? `${surface.thicknesses_mm[0]}mm`
+        : "20mm";
     try {
       const detail = await api.getCatalogueSurface(surface.id);
-      const firstVariant = detail.variants.find((v) => v.active) ?? detail.variants[0] ?? null;
+      const firstVariant =
+        detail.variants.find((v) => v.active) ?? detail.variants[0] ?? null;
       if (firstVariant) {
         variantId = firstVariant.id;
-        if (firstVariant.thickness_mm) thicknessLabel = `${firstVariant.thickness_mm}mm`;
+        if (firstVariant.thickness_mm)
+          thicknessLabel = `${firstVariant.thickness_mm}mm`;
       }
     } catch {
       // Fall back to the surface alone (no specific variant) rather than
@@ -121,19 +165,51 @@ export function MaterialCatalogueSearch({
         placeholder="e.g. Calacatta Gold, white quartz, or Silestone"
         autoComplete="off"
       />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <label className="sr-only" htmlFor={`${id}-family`}>
+          Material type
+        </label>
+        <Select
+          id={`${id}-family`}
+          className="min-w-0 flex-1"
+          value={family}
+          onChange={(e) => setFamily(e.target.value as MaterialFamily | "")}
+        >
+          <option value="">All material types</option>
+          {MATERIAL_FAMILIES.map((type) => (
+            <option key={type} value={type}>
+              {MATERIAL_FAMILY_LABELS[type]}
+            </option>
+          ))}
+        </Select>
+        <button
+          type="button"
+          className="rounded-lg border border-border px-3 py-2 text-sm text-foreground"
+          disabled={loading}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => void browseMaterials()}
+        >
+          Browse materials
+        </button>
+      </div>
       {open && (
-        <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-border bg-background py-1 text-sm shadow-lg">
+        <ul className="mt-3 grid max-h-96 grid-cols-1 gap-3 overflow-auto rounded-lg border border-border bg-background p-3 text-sm sm:grid-cols-2">
           {results.map((r) => (
             <li key={r.id}>
               <button
                 type="button"
-                className="tap-link block w-full px-3 py-2 text-left hover:bg-surface-hover"
+                className="tap-link block h-full w-full overflow-hidden rounded-lg border border-border text-left hover:border-accent hover:bg-surface-hover"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleSelect(r)}
               >
-                <span className="font-medium text-foreground">{r.canonical_name}</span>
+                <MaterialPhoto url={r.image_url} name={r.canonical_name} />
+                <span className="block px-3 py-2 font-medium text-foreground">
+                  {r.canonical_name}
+                </span>
                 {(r.brand_name || r.manufacturer_name) && (
-                  <span className="ml-2 text-xs text-muted">{r.brand_name ?? r.manufacturer_name}</span>
+                  <span className="block px-3 pb-3 text-xs text-muted">
+                    {r.brand_name ?? r.manufacturer_name}
+                  </span>
                 )}
               </button>
             </li>
@@ -151,6 +227,27 @@ export function MaterialCatalogueSearch({
                 ? "Catalogue search is unavailable right now — the name you type will be quoted as typed."
                 : null}
       </p>
+    </div>
+  );
+}
+
+function MaterialPhoto({ url, name }: { url?: string | null; name: string }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  return (
+    <div className="flex h-32 items-center justify-center bg-surface-hover">
+      {url && failedUrl !== url ? (
+        // eslint-disable-next-line @next/next/no-img-element -- workspace HTTPS sources are validated by the API; no server-side image proxy.
+        <img
+          src={url}
+          alt={name}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailedUrl(url)}
+        />
+      ) : (
+        <span className="text-xs text-muted">Photo not supplied</span>
+      )}
     </div>
   );
 }

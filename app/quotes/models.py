@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.catalogue.models import CustomMaterialCreate
 
 # Sprint 033 (Workstream C). Plain strings (no native enum), same
@@ -29,6 +29,8 @@ class QuoteItemRequest(BaseModel):
     unit_input: str = "mm"
 
     notes: str | None = None
+    # Opt-in grouping is local to this request; ungrouped legacy quotes keep their pricing.
+    slab_group: str | None = Field(default=None, min_length=1, max_length=64)
     custom_material: CustomMaterialCreate | None = None
 
     # Sprint 042 (GeoCore Premium OS Plan 03) — Stone Quote Engine V2.

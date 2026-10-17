@@ -1632,6 +1632,7 @@ class TenantCatalogueOverride(Base):
     stock_status: Mapped[str | None] = mapped_column(String, nullable=True)
     lead_time_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tenant_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     private_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

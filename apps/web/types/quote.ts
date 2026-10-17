@@ -120,6 +120,7 @@ export interface QuoteItemRequest {
   thickness_mm?: number | null;
   unit_input?: DimensionUnit;
   notes?: string | null;
+  slab_group?: string | null;
   // Sprint 042 (GeoCore Premium OS Plan 03) — Stone Quote Engine V2.
   // Optional and additive: when set, the backend prices this item from
   // the Master Catalogue + the caller's own tenant override instead of
@@ -150,6 +151,12 @@ export interface QuoteItem {
   notes: string | null;
   price_per_slab: number | null;
   slabs: number | null;
+  slab_allocation?: {
+    group: string;
+    group_slabs: number;
+    method: string;
+    material_allocation: number;
+  } | null;
   line_total: number | null;
   // GeoCore Premium OS Plan 05 (Sprint 044), Task 35 — present only on a
   // stone line created via catalogue selection; lets this line be sent

@@ -5,7 +5,13 @@
  * typed name still quotes as free text.
  */
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,9 +24,12 @@ vi.mock("@/lib/api", async () => {
   return {
     ...actual,
     api: {
-      searchCatalogueSurfaces: (...args: unknown[]) => searchCatalogueSurfacesMock(...args),
-      getCatalogueStatus: (...args: unknown[]) => getCatalogueStatusMock(...args),
-      getCatalogueSurface: (...args: unknown[]) => getCatalogueSurfaceMock(...args),
+      searchCatalogueSurfaces: (...args: unknown[]) =>
+        searchCatalogueSurfacesMock(...args),
+      getCatalogueStatus: (...args: unknown[]) =>
+        getCatalogueStatusMock(...args),
+      getCatalogueSurface: (...args: unknown[]) =>
+        getCatalogueSurfaceMock(...args),
     },
   };
 });
@@ -32,7 +41,12 @@ import { MaterialCatalogueSearch } from "./MaterialCatalogueSearch";
 function Harness() {
   const [value, setValue] = useState("");
   return (
-    <MaterialCatalogueSearch id="material" value={value} onFreeTextChange={setValue} onSelectSurface={() => {}} />
+    <MaterialCatalogueSearch
+      id="material"
+      value={value}
+      onFreeTextChange={setValue}
+      onSelectSurface={() => {}}
+    />
   );
 }
 
@@ -58,28 +72,44 @@ afterEach(() => {
 describe("MaterialCatalogueSearch — Phase A empty states", () => {
   it("says the catalogue has no materials yet when reference data is missing", async () => {
     searchCatalogueSurfacesMock.mockResolvedValue([]);
-    getCatalogueStatusMock.mockResolvedValue({ global_surfaces: 0, tenant_surfaces: 0, reference_data_loaded: false });
+    getCatalogueStatusMock.mockResolvedValue({
+      global_surfaces: 0,
+      tenant_surfaces: 0,
+      reference_data_loaded: false,
+    });
     render(<Harness />);
 
     await typeAndSettle("Calacatta");
 
-    expect(screen.getByRole("status")).toHaveTextContent(/catalogue has no materials yet/i);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /catalogue has no materials yet/i,
+    );
     expect(screen.getByRole("status")).toHaveTextContent(/quoted as typed/i);
   });
 
   it("says nothing matched when the catalogue has materials", async () => {
     searchCatalogueSurfacesMock.mockResolvedValue([]);
-    getCatalogueStatusMock.mockResolvedValue({ global_surfaces: 38, tenant_surfaces: 0, reference_data_loaded: true });
+    getCatalogueStatusMock.mockResolvedValue({
+      global_surfaces: 38,
+      tenant_surfaces: 0,
+      reference_data_loaded: true,
+    });
     render(<Harness />);
 
     await typeAndSettle("Zebrawood");
 
-    expect(screen.getByRole("status")).toHaveTextContent("No catalogue match for “Zebrawood”");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "No catalogue match for “Zebrawood”",
+    );
   });
 
   it("only asks for catalogue status once across several empty searches", async () => {
     searchCatalogueSurfacesMock.mockResolvedValue([]);
-    getCatalogueStatusMock.mockResolvedValue({ global_surfaces: 38, tenant_surfaces: 0, reference_data_loaded: true });
+    getCatalogueStatusMock.mockResolvedValue({
+      global_surfaces: 38,
+      tenant_surfaces: 0,
+      reference_data_loaded: true,
+    });
     render(<Harness />);
 
     await typeAndSettle("Zebra");
@@ -122,7 +152,26 @@ describe("MaterialCatalogueSearch — Phase A empty states", () => {
 
     await typeAndSettle("Calacatta");
 
-    expect(screen.getByRole("status")).toHaveTextContent(/unavailable right now/i);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /unavailable right now/i,
+    );
     expect(screen.getByRole("textbox")).toHaveValue("Calacatta");
   });
+});
+
+it("shows the workspace material photograph in the selection card", async () => {
+  searchCatalogueSurfacesMock.mockResolvedValue([
+    {
+      id: "photo-stone",
+      canonical_name: "Photo Quartz",
+      thicknesses_mm: [20],
+      image_url: "https://example.com/quartz.jpg",
+    },
+  ]);
+  render(<Harness />);
+  await typeAndSettle("Photo");
+  expect(screen.getByRole("img", { name: "Photo Quartz" })).toHaveAttribute(
+    "src",
+    "https://example.com/quartz.jpg",
+  );
 });

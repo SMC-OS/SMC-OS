@@ -107,6 +107,9 @@ class CatalogueService:
             raise SurfaceNotFoundError(surface_id)
 
         fields = data.model_dump(exclude={"surface_variant_id"})
+        # Price-only clients must not erase the workspace photo.
+        if "image_url" not in data.model_fields_set:
+            fields.pop("image_url", None)
         return crud.upsert_tenant_catalogue_override(
             db,
             tenant_id=tenant_id,

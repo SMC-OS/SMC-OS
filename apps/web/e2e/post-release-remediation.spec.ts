@@ -84,6 +84,25 @@ test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links
   });
   expect(customMaterial.ok()).toBeTruthy();
   const { surface_id: surfaceId } = await customMaterial.json();
+  const photoUrl = "https://example.com/synthetic-qa-marble.png";
+  await page.route(photoUrl, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0n8AAAAASUVORK5CYII=",
+        "base64",
+      ),
+    }),
+  );
+  const photoSaved = await api.put(
+    `/api/v1/catalogue/surfaces/${surfaceId}/override`,
+    {
+      headers: authHeaders,
+      data: { image_url: photoUrl, selling_price_per_slab: 900 },
+    },
+  );
+  expect(photoSaved.ok()).toBeTruthy();
 
   await page.goto("/quotes/new/stone");
   await page.waitForLoadState("networkidle");
@@ -91,6 +110,12 @@ test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links
   // Type straight into the inline Material search on this page — never
   // navigating to /catalogue at all.
   await page.getByLabel("Material").fill(materialName);
+  await expect(
+    page.getByRole("img", { name: materialName, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: materialName, exact: true }),
+  ).toHaveJSProperty("naturalWidth", 1);
   await page.getByRole("button", { name: new RegExp(materialName) }).click();
 
   await expect(page.getByText("From catalogue")).toBeVisible();
@@ -158,6 +183,8 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
   expect(
     created.items.map((item: { length_mm: number }) => item.length_mm),
   ).toEqual([2400, 1800, 1600]);
+  expect(created.slabs).toBe(1);
+  expect(created.items[2].slab_allocation.group_slabs).toBe(1);
   // Assert on the itemised RESULT, not the form: the picker labels stay
   // on screen after calculating, so a bare getByText(/U-shape/) matched
   // the picker (passing without checking the result at all) or, once the
