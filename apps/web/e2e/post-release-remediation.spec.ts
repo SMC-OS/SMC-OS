@@ -109,7 +109,7 @@ test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links
 
   // Type straight into the inline Material search on this page — never
   // navigating to /catalogue at all.
-  await page.getByLabel("Material").fill(materialName);
+  await page.getByLabel("Material", { exact: true }).fill(materialName);
   await expect(
     page.getByRole("img", { name: materialName, exact: true }),
   ).toBeVisible();
