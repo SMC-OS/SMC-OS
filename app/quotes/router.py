@@ -56,6 +56,7 @@ def _serialize_item(item) -> dict:
         "notes": item.notes,
         "price_per_slab": item.price_per_slab,
         "slabs": item.slabs,
+        "slab_allocation": (item.catalogue_snapshot or {}).get("slab_allocation"),
         "line_total": item.line_total,
         # GeoCore Premium OS Plan 05 (Sprint 044), Task 35 — surfaced so a
         # handed-off quote's catalogue-linked stone lines can be sent
