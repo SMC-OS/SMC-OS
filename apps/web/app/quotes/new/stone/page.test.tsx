@@ -795,6 +795,28 @@ it("guides material to layout to details to review without losing measurements",
   expect(screen.getByLabelText("Piece B length (mm)")).toHaveValue(1800);
 });
 
+it("returns to Material when adding an item from Review", async () => {
+  render(<NewQuotePage />);
+  await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");
+  await userEvent.click(screen.getByRole("button", { name: "Next: Layout" }));
+  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+  await userEvent.type(screen.getByLabelText("Width/Depth (mm)"), "600");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Next: Design details" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Next: Review" }));
+
+  expect(
+    screen.queryByRole("heading", { name: "1. Material & customer" }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /add item/i }));
+
+  expect(
+    screen.getByRole("heading", { name: "1. Material & customer" }),
+  ).toBeVisible();
+  expect(screen.getAllByLabelText("Material")).toHaveLength(2);
+});
+
 it("records sink details and prices measured upstands as a separate line", async () => {
   renderEditor();
   await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");

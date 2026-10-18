@@ -290,6 +290,7 @@ function NewQuotePageInner({
   function addItem() {
     setResult(null);
     setItems((rows) => [...rows, blankItem()]);
+    setStep(0);
   }
 
   function removeItem(key: string) {
