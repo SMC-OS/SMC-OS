@@ -54,7 +54,7 @@ async function signUpAndLogIn(
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
 
-  return { api, authHeaders, ownerEmail };
+  return { api, authHeaders, ownerEmail, ownerPassword };
 }
 
 test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links_a_surface", async ({
@@ -301,7 +301,10 @@ test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymou
 }) => {
   test.setTimeout(60_000);
   const runId = uniqueRunId("stone-expiry");
-  await signUpAndLogIn(page, runId);
+  const { api, authHeaders, ownerEmail, ownerPassword } = await signUpAndLogIn(
+    page,
+    runId,
+  );
   await page.goto("/quotes/new/stone");
   await page.getByLabel("Show all sections").check();
   await page
@@ -339,11 +342,6 @@ test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymou
   await expect(
     page.getByText(/Ready to attach: retained-plan.pdf/),
   ).toBeVisible();
-  expect(
-    await page
-      .getByLabel("Upload layout drawing (optional)")
-      .evaluate((input: HTMLInputElement) => input.files?.[0]?.name),
-  ).toBe("retained-plan.pdf");
   let quotePosts = 0;
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/api/v1/quote"))
@@ -356,4 +354,55 @@ test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymou
     page.getByRole("alert").filter({ hasText: "Sign in again" }),
   ).toContainText("Sign in again");
   expect(quotePosts).toBe(0);
+
+  // The chooser clears its native value after selection so the same file can
+  // be selected again. Prove the queued File survives by uploading it after
+  // restoring the session, then compare the downloaded bytes.
+  const signIn = await context.newPage();
+  await signIn.goto("/login");
+  await signIn.getByLabel("Email", { exact: true }).fill(ownerEmail);
+  await signIn.getByLabel("Password", { exact: true }).fill(ownerPassword);
+  await signIn.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(signIn).toHaveURL(/\/customers$/);
+  await signIn.close();
+  await page
+    .getByRole("button", { name: "Check sign-in and retry", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Link to existing customer (optional)"),
+  ).toBeVisible();
+  await expect(page.getByLabel("Customer name", { exact: true })).toHaveValue(
+    `Retained Pilot ${runId}`,
+  );
+  await expect(
+    page.getByText(/Ready to attach: retained-plan.pdf/),
+  ).toBeVisible();
+  await page.getByLabel("Enter my own slab price").check();
+  await page.getByLabel("Selling price per slab (£)").fill("900");
+  const accepted = page.waitForResponse(
+    (res) =>
+      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Calculate Quote", exact: true })
+    .click();
+  const response = await accepted;
+  expect(response.status()).toBe(200);
+  const created = await response.json();
+  const documents = await api.get(
+    `/api/v1/documents?customer_id=${created.customer_id}`,
+    { headers: authHeaders },
+  );
+  expect(documents.status()).toBe(200);
+  const drawing = (await documents.json()).find(
+    (doc: { original_filename: string }) =>
+      doc.original_filename === "retained-plan.pdf",
+  );
+  expect(drawing).toBeTruthy();
+  const download = await api.get(`/api/v1/documents/${drawing.id}/download`, {
+    headers: authHeaders,
+  });
+  expect(download.status()).toBe(200);
+  expect(await download.body()).toEqual(Buffer.from("%PDF-1.4\n%%EOF"));
+  expect(quotePosts).toBe(1);
 });
