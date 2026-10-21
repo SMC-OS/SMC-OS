@@ -10,6 +10,7 @@ import {
   type MaterialFamily,
   type CatalogueStatus,
   type SurfaceSearchResult,
+  type SurfaceVariant,
 } from "@/types/catalogue";
 
 interface MaterialCatalogueSearchProps {
@@ -20,6 +21,7 @@ interface MaterialCatalogueSearchProps {
     surface: SurfaceSearchResult,
     thicknessLabel: string,
     variantId: string | null,
+    variant: SurfaceVariant | null,
   ) => void;
 }
 
@@ -40,6 +42,7 @@ type Outcome =
   | "results"
   | "no_match"
   | "catalogue_empty"
+  | "sign_in"
   | "unavailable";
 
 export function MaterialCatalogueSearch({
@@ -105,7 +108,7 @@ export function MaterialCatalogueSearch({
         if (!(err instanceof ApiError)) throw err;
         setResults([]);
         setOpen(false);
-        setOutcome("unavailable");
+        setOutcome(err.status === 401 ? "sign_in" : "unavailable");
       } finally {
         setLoading(false);
       }
@@ -122,8 +125,14 @@ export function MaterialCatalogueSearch({
       setResults(found);
       setOpen(found.length > 0);
       setOutcome(found.length ? "results" : await explainEmptyResult());
-    } catch {
-      setOutcome("unavailable");
+    } catch (err) {
+      setResults([]);
+      setOpen(false);
+      setOutcome(
+        err instanceof ApiError && err.status === 401
+          ? "sign_in"
+          : "unavailable",
+      );
     } finally {
       setLoading(false);
     }
@@ -134,6 +143,7 @@ export function MaterialCatalogueSearch({
     setResults([]);
     setOutcome("idle");
     let variantId: string | null = null;
+    let selectedVariant: SurfaceVariant | null = null;
     let thicknessLabel =
       surface.thicknesses_mm.length > 0
         ? `${surface.thicknesses_mm[0]}mm`
@@ -142,6 +152,7 @@ export function MaterialCatalogueSearch({
       const detail = await api.getCatalogueSurface(surface.id);
       const firstVariant =
         detail.variants.find((v) => v.active) ?? detail.variants[0] ?? null;
+      selectedVariant = firstVariant;
       if (firstVariant) {
         variantId = firstVariant.id;
         if (firstVariant.thickness_mm)
@@ -151,7 +162,7 @@ export function MaterialCatalogueSearch({
       // Fall back to the surface alone (no specific variant) rather than
       // blocking selection on a second failed request.
     }
-    onSelectSurface(surface, thicknessLabel, variantId);
+    onSelectSurface(surface, thicknessLabel, variantId, selectedVariant);
   }
 
   return (
@@ -206,6 +217,11 @@ export function MaterialCatalogueSearch({
                 <span className="block break-words px-3 py-2 font-medium text-foreground">
                   {r.canonical_name}
                 </span>
+                {!r.has_tenant_price && (
+                  <span className="block px-3 pb-2 text-xs text-muted">
+                    Price needed — enter your slab price after selecting
+                  </span>
+                )}
                 {(r.brand_name || r.manufacturer_name) && (
                   <span className="block px-3 pb-3 text-xs text-muted">
                     {r.brand_name ?? r.manufacturer_name}
@@ -219,14 +235,26 @@ export function MaterialCatalogueSearch({
       <p className="mt-1 text-xs text-muted" role="status" aria-live="polite">
         {loading
           ? "Searching catalogue…"
-          : outcome === "no_match"
-            ? `No catalogue match for “${value.trim()}” — it will be quoted as typed.`
-            : outcome === "catalogue_empty"
-              ? "The material catalogue has no materials yet — the name you type will be quoted as typed."
-              : outcome === "unavailable"
-                ? "Catalogue search is unavailable right now — the name you type will be quoted as typed."
-                : null}
+          : outcome === "sign_in"
+            ? "Sign in again to browse your workspace catalogue. Your typed material is kept."
+            : outcome === "no_match"
+              ? `No catalogue match for “${value.trim()}” — keep the name and enter your own slab price below.`
+              : outcome === "catalogue_empty"
+                ? "The material catalogue has no materials yet — enter a material name and your own slab price below."
+                : outcome === "unavailable"
+                  ? "Catalogue search is unavailable right now. Your typed name is kept; an unpriced material needs your own slab price."
+                  : null}
       </p>
+      {outcome === "sign_in" && (
+        <a
+          className="mt-2 inline-block text-sm text-accent underline"
+          href="/login"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Sign in in a new tab
+        </a>
+      )}
     </div>
   );
 }

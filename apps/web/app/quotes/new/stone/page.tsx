@@ -22,7 +22,12 @@ import {
 import { MaterialCatalogueSearch } from "@/components/quotes/MaterialCatalogueSearch";
 import { ApiError, api } from "@/lib/api";
 import { readQuoteCustomMaterial } from "@/lib/quote-custom-material";
-import type { CustomMaterialInput } from "@/types/catalogue";
+import {
+  MATERIAL_FAMILIES,
+  MATERIAL_FAMILY_LABELS,
+  type MaterialFamily,
+  type CustomMaterialInput,
+} from "@/types/catalogue";
 import { formatCurrencyGBP } from "@/lib/utils";
 import {
   EXTRA_LABELS,
@@ -56,11 +61,17 @@ interface ItemRow {
   catalogue_variant_id: string | null;
   // A layout expands into separately measured quote lines on submission.
   custom_material: CustomMaterialInput | null;
+  manualPricing: boolean;
+  manualPrice: string;
+  manualFamily: MaterialFamily;
+  slabLength: string;
+  slabWidth: string;
   layout: LayoutOption | "";
   extras: ExtraOption[];
   pieces: WorktopPiece[];
   designDetails: DesignDetails;
   drawing: { id: string; filename: string } | null;
+  pendingDrawing: File | null;
 }
 
 let nextRowKey = 0;
@@ -81,10 +92,16 @@ function blankItem(overrides: Partial<ItemRow> = {}): ItemRow {
     catalogue_surface_id: null,
     catalogue_variant_id: null,
     custom_material: null,
+    manualPricing: false,
+    manualPrice: "",
+    manualFamily: "quartz",
+    slabLength: "3200",
+    slabWidth: "1600",
     layout: "",
     extras: [],
     designDetails: blankDesignDetails(),
     drawing: null,
+    pendingDrawing: null,
     pieces: ["B", "C", "D"].map((label) => ({
       label,
       length: "",
@@ -113,6 +130,13 @@ function composeItemNotes(row: ItemRow): string | null {
       parts.push(`Hob cut-outs: ${row.designDetails.hob}`);
     if (row.designDetails.taps)
       parts.push(`Tap holes: ${row.designDetails.taps}`);
+  }
+  if (row.extras.includes("polished_edge") && row.designDetails.edgeProfile) {
+    const profile =
+      row.designDetails.edgeProfile === "Other / custom"
+        ? row.designDetails.customEdgeProfile.trim()
+        : row.designDetails.edgeProfile;
+    if (profile) parts.push(`Polished edge profile: ${profile}`);
   }
   if (row.extras.includes("upstand_included"))
     parts.push(
@@ -201,7 +225,10 @@ function NewQuotePageInner({
   initialError: string | null;
   initialCustomerId: string;
 }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isReady, refreshAccess } = useAuth();
+  const [sessionRevision, setSessionRevision] = useState(0);
+  const [checkingSession, setCheckingSession] = useState(false);
+  const [customerError, setCustomerError] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [showAll, setShowAll] = useState(false);
   const stepNames = ["Material", "Layout", "Design details", "Review"];
@@ -238,17 +265,37 @@ function NewQuotePageInner({
         setCustomers(rows);
         const selected = rows.find((row) => row.id === initialCustomerId);
         if (selected) {
-          setCustomer(selected.name);
+          setCustomer((current) => current || selected.name);
         } else if (initialCustomerId) {
           try {
             const initialCustomer = await api.getCustomer(initialCustomerId);
             setCustomers([...rows, initialCustomer]);
-            setCustomer(initialCustomer.name);
+            setCustomer((current) => current || initialCustomer.name);
           } catch {}
         }
       })
-      .catch(() => {});
-  }, [isAuthenticated, initialCustomerId]);
+      .then(() => setCustomerError(null))
+      .catch((error) =>
+        setCustomerError(
+          error instanceof Error ? error.message : "Could not load customers.",
+        ),
+      );
+  }, [isAuthenticated, initialCustomerId, sessionRevision]);
+
+  async function checkSession() {
+    setCheckingSession(true);
+    try {
+      await refreshAccess();
+      setSessionRevision((value) => value + 1);
+      setError(null);
+    } catch {
+      setError(
+        "Sign in again in the new tab, then check your sign-in here. Your draft is kept.",
+      );
+    } finally {
+      setCheckingSession(false);
+    }
+  }
 
   function handleCustomerSelect(id: string) {
     const selected = customers.find((c) => c.id === id);
@@ -266,16 +313,22 @@ function NewQuotePageInner({
   }
 
   async function uploadDrawing(key: string, file: File) {
-    if (!customerId) return;
     setUploadError(null);
     if (!/\.(pdf|png|jpe?g)$/i.test(file.name) || file.size > 5 * 1024 * 1024) {
       setUploadError("Choose a PDF, JPG or PNG drawing up to 5 MB.");
       return;
     }
+    if (!customerId || !isAuthenticated) {
+      updateItem(key, { pendingDrawing: file, drawing: null });
+      return;
+    }
     setUploadingKey(key);
     try {
       const document = await api.uploadDocument(customerId, file);
-      updateItem(key, { drawing: { id: document.id, filename: file.name } });
+      updateItem(key, {
+        pendingDrawing: null,
+        drawing: { id: document.id, filename: file.name },
+      });
     } catch (error) {
       setUploadError(
         error instanceof Error
@@ -334,6 +387,31 @@ function NewQuotePageInner({
       setStep(step + 1);
       return;
     }
+    if (!isAuthenticated) {
+      setError(
+        "Sign in again before saving this quote. Your draft and selected drawings are kept here.",
+      );
+      return;
+    }
+    if (
+      items.some(
+        (row) =>
+          row.manualPricing &&
+          (!row.manualPrice.trim() ||
+            !Number.isFinite(Number(row.manualPrice)) ||
+            Number(row.manualPrice) < 0 ||
+            !Number.isFinite(Number(row.slabLength)) ||
+            !Number.isFinite(Number(row.slabWidth)) ||
+            Number(row.slabLength) <= 0 ||
+            Number(row.slabWidth) <= 0),
+      )
+    ) {
+      setStep(0);
+      setError(
+        "Enter a slab selling price and positive slab dimensions for each manually priced material.",
+      );
+      return;
+    }
     if (
       !customer.trim() ||
       items.some(
@@ -376,11 +454,59 @@ function NewQuotePageInner({
     setResult(null);
 
     try {
+      // Revalidate after a long editing session before any workspace write.
+      await api.getMe();
+      let linkedCustomerId = customerId;
+      let quoteRows = items;
+      if (quoteRows.some((row) => row.pendingDrawing)) {
+        if (!linkedCustomerId) {
+          const created = await api.createCustomer({
+            name: customer.trim(),
+            customer_type: "individual",
+            postcode: postcode || null,
+          });
+          linkedCustomerId = created.id;
+          setCustomerId(created.id);
+          setCustomers((rows) => [...rows, created]);
+        }
+        for (const row of quoteRows) {
+          if (!row.pendingDrawing) continue;
+          const document = await api.uploadDocument(
+            linkedCustomerId,
+            row.pendingDrawing,
+          );
+          const drawing = {
+            id: document.id,
+            filename: row.pendingDrawing.name,
+          };
+          quoteRows = quoteRows.map((item) =>
+            item.key === row.key
+              ? { ...item, drawing, pendingDrawing: null }
+              : item,
+          );
+          updateItem(row.key, { drawing, pendingDrawing: null });
+        }
+      }
       const quote = await api.createQuote({
         customer: customer || "Unknown",
-        customer_id: customerId || null,
+        customer_id: linkedCustomerId || null,
         postcode: postcode || undefined,
-        items: items.flatMap((row) => {
+        items: quoteRows.flatMap((row) => {
+          const customMaterial: CustomMaterialInput | null =
+            row.custom_material ??
+            (row.manualPricing
+              ? {
+                  canonical_name: row.material.trim(),
+                  material_family: row.manualFamily,
+                  selling_price_per_slab: Number(row.manualPrice),
+                  save_to_catalogue: false,
+                  variant: {
+                    thickness_mm: Number.parseFloat(row.thickness),
+                    slab_length_mm: Number(row.slabLength),
+                    slab_width_mm: Number(row.slabWidth),
+                  },
+                }
+              : null);
           const pieces = row.layout
             ? planPieces(row.layout)
             : [{ label: "A", island: false }];
@@ -402,9 +528,13 @@ function NewQuotePageInner({
                   ) || 650,
                 slab_group: row.layout ? row.key : undefined,
                 unit_input: "mm" as const,
-                custom_material: row.custom_material,
-                catalogue_surface_id: row.catalogue_surface_id,
-                catalogue_variant_id: row.catalogue_variant_id,
+                custom_material: customMaterial,
+                catalogue_surface_id: row.manualPricing
+                  ? null
+                  : row.catalogue_surface_id,
+                catalogue_variant_id: row.manualPricing
+                  ? null
+                  : row.catalogue_variant_id,
                 notes:
                   [
                     row.layout ? `Piece ${piece.label}` : null,
@@ -431,9 +561,13 @@ function NewQuotePageInner({
                 width_mm: Number(row.designDetails[`${kind}Height`]),
                 slab_group: row.layout ? row.key : undefined,
                 unit_input: "mm" as const,
-                custom_material: row.custom_material,
-                catalogue_surface_id: row.catalogue_surface_id,
-                catalogue_variant_id: row.catalogue_variant_id,
+                custom_material: customMaterial,
+                catalogue_surface_id: row.manualPricing
+                  ? null
+                  : row.catalogue_surface_id,
+                catalogue_variant_id: row.manualPricing
+                  ? null
+                  : row.catalogue_variant_id,
                 notes: `Measured ${kind} for ${row.material}`,
               })),
           ];
@@ -441,7 +575,13 @@ function NewQuotePageInner({
       });
       setResult(quote);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      setError(
+        err instanceof ApiError && err.status === 401
+          ? "Sign in again before saving this quote. Your draft and selected drawings are kept here."
+          : err instanceof ApiError
+            ? err.message
+            : "Something went wrong.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -688,6 +828,33 @@ function NewQuotePageInner({
         />{" "}
         Show all sections
       </label>
+      {isReady && (!isAuthenticated || customerError) && (
+        <div className="mb-5 rounded-xl border border-warning p-4 text-sm">
+          <p>
+            {!isAuthenticated
+              ? "Sign in again to browse your catalogue and save this quote. Keep this tab open: your draft and selected drawings stay here."
+              : customerError}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <a
+              href="/login"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent underline"
+            >
+              Sign in in a new tab
+            </a>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={checkingSession}
+              onClick={() => void checkSession()}
+            >
+              {checkingSession ? "Checking…" : "Check sign-in and retry"}
+            </Button>
+          </div>
+        </div>
+      )}
       <form onSubmit={handleSubmit}>
         <fieldset disabled={!showStep(0)} hidden={!showStep(0)}>
           <h2 className="mb-4 text-xl font-semibold">
@@ -713,7 +880,7 @@ function NewQuotePageInner({
                   />
                 </Field>
 
-                {isAuthenticated && customers.length > 0 && (
+                {isAuthenticated && (
                   <Field
                     label="Link to existing customer (optional)"
                     htmlFor="customerId"
@@ -837,6 +1004,10 @@ function NewQuotePageInner({
                                 catalogue_surface_id: null,
                                 catalogue_variant_id: null,
                                 material: MATERIAL_OPTIONS[0],
+                                manualPrice: "",
+                                manualFamily: "quartz",
+                                slabLength: "3200",
+                                slabWidth: "1600",
                               })
                             }
                           >
@@ -847,21 +1018,35 @@ function NewQuotePageInner({
                     ) : (
                       <Field label="Material" htmlFor={`${row.key}-material`}>
                         <MaterialCatalogueSearch
+                          key={`${row.key}-${sessionRevision}`}
                           id={`${row.key}-material`}
                           value={row.material}
                           onFreeTextChange={(text) =>
-                            updateItem(row.key, { material: text })
+                            updateItem(row.key, {
+                              material: text,
+                              manualPrice: "",
+                              catalogue_surface_id: null,
+                              catalogue_variant_id: null,
+                            })
                           }
                           onSelectSurface={(
                             surface,
                             thicknessLabel,
                             variantId,
+                            variant,
                           ) =>
                             updateItem(row.key, {
                               material: surface.canonical_name,
                               thickness: thicknessLabel,
                               catalogue_surface_id: surface.id,
                               catalogue_variant_id: variantId,
+                              manualPricing: !surface.has_tenant_price,
+                              manualFamily: surface.material_family,
+                              manualPrice: "",
+                              slabLength: String(
+                                variant?.slab_length_mm ?? 3200,
+                              ),
+                              slabWidth: String(variant?.slab_width_mm ?? 1600),
                             })
                           }
                         />
@@ -889,6 +1074,110 @@ function NewQuotePageInner({
                         </Select>
                       )}
                     </Field>
+                    {!row.custom_material && (
+                      <div className="sm:col-span-3">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={row.manualPricing}
+                            onChange={(event) =>
+                              updateItem(row.key, {
+                                manualPricing: event.target.checked,
+                              })
+                            }
+                          />
+                          Enter my own slab price
+                        </label>
+                        <p className="mt-2 text-xs text-muted">
+                          Browse the catalogue above, or type a material name.
+                          If it has no existing price, enter your selling price
+                          below.
+                        </p>
+                        {row.manualPricing && (
+                          <div className="mt-3 grid grid-cols-1 gap-4 rounded-xl border border-border p-4 sm:grid-cols-2">
+                            <Field
+                              label="Manual material type"
+                              htmlFor={`${row.key}-manual-family`}
+                            >
+                              <Select
+                                id={`${row.key}-manual-family`}
+                                value={row.manualFamily}
+                                onChange={(event) =>
+                                  updateItem(row.key, {
+                                    manualFamily: event.target
+                                      .value as MaterialFamily,
+                                  })
+                                }
+                              >
+                                {MATERIAL_FAMILIES.map((family) => (
+                                  <option value={family} key={family}>
+                                    {MATERIAL_FAMILY_LABELS[family]}
+                                  </option>
+                                ))}
+                              </Select>
+                            </Field>
+                            <Field
+                              label="Selling price per slab (£)"
+                              htmlFor={`${row.key}-manual-price`}
+                            >
+                              <Input
+                                id={`${row.key}-manual-price`}
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                required
+                                value={row.manualPrice}
+                                onChange={(event) =>
+                                  updateItem(row.key, {
+                                    manualPrice: event.target.value,
+                                  })
+                                }
+                              />
+                            </Field>
+                            <Field
+                              label="Slab length (mm)"
+                              htmlFor={`${row.key}-slab-length`}
+                            >
+                              <Input
+                                id={`${row.key}-slab-length`}
+                                type="number"
+                                min="1"
+                                step="1"
+                                required
+                                value={row.slabLength}
+                                onChange={(event) =>
+                                  updateItem(row.key, {
+                                    slabLength: event.target.value,
+                                  })
+                                }
+                              />
+                            </Field>
+                            <Field
+                              label="Slab width (mm)"
+                              htmlFor={`${row.key}-slab-width`}
+                            >
+                              <Input
+                                id={`${row.key}-slab-width`}
+                                type="number"
+                                min="1"
+                                step="1"
+                                required
+                                value={row.slabWidth}
+                                onChange={(event) =>
+                                  updateItem(row.key, {
+                                    slabWidth: event.target.value,
+                                  })
+                                }
+                              />
+                            </Field>
+                            <p className="text-xs text-muted sm:col-span-2">
+                              Used for this quote only. No catalogue material or
+                              supplier price is created.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </fieldset>
                 <fieldset disabled={!showStep(1)} hidden={!showStep(1)}>
@@ -1042,13 +1331,13 @@ function NewQuotePageInner({
                     <Field
                       label="Upload layout drawing (optional)"
                       htmlFor={`${row.key}-drawing`}
-                      hint="PDF, JPG or PNG, up to 5 MB. Saved to the linked customer’s documents and referenced in this quote."
+                      hint="PDF, JPG or PNG, up to 5 MB. Choose a file now; drawings for a new customer upload when you calculate the quote."
                     >
                       <Input
                         id={`${row.key}-drawing`}
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
-                        disabled={!customerId || uploadingKey !== null}
+                        disabled={uploadingKey !== null || submitting}
                         onChange={(event) => {
                           const file = event.target.files?.[0];
                           if (file) void uploadDrawing(row.key, file);
@@ -1058,7 +1347,10 @@ function NewQuotePageInner({
                     </Field>
                     {!customerId && (
                       <p className="mt-2 text-sm text-muted">
-                        Link an existing customer in step 1 to save a drawing.
+                        You can attach a drawing without an existing customer.
+                        On Calculate Quote, a new customer record will be
+                        created from the name in step 1 unless you link an
+                        existing customer first.
                       </p>
                     )}
                     {uploadingKey === row.key && (
@@ -1069,6 +1361,12 @@ function NewQuotePageInner({
                     {row.drawing && (
                       <p role="status" className="mt-2 text-sm text-accent">
                         Saved drawing: {row.drawing.filename}
+                      </p>
+                    )}
+                    {row.pendingDrawing && (
+                      <p role="status" className="mt-2 text-sm text-accent">
+                        Ready to attach: {row.pendingDrawing.name}. It will be
+                        uploaded when you calculate the quote.
                       </p>
                     )}
                     {uploadError && (
@@ -1153,6 +1451,22 @@ function NewQuotePageInner({
                         {composeItemNotes(row)}
                       </p>
                     )}
+                    {row.pendingDrawing && (
+                      <p className="mt-2 text-sm">
+                        Drawing: {row.pendingDrawing.name} — ready to upload
+                        {!customerId
+                          ? "; a customer record will be created when you calculate"
+                          : ""}
+                        .
+                      </p>
+                    )}
+                    {row.manualPricing && (
+                      <p className="mt-2 text-sm">
+                        Your slab selling price: £
+                        {row.manualPrice || "not entered"} · slab{" "}
+                        {row.slabLength} × {row.slabWidth} mm
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -1216,7 +1530,10 @@ function NewQuotePageInner({
         </div>
 
         {error && (
-          <p className="mt-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+          <p
+            role="alert"
+            className="mt-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger"
+          >
             {error}
           </p>
         )}

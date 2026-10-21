@@ -54,7 +54,7 @@ async function signUpAndLogIn(
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/customers$/, { timeout: 15_000 });
 
-  return { api, authHeaders, ownerEmail };
+  return { api, authHeaders, ownerEmail, ownerPassword };
 }
 
 test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links_a_surface", async ({
@@ -201,4 +201,208 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
       { exact: true },
     ),
   ).toBeVisible();
+});
+
+test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_drawing", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const runId = uniqueRunId("stone-recovery");
+  const { api, authHeaders } = await signUpAndLogIn(page, runId);
+  const materialName = `Unlisted pilot marble ${runId}`;
+  const customerName = `Pytest Drawing Customer ${runId}`;
+  await page.goto("/quotes/new/stone");
+  await page.getByLabel("Show all sections").check();
+  await page.getByLabel("Customer name", { exact: true }).fill(customerName);
+  await page.getByLabel("Material", { exact: true }).fill(materialName);
+  await page.getByLabel("Length (mm)", { exact: true }).fill("2400");
+  const rejected = page.waitForResponse(
+    (res) =>
+      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Calculate Quote", exact: true })
+    .click();
+  const rejection = await rejected;
+  expect(rejection.status()).toBe(400);
+  expect((await rejection.json()).detail).toContain("Unrecognised value");
+  await expect(
+    page.getByRole("alert").filter({ hasText: materialName }),
+  ).toContainText(materialName);
+  await expect(page.getByLabel("Customer name", { exact: true })).toHaveValue(
+    customerName,
+  );
+
+  await page.getByLabel("Enter my own slab price").check();
+  await page.getByLabel("Manual material type").selectOption("marble");
+  await page.getByLabel("Selling price per slab (£)").fill("900");
+  await page.getByLabel("Polished edge", { exact: true }).check();
+  await page
+    .getByLabel("Polished edge profile", { exact: true })
+    .selectOption("Double ogee");
+  await page.getByLabel("Upload layout drawing (optional)").setInputFiles({
+    name: "pilot-plan.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from(
+      "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF",
+    ),
+  });
+  await expect(page.getByText(/Ready to attach: pilot-plan.pdf/)).toBeVisible();
+  const accepted = page.waitForResponse(
+    (res) =>
+      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Calculate Quote", exact: true })
+    .click();
+  const response = await accepted;
+  expect(response.status()).toBe(200);
+  const created = await response.json();
+  expect(created.customer_id).toBeTruthy();
+  expect(created.items[0].price_per_slab).toBe(900);
+  expect(created.items[0].notes).toContain(
+    "Polished edge profile: Double ogee",
+  );
+  expect(created.items[0].notes).toContain("pilot-plan.pdf");
+  expect(created.total).toBe(1080);
+  await expect(
+    page.getByRole("heading", { name: `Quote for ${customerName}` }),
+  ).toBeVisible();
+  const savedResponse = await api.get(`/api/v1/quotes/${created.id}`, {
+    headers: authHeaders,
+  });
+  expect(savedResponse.status()).toBe(200);
+  expect((await savedResponse.json()).items[0].notes).toContain("Double ogee");
+  const documents = await api.get(
+    `/api/v1/documents?customer_id=${created.customer_id}`,
+    { headers: authHeaders },
+  );
+  expect(documents.status()).toBe(200);
+  const drawing = (await documents.json()).find(
+    (doc: { original_filename: string }) =>
+      doc.original_filename === "pilot-plan.pdf",
+  );
+  expect(drawing).toBeTruthy();
+  const download = await api.get(`/api/v1/documents/${drawing.id}/download`, {
+    headers: authHeaders,
+  });
+  expect(download.status()).toBe(200);
+  expect(download.headers()["content-type"]).toContain("application/pdf");
+  const invoice = await api.get(`/api/v1/quotes/${created.id}/invoice`, {
+    headers: authHeaders,
+  });
+  expect(invoice.status()).toBe(200);
+  expect(invoice.headers()["content-type"]).toContain("application/pdf");
+});
+
+test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymous_save", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(60_000);
+  const runId = uniqueRunId("stone-expiry");
+  const { api, authHeaders, ownerEmail, ownerPassword } = await signUpAndLogIn(
+    page,
+    runId,
+  );
+  await page.goto("/quotes/new/stone");
+  await page.getByLabel("Show all sections").check();
+  await page
+    .getByLabel("Customer name", { exact: true })
+    .fill(`Retained Pilot ${runId}`);
+  await page.getByLabel("Length (mm)", { exact: true }).fill("2400");
+  await page.getByLabel("Upload layout drawing (optional)").setInputFiles({
+    name: "retained-plan.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n%%EOF"),
+  });
+  await expect(
+    page.getByText(/Ready to attach: retained-plan.pdf/),
+  ).toBeVisible();
+  await context.clearCookies();
+  const denied = page.waitForResponse(
+    (res) =>
+      res.url().includes("/api/v1/catalogue/surfaces?") && res.status() === 401,
+  );
+  await page
+    .getByRole("button", { name: "Browse materials", exact: true })
+    .click();
+  await denied;
+  await expect(
+    page
+      .getByRole("link", { name: "Sign in in a new tab", exact: true })
+      .first(),
+  ).toBeVisible();
+  await expect(page.getByLabel("Customer name", { exact: true })).toHaveValue(
+    `Retained Pilot ${runId}`,
+  );
+  await expect(page.getByLabel("Length (mm)", { exact: true })).toHaveValue(
+    "2400",
+  );
+  await expect(
+    page.getByText(/Ready to attach: retained-plan.pdf/),
+  ).toBeVisible();
+  let quotePosts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/api/v1/quote"))
+      quotePosts++;
+  });
+  await page
+    .getByRole("button", { name: "Calculate Quote", exact: true })
+    .click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Sign in again" }),
+  ).toContainText("Sign in again");
+  expect(quotePosts).toBe(0);
+
+  // The chooser clears its native value after selection so the same file can
+  // be selected again. Prove the queued File survives by uploading it after
+  // restoring the session, then compare the downloaded bytes.
+  const signIn = await context.newPage();
+  await signIn.goto("/login");
+  await signIn.getByLabel("Email", { exact: true }).fill(ownerEmail);
+  await signIn.getByLabel("Password", { exact: true }).fill(ownerPassword);
+  await signIn.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(signIn).toHaveURL(/\/customers$/);
+  await signIn.close();
+  await page
+    .getByRole("button", { name: "Check sign-in and retry", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Link to existing customer (optional)"),
+  ).toBeVisible();
+  await expect(page.getByLabel("Customer name", { exact: true })).toHaveValue(
+    `Retained Pilot ${runId}`,
+  );
+  await expect(
+    page.getByText(/Ready to attach: retained-plan.pdf/),
+  ).toBeVisible();
+  await page.getByLabel("Enter my own slab price").check();
+  await page.getByLabel("Selling price per slab (£)").fill("900");
+  const accepted = page.waitForResponse(
+    (res) =>
+      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Calculate Quote", exact: true })
+    .click();
+  const response = await accepted;
+  expect(response.status()).toBe(200);
+  const created = await response.json();
+  const documents = await api.get(
+    `/api/v1/documents?customer_id=${created.customer_id}`,
+    { headers: authHeaders },
+  );
+  expect(documents.status()).toBe(200);
+  const drawing = (await documents.json()).find(
+    (doc: { original_filename: string }) =>
+      doc.original_filename === "retained-plan.pdf",
+  );
+  expect(drawing).toBeTruthy();
+  const download = await api.get(`/api/v1/documents/${drawing.id}/download`, {
+    headers: authHeaders,
+  });
+  expect(download.status()).toBe(200);
+  expect(await download.body()).toEqual(Buffer.from("%PDF-1.4\n%%EOF"));
+  expect(quotePosts).toBe(1);
 });

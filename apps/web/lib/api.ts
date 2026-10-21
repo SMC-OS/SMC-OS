@@ -165,7 +165,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // the next auth check on a protected page redirects to /login instead
     // of retrying with a dead token.
     if (res.status === 401) clearToken();
-    throw new ApiError(`Request to ${path} failed with ${res.status}`, res.status);
+    const body = await res.json().catch(() => null);
+    const detail = path === "/quote" && typeof body?.detail === "string" ? body.detail : null;
+    throw new ApiError(detail || `Request to ${path} failed with ${res.status}`, res.status);
   }
 
   return (await res.json()) as T;

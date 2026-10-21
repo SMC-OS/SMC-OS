@@ -8,7 +8,13 @@
  * cleared at any time, the same way it reacts to an explicit logout().
  */
 
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider, useAuth } from "@/components/auth/AuthProvider";
@@ -25,15 +31,16 @@ vi.mock("@/lib/api", () => ({
         role: "Owner",
         id: "user-1",
         name: "Jordan Owner",
-      })
+      }),
     ),
   },
 }));
 
 function Probe() {
-  const { isAuthenticated, isReady, name } = useAuth();
+  const { isAuthenticated, isReady, name, refreshAccess } = useAuth();
   return (
     <div>
+      <button onClick={() => void refreshAccess()}>Check session</button>
       <span data-testid="ready">{String(isReady)}</span>
       <span data-testid="authed">{String(isAuthenticated)}</span>
       <span data-testid="name">{name ?? "none"}</span>
@@ -50,17 +57,29 @@ describe("AuthProvider — reacts to a token becoming invalid mid-session", () =
   it("isolates the synthetic demo without contacting the tenant API", async () => {
     route.pathname = "/demo";
     vi.mocked(api.getMe).mockClear();
-    const view = render(<AuthProvider><Probe /></AuthProvider>);
+    const view = render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
     expect(screen.getByTestId("authed")).toHaveTextContent("false");
     await act(async () => {});
     expect(api.getMe).not.toHaveBeenCalled();
     route.pathname = "/customers";
-    view.rerender(<AuthProvider><Probe /></AuthProvider>);
+    view.rerender(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
     await screen.findByText("true", { selector: '[data-testid="ready"]' });
     expect(api.getMe).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("authed")).toHaveTextContent("true");
     route.pathname = "/demo";
-    view.rerender(<AuthProvider><Probe /></AuthProvider>);
+    view.rerender(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
     expect(screen.getByTestId("authed")).toHaveTextContent("false");
     expect(screen.getByTestId("name")).toHaveTextContent("none");
     expect(api.getMe).toHaveBeenCalledTimes(1);
@@ -72,7 +91,7 @@ describe("AuthProvider — reacts to a token becoming invalid mid-session", () =
     render(
       <AuthProvider>
         <Probe />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     await screen.findByText("true", { selector: '[data-testid="ready"]' });
@@ -89,4 +108,21 @@ describe("AuthProvider — reacts to a token becoming invalid mid-session", () =
     expect(screen.getByTestId("authed")).toHaveTextContent("false");
     expect(screen.getByTestId("name")).toHaveTextContent("none");
   });
+});
+
+it("restores the session identity after signing in in another tab", async () => {
+  route.pathname = "/customers";
+  render(
+    <AuthProvider>
+      <Probe />
+    </AuthProvider>,
+  );
+  await screen.findByText("true", { selector: '[data-testid="ready"]' });
+  act(() => clearToken());
+  expect(screen.getByTestId("authed")).toHaveTextContent("false");
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Check session" }));
+  });
+  expect(screen.getByTestId("authed")).toHaveTextContent("true");
+  expect(screen.getByTestId("name")).toHaveTextContent("Jordan Owner");
 });
