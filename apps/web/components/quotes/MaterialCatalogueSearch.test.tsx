@@ -84,7 +84,7 @@ describe("MaterialCatalogueSearch — Phase A empty states", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       /catalogue has no materials yet/i,
     );
-    expect(screen.getByRole("status")).toHaveTextContent(/quoted as typed/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/slab price/i);
   });
 
   it("says nothing matched when the catalogue has materials", async () => {
@@ -174,4 +174,38 @@ it("shows the workspace material photograph in the selection card", async () => 
     "src",
     "https://example.com/quartz.jpg",
   );
+});
+
+it("explains an expired session instead of promising that an unpriced name can be quoted", async () => {
+  searchCatalogueSurfacesMock.mockRejectedValue(
+    new ApiError("Sign in required", 401),
+  );
+  render(<Harness />);
+  await typeAndSettle("Marble");
+  expect(screen.getByRole("status")).toHaveTextContent(/sign in again/i);
+  expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute(
+    "target",
+    "_blank",
+  );
+  expect(screen.getByRole("textbox")).toHaveValue("Marble");
+});
+
+it("browses the catalogue without a search term and applies the material type filter", async () => {
+  searchCatalogueSurfacesMock.mockResolvedValue([
+    { id: "marble-1", canonical_name: "Browse Marble", thicknesses_mm: [20] },
+  ]);
+  render(<Harness />);
+  fireEvent.change(screen.getByLabelText("Material type"), {
+    target: { value: "marble" },
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Browse materials" }));
+  });
+  expect(
+    screen.getByRole("button", { name: /Browse Marble/ }),
+  ).toBeInTheDocument();
+  expect(searchCatalogueSurfacesMock).toHaveBeenCalledWith({
+    material_family: "marble",
+    limit: 24,
+  });
 });

@@ -4,7 +4,11 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { api } from "@/lib/api";
-import { clearToken, clearLegacyTokens, TOKEN_CLEARED_EVENT } from "@/lib/auth-storage";
+import {
+  clearToken,
+  clearLegacyTokens,
+  TOKEN_CLEARED_EVENT,
+} from "@/lib/auth-storage";
 import type { SignupRequest } from "@/types/auth";
 import type { AcceptInvitationRequest } from "@/types/invitation";
 
@@ -51,7 +55,10 @@ interface AuthContextValue {
   signup: (data: SignupRequest) => Promise<AuthRequiredState>;
   // Sprint 011 — accepting a Staff invitation signs the new user straight
   // in, same shape as login()/signup().
-  acceptInvite: (token: string, data: AcceptInvitationRequest) => Promise<AuthRequiredState>;
+  acceptInvite: (
+    token: string,
+    data: AcceptInvitationRequest,
+  ) => Promise<AuthRequiredState>;
   // Phase B — re-reads /auth/me so a change made on the server (starting
   // the no-card trial, returning from Checkout) unlocks the workspace
   // without a full page reload.
@@ -72,19 +79,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Unmount the session provider here so its bootstrap and downstream
   // workspace/notification effects cannot contact the tenant API.
   if (pathname === "/demo") {
-    return <AuthContext.Provider value={DEMO_AUTH}>{children}</AuthContext.Provider>;
+    return (
+      <AuthContext.Provider value={DEMO_AUTH}>{children}</AuthContext.Provider>
+    );
   }
   return <SessionAuthProvider>{children}</SessionAuthProvider>;
 }
 
 const demoSessionAction = async (): Promise<never> => {
-  throw new Error("Authentication actions are unavailable in the synthetic demo");
+  throw new Error(
+    "Authentication actions are unavailable in the synthetic demo",
+  );
 };
 const DEMO_AUTH: AuthContextValue = {
-  isAuthenticated: false, isReady: true, tenantName: null, role: null,
-  userId: null, name: null, email: null, verificationRequired: false,
-  billingAccessRequired: false, login: demoSessionAction, signup: demoSessionAction,
-  acceptInvite: demoSessionAction, refreshAccess: demoSessionAction,
+  isAuthenticated: false,
+  isReady: true,
+  tenantName: null,
+  role: null,
+  userId: null,
+  name: null,
+  email: null,
+  verificationRequired: false,
+  billingAccessRequired: false,
+  login: demoSessionAction,
+  signup: demoSessionAction,
+  acceptInvite: demoSessionAction,
+  refreshAccess: demoSessionAction,
   logout: demoSessionAction,
 };
 
@@ -136,11 +156,18 @@ function SessionAuthProvider({ children }: { children: React.ReactNode }) {
       setBillingAccessRequired(false);
     }
     window.addEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
-    return () => window.removeEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
+    return () =>
+      window.removeEventListener(TOKEN_CLEARED_EVENT, handleTokenCleared);
   }, []);
 
   async function refreshAccess(): Promise<AuthRequiredState> {
     const me = await api.getMe();
+    setIsAuthenticated(true);
+    setTenantName(me.tenant_name);
+    setRole(me.role);
+    setUserId(me.id);
+    setName(me.name);
+    setEmail(me.email);
     setVerificationRequired(me.verification_required);
     setBillingAccessRequired(me.billing_access_required);
     return {
@@ -149,7 +176,10 @@ function SessionAuthProvider({ children }: { children: React.ReactNode }) {
     };
   }
 
-  async function login(email: string, password: string): Promise<AuthRequiredState> {
+  async function login(
+    email: string,
+    password: string,
+  ): Promise<AuthRequiredState> {
     const response = await api.login(email, password);
     setIsAuthenticated(true);
     setTenantName(response.user.tenant_name);
@@ -183,7 +213,7 @@ function SessionAuthProvider({ children }: { children: React.ReactNode }) {
 
   async function acceptInvite(
     token: string,
-    data: AcceptInvitationRequest
+    data: AcceptInvitationRequest,
   ): Promise<AuthRequiredState> {
     const response = await api.acceptInvitation(token, data);
     setIsAuthenticated(true);

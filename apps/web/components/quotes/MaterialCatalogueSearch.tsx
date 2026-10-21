@@ -40,6 +40,7 @@ type Outcome =
   | "results"
   | "no_match"
   | "catalogue_empty"
+  | "sign_in"
   | "unavailable";
 
 export function MaterialCatalogueSearch({
@@ -105,7 +106,7 @@ export function MaterialCatalogueSearch({
         if (!(err instanceof ApiError)) throw err;
         setResults([]);
         setOpen(false);
-        setOutcome("unavailable");
+        setOutcome(err.status === 401 ? "sign_in" : "unavailable");
       } finally {
         setLoading(false);
       }
@@ -122,8 +123,14 @@ export function MaterialCatalogueSearch({
       setResults(found);
       setOpen(found.length > 0);
       setOutcome(found.length ? "results" : await explainEmptyResult());
-    } catch {
-      setOutcome("unavailable");
+    } catch (err) {
+      setResults([]);
+      setOpen(false);
+      setOutcome(
+        err instanceof ApiError && err.status === 401
+          ? "sign_in"
+          : "unavailable",
+      );
     } finally {
       setLoading(false);
     }
@@ -206,6 +213,11 @@ export function MaterialCatalogueSearch({
                 <span className="block break-words px-3 py-2 font-medium text-foreground">
                   {r.canonical_name}
                 </span>
+                {!r.has_tenant_price && (
+                  <span className="block px-3 pb-2 text-xs text-muted">
+                    Price needed — enter your slab price after selecting
+                  </span>
+                )}
                 {(r.brand_name || r.manufacturer_name) && (
                   <span className="block px-3 pb-3 text-xs text-muted">
                     {r.brand_name ?? r.manufacturer_name}
@@ -219,14 +231,26 @@ export function MaterialCatalogueSearch({
       <p className="mt-1 text-xs text-muted" role="status" aria-live="polite">
         {loading
           ? "Searching catalogue…"
-          : outcome === "no_match"
-            ? `No catalogue match for “${value.trim()}” — it will be quoted as typed.`
-            : outcome === "catalogue_empty"
-              ? "The material catalogue has no materials yet — the name you type will be quoted as typed."
-              : outcome === "unavailable"
-                ? "Catalogue search is unavailable right now — the name you type will be quoted as typed."
-                : null}
+          : outcome === "sign_in"
+            ? "Sign in again to browse your workspace catalogue. Your typed material is kept."
+            : outcome === "no_match"
+              ? `No catalogue match for “${value.trim()}” — keep the name and enter your own slab price below.`
+              : outcome === "catalogue_empty"
+                ? "The material catalogue has no materials yet — enter a material name and your own slab price below."
+                : outcome === "unavailable"
+                  ? "Catalogue search is unavailable right now. Your typed name is kept; an unpriced material needs your own slab price."
+                  : null}
       </p>
+      {outcome === "sign_in" && (
+        <a
+          className="mt-2 inline-block text-sm text-accent underline"
+          href="/login"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Sign in in a new tab
+        </a>
+      )}
     </div>
   );
 }

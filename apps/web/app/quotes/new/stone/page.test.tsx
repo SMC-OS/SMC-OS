@@ -27,13 +27,14 @@ import { writeQuoteCustomMaterial } from "@/lib/quote-custom-material";
 // by default, matching every existing test in this file that doesn't
 // arrive via the catalogue; the catalogue-integration tests below set it.
 let currentSearch = "";
+let authenticated = true;
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(currentSearch),
 }));
 
 vi.mock("@/components/auth/AuthProvider", () => ({
   useAuth: () => ({
-    isAuthenticated: true,
+    isAuthenticated: authenticated,
     isReady: true,
     tenantName: "Pytest Co",
     role: "Owner",
@@ -76,6 +77,7 @@ function makeQuoteItem(overrides: Record<string, unknown> = {}) {
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  authenticated = true;
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
 
@@ -163,7 +165,7 @@ beforeEach(() => {
           is_tenant_private: false,
           thicknesses_mm: [20, 30],
           finishes: ["Polished"],
-          has_tenant_price: false,
+          has_tenant_price: true,
         },
       ]);
     }
@@ -898,4 +900,162 @@ it("saves a drawing through the existing customer-document API and references it
   expect(JSON.parse(String(call?.[1]?.body)).items[0].notes).toContain(
     "drawing-1",
   );
+});
+
+it("records the selected polished edge profile in the saved quote notes", async () => {
+  renderEditor();
+  await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");
+  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+  await userEvent.click(screen.getByLabelText("Polished edge"));
+  const profiles = screen.getByLabelText("Polished edge profile");
+  for (const name of [
+    "Full bullnose",
+    "Half bullnose",
+    "Pencil round",
+    "Ogee",
+    "Double ogee",
+    "Bevel",
+    "Mitred",
+    "Other / custom",
+  ])
+    expect(within(profiles).getByRole("option", { name })).toBeInTheDocument();
+  await userEvent.selectOptions(profiles, "Double ogee");
+  await userEvent.click(
+    screen.getByRole("button", { name: /calculate quote/i }),
+  );
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
+    ).toBe(true),
+  );
+  const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+  expect(JSON.parse(String(call?.[1]?.body)).items[0].notes).toContain(
+    "Polished edge profile: Double ogee",
+  );
+});
+
+it("can quote a manually named material with an explicit slab selling price", async () => {
+  renderEditor();
+  await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");
+  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+  await userEvent.clear(screen.getByLabelText("Material"));
+  await userEvent.type(screen.getByLabelText("Material"), "My own marble");
+  await userEvent.click(screen.getByLabelText("Enter my own slab price"));
+  await userEvent.type(
+    screen.getByLabelText("Selling price per slab (£)"),
+    "975",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: /calculate quote/i }),
+  );
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
+    ).toBe(true),
+  );
+  const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+  expect(
+    JSON.parse(String(call?.[1]?.body)).items[0].custom_material,
+  ).toMatchObject({
+    canonical_name: "My own marble",
+    selling_price_per_slab: 975,
+    save_to_catalogue: false,
+    variant: { thickness_mm: 20, slab_length_mm: 3200, slab_width_mm: 1600 },
+  });
+});
+
+it("queues a drawing for a new customer and saves it before creating the quote", async () => {
+  const original = fetchMock.getMockImplementation() as (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/customers") && init?.method === "POST")
+      return jsonResponse(
+        { id: "new-pilot", name: "New Pilot", customer_type: "individual" },
+        201,
+      );
+    if (url.includes("/documents?"))
+      return jsonResponse(
+        { id: "new-drawing", original_filename: "plan.pdf" },
+        201,
+      );
+    return original(input, init);
+  });
+  renderEditor();
+  await userEvent.type(screen.getByLabelText(/customer name/i), "New Pilot");
+  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+  const fileInput = screen.getByLabelText("Upload layout drawing (optional)");
+  expect(fileInput).toBeEnabled();
+  await userEvent.upload(
+    fileInput,
+    new File(["%PDF-1.4"], "plan.pdf", { type: "application/pdf" }),
+  );
+  expect(
+    await screen.findByText(/Ready to attach: plan.pdf/),
+  ).toBeInTheDocument();
+  expect(
+    fetchMock.mock.calls.some(([u]) => String(u).includes("/documents?")),
+  ).toBe(false);
+  await userEvent.click(
+    screen.getByRole("button", { name: /calculate quote/i }),
+  );
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
+    ).toBe(true),
+  );
+  const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+  const body = JSON.parse(String(call?.[1]?.body));
+  expect(body.customer_id).toBe("new-pilot");
+  expect(body.items[0].notes).toContain("new-drawing");
+});
+
+it("keeps a draft and blocks saving when the session is signed out", async () => {
+  authenticated = false;
+  renderEditor();
+  await userEvent.type(
+    screen.getByLabelText(/customer name/i),
+    "Retained Pilot",
+  );
+  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+  await userEvent.click(
+    screen.getByRole("button", { name: /calculate quote/i }),
+  );
+  expect(screen.getByRole("alert")).toHaveTextContent(/sign in again/i);
+  expect(screen.getByLabelText(/customer name/i)).toHaveValue("Retained Pilot");
+  expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote"))).toBe(
+    false,
+  );
+});
+
+it("can supply a quote-only price for a selected catalogue material without ambiguous linkage", async () => {
+  currentSearch =
+    "catalogue_surface_id=unpriced-surface&catalogue_variant_id=unpriced-variant&material=Unpriced%20marble&thickness=20mm";
+  renderEditor();
+  await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");
+  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+  await userEvent.click(screen.getByLabelText("Enter my own slab price"));
+  await userEvent.type(
+    screen.getByLabelText("Selling price per slab (£)"),
+    "900",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: /calculate quote/i }),
+  );
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
+    ).toBe(true),
+  );
+  const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
+  const row = JSON.parse(String(call?.[1]?.body)).items[0];
+  expect(row.custom_material).toMatchObject({
+    canonical_name: "Unpriced marble",
+    selling_price_per_slab: 900,
+    save_to_catalogue: false,
+  });
+  expect(row.catalogue_surface_id).toBeNull();
+  expect(row.catalogue_variant_id).toBeNull();
 });

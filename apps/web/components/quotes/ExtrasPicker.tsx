@@ -5,6 +5,8 @@ import { Field, Input, Select } from "@/components/ui/Field";
 import { cn } from "@/lib/utils";
 
 export type DesignDetails = {
+  edgeProfile: string;
+  customEdgeProfile: string;
   sink: string;
   hob: string;
   taps: string;
@@ -14,6 +16,8 @@ export type DesignDetails = {
   splashbackHeight: string;
 };
 export const blankDesignDetails = (): DesignDetails => ({
+  edgeProfile: "",
+  customEdgeProfile: "",
   sink: "",
   hob: "",
   taps: "",
@@ -68,6 +72,57 @@ export function ExtrasPicker({
           </label>
         ))}
       </div>
+      {value.includes("polished_edge") && (
+        <fieldset className="mt-4 rounded-xl border border-border p-4">
+          <legend className="px-2 font-semibold">Polished edges</legend>
+          <Field
+            label="Polished edge profile"
+            htmlFor={`${idPrefix}-edge-profile`}
+          >
+            <Select
+              id={`${idPrefix}-edge-profile`}
+              value={details.edgeProfile}
+              onChange={(e) => update("edgeProfile", e.target.value)}
+            >
+              <option value="">Select an edge profile</option>
+              {[
+                "Full bullnose",
+                "Half bullnose",
+                "Pencil round",
+                "Ogee",
+                "Double ogee",
+                "Eased / square",
+                "Bevel",
+                "Double bevel",
+                "Double bullnose",
+                "Mitred",
+                "Shark nose",
+                "Other / custom",
+              ].map((profile) => (
+                <option key={profile}>{profile}</option>
+              ))}
+            </Select>
+          </Field>
+          {details.edgeProfile === "Other / custom" && (
+            <Field
+              className="mt-3"
+              label="Custom edge profile"
+              htmlFor={`${idPrefix}-custom-edge`}
+            >
+              <Input
+                id={`${idPrefix}-custom-edge`}
+                value={details.customEdgeProfile}
+                onChange={(e) => update("customEdgeProfile", e.target.value)}
+                placeholder="Describe the edge required"
+              />
+            </Field>
+          )}
+          <p className="mt-3 text-sm text-muted">
+            The selected profile is saved on the quote. Confirm fabrication
+            suitability and pricing before issuing.
+          </p>
+        </fieldset>
+      )}
       {value.includes("cutout") && (
         <fieldset className="mt-4 rounded-xl border border-border p-4">
           <legend className="px-2 font-semibold">
