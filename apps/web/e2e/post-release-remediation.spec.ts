@@ -292,3 +292,64 @@ test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_draw
   expect(invoice.status()).toBe(200);
   expect(invoice.headers()["content-type"]).toContain("application/pdf");
 });
+
+test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymous_save", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(60_000);
+  const runId = uniqueRunId("stone-expiry");
+  await signUpAndLogIn(page, runId);
+  await page.goto("/quotes/new/stone");
+  await page.getByLabel("Show all sections").check();
+  await page
+    .getByLabel("Customer name", { exact: true })
+    .fill(`Retained Pilot ${runId}`);
+  await page.getByLabel("Length (mm)", { exact: true }).fill("2400");
+  await page
+    .getByLabel("Upload layout drawing (optional)")
+    .setInputFiles({
+      name: "retained-plan.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4\n%%EOF"),
+    });
+  await expect(
+    page.getByText(/Ready to attach: retained-plan.pdf/),
+  ).toBeVisible();
+  await context.clearCookies();
+  const denied = page.waitForResponse(
+    (res) =>
+      res.url().includes("/api/v1/catalogue/surfaces?") && res.status() === 401,
+  );
+  await page
+    .getByRole("button", { name: "Browse materials", exact: true })
+    .click();
+  await denied;
+  await expect(
+    page.getByRole("link", { name: "Sign in in a new tab", exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByLabel("Customer name", { exact: true })).toHaveValue(
+    `Retained Pilot ${runId}`,
+  );
+  await expect(page.getByLabel("Length (mm)", { exact: true })).toHaveValue(
+    "2400",
+  );
+  await expect(
+    page.getByText(/Ready to attach: retained-plan.pdf/),
+  ).toBeVisible();
+  expect(
+    await page
+      .getByLabel("Upload layout drawing (optional)")
+      .evaluate((input: HTMLInputElement) => input.files?.[0]?.name),
+  ).toBe("retained-plan.pdf");
+  let quotePosts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/api/v1/quote"))
+      quotePosts++;
+  });
+  await page
+    .getByRole("button", { name: "Calculate Quote", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("Sign in again");
+  expect(quotePosts).toBe(0);
+});

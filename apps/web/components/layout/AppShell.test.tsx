@@ -121,3 +121,26 @@ describe("AppShell public/auth boundary", () => {
     expect(screen.queryByTestId("trial-banner")).not.toBeInTheDocument();
   });
 });
+
+it("retains stone draft inputs and queued files through session loss and recovery", () => {
+  currentPathname = "/quotes/new/stone";
+  authState = { ...authState, isAuthenticated: true };
+  const content = (
+    <>
+      <input aria-label="Draft customer" defaultValue="Retained Pilot" />
+      <input aria-label="Queued drawing" type="file" />
+    </>
+  );
+  const { rerender } = render(<AppShell>{content}</AppShell>);
+  const customer = screen.getByLabelText("Draft customer");
+  const file = screen.getByLabelText("Queued drawing");
+  authState = { ...authState, isAuthenticated: false };
+  rerender(<AppShell>{content}</AppShell>);
+  expect(screen.getByLabelText("Draft customer")).toBe(customer);
+  expect(screen.getByLabelText("Queued drawing")).toBe(file);
+  expect(screen.queryByTestId("sidebar")).not.toBeInTheDocument();
+  authState = { ...authState, isAuthenticated: true };
+  rerender(<AppShell>{content}</AppShell>);
+  expect(screen.getByLabelText("Draft customer")).toBe(customer);
+  expect(screen.getByLabelText("Queued drawing")).toBe(file);
+});

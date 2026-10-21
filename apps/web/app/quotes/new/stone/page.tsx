@@ -454,6 +454,8 @@ function NewQuotePageInner({
     setResult(null);
 
     try {
+      // Revalidate after a long editing session before any workspace write.
+      await api.getMe();
       let linkedCustomerId = customerId;
       let quoteRows = items;
       if (quoteRows.some((row) => row.pendingDrawing)) {
@@ -573,7 +575,13 @@ function NewQuotePageInner({
       });
       setResult(quote);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      setError(
+        err instanceof ApiError && err.status === 401
+          ? "Sign in again before saving this quote. Your draft and selected drawings are kept here."
+          : err instanceof ApiError
+            ? err.message
+            : "Something went wrong.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -996,6 +1004,10 @@ function NewQuotePageInner({
                                 catalogue_surface_id: null,
                                 catalogue_variant_id: null,
                                 material: MATERIAL_OPTIONS[0],
+                                manualPrice: "",
+                                manualFamily: "quartz",
+                                slabLength: "3200",
+                                slabWidth: "1600",
                               })
                             }
                           >
@@ -1010,12 +1022,18 @@ function NewQuotePageInner({
                           id={`${row.key}-material`}
                           value={row.material}
                           onFreeTextChange={(text) =>
-                            updateItem(row.key, { material: text })
+                            updateItem(row.key, {
+                              material: text,
+                              manualPrice: "",
+                              catalogue_surface_id: null,
+                              catalogue_variant_id: null,
+                            })
                           }
                           onSelectSurface={(
                             surface,
                             thicknessLabel,
                             variantId,
+                            variant,
                           ) =>
                             updateItem(row.key, {
                               material: surface.canonical_name,
@@ -1024,6 +1042,11 @@ function NewQuotePageInner({
                               catalogue_variant_id: variantId,
                               manualPricing: !surface.has_tenant_price,
                               manualFamily: surface.material_family,
+                              manualPrice: "",
+                              slabLength: String(
+                                variant?.slab_length_mm ?? 3200,
+                              ),
+                              slabWidth: String(variant?.slab_width_mm ?? 1600),
                             })
                           }
                         />

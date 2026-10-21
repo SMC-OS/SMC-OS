@@ -10,6 +10,7 @@ import {
   type MaterialFamily,
   type CatalogueStatus,
   type SurfaceSearchResult,
+  type SurfaceVariant,
 } from "@/types/catalogue";
 
 interface MaterialCatalogueSearchProps {
@@ -20,6 +21,7 @@ interface MaterialCatalogueSearchProps {
     surface: SurfaceSearchResult,
     thicknessLabel: string,
     variantId: string | null,
+    variant: SurfaceVariant | null,
   ) => void;
 }
 
@@ -141,6 +143,7 @@ export function MaterialCatalogueSearch({
     setResults([]);
     setOutcome("idle");
     let variantId: string | null = null;
+    let selectedVariant: SurfaceVariant | null = null;
     let thicknessLabel =
       surface.thicknesses_mm.length > 0
         ? `${surface.thicknesses_mm[0]}mm`
@@ -149,6 +152,7 @@ export function MaterialCatalogueSearch({
       const detail = await api.getCatalogueSurface(surface.id);
       const firstVariant =
         detail.variants.find((v) => v.active) ?? detail.variants[0] ?? null;
+      selectedVariant = firstVariant;
       if (firstVariant) {
         variantId = firstVariant.id;
         if (firstVariant.thickness_mm)
@@ -158,7 +162,7 @@ export function MaterialCatalogueSearch({
       // Fall back to the surface alone (no specific variant) rather than
       // blocking selection on a second failed request.
     }
-    onSelectSurface(surface, thicknessLabel, variantId);
+    onSelectSurface(surface, thicknessLabel, variantId, selectedVariant);
   }
 
   return (

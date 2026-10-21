@@ -81,6 +81,12 @@ beforeEach(() => {
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
 
+    if (url.endsWith("/auth/me"))
+      return jsonResponse({
+        id: "owner-1",
+        role: "Owner",
+        tenant_name: "Pytest Co",
+      });
     if (url.includes("/customers?")) {
       return jsonResponse([]);
     }
@@ -1058,4 +1064,86 @@ it("can supply a quote-only price for a selected catalogue material without ambi
   });
   expect(row.catalogue_surface_id).toBeNull();
   expect(row.catalogue_variant_id).toBeNull();
+});
+
+it("requires a fresh price and uses known slab dimensions when choosing another unpriced material", async () => {
+  const original = fetchMock.getMockImplementation() as (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  fetchMock.mockImplementation(async (input, init) => {
+    const response = await original(
+      String(input).includes("/catalogue/surfaces?")
+        ? `${input}&q=Silestone`
+        : input,
+      init,
+    );
+    if (String(input).includes("/catalogue/surfaces?"))
+      return jsonResponse(
+        (await response.json()).map((row: object) => ({
+          ...row,
+          has_tenant_price: false,
+        })),
+      );
+    if (String(input).endsWith("/catalogue/surfaces/surface-search-1")) {
+      const detail = await response.json();
+      detail.variants[0].slab_length_mm = 3000;
+      detail.variants[0].slab_width_mm = 1400;
+      return jsonResponse(detail);
+    }
+    return response;
+  });
+  renderEditor();
+  await userEvent.click(screen.getByLabelText("Enter my own slab price"));
+  await userEvent.type(
+    screen.getByLabelText("Selling price per slab (£)"),
+    "900",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Browse materials" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: /calacatta gold/i }),
+  );
+  expect(screen.getByLabelText("Selling price per slab (£)")).toHaveValue(null);
+  expect(screen.getByLabelText("Slab length (mm)")).toHaveValue(3000);
+  expect(screen.getByLabelText("Slab width (mm)")).toHaveValue(1400);
+  await userEvent.type(
+    screen.getByLabelText("Selling price per slab (£)"),
+    "950",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Change" }),
+  );
+  expect(screen.getByLabelText("Selling price per slab (£)")).toHaveValue(null);
+});
+
+it("checks an expired session before submitting a workspace quote", async () => {
+  const original = fetchMock.getMockImplementation() as (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  fetchMock.mockImplementation((input, init) =>
+    String(input).endsWith("/auth/me")
+      ? Promise.resolve(
+          jsonResponse({ detail: "Could not validate credentials" }, 401),
+        )
+      : original(input, init),
+  );
+  renderEditor();
+  await userEvent.type(
+    screen.getByLabelText(/customer name/i),
+    "Retained Pilot",
+  );
+  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+  await userEvent.click(
+    screen.getByRole("button", { name: /calculate quote/i }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("alert")).toHaveTextContent(/sign in again/i),
+  );
+  expect(screen.getByLabelText(/customer name/i)).toHaveValue("Retained Pilot");
+  expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote"))).toBe(
+    false,
+  );
 });
