@@ -226,7 +226,9 @@ test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_draw
   const rejection = await rejected;
   expect(rejection.status()).toBe(400);
   expect((await rejection.json()).detail).toContain("Unrecognised value");
-  await expect(page.getByRole("alert")).toContainText(materialName);
+  await expect(
+    page.getByRole("alert").filter({ hasText: materialName }),
+  ).toContainText(materialName);
   await expect(page.getByLabel("Customer name", { exact: true })).toHaveValue(
     customerName,
   );
@@ -306,13 +308,11 @@ test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymou
     .getByLabel("Customer name", { exact: true })
     .fill(`Retained Pilot ${runId}`);
   await page.getByLabel("Length (mm)", { exact: true }).fill("2400");
-  await page
-    .getByLabel("Upload layout drawing (optional)")
-    .setInputFiles({
-      name: "retained-plan.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from("%PDF-1.4\n%%EOF"),
-    });
+  await page.getByLabel("Upload layout drawing (optional)").setInputFiles({
+    name: "retained-plan.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n%%EOF"),
+  });
   await expect(
     page.getByText(/Ready to attach: retained-plan.pdf/),
   ).toBeVisible();
@@ -326,7 +326,9 @@ test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymou
     .click();
   await denied;
   await expect(
-    page.getByRole("link", { name: "Sign in in a new tab", exact: true }).first(),
+    page
+      .getByRole("link", { name: "Sign in in a new tab", exact: true })
+      .first(),
   ).toBeVisible();
   await expect(page.getByLabel("Customer name", { exact: true })).toHaveValue(
     `Retained Pilot ${runId}`,
@@ -350,6 +352,8 @@ test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymou
   await page
     .getByRole("button", { name: "Calculate Quote", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText("Sign in again");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Sign in again" }),
+  ).toContainText("Sign in again");
   expect(quotePosts).toBe(0);
 });
