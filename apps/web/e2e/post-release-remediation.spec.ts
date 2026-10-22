@@ -282,9 +282,6 @@ test("C_unknown_material_draft_can_be_priced_with_edges_and_new_customer_drawing
   const created = await response.json();
   expect(created.customer_id).toBeTruthy();
   expect(created.id).toBe(pending.id);
-  expect(
-    created.site_address_line1 ?? "1 Synthetic Street, London",
-  ).toBeTruthy();
   expect(created.items[0].price_per_slab).toBe(900);
   expect(created.items[0].notes).toContain(
     "Polished edge profile: Double ogee",
@@ -298,7 +295,10 @@ test("C_unknown_material_draft_can_be_priced_with_edges_and_new_customer_drawing
     headers: authHeaders,
   });
   expect(savedResponse.status()).toBe(200);
-  expect((await savedResponse.json()).items[0].notes).toContain("Double ogee");
+  const savedQuote = await savedResponse.json();
+  expect(savedQuote.items[0].notes).toContain("Double ogee");
+  expect(savedQuote.site_address_line1).toBe("1 Synthetic Street, London");
+  expect(savedQuote.site_postcode).toBe("NW2 7RP");
   const documents = await api.get(
     `/api/v1/documents?customer_id=${created.customer_id}`,
     { headers: authHeaders },
