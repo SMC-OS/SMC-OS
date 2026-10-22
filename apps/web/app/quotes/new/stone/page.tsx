@@ -474,10 +474,7 @@ function NewQuotePageInner({
       await api.getMe();
       let linkedCustomerId = customerId;
       let quoteRows = items;
-      if (
-        quoteRows.some((row) => row.pendingDrawing) ||
-        (!linkedCustomerId && (email.trim() || phone.trim()))
-      ) {
+      if (!linkedCustomerId || quoteRows.some((row) => row.pendingDrawing)) {
         if (!linkedCustomerId) {
           const created = await api.createCustomer({
             name: customer.trim(),

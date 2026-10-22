@@ -968,7 +968,9 @@ def create_quote(
                 setattr(replace_pending, key, value)
         db.execute(sa_delete(QuoteItem).where(QuoteItem.quote_id == replace_pending.id))
         row = replace_pending
-    db.add(row)
+        db.expire(row, ["items"])
+    else:
+        db.add(row)
     if commit:
         db.commit()
     else:
@@ -2335,7 +2337,7 @@ def search_catalogue_surfaces(
         for token in tokens:
             like = f"%{token}%"
             matches = [
-                CatalogueSurface.canonical_name.ilike(like),
+                *[CatalogueSurface.canonical_name.ilike(f"%{spelling}%") for spelling in search_terms.name_spellings_for(token)],
                 CatalogueBrand.name.ilike(like),
                 CatalogueManufacturer.name.ilike(like),
                 _supplier_sources_surface(tenant_id, CatalogueSupplier.name.ilike(like)),

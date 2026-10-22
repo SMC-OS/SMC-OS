@@ -87,6 +87,10 @@ beforeEach(() => {
         role: "Owner",
         tenant_name: "Pytest Co",
       });
+    if (url.endsWith("/customers") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      return jsonResponse({ id: "new-customer", ...body }, 201);
+    }
     if (url.includes("/customers?")) {
       return jsonResponse([]);
     }
@@ -1191,7 +1195,10 @@ it("checks an expired session before submitting a workspace quote", async () => 
 });
 
 it("records splashback without dimensions and saves any typed stone as pricing pending", async () => {
-  const baseFetch = fetchMock.getMockImplementation()!;
+  const baseFetch = fetchMock.getMockImplementation() as (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>;
   fetchMock.mockImplementation(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith("/quote") && init?.method === "POST") {

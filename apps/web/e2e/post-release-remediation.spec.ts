@@ -267,7 +267,9 @@ test("C_unknown_material_draft_can_be_priced_with_edges_and_new_customer_drawing
       "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF",
     ),
   });
-  await expect(page.getByText(/Ready to attach: pilot-plan.pdf/)).toBeVisible();
+  await expect(
+    page.getByText(/(?:Ready to attach|Saved drawing): pilot-plan.pdf/),
+  ).toBeVisible();
   const accepted = page.waitForResponse(
     (res) =>
       res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",

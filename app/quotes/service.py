@@ -335,7 +335,8 @@ class QuoteService:
         # silently not for others is precisely the "quietly does nothing"
         # failure this feature exists to avoid. An anonymous quote has no
         # tenant, so the dispatcher no-ops for it.
-        automation_dispatcher.dispatch_quote_created(db, row)
+        if result["total"] is not None:
+            automation_dispatcher.dispatch_quote_created(db, row)
 
         return {
             **result,
