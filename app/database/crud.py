@@ -921,11 +921,17 @@ def create_quote(
     # test that predates this sprint keeps working with the old signature.
     currency: str = "GBP",
     subtotal: float | None = None,
+    site_address_line1: str | None = None,
+    site_postcode: str | None = None,
+    replace_pending: Quote | None = None,
+    commit: bool = True,
 ) -> Quote:
     row = Quote(
         id=id,
         tenant_id=tenant_id,
         customer_id=customer_id,
+        site_address_line1=site_address_line1,
+        site_postcode=site_postcode,
         quote_kind="stone",
         # GeoCore Premium OS Plan 01 (Sprint 040) — this function only
         # ever creates a stone quote (quote_kind is hardcoded above), so
@@ -956,13 +962,22 @@ def create_quote(
         vat=vat,
         total=total,
     )
+    if replace_pending is not None:
+        for key, value in row.__dict__.items():
+            if not key.startswith("_"):
+                setattr(replace_pending, key, value)
+        db.execute(sa_delete(QuoteItem).where(QuoteItem.quote_id == replace_pending.id))
+        row = replace_pending
     db.add(row)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 
 
-def create_quote_items(db: Session, items: list[dict]) -> list[QuoteItem]:
+def create_quote_items(db: Session, items: list[dict], *, commit: bool = True) -> list[QuoteItem]:
     """Bulk-creates the QuoteItem rows for a just-created Quote (Sprint
     033, Workstream C). Each dict must include `quote_id`; `id`/
     `created_at` are filled in if not already present. One commit for
@@ -974,7 +989,10 @@ def create_quote_items(db: Session, items: list[dict]) -> list[QuoteItem]:
         item.setdefault("id", uuid.uuid4())
         rows.append(QuoteItem(**item))
     db.add_all(rows)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     for row in rows:
         db.refresh(row)
     return rows
@@ -2292,6 +2310,7 @@ def search_catalogue_surfaces(
     colour_family: str | None = None,
     include_discontinued: bool = False,
     limit: int = 20,
+    offset: int = 0,
 ) -> list[CatalogueSurface]:
     """Every tenant sees every global (tenant_id IS NULL) surface, plus
     only their own private ones — never another tenant's. Same
@@ -2340,7 +2359,7 @@ def search_catalogue_surfaces(
         stmt = stmt.where(CatalogueSurface.collection_id == collection_id)
     if colour_family:
         stmt = stmt.where(CatalogueSurface.colour_family == colour_family)
-    stmt = stmt.order_by(CatalogueSurface.canonical_name).limit(limit)
+    stmt = stmt.order_by(CatalogueSurface.canonical_name, CatalogueSurface.id).offset(offset).limit(limit)
     return list(db.scalars(stmt))
 
 

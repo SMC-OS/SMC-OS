@@ -57,6 +57,10 @@ class QuoteKindError(Exception):
     silently corrupt a customer-facing price."""
 
 
+class QuotePricingPendingError(Exception):
+    """An unpriced specification cannot become a customer offer."""
+
+
 class QuoteEditStateError(Exception):
     """Raised when a quote is edited after it has left draft. A quote that
     has been sent to a customer or approved is a document someone else is
@@ -106,6 +110,8 @@ class QuoteService:
         quote = crud.get_quote_by_id(db, quote_id, tenant_id)
         if quote is None:
             raise QuoteNotFoundError(quote_id)
+        if quote.total is None:
+            raise QuotePricingPendingError("Add material prices before sending or approving this quote.")
 
         # Sprint 036 — "sent" joins "draft" as an approvable state. This
         # is a widening: everything approvable before this sprint is still
@@ -221,12 +227,23 @@ class QuoteService:
         ):
             raise CustomerNotFoundError(quote.customer_id)
 
+        pending = None
+        if quote.draft_id is not None:
+            if tenant_id is None:
+                raise QuoteNotFoundError(quote.draft_id)
+            pending = crud.get_quote_by_id(db, quote.draft_id, tenant_id)
+            if pending is None:
+                raise QuoteNotFoundError(quote.draft_id)
+            if pending.quote_kind != "stone" or pending.status != "draft" or pending.total is not None:
+                raise QuoteEditStateError("Only an unpriced stone draft can be completed here.")
         result = self.calculator.calculate(db, quote, tenant_id=tenant_id)
         first_item = result["items"][0]
 
         row = crud.create_quote(
             db,
-            id=uuid.uuid4(),
+            id=pending.id if pending else uuid.uuid4(),
+            replace_pending=pending,
+            commit=False,
             tenant_id=tenant_id,
             customer_id=quote.customer_id,
             # Sprint 033 (Workstream C) — these columns are now a
@@ -265,6 +282,8 @@ class QuoteService:
             # and falls back to the column default.
             currency=self._tenant_currency(db, tenant_id),
             subtotal=result["price_before_vat"],
+            site_address_line1=quote.site_address_line1,
+            site_postcode=quote.postcode,
         )
 
         crud.create_quote_items(
@@ -291,7 +310,10 @@ class QuoteService:
                 }
                 for index, item in enumerate(result["items"])
             ],
+            commit=False,
         )
+        db.commit()
+        db.expire(row, ["items"])
         db.refresh(row)
 
         # Sprint 004/006 established this pattern: the backend logs its own
@@ -300,7 +322,7 @@ class QuoteService:
             ActivityEventCreate(
                 type=ActivityType.QUOTE_CREATED,
                 title="New quote created",
-                description=f"{quote.customer} — {result['material']}, £{result['total']:,.2f}",
+                description=f"{quote.customer} — {result['material']}, " + ("pricing pending" if result["total"] is None else f"£{result['total']:,.2f}"),
             ),
             tenant_id=tenant_id,
         )
@@ -518,6 +540,8 @@ class QuoteService:
         quote = crud.get_quote_by_id(db, quote_id, tenant_id)
         if quote is None:
             raise QuoteNotFoundError(quote_id)
+        if quote.total is None:
+            raise QuotePricingPendingError("Add material prices before sending or approving this quote.")
         if quote.status == "sent":
             return quote
         if quote.status != "draft":
@@ -560,6 +584,8 @@ class QuoteService:
         quote = crud.get_quote_by_id(db, quote_id, tenant_id)
         if quote is None:
             raise QuoteNotFoundError(quote_id)
+        if quote.total is None:
+            raise QuotePricingPendingError("Add material prices before sending or approving this quote.")
         if quote.status not in ("draft", "sent"):
             raise QuoteApprovalStateError(quote.status)
         if quote.customer_id is None:

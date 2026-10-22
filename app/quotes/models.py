@@ -85,6 +85,12 @@ class QuoteRequest(BaseModel):
     customer: str
 
     postcode: str | None = None
+    site_address_line1: str | None = Field(default=None, min_length=1, max_length=500)
+    # Explicit editor opt-in: an unknown stone is a saved specification,
+    # never a guessed price or a zero-value offer. Legacy callers still fail
+    # on missing prices unless they request this behaviour.
+    allow_unpriced: bool = False
+    draft_id: uuid.UUID | None = None
 
     # Sprint 033 (Workstream C) — the source of truth. A quote is one or
     # more independent line items; nothing here forces a splashback to
@@ -115,6 +121,8 @@ class QuoteRequest(BaseModel):
 
     @model_validator(mode="after")
     def _build_items(self) -> "QuoteRequest":
+        if self.allow_unpriced and (not (self.site_address_line1 or "").strip() or not (self.postcode or "").strip()):
+            raise ValueError("Customer address and postcode are required for a stone quote draft.")
         if self.items:
             return self
 

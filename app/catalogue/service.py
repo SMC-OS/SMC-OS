@@ -69,6 +69,7 @@ class CatalogueService:
         colour_family: str | None = None,
         include_discontinued: bool = False,
         limit: int = 20,
+        offset: int = 0,
     ) -> list[CatalogueSurface]:
         return crud.search_catalogue_surfaces(
             db,
@@ -82,6 +83,7 @@ class CatalogueService:
             colour_family=colour_family,
             include_discontinued=include_discontinued,
             limit=limit,
+            offset=offset,
         )
 
     def get_detail(

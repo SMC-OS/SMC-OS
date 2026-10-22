@@ -142,10 +142,6 @@ function composeItemNotes(row: ItemRow): string | null {
     parts.push(
       `Upstand: ${row.designDetails.upstandLength} × ${row.designDetails.upstandHeight} mm`,
     );
-  if (row.extras.includes("splashback_included"))
-    parts.push(
-      `Splashback: ${row.designDetails.splashbackLength} × ${row.designDetails.splashbackHeight} mm`,
-    );
   return parts.length > 0 ? parts.join(". ") : null;
 }
 
@@ -235,7 +231,11 @@ function NewQuotePageInner({
   const showStep = (index: number) => showAll || step === index;
   const [customer, setCustomer] = useState("");
   const [customerId, setCustomerId] = useState(initialCustomerId);
+  const [pendingDraftId, setPendingDraftId] = useState<string | undefined>();
   const [postcode, setPostcode] = useState("");
+  const [address, setAddress] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [items, setItems] = useState<ItemRow[]>(() => [blankItem(initialItem)]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -266,11 +266,21 @@ function NewQuotePageInner({
         const selected = rows.find((row) => row.id === initialCustomerId);
         if (selected) {
           setCustomer((current) => current || selected.name);
+          setAddress((current) => current || selected.address_line1 || "");
+          setPostcode((current) => current || selected.postcode || "");
+          setEmail((current) => current || selected.email || "");
+          setPhone((current) => current || selected.phone || "");
         } else if (initialCustomerId) {
           try {
             const initialCustomer = await api.getCustomer(initialCustomerId);
             setCustomers([...rows, initialCustomer]);
             setCustomer((current) => current || initialCustomer.name);
+            setAddress(
+              (current) => current || initialCustomer.address_line1 || "",
+            );
+            setPostcode((current) => current || initialCustomer.postcode || "");
+            setEmail((current) => current || initialCustomer.email || "");
+            setPhone((current) => current || initialCustomer.phone || "");
           } catch {}
         }
       })
@@ -302,7 +312,13 @@ function NewQuotePageInner({
     setCustomerId(id);
     setItems((rows) => rows.map((row) => ({ ...row, drawing: null })));
     setResult(null);
-    if (selected) setCustomer(selected.name);
+    if (selected) {
+      setCustomer(selected.name);
+      setAddress(selected.address_line1 ?? "");
+      setPostcode(selected.postcode ?? "");
+      setEmail(selected.email ?? "");
+      setPhone(selected.phone ?? "");
+    }
   }
 
   function updateItem(key: string, patch: Partial<ItemRow>) {
@@ -397,8 +413,8 @@ function NewQuotePageInner({
       items.some(
         (row) =>
           row.manualPricing &&
-          (!row.manualPrice.trim() ||
-            !Number.isFinite(Number(row.manualPrice)) ||
+          row.manualPrice.trim() !== "" &&
+          (!Number.isFinite(Number(row.manualPrice)) ||
             Number(row.manualPrice) < 0 ||
             !Number.isFinite(Number(row.slabLength)) ||
             !Number.isFinite(Number(row.slabWidth)) ||
@@ -414,6 +430,8 @@ function NewQuotePageInner({
     }
     if (
       !customer.trim() ||
+      !address.trim() ||
+      !postcode.trim() ||
       items.some(
         (row) =>
           !row.material.trim() ||
@@ -421,11 +439,9 @@ function NewQuotePageInner({
           Number(row.quantity) < 1 ||
           Number(row.length_mm) <= 0 ||
           Number(row.width_mm) <= 0 ||
-          (["upstand", "splashback"] as const).some(
+          (["upstand"] as const).some(
             (kind) =>
-              row.extras.includes(
-                kind === "upstand" ? "upstand_included" : "splashback_included",
-              ) &&
+              row.extras.includes("upstand_included") &&
               (Number(row.designDetails[`${kind}Length`]) <= 0 ||
                 Number(row.designDetails[`${kind}Height`]) <= 0),
           ) ||
@@ -445,7 +461,7 @@ function NewQuotePageInner({
       )
     ) {
       setError(
-        "Complete the customer, material and positive measurements for every piece before calculating.",
+        "Complete the customer name, address, postcode, material and positive measurements for every piece before saving.",
       );
       return;
     }
@@ -458,12 +474,18 @@ function NewQuotePageInner({
       await api.getMe();
       let linkedCustomerId = customerId;
       let quoteRows = items;
-      if (quoteRows.some((row) => row.pendingDrawing)) {
+      if (
+        quoteRows.some((row) => row.pendingDrawing) ||
+        (!linkedCustomerId && (email.trim() || phone.trim()))
+      ) {
         if (!linkedCustomerId) {
           const created = await api.createCustomer({
             name: customer.trim(),
             customer_type: "individual",
-            postcode: postcode || null,
+            postcode: postcode.trim(),
+            address_line1: address.trim(),
+            email: email.trim() || null,
+            phone: phone.trim() || null,
           });
           linkedCustomerId = created.id;
           setCustomerId(created.id);
@@ -490,7 +512,10 @@ function NewQuotePageInner({
       const quote = await api.createQuote({
         customer: customer || "Unknown",
         customer_id: linkedCustomerId || null,
-        postcode: postcode || undefined,
+        postcode: postcode.trim(),
+        site_address_line1: address.trim(),
+        allow_unpriced: true,
+        draft_id: pendingDraftId,
         items: quoteRows.flatMap((row) => {
           const customMaterial: CustomMaterialInput | null =
             row.custom_material ??
@@ -498,7 +523,9 @@ function NewQuotePageInner({
               ? {
                   canonical_name: row.material.trim(),
                   material_family: row.manualFamily,
-                  selling_price_per_slab: Number(row.manualPrice),
+                  selling_price_per_slab: row.manualPrice.trim()
+                    ? Number(row.manualPrice)
+                    : undefined,
                   save_to_catalogue: false,
                   variant: {
                     thickness_mm: Number.parseFloat(row.thickness),
@@ -544,14 +571,8 @@ function NewQuotePageInner({
                     .join(". ") || null,
               };
             }),
-            ...(["upstand", "splashback"] as const)
-              .filter((kind) =>
-                row.extras.includes(
-                  kind === "upstand"
-                    ? "upstand_included"
-                    : "splashback_included",
-                ),
-              )
+            ...(["upstand"] as const)
+              .filter(() => row.extras.includes("upstand_included"))
               .map((kind) => ({
                 item_type: kind,
                 material: row.material,
@@ -573,6 +594,7 @@ function NewQuotePageInner({
           ];
         }),
       });
+      setPendingDraftId(quote.pricing_pending ? quote.id : undefined);
       setResult(quote);
     } catch (err) {
       setError(
@@ -902,15 +924,54 @@ function NewQuotePageInner({
                   </Field>
                 )}
 
-                <Field label="Postcode (optional)" htmlFor="postcode">
+                <Field
+                  label="Customer address"
+                  htmlFor="site-address"
+                  className="sm:col-span-2"
+                >
+                  <Input
+                    id="site-address"
+                    required
+                    value={address}
+                    onChange={(e) => {
+                      setAddress(e.target.value);
+                      setResult(null);
+                    }}
+                    autoComplete="street-address"
+                    placeholder="House number and street, town or city"
+                  />
+                </Field>
+                <Field label="Postcode" htmlFor="postcode">
                   <Input
                     id="postcode"
+                    required
+                    autoComplete="postal-code"
                     value={postcode}
                     onChange={(e) => {
                       setPostcode(e.target.value);
                       setResult(null);
                     }}
                     placeholder="e.g. AB1 2CD"
+                  />
+                </Field>
+                <Field label="Email (optional)" htmlFor="customer-email">
+                  <Input
+                    id="customer-email"
+                    type="email"
+                    value={email}
+                    disabled={!!customerId}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                  />
+                </Field>
+                <Field label="Phone (optional)" htmlFor="customer-phone">
+                  <Input
+                    id="customer-phone"
+                    type="tel"
+                    value={phone}
+                    disabled={!!customerId}
+                    onChange={(e) => setPhone(e.target.value)}
+                    autoComplete="tel"
                   />
                 </Field>
               </div>
@@ -1024,6 +1085,7 @@ function NewQuotePageInner({
                           onFreeTextChange={(text) =>
                             updateItem(row.key, {
                               material: text,
+                              manualPricing: true,
                               manualPrice: "",
                               catalogue_surface_id: null,
                               catalogue_variant_id: null,
@@ -1090,8 +1152,8 @@ function NewQuotePageInner({
                         </label>
                         <p className="mt-2 text-xs text-muted">
                           Browse the catalogue above, or type a material name.
-                          If it has no existing price, enter your selling price
-                          below.
+                          Enter a selling price to calculate a total, or leave
+                          it blank to save a draft with pricing pending.
                         </p>
                         {row.manualPricing && (
                           <div className="mt-3 grid grid-cols-1 gap-4 rounded-xl border border-border p-4 sm:grid-cols-2">
@@ -1125,7 +1187,6 @@ function NewQuotePageInner({
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                required
                                 value={row.manualPrice}
                                 onChange={(event) =>
                                   updateItem(row.key, {
@@ -1391,9 +1452,9 @@ function NewQuotePageInner({
                       }
                     />
                     <p className="mt-3 text-sm text-muted">
-                      Measured upstands and splashbacks are priced as separate
-                      lines. Cut-out, tap-hole and polished-edge charges need
-                      review and are not added automatically.
+                      Measured upstands are priced as separate lines. Cut-out,
+                      tap-hole and polished-edge charges need review and are not
+                      added automatically.
                     </p>
                   </div>
                 </fieldset>
@@ -1410,6 +1471,7 @@ function NewQuotePageInner({
               </h2>
               <p className="mb-4 text-sm text-muted">
                 {customer || "Customer not entered"}
+                {address ? ` · ${address}` : ""}
                 {postcode ? ` · ${postcode}` : ""}
               </p>
               <ul className="space-y-4">
@@ -1462,9 +1524,9 @@ function NewQuotePageInner({
                     )}
                     {row.manualPricing && (
                       <p className="mt-2 text-sm">
-                        Your slab selling price: £
-                        {row.manualPrice || "not entered"} · slab{" "}
-                        {row.slabLength} × {row.slabWidth} mm
+                        {row.manualPrice.trim()
+                          ? `Your slab selling price: £${row.manualPrice} · slab ${row.slabLength} × ${row.slabWidth} mm`
+                          : "Pricing pending — add your slab price when available."}
                       </p>
                     )}
                   </li>
@@ -1473,10 +1535,11 @@ function NewQuotePageInner({
               <p className="mt-4 text-sm text-muted">
                 The estimate uses your catalogue prices and pools the material
                 area of each selected layout, including 15% waste. Review the
-                cutting plan before issuing a final price. Measured upstands and
-                splashbacks add separate lines. Cut-out, tap-hole and
-                polished-edge selections are specifications only. Calculating
-                creates a saved quote; it does not send it to the customer.
+                cutting plan before issuing a final price. Measured upstands add
+                separate lines. Splashback is recorded as an inclusion. Cut-out,
+                tap-hole and polished-edge selections are specifications only.
+                Calculating creates a saved quote; it does not send it to the
+                customer.
               </p>
             </CardContent>
           </Card>
@@ -1542,7 +1605,11 @@ function NewQuotePageInner({
       {result && (
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Quote for {result.customer}</CardTitle>
+            <CardTitle>
+              {result.pricing_pending
+                ? "Draft saved — pricing pending"
+                : `Quote for ${result.customer}`}
+            </CardTitle>
           </CardHeader>
           <CardContent className="pt-4">
             <ul className="mb-4 flex flex-col gap-2">
@@ -1560,7 +1627,9 @@ function NewQuotePageInner({
                       {item.quantity} x {item.length_mm}mm x {item.width_mm}mm ·{" "}
                       {item.slab_allocation
                         ? `shares ${item.slab_allocation.group_slabs} slab${item.slab_allocation.group_slabs === 1 ? "" : "s"} across the layout`
-                        : `${item.slabs} slab${item.slabs === 1 ? "" : "s"}`}
+                        : item.slabs === null
+                          ? "Slab requirement pending pricing"
+                          : `${item.slabs} slab${item.slabs === 1 ? "" : "s"}`}
                     </p>
                     {item.notes && (
                       <p className="mt-1 text-xs text-muted">{item.notes}</p>
@@ -1578,15 +1647,21 @@ function NewQuotePageInner({
             <dl className="grid grid-cols-2 gap-y-2 border-t border-border pt-4 text-sm">
               <dt className="text-muted">Subtotal</dt>
               <dd className="text-right text-foreground">
-                {formatCurrencyGBP(result.price_before_vat)}
+                {result.price_before_vat === null
+                  ? "Pricing pending"
+                  : formatCurrencyGBP(result.price_before_vat)}
               </dd>
               <dt className="text-muted">VAT (20%)</dt>
               <dd className="text-right text-foreground">
-                {formatCurrencyGBP(result.vat)}
+                {result.vat === null
+                  ? "Pricing pending"
+                  : formatCurrencyGBP(result.vat)}
               </dd>
               <dt className="font-semibold text-foreground">Total</dt>
               <dd className="text-right text-lg font-semibold text-foreground">
-                {formatCurrencyGBP(result.total)}
+                {result.total === null
+                  ? "Pricing pending"
+                  : formatCurrencyGBP(result.total)}
               </dd>
             </dl>
 
@@ -1594,7 +1669,7 @@ function NewQuotePageInner({
               {isAuthenticated ? (
                 <Button
                   onClick={handleDownload}
-                  disabled={downloading}
+                  disabled={downloading || result.pricing_pending}
                   variant="outline"
                 >
                   {downloading ? "Downloading…" : "Download Invoice"}
