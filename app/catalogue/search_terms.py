@@ -74,3 +74,11 @@ def colours_for(token: str) -> set[str]:
     """The colour_family values a single typed word refers to — empty
     when the word is not a colour word."""
     return set(_COLOUR_SYNONYMS.get(token.lower(), set()))
+
+
+def name_spellings_for(token: str) -> set[str]:
+    """Recognise the transposition reported in the quote screenshot without
+    changing the material name a user types or conflating genuine names
+    such as Caesarstone Misty Carrera with Carrara."""
+    token = token.lower()
+    return {token, "carrara"} if token == "cararra" else {token}

@@ -52,7 +52,7 @@ beforeEach(() => {
   pushMock.mockClear();
   confirmMock.mockReset();
   resendMock.mockReset();
-  logoutMock.mockClear();
+  logoutMock.mockReset();
   currentToken = null;
   authState = {
     isReady: true,
@@ -74,11 +74,15 @@ describe("VerifyEmailPage — no token (the holding screen AppShell redirects to
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 
-  it("sign_out_clears_the_session_and_returns_to_login", () => {
+  it("sign_out_waits_for_server_revocation_then_returns_to_login", async () => {
+    let completeLogout!: () => void;
+    logoutMock.mockReturnValue(new Promise<void>((resolve) => { completeLogout = resolve; }));
     render(<VerifyEmailPage />);
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    expect(logoutMock).toHaveBeenCalled();
-    expect(pushMock).toHaveBeenCalledWith("/login");
+    expect(logoutMock).toHaveBeenCalledTimes(1);
+    expect(pushMock).not.toHaveBeenCalled();
+    completeLogout();
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/login"));
   });
 
   it("shows_a_sign_in_prompt_instead_of_resend_when_unauthenticated", () => {
@@ -196,4 +200,12 @@ describe("VerifyEmailPage — resend states", () => {
       expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
     });
   });
+});
+
+it("keeps the verification screen recoverable when server logout fails", async () => {
+  logoutMock.mockRejectedValue(new Error("Network unavailable"));
+  render(<VerifyEmailPage />);
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/Could not sign out/);
+  expect(pushMock).not.toHaveBeenCalled();
 });

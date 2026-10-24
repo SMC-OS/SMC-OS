@@ -51,6 +51,11 @@ def _describe_stone_item(item) -> str:
 
     if item.length_mm is not None and item.width_mm is not None:
         label += f", {item.quantity:g} x {item.length_mm:g}mm x {item.width_mm:g}mm"
+    allocation = (getattr(item, "catalogue_snapshot", None) or {}).get("slab_allocation")
+    if allocation:
+        label += f", shared material-area estimate ({allocation['group_slabs']} slabs across layout)"
+    if getattr(item, "notes", None):
+        label += f". {item.notes}"
     return label
 
 
@@ -91,10 +96,26 @@ def build_line_items(quote) -> list[dict]:
                 if item.line_kind == "stone"
                 else _describe_general_item(item, symbol)
             ),
-            "amount": item.line_total if item.line_total is not None else 0.0,
+            "amount": item.line_total,
         }
         for item in quote.items
     ]
+
+
+def build_document_fields(quote) -> dict:
+    """Only agreed customer-facing contract fields; never internal notes."""
+    return {
+        "site_address": ", ".join(str(value) for value in [
+            getattr(quote, "site_address_line1", None),
+            getattr(quote, "site_address_line2", None),
+            getattr(quote, "site_city", None),
+            getattr(quote, "site_postcode", None) or getattr(quote, "postcode", None),
+        ] if value),
+        "valid_until": getattr(quote, "valid_until", None),
+        "scope_of_works": getattr(quote, "scope_of_works", None),
+        "exclusions": getattr(quote, "exclusions", None),
+        "terms": getattr(quote, "terms", None),
+    }
 
 
 def _escape(value: str) -> str:
@@ -136,13 +157,24 @@ class PDFGenerator:
         # 14 Elm Road"); a stone quote never had one, and keeps the exact
         # heading it has had since Sprint 007 so a re-downloaded historical
         # document is identical to the one the customer already holds.
-        heading = invoice.get("title") or f"Invoice for Quote #{str(invoice['id'])[:8]}"
+        heading = (f"Draft specification — pricing pending #{str(invoice['id'])[:8]}" if invoice.get("total") is None else invoice.get("title") or f"Invoice for Quote #{str(invoice['id'])[:8]}")
         story.append(Paragraph(_escape(str(heading)), styles["Heading2"]))
         currency = invoice.get("currency") or "GBP"
         if currency not in _CURRENCY_SYMBOLS:
             story.append(Paragraph(f"All amounts in {_escape(currency)}", styles["Normal"]))
         story.append(Paragraph(f"Date: {invoice['created_at']:%d %B %Y}", styles["Normal"]))
         story.append(Paragraph(f"Customer: {_escape(invoice['customer'])}", styles["Normal"]))
+        if invoice.get("site_address"):
+            story.append(Paragraph(f"Site: {_escape(str(invoice['site_address']))}", styles["Normal"]))
+        if invoice.get("valid_until"):
+            story.append(Paragraph(f"Valid until: {invoice['valid_until']:%d %B %Y}", styles["Normal"]))
+        for key, label in [("scope_of_works", "Scope of works"), ("exclusions", "Exclusions"), ("terms", "Terms")]:
+            value = invoice.get(key)
+            if value:
+                story.append(Spacer(1, 8))
+                story.append(Paragraph(label, styles["Heading3"]))
+                for line in str(value).splitlines():
+                    story.append(Paragraph(_escape(line) or "<br/>", styles["Normal"]))
         story.append(Spacer(1, 16))
 
         # VAT breakdown table — one row per line item (Sprint 033), then
@@ -166,8 +198,8 @@ class PDFGenerator:
             f"VAT ({vat_rate * 100:g}%)" if vat_rate is not None else "VAT (20%)"
         )
 
-        def money(amount: float) -> str:
-            return f"{symbol}{amount:,.2f}"
+        def money(amount: float | None) -> str:
+            return "Pricing pending" if amount is None else f"{symbol}{amount:,.2f}"
 
         rows = [["Description", "Amount"]]
         rows += [[item["description"], money(item["amount"])] for item in line_items]

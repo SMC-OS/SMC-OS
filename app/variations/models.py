@@ -92,6 +92,7 @@ class VariationOut(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
     reference: str
+    currency: str = "GBP"
     title: str
     description: str | None
     status: str

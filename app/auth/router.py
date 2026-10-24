@@ -1,6 +1,9 @@
 import time
+import uuid
+from datetime import datetime, timezone
+import jwt
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
@@ -41,6 +44,13 @@ from app.database import crud
 from app.database.database import get_db
 from app.database.models import User
 
+from app.auth.cookie_sessions import (
+    clear_browser_session, expose_session_csrf, session_cookie_name,
+    session_token_response, validate_browser_session_request, validate_cookie_write,
+)
+from app.auth.security import decode_access_token
+from app.database.models import RevokedBrowserSession
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Sprint 039 Production Readiness Defect Gate, Blocker 2 — the exact same
@@ -50,7 +60,8 @@ _FORGOT_PASSWORD_MESSAGE = "If an account exists for that email, we've sent a re
 
 
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def signup(data: SignupRequest, db: Session = Depends(get_db)):
+def signup(data: SignupRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    validate_browser_session_request(request)
     try:
         tenant, user = auth_service.signup(db, data)
     except EmailAlreadyRegisteredError:
@@ -69,7 +80,7 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
     token = create_access_token(
         subject=str(user.id), tenant_id=str(tenant.id), token_version=user.token_version
     )
-    return TokenResponse(access_token=token, user=auth_service.build_user_out(db, user))
+    return session_token_response(request, response, token, auth_service.build_user_out(db, user))
 
 
 @router.post("/email/verify/resend", response_model=VerificationResendResponse)
@@ -122,7 +133,8 @@ def confirm_email_verification(data: VerifyEmailConfirmRequest, db: Session = De
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(credentials: LoginRequest, db: Session = Depends(get_db)):
+def login(credentials: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    validate_browser_session_request(request)
     login_rate_limiter.check(
         credentials.email,
         max_attempts=settings.login_rate_limit_max_attempts,
@@ -141,11 +153,12 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
     token = create_access_token(
         subject=str(user.id), tenant_id=str(user.tenant_id), token_version=user.token_version
     )
-    return TokenResponse(access_token=token, user=auth_service.build_user_out(db, user))
+    return session_token_response(request, response, token, auth_service.build_user_out(db, user))
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def me(request: Request, response: Response, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    expose_session_csrf(request, response)
     return auth_service.build_user_out(db, current_user)
 
 
@@ -206,12 +219,15 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
 @router.post("/password/change", response_model=TokenResponse)
 def change_password(
     data: ChangePasswordRequest,
+    request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Changes the signed-in user's own password (see
     app/auth/password_change_service.py). Every other session is revoked;
     the response carries a fresh token so this one stays signed in."""
+    validate_browser_session_request(request)
     limiter_key = str(current_user.id)
     password_change_rate_limiter.check(
         limiter_key,
@@ -250,4 +266,32 @@ def change_password(
     token = create_access_token(
         subject=str(user.id), tenant_id=str(user.tenant_id), token_version=user.token_version
     )
-    return TokenResponse(access_token=token, user=auth_service.build_user_out(db, user))
+    return session_token_response(request, response, token, auth_service.build_user_out(db, user))
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Revoke this signed session only; repeated/expired logout is safe."""
+    validate_browser_session_request(request)
+    bearer = request.headers.get("Authorization", "")
+    token = bearer[7:] if bearer.lower().startswith("bearer ") else request.cookies.get(session_cookie_name())
+    if token:
+        try:
+            payload = decode_access_token(token)
+        except jwt.PyJWTError:
+            payload = None
+        if payload is not None:
+            if not bearer.lower().startswith("bearer "):
+                validate_cookie_write(request)
+            try:
+                user_id = uuid.UUID(payload["sub"])
+            except (ValueError, KeyError):
+                user_id = None
+            if user_id is not None and payload.get("jti") and crud.get_user_by_id(db, user_id) is not None:
+                if db.get(RevokedBrowserSession, payload["jti"]) is None:
+                    db.add(RevokedBrowserSession(token_id=payload["jti"], user_id=user_id,
+                        expires_at=datetime.fromtimestamp(payload["exp"], timezone.utc)))
+                    db.commit()
+    clear_browser_session(response)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response

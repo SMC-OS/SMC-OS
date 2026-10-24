@@ -69,6 +69,7 @@ class CatalogueService:
         colour_family: str | None = None,
         include_discontinued: bool = False,
         limit: int = 20,
+        offset: int = 0,
     ) -> list[CatalogueSurface]:
         return crud.search_catalogue_surfaces(
             db,
@@ -82,6 +83,7 @@ class CatalogueService:
             colour_family=colour_family,
             include_discontinued=include_discontinued,
             limit=limit,
+            offset=offset,
         )
 
     def get_detail(
@@ -107,6 +109,9 @@ class CatalogueService:
             raise SurfaceNotFoundError(surface_id)
 
         fields = data.model_dump(exclude={"surface_variant_id"})
+        # Price-only clients must not erase the workspace photo.
+        if "image_url" not in data.model_fields_set:
+            fields.pop("image_url", None)
         return crud.upsert_tenant_catalogue_override(
             db,
             tenant_id=tenant_id,

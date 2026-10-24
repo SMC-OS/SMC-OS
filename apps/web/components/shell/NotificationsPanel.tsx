@@ -34,11 +34,16 @@ const TYPE_TONE: Record<NotificationType, string> = {
 // computed mapping from a fixed set of known source_type values to a
 // fixed route template. Never a client-supplied or stored URL.
 const SOURCE_ROUTE: Record<NotificationSourceType, (id: string) => string> = {
-  project: (id) => `/projects/${id}`,
+  project: (id) => `/projects/${encodeURIComponent(id)}`,
+  customer: (id) => `/customers/${encodeURIComponent(id)}`,
+  quote: (id) => `/quotes/${encodeURIComponent(id)}`,
 };
 
 function notificationHref(notification: AppNotification): string | null {
   if (!notification.source_type || !notification.source_id) return null;
+  // Unknown/new sources remain readable. Never call an inherited property or
+  // invent a route for a nested entity without its parent project identity.
+  if (!Object.hasOwn(SOURCE_ROUTE, notification.source_type)) return null;
   return SOURCE_ROUTE[notification.source_type](notification.source_id);
 }
 

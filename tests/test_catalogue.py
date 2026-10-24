@@ -708,3 +708,25 @@ def test_ai_catalogue_search_reports_missing_price_explicitly_never_fabricated(d
         assert results2[0]["price_per_slab"] == 444
     finally:
         _cleanup_tenant(tenant.id, [surface.id])
+
+
+def test_workspace_photo_does_not_leak_to_other_tenant_and_survives_price_only_update(client, db, auth_headers, other_tenant_auth_headers):
+    surface = _seed_surface(db, name=f'Pytest Photo Isolation {uuid.uuid4().hex[:8]}')
+    surface_id = surface.id
+    url = f'/api/v1/catalogue/surfaces/{surface_id}'
+    photo = 'https://example.com/workspace-owned-quartz.jpg'
+    try:
+        response = client.put(f'{url}/override', headers=auth_headers, json={'image_url': photo, 'selling_price_per_slab': 1000})
+        assert response.status_code == 200, response.text
+        assert client.get(url, headers=auth_headers).json()['image_url'] == photo
+        assert client.get(url, headers=other_tenant_auth_headers).json()['image_url'] is None
+        search = client.get('/api/v1/catalogue/surfaces', params={'q': surface.canonical_name}, headers=auth_headers)
+        assert search.status_code == 200
+        assert next(row for row in search.json() if row['id'] == str(surface_id))['image_url'] == photo
+        price_only = client.put(f'{url}/override', headers=auth_headers, json={'selling_price_per_slab': 1100})
+        assert price_only.status_code == 200
+        assert client.get(url, headers=auth_headers).json()['image_url'] == photo
+    finally:
+        db.execute(delete(TenantCatalogueOverride).where(TenantCatalogueOverride.surface_id == surface_id))
+        db.execute(delete(CatalogueSurface).where(CatalogueSurface.id == surface_id))
+        db.commit()

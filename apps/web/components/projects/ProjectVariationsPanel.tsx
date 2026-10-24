@@ -9,7 +9,7 @@ import { Field, Input, Textarea } from "@/components/ui/Field";
 import { PlusIcon, TrashIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
 import { parseNumberInput } from "@/lib/number";
-import { formatCurrencyGBP, formatDateTime } from "@/lib/utils";
+import { formatCurrency, formatMoney, formatDateTime } from "@/lib/utils";
 import { VARIATION_STATUS_LABELS, VARIATION_STATUS_TONE } from "@/types/variation";
 import type { Variation, VariationItemIn } from "@/types/variation";
 
@@ -234,7 +234,7 @@ export function ProjectVariationsPanel({ projectId }: { projectId: string }) {
                         {variation.reference} &middot; {variation.title}
                       </p>
                       <p className="text-xs text-muted">
-                        {formatCurrencyGBP(variation.total)} total
+                        {Number.isInteger(variation.total) ? formatCurrency(variation.total, variation.currency ?? "GBP") : formatMoney(variation.total, variation.currency ?? "GBP")} total
                         {variation.approved_at
                           ? ` · Approved ${formatDateTime(variation.approved_at)}`
                           : ""}

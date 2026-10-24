@@ -86,7 +86,8 @@ export function GeneralQuoteBuilder({
    * component is ever rendered. */
   existingQuote?: Quote;
 }) {
-  const { currency } = useWorkspace();
+  const { currency: workspaceCurrency } = useWorkspace();
+  const currency = existingQuote?.currency ?? workspaceCurrency;
   const symbol = currencySymbol(currency);
 
   const [customers, setCustomers] = useState<Customer[]>([]);

@@ -347,3 +347,29 @@ describe("ProjectMaterialsPanel", () => {
     expect(screen.getByRole("button", { name: /download pdf/i })).toBeInTheDocument();
   });
 });
+
+it("links a purchase-order line to its project requirement", async () => {
+  getProjectRequirementsMock.mockResolvedValue([requirement(), requirement({ id: "cancelled-req", description: "Cancelled slab", status: "cancelled" })]);
+  getPurchaseOrdersMock.mockResolvedValue([]);
+  getSuppliersMock.mockResolvedValue([]);
+  createPurchaseOrderMock.mockResolvedValue(purchaseOrder());
+  render(<ProjectMaterialsPanel projectId="project-1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "New purchase order" }));
+  const selector = await screen.findByRole("combobox", { name: "Requirement for item 1" });
+  expect(screen.queryByRole("option", { name: "Cancelled slab" })).not.toBeInTheDocument();
+  fireEvent.change(selector, { target: { value: "req-1" } });
+  fireEvent.change(screen.getByLabelText("Unit cost"), { target: { value: "400" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  await waitFor(() => expect(createPurchaseOrderMock).toHaveBeenCalledWith(expect.objectContaining({
+    project_id: "project-1",
+    items: [expect.objectContaining({ material_requirement_id: "req-1", description: "40mm quartz worktop slabs", quantity: 3, unit: "slab", unit_cost: 400 })],
+  })));
+});
+it("blocks an empty purchase order instead of silently doing nothing", async () => {
+  getProjectRequirementsMock.mockResolvedValue([]);
+  getPurchaseOrdersMock.mockResolvedValue([]);
+  getSuppliersMock.mockResolvedValue([]);
+  render(<ProjectMaterialsPanel projectId="project-1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "New purchase order" }));
+  expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
+});

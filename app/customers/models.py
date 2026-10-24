@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 # Sprint 036 (Workstream D). Plain strings, same no-native-enum
 # convention as Project.status / User.role — validated here at the
@@ -120,6 +120,9 @@ class CustomerContextOut(BaseModel):
     customer: CustomerOut
     quotes: list[CustomerQuoteSummary]
     projects: list[CustomerProjectSummary]
+    currency: str = "GBP"
+    quoted_value_by_currency: dict[str, float] = Field(default_factory=dict)
+    approved_value_by_currency: dict[str, float] = Field(default_factory=dict)
     quoted_value: float
     approved_value: float
     open_projects: int

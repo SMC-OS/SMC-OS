@@ -8,7 +8,7 @@ import { legalUrl } from "@/lib/legal";
 
 const defaults = { preferences: false, analytics: false, marketing: false };
 export function PrivacyCard() {
-  const [value, setValue] = useState<Consent | null>(() => readConsent());
+  const [value, setValue] = useState<Pick<Consent, keyof typeof defaults>>(() => readConsent() ?? defaults);
   const [marketingEmail, setMarketingEmail] = useState<MarketingPreference | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSaving, setEmailSaving] = useState(false);
@@ -19,8 +19,8 @@ export function PrivacyCard() {
       .catch(() => { if (active) setEmailError("Could not load your marketing email preference."); });
     return () => { active = false; };
   }, []);
-  const current = value ?? { essential: true, ...defaults };
-  function change(key: keyof typeof defaults, checked: boolean) { setValue(writeConsent({ preferences: current.preferences, analytics: current.analytics, marketing: current.marketing, [key]: checked })); }
+  const current = value;
+  function change(key: keyof typeof defaults, checked: boolean) { setValue({ ...current, [key]: checked }); }
   async function changeMarketingEmail(enabled: boolean) {
     setEmailSaving(true);
     setEmailError(null);

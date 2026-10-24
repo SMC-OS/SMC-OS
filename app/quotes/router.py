@@ -11,6 +11,7 @@ from app.quotes.general import GeneralQuoteRequest, GeneralQuoteUpdate
 from app.quotes.service import (
     CustomerNotFoundError,
     QuoteApprovalStateError,
+    QuotePricingPendingError,
     QuoteEditStateError,
     QuoteKindError,
     QuoteNotFoundError,
@@ -26,7 +27,7 @@ from app.database.models import User
 from app.projects.models import ProjectOut
 from app.quotes.ai_draft import AIDraftError, AIDraftUnavailable, ai_draft_service
 from app.quotes.ai_models import AIDraftRequest, AIQuoteDraft
-from app.quotes.pdf import PDFGenerator, build_line_items
+from app.quotes.pdf import PDFGenerator, build_line_items, build_document_fields
 from app.tenants import identity as tenant_identity
 from app.tenants.service import tenant_service
 
@@ -56,6 +57,7 @@ def _serialize_item(item) -> dict:
         "notes": item.notes,
         "price_per_slab": item.price_per_slab,
         "slabs": item.slabs,
+        "slab_allocation": (item.catalogue_snapshot or {}).get("slab_allocation"),
         "line_total": item.line_total,
         # GeoCore Premium OS Plan 05 (Sprint 044), Task 35 — surfaced so a
         # handed-off quote's catalogue-linked stone lines can be sent
@@ -259,6 +261,8 @@ def send_quote(
         quote = quote_service.mark_sent(db, quote_id, current_user.tenant_id)
     except QuoteNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    except QuotePricingPendingError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except QuoteApprovalStateError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -292,6 +296,8 @@ def send_quote_email(
         )
     except QuoteNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    except QuotePricingPendingError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except QuoteApprovalStateError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -324,6 +330,8 @@ def approve_quote(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quote not found",
         )
+    except QuotePricingPendingError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except QuoteApprovalStateError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -346,6 +354,8 @@ def handoff_quote(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quote not found",
         )
+    except QuotePricingPendingError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except QuoteApprovalStateError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -379,6 +389,7 @@ def download_invoice(
                 tenant_service.get(db, current_user.tenant_id)
             ),
             "line_items": build_line_items(quote),
+            **build_document_fields(quote),
             "price_before_vat": quote.price_before_vat,
             "vat": quote.vat,
             "total": quote.total,

@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_core import PydanticCustomError
@@ -51,9 +52,12 @@ class PortalQuoteOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    material: str
-    thickness: str
-    kitchen_length: float
+    quote_kind: Literal["stone", "general"] = "stone"
+    title: str | None = None
+    currency: str = "GBP"
+    material: str | None = None
+    thickness: str | None = None
+    kitchen_length: float | None = None
     price_before_vat: float
     vat: float
     total: float

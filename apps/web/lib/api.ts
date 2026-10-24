@@ -90,7 +90,7 @@ import type {
 import type { TeamMemberOut } from "@/types/user";
 import type { Variation, VariationCreate, VariationUpdate } from "@/types/variation";
 import type { ProjectWorkflowDetail, WorkflowHistoryEntry } from "@/types/workflow";
-import { clearToken, getToken } from "@/lib/auth-storage";
+import { clearToken, getToken, getCsrfToken, setCsrfToken } from "@/lib/auth-storage";
 import { resolveApiBaseUrl } from "@/lib/runtime-config";
 
 /**
@@ -118,6 +118,24 @@ export type MarketingPreference = {
   updated_at: string | null;
 };
 
+/** Credentials stay in an HttpOnly cookie; only the non-authentication CSRF
+ * challenge is exposed to JavaScript and sent on mutations. */
+async function sessionFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const unsafe = !["GET", "HEAD", "OPTIONS"].includes(method);
+  const csrf = getCsrfToken();
+  const initialHeaders = init?.headers instanceof Headers
+    ? Object.fromEntries(init.headers.entries())
+    : Array.isArray(init?.headers) ? Object.fromEntries(init.headers) : init?.headers;
+  const res = await fetch(input, {
+    ...init, credentials: "include", cache: "no-store",
+    headers: { ...initialHeaders, ...(unsafe && csrf ? { "X-CSRF-Token": csrf } : {}) },
+  });
+  const renewedCsrf = res.headers?.get("X-CSRF-Token");
+  if (renewedCsrf) setCsrfToken(renewedCsrf);
+  return res;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
 
@@ -129,7 +147,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // Sprint 003: every backend route (except / and /health) moved under
     // /api/v1 (ADR-012) — applied once here so every api.* call site below
     // stays a bare resource path, not a search-and-replace across each one.
-    res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+    res = await sessionFetch(`${API_BASE_URL}/api/v1${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -147,7 +165,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // the next auth check on a protected page redirects to /login instead
     // of retrying with a dead token.
     if (res.status === 401) clearToken();
-    throw new ApiError(`Request to ${path} failed with ${res.status}`, res.status);
+    const body = await res.json().catch(() => null);
+    const detail = path === "/quote" && typeof body?.detail === "string" ? body.detail : null;
+    throw new ApiError(detail || `Request to ${path} failed with ${res.status}`, res.status);
   }
 
   return (await res.json()) as T;
@@ -163,7 +183,7 @@ async function requestNoContent(path: string, init?: RequestInit): Promise<void>
   let res: Response;
 
   try {
-    res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+    res = await sessionFetch(`${API_BASE_URL}/api/v1${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -221,8 +241,13 @@ export const api = {
   login: (email: string, password: string) =>
     request<LoginResponse>("/auth/login", {
       method: "POST",
+      headers: { "X-Geocore-Session": "cookie" },
       body: JSON.stringify({ email, password }),
     }),
+
+  logout: () => requestNoContent("/auth/logout", {
+    method: "POST", headers: { "X-Geocore-Session": "cookie" },
+  }),
 
   // Sprint 009 — creates a new company workspace + its first (Owner) user,
   // returns the same shape as login so the caller can sign the new owner
@@ -230,6 +255,7 @@ export const api = {
   signup: (data: SignupRequest) =>
     request<LoginResponse>("/auth/signup", {
       method: "POST",
+      headers: { "X-Geocore-Session": "cookie" },
       body: JSON.stringify(data),
     }),
 
@@ -279,6 +305,7 @@ export const api = {
   changePassword: (currentPassword: string, newPassword: string) =>
     request<LoginResponse>("/auth/password/change", {
       method: "POST",
+      headers: { "X-Geocore-Session": "cookie" },
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),
 
@@ -347,6 +374,7 @@ export const api = {
   acceptInvitation: (token: string, data: AcceptInvitationRequest) =>
     request<LoginResponse>(`/invitations/token/${token}/accept`, {
       method: "POST",
+      headers: { "X-Geocore-Session": "cookie" },
       body: JSON.stringify(data),
     }),
 
@@ -402,7 +430,7 @@ export const api = {
     let res: Response;
 
     try {
-      res = await fetch(
+      res = await sessionFetch(
         `${API_BASE_URL}/api/v1/portal-links/token/${token}/invoice/${quoteId}`
       );
     } catch {
@@ -454,7 +482,7 @@ export const api = {
   ): Promise<void> => {
     let res: Response;
     try {
-      res = await fetch(
+      res = await sessionFetch(
         `${API_BASE_URL}/api/v1/portal-links/token/${token}/documents/${documentId}/download`
       );
     } catch {
@@ -610,6 +638,8 @@ export const api = {
   // Sprint 042 (GeoCore Premium OS Plan 03) — Master Materials & Supplier Catalogue.
   getMaterialFamilies: () => request<string[]>("/catalogue/meta/material-families"),
 
+  getCatalogueCompanies: () => request<{id: string; name: string; kind: "supplier" | "manufacturer"}[]>("/catalogue/meta/companies"),
+
   getCatalogueStatus: () => request<CatalogueStatus>("/catalogue/meta/status"),
 
   searchCatalogueSurfaces: (params: {
@@ -617,6 +647,8 @@ export const api = {
     material_family?: string;
     colour_family?: string;
     supplier_id?: string;
+    manufacturer_id?: string;
+    offset?: number;
     include_discontinued?: boolean;
     limit?: number;
   } = {}) => {
@@ -624,6 +656,8 @@ export const api = {
     if (params.q) query.set("q", params.q);
     if (params.material_family) query.set("material_family", params.material_family);
     if (params.supplier_id) query.set("supplier_id", params.supplier_id);
+    if (params.manufacturer_id) query.set("manufacturer_id", params.manufacturer_id);
+    if (params.offset) query.set("offset", String(params.offset));
     if (params.colour_family) query.set("colour_family", params.colour_family);
     if (params.include_discontinued) query.set("include_discontinued", "true");
     query.set("limit", String(params.limit ?? 30));
@@ -729,7 +763,7 @@ export const api = {
 
     let res: Response;
     try {
-      res = await fetch(`${API_BASE_URL}/api/v1/tenants/me/logo`, {
+      res = await sessionFetch(`${API_BASE_URL}/api/v1/tenants/me/logo`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
@@ -779,7 +813,7 @@ export const api = {
     let res: Response;
 
     try {
-      res = await fetch(`${API_BASE_URL}/api/v1/quotes/${id}/invoice`, {
+      res = await sessionFetch(`${API_BASE_URL}/api/v1/quotes/${id}/invoice`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
     } catch {
@@ -817,7 +851,7 @@ export const api = {
 
     let res: Response;
     try {
-      res = await fetch(
+      res = await sessionFetch(
         `${API_BASE_URL}/api/v1/documents?customer_id=${customerId}`,
         {
           method: "POST",
@@ -851,7 +885,7 @@ export const api = {
     let res: Response;
 
     try {
-      res = await fetch(`${API_BASE_URL}/api/v1/documents/${id}/download`, {
+      res = await sessionFetch(`${API_BASE_URL}/api/v1/documents/${id}/download`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
     } catch {
@@ -949,7 +983,7 @@ export const api = {
     let res: Response;
 
     try {
-      res = await fetch(`${API_BASE_URL}/api/v1/variations/${id}/pdf`, {
+      res = await sessionFetch(`${API_BASE_URL}/api/v1/variations/${id}/pdf`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
     } catch {
@@ -1039,7 +1073,7 @@ export const api = {
     let res: Response;
 
     try {
-      res = await fetch(`${API_BASE_URL}/api/v1/purchase-orders/${id}/pdf`, {
+      res = await sessionFetch(`${API_BASE_URL}/api/v1/purchase-orders/${id}/pdf`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
     } catch {

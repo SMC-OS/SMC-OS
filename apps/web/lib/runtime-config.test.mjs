@@ -14,7 +14,15 @@ const compiled = ts.transpileModule(source, {
   },
 }).outputText;
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`;
-const { resolveApiBaseUrl } = await import(moduleUrl);
+const { resolveApiBaseUrl, resolveApiProxyTarget } = await import(moduleUrl);
+
+test("same-origin proxy uses only a fixed validated HTTPS upstream", () => {
+  assert.equal(resolveApiProxyTarget("https://api-staging.example.com/", "https://web-staging.example.com"), "https://api-staging.example.com");
+  assert.equal(resolveApiProxyTarget("", "https://web-staging.example.com"), null);
+  assert.throws(() => resolveApiProxyTarget("https://web-staging.example.com", "https://web-staging.example.com"), /cannot proxy back/);
+  for (const candidate of ["http://api.example.com", "https://localhost", "https://127.0.0.1", "https://api.example.com/path", "https://user@api.example.com", "https://api.example.com?url=https://other.example.com"])
+    assert.throws(() => resolveApiProxyTarget(candidate, "https://web-staging.example.com"), /API_PROXY_URL/);
+});
 
 const normalizationBypasses = [
   ["encoded wildcard", "https://%2A.example.com"],

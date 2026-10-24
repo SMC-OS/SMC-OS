@@ -1,3 +1,5 @@
+import type { CustomMaterialInput } from "@/types/catalogue";
+
 // Sprint 005: mirrors the seeded catalogue in app/materials/seed.py.
 // Materials stay internal (no GET /api/v1/materials this sprint), so this
 // list is hand-kept in sync the same way the previous 3-item list was.
@@ -34,13 +36,19 @@ export const MATERIAL_OPTIONS = [
 // chosen surface's real variant, never from this list.
 export const THICKNESS_OPTIONS = ["20mm", "30mm"] as const;
 
-// Post-release remediation §4 — a visual layout picker for the shape of
-// a worktop run. Deliberately a small closed set of icon-backed choices
-// rather than a freeform diagram editor: it labels the job for the
-// quote's notes, it does not attempt to compute geometry or price from
-// the shape (pricing stays exactly the existing per-item slab-area
-// calculation, unaffected by this field).
-export const LAYOUT_OPTIONS = ["straight", "l_shape", "u_shape", "island", "peninsula"] as const;
+// Reference-led worktop layouts. Each labelled piece is submitted as its own
+// measured stone line; existing stored layout keys remain compatible.
+export const LAYOUT_OPTIONS = [
+  "l_shape",
+  "l_shape_island",
+  "u_shape",
+  "u_shape_island",
+  "straight",
+  "island",
+  "galley",
+  "galley_island",
+  "peninsula",
+] as const;
 export type LayoutOption = (typeof LAYOUT_OPTIONS)[number];
 export const LAYOUT_LABELS: Record<LayoutOption, string> = {
   straight: "Straight run",
@@ -48,6 +56,10 @@ export const LAYOUT_LABELS: Record<LayoutOption, string> = {
   u_shape: "U-shape",
   island: "Island",
   peninsula: "Peninsula",
+  l_shape_island: "L-shape + island",
+  u_shape_island: "U-shape + island",
+  galley: "Galley shape",
+  galley_island: "Galley shape + island",
 };
 
 // Post-release remediation §4 — common add-ons a customer expects to see
@@ -55,7 +67,12 @@ export const LAYOUT_LABELS: Record<LayoutOption, string> = {
 // recorded on the line's notes for transparency, not priced separately
 // — a real extras pricing model is a materially larger change than this
 // reconstruction's scope and is not invented here.
-export const EXTRA_OPTIONS = ["cutout", "upstand_included", "splashback_included", "polished_edge"] as const;
+export const EXTRA_OPTIONS = [
+  "cutout",
+  "upstand_included",
+  "splashback_included",
+  "polished_edge",
+] as const;
 export type ExtraOption = (typeof EXTRA_OPTIONS)[number];
 export const EXTRA_LABELS: Record<ExtraOption, string> = {
   cutout: "Sink / hob cutout",
@@ -95,6 +112,7 @@ export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
 export interface QuoteItemRequest {
   item_type: ItemType;
   material: string;
+  custom_material?: CustomMaterialInput | null;
   thickness: string;
   quantity: number;
   length_mm: number;
@@ -102,6 +120,7 @@ export interface QuoteItemRequest {
   thickness_mm?: number | null;
   unit_input?: DimensionUnit;
   notes?: string | null;
+  slab_group?: string | null;
   // Sprint 042 (GeoCore Premium OS Plan 03) — Stone Quote Engine V2.
   // Optional and additive: when set, the backend prices this item from
   // the Master Catalogue + the caller's own tenant override instead of
@@ -132,6 +151,12 @@ export interface QuoteItem {
   notes: string | null;
   price_per_slab: number | null;
   slabs: number | null;
+  slab_allocation?: {
+    group: string;
+    group_slabs: number;
+    method: string;
+    material_allocation: number;
+  } | null;
   line_total: number | null;
   // GeoCore Premium OS Plan 05 (Sprint 044), Task 35 — present only on a
   // stone line created via catalogue selection; lets this line be sent
@@ -148,6 +173,9 @@ export interface QuoteItem {
 export interface QuoteRequest {
   customer: string;
   postcode?: string;
+  site_address_line1?: string;
+  allow_unpriced?: boolean;
+  draft_id?: string;
   items?: QuoteItemRequest[];
 
   // Legacy single-item alias — omit `items` and use these instead for a
@@ -172,12 +200,13 @@ export interface QuoteResult {
   // summarize_items()) — "Multiple materials"/"Mixed" when items disagree.
   material: string;
   thickness: string;
-  slabs: number;
+  slabs: number | null;
   price_per_slab: number | null;
   items: QuoteItem[];
-  price_before_vat: number;
-  vat: number;
-  total: number;
+  pricing_pending?: boolean;
+  price_before_vat: number | null;
+  vat: number | null;
+  total: number | null;
   // Sprint 007: present once the quote is persisted.
   id: string;
   customer_id?: string | null;
