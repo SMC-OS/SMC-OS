@@ -70,6 +70,10 @@ test("a_three_item_quote_can_be_created_manually_and_remains_accessible", async 
   await page
     .getByLabel("Customer name")
     .fill(`Pytest Multi-Item Customer ${runId}`);
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
 
   // Item 1 (worktop, defaults) — just needs a length.
   await page.getByLabel("Length (mm)").first().fill("2400");
@@ -229,6 +233,10 @@ test("a_multi_item_quote_can_be_generated_through_simo_ai", async ({
 
   await expect(page.getByText("Interpreted 3 items")).toBeVisible();
   await page.getByRole("button", { name: "Use these items" }).click();
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
 
   await expect(page.getByText("Item 3", { exact: true })).toBeVisible();
   await expect(page.locator("[id$='-length']").nth(0)).toHaveValue("2400");

@@ -30,7 +30,7 @@ from app.database import crud
 from app.database.database import get_db
 from app.database.models import User
 from app.quotes.models import QuoteRequest
-from app.quotes.service import CustomerNotFoundError, quote_service
+from app.quotes.service import CustomerNotFoundError, QuoteNotFoundError, QuoteEditStateError, quote_service
 
 router = APIRouter(tags=["core"])
 
@@ -58,6 +58,10 @@ def create_quote(
         return quote_service.create(db, request, tenant_id=tenant_id)
     except CustomerNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    except QuoteNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    except QuoteEditStateError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
 @router.post("/estimate")
@@ -73,6 +77,10 @@ def estimate(
         return quote_service.create(db, quote, tenant_id=tenant_id)
     except CustomerNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    except QuoteNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    except QuoteEditStateError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
 @router.get("/dashboard")

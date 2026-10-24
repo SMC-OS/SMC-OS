@@ -13,7 +13,7 @@ own general-quote-creation gate exactly.
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_billing_access, require_role
@@ -98,6 +98,21 @@ def get_catalogue_status(
     )
 
 
+@router.get("/meta/companies")
+def list_companies(
+    current_user: User = Depends(require_billing_access),
+    db: Session = Depends(get_db),
+):
+    from sqlalchemy import select
+    from app.database.models import CatalogueManufacturer, CatalogueSupplier
+
+    return sorted([
+        {"id": str(row.id), "name": row.name, "kind": kind}
+        for model, kind in [(CatalogueManufacturer, "manufacturer"), (CatalogueSupplier, "supplier")]
+        for row in db.scalars(select(model).where(model.active.is_(True)))
+    ], key=lambda row: row["name"].casefold())
+
+
 @router.get("/surfaces", response_model=list[SurfaceSearchResult])
 def search_surfaces(
     q: str | None = None,
@@ -108,7 +123,8 @@ def search_surfaces(
     collection_id: uuid.UUID | None = None,
     colour_family: str | None = None,
     include_discontinued: bool = False,
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(require_billing_access),
     db: Session = Depends(get_db),
 ):
@@ -124,6 +140,7 @@ def search_surfaces(
         colour_family=colour_family,
         include_discontinued=include_discontinued,
         limit=limit,
+        offset=offset,
     )
     return [_serialize_search_result(db, surface, current_user.tenant_id) for surface in surfaces]
 

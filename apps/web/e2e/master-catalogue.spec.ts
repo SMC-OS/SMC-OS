@@ -111,6 +111,10 @@ test("A_stone_catalogue_quote_prices_from_the_surface_and_its_snapshot_survives_
   await expect(page.getByText("20mm")).toBeVisible();
 
   await page.getByLabel("Customer name").fill(`Journey A Customer ${runId}`);
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2400");
 
@@ -213,6 +217,10 @@ test("B_a_tenant_can_set_their_own_price_and_a_new_quote_reflects_it", async ({
   await page.getByRole("button", { name: "Use in a stone quote" }).click();
   await page.waitForURL(/\/quotes\/new\/stone\?/);
   await page.getByLabel("Customer name").fill(`Journey B Customer ${runId}`);
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2000");
 
@@ -267,6 +275,10 @@ test("C_a_custom_material_saved_to_the_catalogue_is_immediately_reusable_from_se
   await expect(page.getByText("From catalogue")).toBeVisible();
 
   await page.getByLabel("Customer name").fill(`Journey C Customer ${runId}`);
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("1800");
 
@@ -396,6 +408,10 @@ test("E_construction_quoting_is_untouched_alongside_a_stone_catalogue_quote_in_t
   await page
     .getByLabel("Customer name")
     .fill(`Journey E Stone Customer ${runId}`);
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2400");
 

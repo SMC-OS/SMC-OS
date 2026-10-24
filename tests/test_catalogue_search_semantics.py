@@ -229,3 +229,11 @@ def test_several_variant_overrides_still_return_the_surface_once(db, tenants):
 
     results = catalogue_service.search(db, a.id, query=f"Dupe{RUN}", limit=50)
     assert [s.id for s in results] == [surface.id]
+
+
+def test_cararra_search_also_finds_carrara_without_conflating_carrera(db, tenants):
+    a, _, surfaces, _ = tenants
+    named = _surface(db, f"Carrara Cashmere {RUN}", family="quartz", colour="white", tenant_id=a.id)
+    surfaces.append(named.id)
+    assert named.id in _ids(catalogue_service.search(db, a.id, query=f"Cararra {RUN}", limit=50))
+    assert search_terms.name_spellings_for("Carrera") == {"carrera"}

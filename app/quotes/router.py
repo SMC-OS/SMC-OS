@@ -11,6 +11,7 @@ from app.quotes.general import GeneralQuoteRequest, GeneralQuoteUpdate
 from app.quotes.service import (
     CustomerNotFoundError,
     QuoteApprovalStateError,
+    QuotePricingPendingError,
     QuoteEditStateError,
     QuoteKindError,
     QuoteNotFoundError,
@@ -260,6 +261,8 @@ def send_quote(
         quote = quote_service.mark_sent(db, quote_id, current_user.tenant_id)
     except QuoteNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    except QuotePricingPendingError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except QuoteApprovalStateError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -293,6 +296,8 @@ def send_quote_email(
         )
     except QuoteNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    except QuotePricingPendingError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except QuoteApprovalStateError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -325,6 +330,8 @@ def approve_quote(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quote not found",
         )
+    except QuotePricingPendingError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except QuoteApprovalStateError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -347,6 +354,8 @@ def handoff_quote(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quote not found",
         )
+    except QuotePricingPendingError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except QuoteApprovalStateError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

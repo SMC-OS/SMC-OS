@@ -170,12 +170,10 @@ export function ExtrasPicker({
           </p>
         </fieldset>
       )}
-      {(["upstand", "splashback"] as const).map((kind) => {
-        const selected = value.includes(
-          kind === "upstand" ? "upstand_included" : "splashback_included",
-        );
+      {(["upstand"] as const).map((kind) => {
+        const selected = value.includes("upstand_included");
         if (!selected) return null;
-        const title = kind === "upstand" ? "Upstand" : "Splashback";
+        const title = "Upstand";
         const lengthKey = `${kind}Length` as keyof DesignDetails;
         const heightKey = `${kind}Height` as keyof DesignDetails;
         return (

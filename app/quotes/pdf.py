@@ -96,7 +96,7 @@ def build_line_items(quote) -> list[dict]:
                 if item.line_kind == "stone"
                 else _describe_general_item(item, symbol)
             ),
-            "amount": item.line_total if item.line_total is not None else 0.0,
+            "amount": item.line_total,
         }
         for item in quote.items
     ]
@@ -157,7 +157,7 @@ class PDFGenerator:
         # 14 Elm Road"); a stone quote never had one, and keeps the exact
         # heading it has had since Sprint 007 so a re-downloaded historical
         # document is identical to the one the customer already holds.
-        heading = invoice.get("title") or f"Invoice for Quote #{str(invoice['id'])[:8]}"
+        heading = (f"Draft specification — pricing pending #{str(invoice['id'])[:8]}" if invoice.get("total") is None else invoice.get("title") or f"Invoice for Quote #{str(invoice['id'])[:8]}")
         story.append(Paragraph(_escape(str(heading)), styles["Heading2"]))
         currency = invoice.get("currency") or "GBP"
         if currency not in _CURRENCY_SYMBOLS:
@@ -198,8 +198,8 @@ class PDFGenerator:
             f"VAT ({vat_rate * 100:g}%)" if vat_rate is not None else "VAT (20%)"
         )
 
-        def money(amount: float) -> str:
-            return f"{symbol}{amount:,.2f}"
+        def money(amount: float | None) -> str:
+            return "Pricing pending" if amount is None else f"{symbol}{amount:,.2f}"
 
         rows = [["Description", "Amount"]]
         rows += [[item["description"], money(item["amount"])] for item in line_items]

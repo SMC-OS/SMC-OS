@@ -638,6 +638,8 @@ export const api = {
   // Sprint 042 (GeoCore Premium OS Plan 03) — Master Materials & Supplier Catalogue.
   getMaterialFamilies: () => request<string[]>("/catalogue/meta/material-families"),
 
+  getCatalogueCompanies: () => request<{id: string; name: string; kind: "supplier" | "manufacturer"}[]>("/catalogue/meta/companies"),
+
   getCatalogueStatus: () => request<CatalogueStatus>("/catalogue/meta/status"),
 
   searchCatalogueSurfaces: (params: {
@@ -645,6 +647,8 @@ export const api = {
     material_family?: string;
     colour_family?: string;
     supplier_id?: string;
+    manufacturer_id?: string;
+    offset?: number;
     include_discontinued?: boolean;
     limit?: number;
   } = {}) => {
@@ -652,6 +656,8 @@ export const api = {
     if (params.q) query.set("q", params.q);
     if (params.material_family) query.set("material_family", params.material_family);
     if (params.supplier_id) query.set("supplier_id", params.supplier_id);
+    if (params.manufacturer_id) query.set("manufacturer_id", params.manufacturer_id);
+    if (params.offset) query.set("offset", String(params.offset));
     if (params.colour_family) query.set("colour_family", params.colour_family);
     if (params.include_discontinued) query.set("include_discontinued", "true");
     query.set("limit", String(params.limit ?? 30));

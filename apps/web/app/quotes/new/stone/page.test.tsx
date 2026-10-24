@@ -87,6 +87,10 @@ beforeEach(() => {
         role: "Owner",
         tenant_name: "Pytest Co",
       });
+    if (url.endsWith("/customers") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      return jsonResponse({ id: "new-customer", ...body }, 201);
+    }
     if (url.includes("/customers?")) {
       return jsonResponse([]);
     }
@@ -777,6 +781,13 @@ function renderEditor() {
   if (ai) fireEvent.click(ai);
   const toggle = screen.queryByLabelText("Show all sections");
   if (toggle) fireEvent.click(toggle);
+  const address = screen.queryByLabelText("Customer address");
+  if (address)
+    fireEvent.change(address, {
+      target: { value: "1 Synthetic Street, London" },
+    });
+  const postcode = screen.queryByLabelText("Postcode");
+  if (postcode) fireEvent.change(postcode, { target: { value: "NW2 7RP" } });
   return view;
 }
 
@@ -789,6 +800,12 @@ it("guides material to layout to details to review without losing measurements",
     screen.queryByRole("combobox", { name: "Worktop layout" }),
   ).not.toBeInTheDocument();
   await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");
+  fireEvent.change(screen.getByLabelText("Customer address"), {
+    target: { value: "1 Synthetic Street, London" },
+  });
+  fireEvent.change(screen.getByLabelText("Postcode"), {
+    target: { value: "NW2 7RP" },
+  });
   await userEvent.click(screen.getByRole("button", { name: "Next: Layout" }));
   await userEvent.selectOptions(
     screen.getByLabelText("Worktop layout"),
@@ -805,7 +822,19 @@ it("guides material to layout to details to review without losing measurements",
 
 it("returns to Material when adding an item from Review", async () => {
   render(<NewQuotePage />);
+  fireEvent.change(screen.getByLabelText("Customer address"), {
+    target: { value: "1 Synthetic Street, London" },
+  });
+  fireEvent.change(screen.getByLabelText("Postcode"), {
+    target: { value: "NW2 7RP" },
+  });
   await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");
+  fireEvent.change(screen.getByLabelText("Customer address"), {
+    target: { value: "1 Synthetic Street, London" },
+  });
+  fireEvent.change(screen.getByLabelText("Postcode"), {
+    target: { value: "NW2 7RP" },
+  });
   await userEvent.click(screen.getByRole("button", { name: "Next: Layout" }));
   await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
   await userEvent.type(screen.getByLabelText("Width/Depth (mm)"), "600");
@@ -859,7 +888,14 @@ it("saves a drawing through the existing customer-document API and references it
   fetchMock.mockImplementation(async (input) => {
     const url = String(input);
     if (url.includes("/customers?"))
-      return jsonResponse([{ id: "customer-1", name: "Pilot" }]);
+      return jsonResponse([
+        {
+          id: "customer-1",
+          name: "Pilot",
+          address_line1: "1 Synthetic Street, London",
+          postcode: "NW2 7RP",
+        },
+      ]);
     if (url.includes("/documents?"))
       return jsonResponse(
         { id: "drawing-1", original_filename: "kitchen.pdf" },
@@ -946,7 +982,11 @@ it("can quote a manually named material with an explicit slab selling price", as
   await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
   await userEvent.clear(screen.getByLabelText("Material"));
   await userEvent.type(screen.getByLabelText("Material"), "My own marble");
-  await userEvent.click(screen.getByLabelText("Enter my own slab price"));
+  if (
+    !(screen.getByLabelText("Enter my own slab price") as HTMLInputElement)
+      .checked
+  )
+    await userEvent.click(screen.getByLabelText("Enter my own slab price"));
   await userEvent.type(
     screen.getByLabelText("Selling price per slab (£)"),
     "975",
@@ -1042,7 +1082,11 @@ it("can supply a quote-only price for a selected catalogue material without ambi
   renderEditor();
   await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");
   await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-  await userEvent.click(screen.getByLabelText("Enter my own slab price"));
+  if (
+    !(screen.getByLabelText("Enter my own slab price") as HTMLInputElement)
+      .checked
+  )
+    await userEvent.click(screen.getByLabelText("Enter my own slab price"));
   await userEvent.type(
     screen.getByLabelText("Selling price per slab (£)"),
     "900",
@@ -1094,7 +1138,11 @@ it("requires a fresh price and uses known slab dimensions when choosing another 
     return response;
   });
   renderEditor();
-  await userEvent.click(screen.getByLabelText("Enter my own slab price"));
+  if (
+    !(screen.getByLabelText("Enter my own slab price") as HTMLInputElement)
+      .checked
+  )
+    await userEvent.click(screen.getByLabelText("Enter my own slab price"));
   await userEvent.type(
     screen.getByLabelText("Selling price per slab (£)"),
     "900",
@@ -1112,9 +1160,7 @@ it("requires a fresh price and uses known slab dimensions when choosing another 
     screen.getByLabelText("Selling price per slab (£)"),
     "950",
   );
-  await userEvent.click(
-    screen.getByRole("button", { name: "Change" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Change" }));
   expect(screen.getByLabelText("Selling price per slab (£)")).toHaveValue(null);
 });
 
@@ -1146,4 +1192,75 @@ it("checks an expired session before submitting a workspace quote", async () => 
   expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote"))).toBe(
     false,
   );
+});
+
+it("records splashback without dimensions and saves any typed stone as pricing pending", async () => {
+  const baseFetch = fetchMock.getMockImplementation() as (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  fetchMock.mockImplementation(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/quote") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        return jsonResponse({
+          id: "pending-quote",
+          customer: body.customer,
+          pricing_pending: true,
+          items: body.items.map((item: Record<string, unknown>) =>
+            makeQuoteItem({ ...item, slabs: null, line_total: null }),
+          ),
+          price_before_vat: null,
+          vat: null,
+          total: null,
+        });
+      }
+      return baseFetch(input, init);
+    },
+  );
+  renderEditor();
+  await userEvent.type(screen.getByLabelText("Customer name"), "Pilot");
+  await userEvent.clear(screen.getByLabelText(/^material$/i));
+  await userEvent.type(
+    screen.getByLabelText(/^material$/i),
+    "Any stone I choose",
+  );
+  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
+  await userEvent.click(screen.getByLabelText("Splashback included"));
+  expect(screen.queryByLabelText(/splashback length/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/splashback height/i)).not.toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Calculate Quote" }),
+  );
+  expect(
+    await screen.findByText("Draft saved — pricing pending"),
+  ).toBeInTheDocument();
+  const sent = fetchMock.mock.calls.find(
+    ([url, init]) => String(url).endsWith("/quote") && init?.method === "POST",
+  );
+  const body = JSON.parse(String(sent?.[1]?.body));
+  expect(body.items).toHaveLength(1);
+  expect(body.items[0].material).toBe("Any stone I choose");
+  expect(body.items[0].notes).toContain("Splashback included");
+  expect(body.items[0].custom_material.selling_price_per_slab).toBeUndefined();
+  expect(body).toMatchObject({
+    allow_unpriced: true,
+    site_address_line1: "1 Synthetic Street, London",
+    postcode: "NW2 7RP",
+  });
+  expect(
+    screen.getByRole("button", { name: "Download Invoice" }),
+  ).toBeDisabled();
+});
+
+it("requires address and postcode while email and phone remain optional", () => {
+  renderEditor();
+  expect(screen.getByLabelText("Customer address")).toBeRequired();
+  expect(screen.getByLabelText("Postcode")).toBeRequired();
+  expect(screen.getByLabelText("Email (optional)")).not.toBeRequired();
+  expect(screen.getByLabelText("Phone (optional)")).not.toBeRequired();
+  fireEvent.change(screen.getByLabelText("Customer address"), {
+    target: { value: "" },
+  });
+  expect(screen.getByLabelText("Customer address")).toBeInvalid();
 });

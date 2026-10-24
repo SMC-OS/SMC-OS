@@ -173,6 +173,9 @@ export interface QuoteItem {
 export interface QuoteRequest {
   customer: string;
   postcode?: string;
+  site_address_line1?: string;
+  allow_unpriced?: boolean;
+  draft_id?: string;
   items?: QuoteItemRequest[];
 
   // Legacy single-item alias — omit `items` and use these instead for a
@@ -197,12 +200,13 @@ export interface QuoteResult {
   // summarize_items()) — "Multiple materials"/"Mixed" when items disagree.
   material: string;
   thickness: string;
-  slabs: number;
+  slabs: number | null;
   price_per_slab: number | null;
   items: QuoteItem[];
-  price_before_vat: number;
-  vat: number;
-  total: number;
+  pricing_pending?: boolean;
+  price_before_vat: number | null;
+  vat: number | null;
+  total: number | null;
   // Sprint 007: present once the quote is persisted.
   id: string;
   customer_id?: string | null;

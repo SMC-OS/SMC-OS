@@ -59,7 +59,7 @@ def summarize_items(item_results: list[dict]) -> dict:
         "material": first["material"] if same_material else "Multiple materials",
         "thickness": first["thickness"] if same_material else "Mixed",
         "price_per_slab": first["price_per_slab"] if same_material else None,
-        "slabs": sum(i["slabs"] for i in item_results),
+        "slabs": None if any(i["slabs"] is None for i in item_results) else sum(i["slabs"] for i in item_results),
     }
 
 
@@ -73,6 +73,7 @@ class QuoteCalculator:
         price_before_vat = 0.0
 
         for item in quote.items:
+            unpriced = bool(getattr(quote, "allow_unpriced", False) and tenant_id is not None)
             custom = getattr(item, "custom_material", None)
             if custom is not None:
                 if tenant_id is None:
@@ -83,7 +84,7 @@ class QuoteCalculator:
                     default_markup_percent=custom.default_markup_percent,
                     target_margin_percent=None,
                 ))
-                if price_per_slab is None:
+                if price_per_slab is None and not unpriced:
                     raise CataloguePriceMissingError(custom.canonical_name)
                 variant = custom.variant
                 slab_size = f"{variant.slab_length_mm:g}x{variant.slab_width_mm:g}" if variant.slab_length_mm and variant.slab_width_mm else None
@@ -98,28 +99,32 @@ class QuoteCalculator:
                     "default_markup_percent": custom.default_markup_percent,
                 }
             elif getattr(item, "catalogue_surface_id", None) is not None:
-                price_per_slab, snapshot = self._resolve_catalogue_item(db, item, tenant_id)
-                adapter = SimpleNamespace(slab_size=snapshot["slab_size"])
+                try:
+                    price_per_slab, snapshot = self._resolve_catalogue_item(db, item, tenant_id)
+                except CataloguePriceMissingError:
+                    if not unpriced:
+                        raise
+                    price_per_slab, snapshot = None, {"source": "catalogue", "pricing_pending": True}
+                adapter = SimpleNamespace(slab_size=snapshot.get("slab_size"))
             else:
                 material = material_service.get_by_name_and_thickness(db, item.material, item.thickness)
-                if material is None:
+                if material is None and not unpriced:
                     # Sprint 003's global KeyError -> 400 handler
                     # (app/core/errors.py) already exists for exactly this
                     # "unrecognised value" case, so this reuses that seam
                     # rather than introducing a new one.
                     raise KeyError(f"{item.material} ({item.thickness})")
-                price_per_slab = material.price
-                adapter = material
+                price_per_slab = material.price if material is not None else None
+                adapter = material or SimpleNamespace(slab_size=None)
                 snapshot = None
 
-            slabs = calculate_slabs(item, adapter)
-            material_price = price_per_slab * slabs
+            slabs = calculate_slabs(item, adapter) if price_per_slab is not None else None
+            material_price = price_per_slab * slabs if price_per_slab is not None else None
             surcharge = _ITEM_TYPE_SURCHARGES.get(item.item_type, 0) * item.quantity
-            line_total = round(material_price + surcharge, 2)
-            price_before_vat += line_total
+            line_total = round(material_price + surcharge, 2) if material_price is not None else None
 
             group = getattr(item, "slab_group", None)
-            if group:
+            if group and price_per_slab is not None:
                 signature = (item.material.strip().casefold(), item.thickness, str(getattr(item, "catalogue_surface_id", None)), str(getattr(item, "catalogue_variant_id", None)), price_per_slab, json.dumps(snapshot, sort_keys=True), adapter.slab_size)
                 slab_groups.setdefault(group, []).append((len(item_results), item, signature))
 
@@ -139,7 +144,7 @@ class QuoteCalculator:
                     "line_total": line_total,
                     "catalogue_surface_id": getattr(item, "catalogue_surface_id", None),
                     "catalogue_variant_id": getattr(item, "catalogue_variant_id", None),
-                    "catalogue_snapshot": snapshot,
+                    "catalogue_snapshot": {**(snapshot or {}), "pricing_pending": True} if price_per_slab is None else snapshot,
                 }
             )
 
@@ -167,8 +172,9 @@ class QuoteCalculator:
                 row["slab_allocation"] = allocation
                 row["catalogue_snapshot"] = {**(row["catalogue_snapshot"] or {}), "slab_allocation": allocation}
 
-        price_before_vat = round(sum(row["line_total"] for row in item_results), 2)
-        vat = round(price_before_vat * 0.20, 2)
+        pricing_pending = any(row["line_total"] is None for row in item_results)
+        price_before_vat = None if pricing_pending else round(sum(row["line_total"] for row in item_results), 2)
+        vat = None if pricing_pending else round(price_before_vat * 0.20, 2)
         summary = summarize_items(item_results)
 
         return {
@@ -180,7 +186,8 @@ class QuoteCalculator:
             "items": item_results,
             "price_before_vat": price_before_vat,
             "vat": vat,
-            "total": round(price_before_vat + vat, 2),
+            "total": None if pricing_pending else round(price_before_vat + vat, 2),
+            "pricing_pending": pricing_pending,
         }
 
     def _resolve_catalogue_item(self, db: Session, item, tenant_id: uuid.UUID | None) -> tuple[float, dict]:

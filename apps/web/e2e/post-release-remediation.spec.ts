@@ -123,6 +123,10 @@ test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links
   await page
     .getByLabel("Customer name")
     .fill(`Pytest Remediation Customer ${runId}`);
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").first().fill("2400");
 
@@ -154,6 +158,10 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
   await page
     .getByLabel("Customer name")
     .fill(`Pytest Layout Customer ${runId}`);
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page
     .getByLabel("Worktop layout", { exact: true })
@@ -203,7 +211,7 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
   ).toBeVisible();
 });
 
-test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_drawing", async ({
+test("C_unknown_material_draft_can_be_priced_with_edges_and_new_customer_drawing", async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -214,6 +222,10 @@ test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_draw
   await page.goto("/quotes/new/stone");
   await page.getByLabel("Show all sections").check();
   await page.getByLabel("Customer name", { exact: true }).fill(customerName);
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByLabel("Material", { exact: true }).fill(materialName);
   await page.getByLabel("Length (mm)", { exact: true }).fill("2400");
   const rejected = page.waitForResponse(
@@ -224,11 +236,17 @@ test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_draw
     .getByRole("button", { name: "Calculate Quote", exact: true })
     .click();
   const rejection = await rejected;
-  expect(rejection.status()).toBe(400);
-  expect((await rejection.json()).detail).toContain("Unrecognised value");
+  expect(rejection.status()).toBe(200);
+  const pending = await rejection.json();
+  expect(pending.pricing_pending).toBe(true);
+  expect(pending.total).toBeNull();
   await expect(
-    page.getByRole("alert").filter({ hasText: materialName }),
-  ).toContainText(materialName);
+    page.getByRole("heading", { name: "Draft saved — pricing pending" }),
+  ).toBeVisible();
+  const refused = await api.post(`/api/v1/quotes/${pending.id}/approve`, {
+    headers: authHeaders,
+  });
+  expect(refused.status()).toBe(409);
   await expect(page.getByLabel("Customer name", { exact: true })).toHaveValue(
     customerName,
   );
@@ -236,6 +254,8 @@ test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_draw
   await page.getByLabel("Enter my own slab price").check();
   await page.getByLabel("Manual material type").selectOption("marble");
   await page.getByLabel("Selling price per slab (£)").fill("900");
+  await page.getByLabel("Splashback included", { exact: true }).check();
+  await expect(page.getByLabel("Splashback length (mm)")).toHaveCount(0);
   await page.getByLabel("Polished edge", { exact: true }).check();
   await page
     .getByLabel("Polished edge profile", { exact: true })
@@ -247,7 +267,9 @@ test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_draw
       "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF",
     ),
   });
-  await expect(page.getByText(/Ready to attach: pilot-plan.pdf/)).toBeVisible();
+  await expect(
+    page.getByText(/(?:Ready to attach|Saved drawing): pilot-plan.pdf/),
+  ).toBeVisible();
   const accepted = page.waitForResponse(
     (res) =>
       res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
@@ -259,6 +281,7 @@ test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_draw
   expect(response.status()).toBe(200);
   const created = await response.json();
   expect(created.customer_id).toBeTruthy();
+  expect(created.id).toBe(pending.id);
   expect(created.items[0].price_per_slab).toBe(900);
   expect(created.items[0].notes).toContain(
     "Polished edge profile: Double ogee",
@@ -272,7 +295,10 @@ test("C_unknown_material_400_recovers_with_own_price_edges_and_new_customer_draw
     headers: authHeaders,
   });
   expect(savedResponse.status()).toBe(200);
-  expect((await savedResponse.json()).items[0].notes).toContain("Double ogee");
+  const savedQuote = await savedResponse.json();
+  expect(savedQuote.items[0].notes).toContain("Double ogee");
+  expect(savedQuote.site_address_line1).toBe("1 Synthetic Street, London");
+  expect(savedQuote.site_postcode).toBe("NW2 7RP");
   const documents = await api.get(
     `/api/v1/documents?customer_id=${created.customer_id}`,
     { headers: authHeaders },
@@ -310,6 +336,10 @@ test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymou
   await page
     .getByLabel("Customer name", { exact: true })
     .fill(`Retained Pilot ${runId}`);
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByLabel("Length (mm)", { exact: true }).fill("2400");
   await page.getByLabel("Upload layout drawing (optional)").setInputFiles({
     name: "retained-plan.pdf",

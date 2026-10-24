@@ -51,6 +51,13 @@ export function MaterialCatalogueSearch({
   onFreeTextChange,
   onSelectSurface,
 }: MaterialCatalogueSearchProps) {
+  const [company, setCompany] = useState("");
+  const [companies, setCompanies] = useState<
+    { id: string; name: string; kind: "supplier" | "manufacturer" }[]
+  >([]);
+  const [canLoadMore, setCanLoadMore] = useState(false);
+  const [browseMode, setBrowseMode] = useState(false);
+  const requestVersion = useRef(0);
   const [family, setFamily] = useState<MaterialFamily | "">("");
   const [results, setResults] = useState<SurfaceSearchResult[]>([]);
   const [open, setOpen] = useState(false);
@@ -81,61 +88,74 @@ export function MaterialCatalogueSearch({
     };
   }, []);
 
-  function handleChange(text: string) {
-    onFreeTextChange(text);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (text.trim().length < 2) {
-      setResults([]);
-      setOpen(false);
-      setOutcome("idle");
-      return;
-    }
-    setOutcome("idle");
-    debounceRef.current = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const found = await api.searchCatalogueSurfaces({
-          q: text.trim(),
-          limit: 24,
-          material_family: family || undefined,
-        });
-        setResults(found);
-        setOpen(found.length > 0);
-        setOutcome(found.length > 0 ? "results" : await explainEmptyResult());
-      } catch (err) {
-        // A catalogue search failure never blocks free-text entry — the
-        // typed value above is already the row's material either way.
-        if (!(err instanceof ApiError)) throw err;
-        setResults([]);
-        setOpen(false);
-        setOutcome(err.status === 401 ? "sign_in" : "unavailable");
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
-  }
+  useEffect(() => {
+    api
+      .getCatalogueCompanies?.()
+      .then(setCompanies)
+      .catch(() => setCompanies([]));
+  }, []);
 
-  async function browseMaterials() {
+  async function searchMaterials(
+    text: string,
+    selectedFamily = family,
+    selectedCompany = company,
+    offset = 0,
+    browse = false,
+  ) {
+    const version = ++requestVersion.current;
+    const [kind, companyId] = selectedCompany.split(":");
     setLoading(true);
     try {
       const found = await api.searchCatalogueSurfaces({
-        material_family: family || undefined,
+        q: browse ? undefined : text.trim() || undefined,
+        material_family: selectedFamily || undefined,
+        supplier_id: kind === "supplier" ? companyId : undefined,
+        manufacturer_id: kind === "manufacturer" ? companyId : undefined,
         limit: 24,
+        offset,
       });
-      setResults(found);
-      setOpen(found.length > 0);
-      setOutcome(found.length ? "results" : await explainEmptyResult());
+      if (version !== requestVersion.current) return;
+      setResults((previous) => (offset ? [...previous, ...found] : found));
+      setCanLoadMore(found.length === 24);
+      setOpen(offset > 0 || found.length > 0);
+      setOutcome(
+        found.length || offset ? "results" : await explainEmptyResult(),
+      );
     } catch (err) {
-      setResults([]);
-      setOpen(false);
+      if (version !== requestVersion.current) return;
+      if (!offset) setResults([]);
+      setOpen(offset > 0);
+      setCanLoadMore(false);
       setOutcome(
         err instanceof ApiError && err.status === 401
           ? "sign_in"
           : "unavailable",
       );
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
+  }
+
+  function handleChange(text: string) {
+    onFreeTextChange(text);
+    setBrowseMode(false);
+    ++requestVersion.current;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setResults([]);
+    setOpen(false);
+    setOutcome("idle");
+    setCanLoadMore(false);
+    if (text.trim().length < 2) {
+      setLoading(false);
+      return;
+    }
+    debounceRef.current = setTimeout(() => void searchMaterials(text), 300);
+  }
+
+  function browseMaterials() {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setBrowseMode(true);
+    void searchMaterials("", family, company, 0, true);
   }
 
   async function handleSelect(surface: SurfaceSearchResult) {
@@ -165,6 +185,15 @@ export function MaterialCatalogueSearch({
     onSelectSurface(surface, thicknessLabel, variantId, selectedVariant);
   }
 
+  const groups = new Map<string, SurfaceSearchResult[]>();
+  for (const surface of results) {
+    const name =
+      [surface.supplier_name, surface.manufacturer_name, surface.brand_name]
+        .filter(Boolean)
+        .join(" · ") || "Supplier not specified";
+    groups.set(name, [...(groups.get(name) ?? []), surface]);
+  }
+
   return (
     <div className="relative">
       <Input
@@ -184,12 +213,42 @@ export function MaterialCatalogueSearch({
           id={`${id}-family`}
           className="min-w-0 flex-1"
           value={family}
-          onChange={(e) => setFamily(e.target.value as MaterialFamily | "")}
+          onChange={(e) => {
+            const next = e.target.value as MaterialFamily | "";
+            setFamily(next);
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            void searchMaterials(value, next, company, 0, browseMode);
+          }}
         >
           <option value="">All material types</option>
           {MATERIAL_FAMILIES.map((type) => (
             <option key={type} value={type}>
               {MATERIAL_FAMILY_LABELS[type]}
+            </option>
+          ))}
+        </Select>
+        <label className="sr-only" htmlFor={`${id}-company`}>
+          Company / supplier
+        </label>
+        <Select
+          id={`${id}-company`}
+          className="min-w-0 flex-1"
+          value={company}
+          onChange={(event) => {
+            const next = event.target.value;
+            setCompany(next);
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            setBrowseMode(true);
+            void searchMaterials("", family, next, 0, true);
+          }}
+        >
+          <option value="">All companies</option>
+          {companies.map((entry) => (
+            <option
+              key={`${entry.kind}:${entry.id}`}
+              value={`${entry.kind}:${entry.id}`}
+            >
+              {entry.name}
             </option>
           ))}
         </Select>
@@ -204,33 +263,65 @@ export function MaterialCatalogueSearch({
         </button>
       </div>
       {open && (
-        <ul className="mt-3 grid max-h-96 grid-cols-1 gap-3 overflow-auto rounded-lg border border-border bg-background p-3 text-sm sm:grid-cols-2">
-          {results.map((r) => (
-            <li key={r.id} className="min-w-0">
-              <button
-                type="button"
-                className="block h-full w-full overflow-hidden rounded-lg border border-border text-left hover:border-accent hover:bg-surface-hover"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleSelect(r)}
-              >
-                <MaterialPhoto url={r.image_url} name={r.canonical_name} />
-                <span className="block break-words px-3 py-2 font-medium text-foreground">
-                  {r.canonical_name}
-                </span>
-                {!r.has_tenant_price && (
-                  <span className="block px-3 pb-2 text-xs text-muted">
-                    Price needed — enter your slab price after selecting
-                  </span>
-                )}
-                {(r.brand_name || r.manufacturer_name) && (
-                  <span className="block px-3 pb-3 text-xs text-muted">
-                    {r.brand_name ?? r.manufacturer_name}
-                  </span>
-                )}
-              </button>
+        <ul className="mt-3 flex max-h-96 flex-col gap-4 overflow-auto rounded-lg border border-border bg-background p-3 text-sm">
+          {Array.from(groups, ([name, surfaces]) => (
+            <li key={name}>
+              <h3 className="mb-2 font-semibold">{name}</h3>
+              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {surfaces.map((r) => (
+                  <li key={r.id} className="min-w-0">
+                    <button
+                      type="button"
+                      className="block h-full w-full overflow-hidden rounded-lg border border-border text-left hover:border-accent hover:bg-surface-hover"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleSelect(r)}
+                    >
+                      <MaterialPhoto
+                        url={r.image_url}
+                        name={r.canonical_name}
+                      />
+                      <span className="block break-words px-3 py-2 font-medium text-foreground">
+                        {r.canonical_name}
+                      </span>
+                      {!r.has_tenant_price && (
+                        <span className="block px-3 pb-2 text-xs text-muted">
+                          Pricing pending — add your slab price or save a draft
+                        </span>
+                      )}
+                      {(r.supplier_name ||
+                        r.brand_name ||
+                        r.manufacturer_name) && (
+                        <span className="block px-3 pb-3 text-xs text-muted">
+                          {[r.supplier_name, r.manufacturer_name, r.brand_name]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>
+      )}
+      {open && canLoadMore && (
+        <button
+          type="button"
+          disabled={loading}
+          className="mt-3 text-sm text-accent underline"
+          onClick={() =>
+            void searchMaterials(
+              value,
+              family,
+              company,
+              results.length,
+              browseMode,
+            )
+          }
+        >
+          Load more materials
+        </button>
       )}
       <p className="mt-1 text-xs text-muted" role="status" aria-live="polite">
         {loading
@@ -238,11 +329,11 @@ export function MaterialCatalogueSearch({
           : outcome === "sign_in"
             ? "Sign in again to browse your workspace catalogue. Your typed material is kept."
             : outcome === "no_match"
-              ? `No catalogue match for “${value.trim()}” — keep the name and enter your own slab price below.`
+              ? `No catalogue match for “${value.trim()}” — keep the name, add your own slab price or save a draft with pricing pending.`
               : outcome === "catalogue_empty"
-                ? "The material catalogue has no materials yet — enter a material name and your own slab price below."
+                ? "The material catalogue has no materials yet — enter a material name; add your own slab price or save a draft with pricing pending."
                 : outcome === "unavailable"
-                  ? "Catalogue search is unavailable right now. Your typed name is kept; an unpriced material needs your own slab price."
+                  ? "Catalogue search is unavailable right now. Your typed name is kept; add your own slab price or save a draft with pricing pending."
                   : null}
       </p>
       {outcome === "sign_in" && (

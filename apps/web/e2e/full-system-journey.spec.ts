@@ -237,6 +237,10 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({
   await page.getByLabel("Link to existing customer (optional)").selectOption({
     label: CUSTOMER_NAME,
   });
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street, London");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("3200");
   const quoteCreated = page.waitForResponse(

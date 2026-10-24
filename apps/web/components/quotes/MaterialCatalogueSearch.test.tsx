@@ -18,12 +18,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const searchCatalogueSurfacesMock = vi.fn();
 const getCatalogueStatusMock = vi.fn();
 const getCatalogueSurfaceMock = vi.fn();
+const getCatalogueCompaniesMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
     api: {
+      getCatalogueCompanies: (...args: unknown[]) =>
+        getCatalogueCompaniesMock(...args),
       searchCatalogueSurfaces: (...args: unknown[]) =>
         searchCatalogueSurfacesMock(...args),
       getCatalogueStatus: (...args: unknown[]) =>
@@ -62,6 +65,7 @@ beforeEach(() => {
   searchCatalogueSurfacesMock.mockReset();
   getCatalogueStatusMock.mockReset();
   getCatalogueSurfaceMock.mockReset();
+  getCatalogueCompaniesMock.mockReset().mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -204,8 +208,59 @@ it("browses the catalogue without a search term and applies the material type fi
   expect(
     screen.getByRole("button", { name: /Browse Marble/ }),
   ).toBeInTheDocument();
-  expect(searchCatalogueSurfacesMock).toHaveBeenCalledWith({
-    material_family: "marble",
-    limit: 24,
+  expect(searchCatalogueSurfacesMock).toHaveBeenCalledWith(
+    expect.objectContaining({
+      material_family: "marble",
+      limit: 24,
+    }),
+  );
+});
+
+it("filters by company and loads materials beyond the first page", async () => {
+  getCatalogueCompaniesMock.mockResolvedValue([
+    { id: "noble-1", name: "NobleStone", kind: "supplier" },
+  ]);
+  searchCatalogueSurfacesMock
+    .mockResolvedValueOnce(
+      Array.from({ length: 24 }, (_, i) => ({
+        id: `s-${i}`,
+        canonical_name: `Stone ${i}`,
+        supplier_name: "NobleStone",
+        thicknesses_mm: [],
+      })),
+    )
+    .mockResolvedValueOnce([
+      {
+        id: "last",
+        canonical_name: "Carrara Cashmere",
+        supplier_name: "NobleStone",
+        thicknesses_mm: [],
+      },
+    ]);
+  await act(async () => {
+    render(<Harness />);
   });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText("Company / supplier"), {
+      target: { value: "supplier:noble-1" },
+    });
+  });
+  expect(searchCatalogueSurfacesMock).toHaveBeenLastCalledWith(
+    expect.objectContaining({ supplier_id: "noble-1", limit: 24, offset: 0 }),
+  );
+  await act(async () => {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Load more materials" }),
+    );
+  });
+  expect(searchCatalogueSurfacesMock).toHaveBeenLastCalledWith(
+    expect.objectContaining({ supplier_id: "noble-1", offset: 24 }),
+  );
+  expect(
+    screen.getByRole("button", { name: /Carrara Cashmere/ }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Stone 0", { exact: true })).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Load more materials" }),
+  ).not.toBeInTheDocument();
 });
