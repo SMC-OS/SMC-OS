@@ -94,8 +94,18 @@ test("signup_lands_on_verify_email_and_confirming_the_emailed_link_unlocks_the_w
   // ---- Resend, from the verification screen itself ----
   const resendButton = page.getByRole("button", { name: "Resend verification email" });
   await expect(resendButton).toBeVisible();
+  const responsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/auth/email/verify/resend") && response.request().method() === "POST"
+  );
   await resendButton.click();
-  await expect(page.getByText(/verification email sent/i)).toBeVisible();
+  const resendResponse = await responsePromise;
+  expect(resendResponse.ok()).toBeTruthy();
+  const delivery = await resendResponse.json();
+  // CI has no email provider key. A real delivery failure must be visible,
+  // while the account remains recoverable through a valid token below.
+  expect(delivery.delivery_status).toBe("failed");
+  await expect(page.getByRole("alert")).toHaveText(delivery.message);
+  await expect(page.getByText(/verification email sent/i)).toHaveCount(0);
 
   // ---- Confirm via the real link target, with a token minted the same
   // way the real email would have (see mintVerificationToken's docstring
