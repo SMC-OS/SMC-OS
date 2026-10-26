@@ -102,7 +102,9 @@ const BILLING_EXEMPT_ROUTES = [
 
 function matchesRoute(pathname: string | null, routes: string[]): boolean {
   if (!pathname) return false;
-  return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+  return routes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
 }
 
 function isStandaloneRoute(pathname: string | null): boolean {
@@ -112,7 +114,12 @@ function isStandaloneRoute(pathname: string | null): boolean {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isReady, isAuthenticated, verificationRequired, billingAccessRequired } = useAuth();
+  const {
+    isReady,
+    isAuthenticated,
+    verificationRequired,
+    billingAccessRequired,
+  } = useAuth();
 
   useEffect(() => {
     if (!isReady || !isAuthenticated || !verificationRequired) return;
@@ -125,23 +132,47 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     // already being sent to /verify-email by the effect above, so this
     // one only has an opinion once that's resolved (never race the two
     // redirects against each other).
-    if (!isReady || !isAuthenticated || verificationRequired || !billingAccessRequired) return;
+    if (
+      !isReady ||
+      !isAuthenticated ||
+      verificationRequired ||
+      !billingAccessRequired
+    )
+      return;
     if (matchesRoute(pathname, BILLING_EXEMPT_ROUTES)) return;
     router.replace("/pricing");
-  }, [isReady, isAuthenticated, verificationRequired, billingAccessRequired, pathname, router]);
+  }, [
+    isReady,
+    isAuthenticated,
+    verificationRequired,
+    billingAccessRequired,
+    pathname,
+    router,
+  ]);
 
-  if (isStandaloneRoute(pathname) || (isReady && !isAuthenticated)) {
-    return <div className="min-h-screen overflow-y-auto bg-background">{children}</div>;
+  // Keep the stone editor mounted across session expiry/recovery: its draft
+  // includes browser File objects that cannot be restored after a remount.
+  const keepStoneDraft = pathname === "/quotes/new/stone";
+  const showChrome = !isReady || isAuthenticated;
+  if (
+    isStandaloneRoute(pathname) ||
+    (isReady && !isAuthenticated && !keepStoneDraft)
+  ) {
+    return (
+      <div className="min-h-screen overflow-y-auto bg-background">
+        {children}
+      </div>
+    );
   }
 
   return (
     <SidebarProvider>
       <div className="flex h-screen overflow-hidden bg-background">
-        <Sidebar />
+        {showChrome && <Sidebar />}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar />
-          <TrialBanner />
+          {showChrome && <Topbar />}
+          {showChrome && <TrialBanner />}
 
           <main
             className="min-w-0 flex-1 overflow-y-auto p-4 pb-24 md:pb-8 lg:p-8"
@@ -151,7 +182,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
 
-        <MobileNav />
+        {showChrome && <MobileNav />}
       </div>
     </SidebarProvider>
   );

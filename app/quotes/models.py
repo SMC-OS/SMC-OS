@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from app.catalogue.models import CustomMaterialCreate
 
 # Sprint 033 (Workstream C). Plain strings (no native enum), same
 # convention as Quote.status etc. — validated here at the Pydantic
@@ -28,6 +29,9 @@ class QuoteItemRequest(BaseModel):
     unit_input: str = "mm"
 
     notes: str | None = None
+    # Opt-in grouping is local to this request; ungrouped legacy quotes keep their pricing.
+    slab_group: str | None = Field(default=None, min_length=1, max_length=64)
+    custom_material: CustomMaterialCreate | None = None
 
     # Sprint 042 (GeoCore Premium OS Plan 03) — Stone Quote Engine V2.
     # Both optional and additive: when `catalogue_surface_id` is set,
@@ -40,6 +44,15 @@ class QuoteItemRequest(BaseModel):
     # existing free-text path changes when this is omitted.
     catalogue_surface_id: uuid.UUID | None = None
     catalogue_variant_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _custom_is_quote_only(self):
+        if self.custom_material is not None:
+            if self.custom_material.save_to_catalogue:
+                raise ValueError("Inline custom material cannot save to the catalogue")
+            if self.catalogue_surface_id is not None or self.catalogue_variant_id is not None:
+                raise ValueError("Choose either a catalogue material or an inline custom material")
+        return self
 
     @field_validator("item_type")
     @classmethod
@@ -72,6 +85,12 @@ class QuoteRequest(BaseModel):
     customer: str
 
     postcode: str | None = None
+    site_address_line1: str | None = Field(default=None, min_length=1, max_length=500)
+    # Explicit editor opt-in: an unknown stone is a saved specification,
+    # never a guessed price or a zero-value offer. Legacy callers still fail
+    # on missing prices unless they request this behaviour.
+    allow_unpriced: bool = False
+    draft_id: uuid.UUID | None = None
 
     # Sprint 033 (Workstream C) — the source of truth. A quote is one or
     # more independent line items; nothing here forces a splashback to
@@ -102,6 +121,8 @@ class QuoteRequest(BaseModel):
 
     @model_validator(mode="after")
     def _build_items(self) -> "QuoteRequest":
+        if self.allow_unpriced and (not (self.site_address_line1 or "").strip() or not (self.postcode or "").strip()):
+            raise ValueError("Customer address and postcode are required for a stone quote draft.")
         if self.items:
             return self
 

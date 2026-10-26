@@ -25,10 +25,12 @@ router = APIRouter(tags=["variations"], dependencies=[Depends(require_billing_ac
 
 def _serialize(db: Session, variation: Variation) -> VariationOut:
     items = crud.list_variation_items(db, variation.id)
+    project = crud.get_project_by_id(db, variation.project_id, variation.tenant_id)
     return VariationOut(
         id=variation.id,
         project_id=variation.project_id,
         reference=variation.reference,
+        currency=project.currency,
         title=variation.title,
         description=variation.description,
         status=variation.status,

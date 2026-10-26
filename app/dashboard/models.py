@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PipelineCounts(BaseModel):
@@ -56,6 +56,9 @@ class QuotedValue(BaseModel):
     """Neither field is "revenue" — a quote total is a price offered or
     committed to, not recognized income (docs/SPRINTS/sprint-025.md §1)."""
 
+    currency: str = "GBP"
+    quoted_value_by_currency: dict[str, float] = Field(default_factory=dict)
+    approved_quoted_value_by_currency: dict[str, float] = Field(default_factory=dict)
     quoted_value: float
     approved_quoted_value: float
 
@@ -82,6 +85,9 @@ class FinancialSignals(BaseModel):
     confident average when underlying cost data is incomplete for some
     projects, so only counts are exposed, never an aggregate margin."""
 
+    currency: str = "GBP"
+    approved_contract_value_by_currency: dict[str, float] = Field(default_factory=dict)
+    approved_variations_value_by_currency: dict[str, float] = Field(default_factory=dict)
     approved_contract_value: float
     approved_variations_value: float
     projects_with_margin_risk: int

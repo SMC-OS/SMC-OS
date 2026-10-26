@@ -5,7 +5,7 @@ export type NotificationType = "success" | "warning" | "info" | "error";
 // entity's id. Both null for every notification created before this
 // sprint (tenant-wide broadcasts) and for any future notification with
 // nothing safe to link to.
-export type NotificationSourceType = "project";
+export type NotificationSourceType = "project" | "customer" | "quote";
 
 export interface AppNotification {
   id: string;

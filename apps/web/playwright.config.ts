@@ -15,7 +15,8 @@ import { defineConfig, devices } from "@playwright/test";
  * client-side JS on the page instead of raising a clear error.
  */
 export const FRONTEND_URL = "http://localhost:3000";
-export const BACKEND_URL = "http://127.0.0.1:8000";
+// Browser HttpOnly SameSite=Lax cookies require a shared site. Ports may differ.
+export const BACKEND_URL = "http://localhost:8000";
 // Sprint 041 — apps/marketing's own dev server, so Plan 02's public
 // homepage/pricing/request-demo journeys can be driven by a real browser
 // against the real (statically-served, no-auth) marketing app rather than

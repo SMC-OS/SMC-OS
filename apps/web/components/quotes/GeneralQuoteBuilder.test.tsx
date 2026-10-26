@@ -327,3 +327,11 @@ describe("GeneralQuoteBuilder — editing an existing draft (Sprint 039 Blocker 
     expect(await screen.findByText(/quote updated/i)).toBeInTheDocument();
   });
 });
+
+it("edits an existing EUR quote using its captured currency instead of today's GBP workspace", async () => {
+  // The established fixture omits unrelated Quote envelope fields.
+  // @ts-expect-error — same partial persisted quote fixture as the edit tests above.
+  render(<GeneralQuoteBuilder existingQuote={{ ...makeExistingQuote(), currency: "EUR" }} />);
+  expect(await screen.findByLabelText("Rate (€)")).toBeVisible();
+  expect(screen.queryByLabelText("Rate (£)")).not.toBeInTheDocument();
+});

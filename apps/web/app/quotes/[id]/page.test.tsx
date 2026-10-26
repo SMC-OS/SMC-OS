@@ -281,3 +281,15 @@ describe("QuoteDetailPage — edit entry point (Sprint 039 Blocker 5)", () => {
     expect(screen.queryByRole("link", { name: /edit/i })).not.toBeInTheDocument();
   });
 });
+
+it("shows a general line rate in the quote currency", async () => {
+  fetchMock.mockImplementation(async () => jsonResponse(makeQuote({ quote_kind: "general", currency: "EUR", items: [{ id: "line-1", line_kind: "labour", description: "Synthetic fitting", quantity: 1, unit: "item", unit_price: 100, line_total: 100 }] })));
+  render(<QuoteDetailPage />);
+  expect(await screen.findByText("1 item @ €100.00")).toBeVisible();
+});
+it("shows stone layout and included extras on the quote detail", async () => {
+  const quote = makeQuote({ items: [{ ...makeQuote().items[0], line_kind: "stone", notes: "Layout: Peninsula. Extras: Polished edge" }] });
+  fetchMock.mockImplementation(async () => jsonResponse(quote));
+  render(<QuoteDetailPage />);
+  expect(await screen.findByText(/Layout: Peninsula.*Polished edge/)).toBeVisible();
+});

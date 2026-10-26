@@ -1,7 +1,7 @@
 /**
  * Settings > Security "Change password" form. Locks down: client-side
  * validation (required, policy, mismatch, new == current), the request
- * never naming an account, the fresh token being stored, the loading and
+ * never naming an account, the renewed browser session without storing a bearer token, the loading and
  * success states, and a safe message for each server failure.
  */
 
@@ -40,8 +40,7 @@ function submit() {
 
 function okResponse(verified = true) {
   return {
-    access_token: "fresh-token",
-    token_type: "bearer",
+    token_type: "cookie",
     user: { email: "owner@example.invalid", email_verified_at: verified ? "2026-09-01T00:00:00Z" : null },
   };
 }
@@ -105,7 +104,7 @@ describe("ChangePasswordCard", () => {
     expect(changePasswordMock).not.toHaveBeenCalled();
   });
 
-  it("sends only the two passwords, stores the fresh token and confirms success", async () => {
+  it("sends only the two passwords, never stores a bearer token and confirms success", async () => {
     let resolve: (value: unknown) => void = () => {};
     changePasswordMock.mockReturnValue(new Promise((r) => (resolve = r)));
     render(<ChangePasswordCard />);
@@ -119,7 +118,7 @@ describe("ChangePasswordCard", () => {
     resolve(okResponse());
     expect(await screen.findByRole("status")).toHaveTextContent(/password has been changed/);
     expect(screen.getByRole("status")).toHaveTextContent(/confirmation has been sent/);
-    expect(setTokenMock).toHaveBeenCalledWith("fresh-token");
+    expect(setTokenMock).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Current password")).toHaveValue("");
     expect(screen.getByLabelText("New password")).toHaveValue("");
   });

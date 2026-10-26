@@ -1,4 +1,7 @@
 import uuid
+import json
+import math
+from decimal import Decimal, ROUND_DOWN
 from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
@@ -6,8 +9,8 @@ from sqlalchemy.orm import Session
 from app.catalogue.service import resolve_price_per_slab
 from app.database import crud
 from app.materials.service import material_service
-from app.quotes.slab_calculator import calculate_slabs
-from app.quotes.validator import validate_dimensions
+from app.quotes.slab_calculator import calculate_slabs, _parse_slab_size, WASTAGE_FACTOR
+from app.quotes.validator import validate_dimensions, DimensionError
 
 
 class CataloguePriceMissingError(Exception):
@@ -56,7 +59,7 @@ def summarize_items(item_results: list[dict]) -> dict:
         "material": first["material"] if same_material else "Multiple materials",
         "thickness": first["thickness"] if same_material else "Mixed",
         "price_per_slab": first["price_per_slab"] if same_material else None,
-        "slabs": sum(i["slabs"] for i in item_results),
+        "slabs": None if any(i["slabs"] is None for i in item_results) else sum(i["slabs"] for i in item_results),
     }
 
 
@@ -66,34 +69,69 @@ class QuoteCalculator:
         validate_dimensions(quote)
 
         item_results = []
+        slab_groups = {}
         price_before_vat = 0.0
 
         for item in quote.items:
-            if getattr(item, "catalogue_surface_id", None) is not None:
-                price_per_slab, snapshot = self._resolve_catalogue_item(db, item, tenant_id)
-                adapter = SimpleNamespace(slab_size=snapshot["slab_size"])
+            unpriced = bool(getattr(quote, "allow_unpriced", False) and tenant_id is not None)
+            custom = getattr(item, "custom_material", None)
+            if custom is not None:
+                if tenant_id is None:
+                    raise KeyError("Quote-only custom materials require an authenticated workspace")
+                price_per_slab = resolve_price_per_slab(SimpleNamespace(
+                    selling_price_per_slab=custom.selling_price_per_slab,
+                    buy_cost_per_slab=custom.buy_cost_per_slab,
+                    default_markup_percent=custom.default_markup_percent,
+                    target_margin_percent=None,
+                ))
+                if price_per_slab is None and not unpriced:
+                    raise CataloguePriceMissingError(custom.canonical_name)
+                variant = custom.variant
+                slab_size = f"{variant.slab_length_mm:g}x{variant.slab_width_mm:g}" if variant.slab_length_mm and variant.slab_width_mm else None
+                adapter = SimpleNamespace(slab_size=slab_size)
+                snapshot = {
+                    "source": "quote_custom", "canonical_name": custom.canonical_name,
+                    "supplier_name": custom.supplier_name, "manufacturer_name": custom.manufacturer_name,
+                    "material_family": custom.material_family, "thickness_mm": variant.thickness_mm,
+                    "finish": variant.finish, "slab_size": slab_size,
+                    "buy_cost_per_slab": custom.buy_cost_per_slab,
+                    "selling_price_per_slab": price_per_slab,
+                    "default_markup_percent": custom.default_markup_percent,
+                }
+            elif getattr(item, "catalogue_surface_id", None) is not None:
+                try:
+                    price_per_slab, snapshot = self._resolve_catalogue_item(db, item, tenant_id)
+                except CataloguePriceMissingError:
+                    if not unpriced:
+                        raise
+                    price_per_slab, snapshot = None, {"source": "catalogue", "pricing_pending": True}
+                adapter = SimpleNamespace(slab_size=snapshot.get("slab_size"))
             else:
                 material = material_service.get_by_name_and_thickness(db, item.material, item.thickness)
-                if material is None:
+                if material is None and not unpriced:
                     # Sprint 003's global KeyError -> 400 handler
                     # (app/core/errors.py) already exists for exactly this
                     # "unrecognised value" case, so this reuses that seam
                     # rather than introducing a new one.
                     raise KeyError(f"{item.material} ({item.thickness})")
-                price_per_slab = material.price
-                adapter = material
+                price_per_slab = material.price if material is not None else None
+                adapter = material or SimpleNamespace(slab_size=None)
                 snapshot = None
 
-            slabs = calculate_slabs(item, adapter)
-            material_price = price_per_slab * slabs
+            slabs = calculate_slabs(item, adapter) if price_per_slab is not None else None
+            material_price = price_per_slab * slabs if price_per_slab is not None else None
             surcharge = _ITEM_TYPE_SURCHARGES.get(item.item_type, 0) * item.quantity
-            line_total = round(material_price + surcharge, 2)
-            price_before_vat += line_total
+            line_total = round(material_price + surcharge, 2) if material_price is not None else None
+
+            group = getattr(item, "slab_group", None)
+            if group and price_per_slab is not None:
+                signature = (item.material.strip().casefold(), item.thickness, str(getattr(item, "catalogue_surface_id", None)), str(getattr(item, "catalogue_variant_id", None)), price_per_slab, json.dumps(snapshot, sort_keys=True), adapter.slab_size)
+                slab_groups.setdefault(group, []).append((len(item_results), item, signature))
 
             item_results.append(
                 {
                     "item_type": item.item_type,
-                    "material": item.material,
+                    "material": custom.canonical_name if custom is not None else item.material,
                     "thickness": item.thickness,
                     "quantity": item.quantity,
                     "length_mm": item.length_mm,
@@ -106,12 +144,37 @@ class QuoteCalculator:
                     "line_total": line_total,
                     "catalogue_surface_id": getattr(item, "catalogue_surface_id", None),
                     "catalogue_variant_id": getattr(item, "catalogue_variant_id", None),
-                    "catalogue_snapshot": snapshot,
+                    "catalogue_snapshot": {**(snapshot or {}), "pricing_pending": True} if price_per_slab is None else snapshot,
                 }
             )
 
-        price_before_vat = round(price_before_vat, 2)
-        vat = round(price_before_vat * 0.20, 2)
+        # Pool only explicitly grouped, identically resolved materials. This is an
+        # area-and-waste estimate, not a cutting/nesting or grain-matching promise.
+        for group, entries in slab_groups.items():
+            if any(entry[2] != entries[0][2] for entry in entries[1:]):
+                raise DimensionError("Shared slab pieces must use the same material, thickness, variant and price.")
+            slab_length, slab_width = _parse_slab_size(entries[0][2][-1])
+            areas = [entry[1].length_mm * entry[1].width_mm * entry[1].quantity / 1_000_000 for entry in entries]
+            total_area = sum(areas)
+            shared_slabs = max(1, math.ceil(total_area * WASTAGE_FACTOR / (slab_length * slab_width)))
+            price = entries[0][2][4]
+            total_pence = int(round(price * shared_slabs * 100))
+            allocated_pence = 0
+            for offset, (index, item, _) in enumerate(entries):
+                # Allocate whole pennies and put the rounding remainder on the last
+                # line so displayed line totals always reconcile to the quote total.
+                pence = total_pence - allocated_pence if offset == len(entries) - 1 else int((Decimal(total_pence) * Decimal(str(areas[offset])) / Decimal(str(total_area))).quantize(Decimal("1"), rounding=ROUND_DOWN))
+                allocated_pence += pence
+                row = item_results[index]
+                row["slabs"] = shared_slabs if offset == 0 else 0
+                row["line_total"] = round(pence / 100 + _ITEM_TYPE_SURCHARGES.get(item.item_type, 0) * item.quantity, 2)
+                allocation = {"group": group, "group_slabs": shared_slabs, "method": "area_with_15_percent_waste", "material_allocation": pence / 100}
+                row["slab_allocation"] = allocation
+                row["catalogue_snapshot"] = {**(row["catalogue_snapshot"] or {}), "slab_allocation": allocation}
+
+        pricing_pending = any(row["line_total"] is None for row in item_results)
+        price_before_vat = None if pricing_pending else round(sum(row["line_total"] for row in item_results), 2)
+        vat = None if pricing_pending else round(price_before_vat * 0.20, 2)
         summary = summarize_items(item_results)
 
         return {
@@ -123,7 +186,8 @@ class QuoteCalculator:
             "items": item_results,
             "price_before_vat": price_before_vat,
             "vat": vat,
-            "total": round(price_before_vat + vat, 2),
+            "total": None if pricing_pending else round(price_before_vat + vat, 2),
+            "pricing_pending": pricing_pending,
         }
 
     def _resolve_catalogue_item(self, db: Session, item, tenant_id: uuid.UUID | None) -> tuple[float, dict]:

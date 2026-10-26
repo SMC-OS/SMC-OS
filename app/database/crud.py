@@ -75,6 +75,7 @@ from app.database.models import (
     WorkflowTemplate,
     WorkflowTransition,
 )
+from app.money import totals_by_currency
 from app.catalogue import search_terms
 from app.procurement.models import REQUIREMENT_BLOCKING_STATUSES, is_po_late
 
@@ -475,6 +476,7 @@ def create_project(
     notes: str | None,
     status: str,
     quote_id: uuid.UUID | None = None,
+    currency: str | None = None,
     # Sprint 036 (Workstream F). Keyword-only with defaults, so the
     # quote-handoff caller and every existing test keep working with the
     # original signature.
@@ -504,6 +506,7 @@ def create_project(
         notes=notes,
         status=status,
         quote_id=quote_id,
+        currency=currency or tenant_currency(db, tenant_id),
         project_type=project_type,
         description=description,
         site_address_line1=site_address_line1,
@@ -918,11 +921,17 @@ def create_quote(
     # test that predates this sprint keeps working with the old signature.
     currency: str = "GBP",
     subtotal: float | None = None,
+    site_address_line1: str | None = None,
+    site_postcode: str | None = None,
+    replace_pending: Quote | None = None,
+    commit: bool = True,
 ) -> Quote:
     row = Quote(
         id=id,
         tenant_id=tenant_id,
         customer_id=customer_id,
+        site_address_line1=site_address_line1,
+        site_postcode=site_postcode,
         quote_kind="stone",
         # GeoCore Premium OS Plan 01 (Sprint 040) — this function only
         # ever creates a stone quote (quote_kind is hardcoded above), so
@@ -953,13 +962,24 @@ def create_quote(
         vat=vat,
         total=total,
     )
-    db.add(row)
-    db.commit()
+    if replace_pending is not None:
+        for key, value in row.__dict__.items():
+            if not key.startswith("_"):
+                setattr(replace_pending, key, value)
+        db.execute(sa_delete(QuoteItem).where(QuoteItem.quote_id == replace_pending.id))
+        row = replace_pending
+        db.expire(row, ["items"])
+    else:
+        db.add(row)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 
 
-def create_quote_items(db: Session, items: list[dict]) -> list[QuoteItem]:
+def create_quote_items(db: Session, items: list[dict], *, commit: bool = True) -> list[QuoteItem]:
     """Bulk-creates the QuoteItem rows for a just-created Quote (Sprint
     033, Workstream C). Each dict must include `quote_id`; `id`/
     `created_at` are filled in if not already present. One commit for
@@ -971,7 +991,10 @@ def create_quote_items(db: Session, items: list[dict]) -> list[QuoteItem]:
         item.setdefault("id", uuid.uuid4())
         rows.append(QuoteItem(**item))
     db.add_all(rows)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     for row in rows:
         db.refresh(row)
     return rows
@@ -1000,9 +1023,21 @@ def count_quotes_today(db: Session, tenant_id: uuid.UUID) -> int:
     )
 
 
+def quote_values_by_currency(db: Session, tenant_id: uuid.UUID, status: str | None = None) -> dict[str, float]:
+    query = db.query(Quote.currency, func.sum(Quote.total)).filter(Quote.tenant_id == tenant_id)
+    if status is not None:
+        query = query.filter(Quote.status == status)
+    return totals_by_currency(query.group_by(Quote.currency).all())
+
+
+def tenant_currency(db: Session, tenant_id: uuid.UUID) -> str:
+    tenant = get_tenant_by_id(db, tenant_id)
+    return tenant.currency if tenant is not None else 'GBP'
+
+
 def sum_quotes_revenue(db: Session, tenant_id: uuid.UUID) -> float:
-    total = db.query(func.sum(Quote.total)).filter(Quote.tenant_id == tenant_id).scalar()
-    return float(total) if total is not None else 0.0
+    # Legacy scalar is explicitly the workspace denomination only.
+    return quote_values_by_currency(db, tenant_id).get(tenant_currency(db, tenant_id), 0.0)
 
 
 # Sprint 025 (docs/SPRINTS/sprint-025.md) — Business Command Centre
@@ -1062,12 +1097,7 @@ def count_handed_off_projects(db: Session, tenant_id: uuid.UUID) -> int:
 
 
 def sum_approved_quotes_value(db: Session, tenant_id: uuid.UUID) -> float:
-    total = (
-        db.query(func.sum(Quote.total))
-        .filter(Quote.tenant_id == tenant_id, Quote.status == "approved")
-        .scalar()
-    )
-    return float(total) if total is not None else 0.0
+    return quote_values_by_currency(db, tenant_id, 'approved').get(tenant_currency(db, tenant_id), 0.0)
 
 
 def count_appointments_by_status(db: Session, tenant_id: uuid.UUID) -> dict[str, int]:
@@ -2282,6 +2312,7 @@ def search_catalogue_surfaces(
     colour_family: str | None = None,
     include_discontinued: bool = False,
     limit: int = 20,
+    offset: int = 0,
 ) -> list[CatalogueSurface]:
     """Every tenant sees every global (tenant_id IS NULL) surface, plus
     only their own private ones — never another tenant's. Same
@@ -2306,7 +2337,7 @@ def search_catalogue_surfaces(
         for token in tokens:
             like = f"%{token}%"
             matches = [
-                CatalogueSurface.canonical_name.ilike(like),
+                *[CatalogueSurface.canonical_name.ilike(f"%{spelling}%") for spelling in search_terms.name_spellings_for(token)],
                 CatalogueBrand.name.ilike(like),
                 CatalogueManufacturer.name.ilike(like),
                 _supplier_sources_surface(tenant_id, CatalogueSupplier.name.ilike(like)),
@@ -2330,7 +2361,7 @@ def search_catalogue_surfaces(
         stmt = stmt.where(CatalogueSurface.collection_id == collection_id)
     if colour_family:
         stmt = stmt.where(CatalogueSurface.colour_family == colour_family)
-    stmt = stmt.order_by(CatalogueSurface.canonical_name).limit(limit)
+    stmt = stmt.order_by(CatalogueSurface.canonical_name, CatalogueSurface.id).offset(offset).limit(limit)
     return list(db.scalars(stmt))
 
 
@@ -2504,13 +2535,28 @@ def sum_approved_variations_total(db: Session, project_id: uuid.UUID, tenant_id:
     return float(total) if total is not None else 0.0
 
 
+
+def sum_approved_variations_vat(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> float:
+    """Only approved, same-tenant variation VAT contributes to contract VAT."""
+    value = db.query(func.sum(Variation.vat)).filter(
+        Variation.project_id == project_id,
+        Variation.tenant_id == tenant_id,
+        Variation.status == "approved",
+    ).scalar()
+    return float(value) if value is not None else 0.0
+
+
+def approved_variations_by_currency(db: Session, tenant_id: uuid.UUID) -> dict[str, float]:
+    currency = Project.currency
+    rows = (db.query(currency, func.sum(Variation.total)).select_from(Variation)
+        .join(Project, (Project.id == Variation.project_id) & (Project.tenant_id == tenant_id))
+        .filter(Variation.tenant_id == tenant_id, Variation.status == 'approved')
+        .group_by(currency).all())
+    return totals_by_currency(rows)
+
+
 def sum_approved_variations_total_for_tenant(db: Session, tenant_id: uuid.UUID) -> float:
-    total = (
-        db.query(func.sum(Variation.total))
-        .filter(Variation.tenant_id == tenant_id, Variation.status == "approved")
-        .scalar()
-    )
-    return float(total) if total is not None else 0.0
+    return approved_variations_by_currency(db, tenant_id).get(tenant_currency(db, tenant_id), 0.0)
 
 
 def replace_variation_items(db: Session, variation_id: uuid.UUID, items: list[dict]) -> list[VariationItem]:

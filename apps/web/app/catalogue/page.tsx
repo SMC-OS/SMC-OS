@@ -6,10 +6,17 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/components/ui/Card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+} from "@/components/ui/Card";
 import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
 import { SearchIcon } from "@/components/ui/icons";
 import { ApiError, api } from "@/lib/api";
+import { writeQuoteCustomMaterial } from "@/lib/quote-custom-material";
 import { formatCurrencyGBP } from "@/lib/utils";
 import {
   MATERIAL_FAMILIES,
@@ -72,7 +79,8 @@ export default function CataloguePage() {
   // empty result say whether nothing matched or nothing is loaded.
   const [supplierId, setSupplierId] = useState("");
   const [suppliers, setSuppliers] = useState<CatalogueSupplierSummary[]>([]);
-  const [catalogueStatus, setCatalogueStatus] = useState<CatalogueStatus | null>(null);
+  const [catalogueStatus, setCatalogueStatus] =
+    useState<CatalogueStatus | null>(null);
   // Bumped by "Clear search" so the cleared query re-runs even when the
   // family/supplier filters were already empty.
   const [searchNonce, setSearchNonce] = useState(0);
@@ -93,6 +101,7 @@ export default function CataloguePage() {
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceBuyCost, setPriceBuyCost] = useState("");
   const [priceMarkup, setPriceMarkup] = useState("");
+  const [priceImageUrl, setPriceImageUrl] = useState("");
   const [priceSellingPrice, setPriceSellingPrice] = useState("");
   const [priceSubmitting, setPriceSubmitting] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
@@ -103,10 +112,14 @@ export default function CataloguePage() {
   // this workspace can see; leaving it off creates nothing durable at
   // all (see app/catalogue/service.py's create_custom_material docstring).
   const [showCustomForm, setShowCustomForm] = useState(false);
-  const [customForm, setCustomForm] = useState<CustomMaterialFormState>(blankCustomMaterial());
+  const [customForm, setCustomForm] = useState<CustomMaterialFormState>(
+    blankCustomMaterial(),
+  );
   const [customSubmitting, setCustomSubmitting] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
-  const [customResult, setCustomResult] = useState<CustomMaterialResult | null>(null);
+  const [customResult, setCustomResult] = useState<CustomMaterialResult | null>(
+    null,
+  );
 
   // GeoCore Premium OS Plan 05 (Sprint 044), Task 34 — "Add to Project
   // Requirement" from a catalogue surface, so a material identified here
@@ -131,7 +144,9 @@ export default function CataloguePage() {
       })
       .then(setResults)
       .catch((err) =>
-        setError(err instanceof ApiError ? err.message : "Something went wrong.")
+        setError(
+          err instanceof ApiError ? err.message : "Something went wrong.",
+        ),
       )
       .finally(() => setLoading(false));
   }, [query, materialFamily, supplierId]);
@@ -148,22 +163,40 @@ export default function CataloguePage() {
     runSearch();
     // Only re-run automatically on the filters below, not on every
     // keystroke into `query` — that has its own explicit "Search" submit.
-    api.getProjects().then(setProjects).catch(() => {});
+    api
+      .getProjects()
+      .then(setProjects)
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, isAuthenticated, router, materialFamily, supplierId, searchNonce]);
+  }, [
+    isReady,
+    isAuthenticated,
+    router,
+    materialFamily,
+    supplierId,
+    searchNonce,
+  ]);
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;
     // Both optional: a failure only hides the supplier filter or falls
     // back to the generic "no results" wording, never blocks search.
-    api.getCatalogueStatus().then(setCatalogueStatus).catch(() => {});
-    api.getSuppliers().then(setSuppliers).catch(() => {});
+    api
+      .getCatalogueStatus()
+      .then(setCatalogueStatus)
+      .catch(() => {});
+    api
+      .getSuppliers()
+      .then(setSuppliers)
+      .catch(() => {});
   }, [isReady, isAuthenticated]);
 
   const catalogueIsEmpty =
     catalogueStatus !== null &&
     catalogueStatus.global_surfaces + catalogueStatus.tenant_surfaces === 0;
-  const hasActiveFilters = Boolean(query.trim() || materialFamily || supplierId);
+  const hasActiveFilters = Boolean(
+    query.trim() || materialFamily || supplierId,
+  );
 
   function clearFilters() {
     setQuery("");
@@ -195,13 +228,22 @@ export default function CataloguePage() {
           setSelectedVariantId(surface.variants[0].id);
         }
         if (!keepPriceForm) {
-          setPriceBuyCost(surface.tenant_override?.buy_cost_per_slab?.toString() ?? "");
-          setPriceMarkup(surface.tenant_override?.default_markup_percent?.toString() ?? "");
-          setPriceSellingPrice(surface.tenant_override?.selling_price_per_slab?.toString() ?? "");
+          setPriceImageUrl(surface.image_url ?? "");
+          setPriceBuyCost(
+            surface.tenant_override?.buy_cost_per_slab?.toString() ?? "",
+          );
+          setPriceMarkup(
+            surface.tenant_override?.default_markup_percent?.toString() ?? "",
+          );
+          setPriceSellingPrice(
+            surface.tenant_override?.selling_price_per_slab?.toString() ?? "",
+          );
         }
       })
       .catch((err) =>
-        setDetailError(err instanceof ApiError ? err.message : "Something went wrong.")
+        setDetailError(
+          err instanceof ApiError ? err.message : "Something went wrong.",
+        ),
       )
       .finally(() => setDetailLoading(false));
   }
@@ -213,15 +255,20 @@ export default function CataloguePage() {
     setPriceError(null);
     try {
       await api.upsertCatalogueOverride(detail.id, {
+        image_url: priceImageUrl || null,
         buy_cost_per_slab: priceBuyCost ? Number(priceBuyCost) : null,
         default_markup_percent: priceMarkup ? Number(priceMarkup) : null,
-        selling_price_per_slab: priceSellingPrice ? Number(priceSellingPrice) : null,
+        selling_price_per_slab: priceSellingPrice
+          ? Number(priceSellingPrice)
+          : null,
       });
       openSurface(detail.id, true);
       setEditingPrice(false);
       runSearch();
     } catch (err) {
-      setPriceError(err instanceof ApiError ? err.message : "Something went wrong.");
+      setPriceError(
+        err instanceof ApiError ? err.message : "Something went wrong.",
+      );
     } finally {
       setPriceSubmitting(false);
     }
@@ -229,28 +276,75 @@ export default function CataloguePage() {
 
   function useInQuote() {
     if (!detail) return;
-    const variant = detail.variants.find((v) => v.id === selectedVariantId) ?? null;
+    const variant =
+      detail.variants.find((v) => v.id === selectedVariantId) ?? null;
     const params = new URLSearchParams();
     params.set("catalogue_surface_id", detail.id);
     if (variant) params.set("catalogue_variant_id", variant.id);
     params.set("material", detail.canonical_name);
-    if (variant?.thickness_mm) params.set("thickness", `${variant.thickness_mm}mm`);
+    if (variant?.thickness_mm)
+      params.set("thickness", `${variant.thickness_mm}mm`);
     router.push(`/quotes/new/stone?${params.toString()}`);
+  }
+
+  function customMaterialPayload() {
+    return {
+      canonical_name: customForm.canonical_name,
+      supplier_name: customForm.supplier_name || null,
+      manufacturer_name: customForm.manufacturer_name || null,
+      material_family: customForm.material_family,
+      variant: {
+        thickness_mm: customForm.thickness_mm
+          ? Number(customForm.thickness_mm)
+          : null,
+        finish: customForm.finish || null,
+        slab_length_mm: customForm.slab_length_mm
+          ? Number(customForm.slab_length_mm)
+          : null,
+        slab_width_mm: customForm.slab_width_mm
+          ? Number(customForm.slab_width_mm)
+          : null,
+      },
+      buy_cost_per_slab: customForm.buy_cost_per_slab
+        ? Number(customForm.buy_cost_per_slab)
+        : null,
+      selling_price_per_slab: customForm.selling_price_per_slab
+        ? Number(customForm.selling_price_per_slab)
+        : null,
+      save_to_catalogue: customForm.save_to_catalogue,
+    };
   }
 
   function goToQuoteWithCustomMaterial(result: CustomMaterialResult) {
     const params = new URLSearchParams();
-    if (result.surface_id) params.set("catalogue_surface_id", result.surface_id);
-    if (result.variant_id) params.set("catalogue_variant_id", result.variant_id);
+    if (result.surface_id)
+      params.set("catalogue_surface_id", result.surface_id);
+    if (result.variant_id)
+      params.set("catalogue_variant_id", result.variant_id);
+    if (!result.surface_id) {
+      try {
+        params.set(
+          "custom_material_id",
+          writeQuoteCustomMaterial(customMaterialPayload()),
+        );
+      } catch {
+        setCustomError(
+          "Could not retain this draft in your browser. Enable tab storage and try again.",
+        );
+        return;
+      }
+    }
     params.set("material", result.canonical_name);
-    if (customForm.thickness_mm) params.set("thickness", `${customForm.thickness_mm}mm`);
+    if (customForm.thickness_mm)
+      params.set("thickness", `${customForm.thickness_mm}mm`);
     router.push(`/quotes/new/stone?${params.toString()}`);
   }
 
   async function addToProjectRequirement(e: React.FormEvent) {
     e.preventDefault();
     if (!detail || !requirementProjectId) return;
-    const variant = detail.variants.find((v) => v.id === selectedVariantId) ?? null;
+    const variant =
+      detail.variants.find((v) => v.id === selectedVariantId) ?? null;
     setRequirementSubmitting(true);
     setRequirementError(null);
     try {
@@ -259,14 +353,18 @@ export default function CataloguePage() {
         catalogue_surface_id: detail.id,
         catalogue_variant_id: variant?.id ?? null,
         material_family: detail.material_family,
-        required_quantity: requirementQuantity ? Number(requirementQuantity) : null,
+        required_quantity: requirementQuantity
+          ? Number(requirementQuantity)
+          : null,
         unit: requirementUnit || null,
       });
       setRequirementSuccess(true);
       setRequirementQuantity("");
       setRequirementUnit("");
     } catch (err) {
-      setRequirementError(err instanceof ApiError ? err.message : "Something went wrong.");
+      setRequirementError(
+        err instanceof ApiError ? err.message : "Something went wrong.",
+      );
     } finally {
       setRequirementSubmitting(false);
     }
@@ -278,29 +376,15 @@ export default function CataloguePage() {
     setCustomError(null);
     setCustomResult(null);
     try {
-      const result = await api.createCustomMaterial({
-        canonical_name: customForm.canonical_name,
-        supplier_name: customForm.supplier_name || null,
-        manufacturer_name: customForm.manufacturer_name || null,
-        material_family: customForm.material_family,
-        variant: {
-          thickness_mm: customForm.thickness_mm ? Number(customForm.thickness_mm) : null,
-          finish: customForm.finish || null,
-          slab_length_mm: customForm.slab_length_mm ? Number(customForm.slab_length_mm) : null,
-          slab_width_mm: customForm.slab_width_mm ? Number(customForm.slab_width_mm) : null,
-        },
-        buy_cost_per_slab: customForm.buy_cost_per_slab ? Number(customForm.buy_cost_per_slab) : null,
-        selling_price_per_slab: customForm.selling_price_per_slab
-          ? Number(customForm.selling_price_per_slab)
-          : null,
-        save_to_catalogue: customForm.save_to_catalogue,
-      });
+      const result = await api.createCustomMaterial(customMaterialPayload());
       setCustomResult(result);
       if (result.saved_to_catalogue) {
         runSearch();
       }
     } catch (err) {
-      setCustomError(err instanceof ApiError ? err.message : "Something went wrong.");
+      setCustomError(
+        err instanceof ApiError ? err.message : "Something went wrong.",
+      );
     } finally {
       setCustomSubmitting(false);
     }
@@ -347,7 +431,10 @@ export default function CataloguePage() {
                     : "was recorded for this quote only — it was not saved anywhere, so search won't find it again."}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" onClick={() => goToQuoteWithCustomMaterial(customResult)}>
+                  <Button
+                    type="button"
+                    onClick={() => goToQuoteWithCustomMaterial(customResult)}
+                  >
                     Use in a stone quote
                   </Button>
                   <Button
@@ -364,7 +451,10 @@ export default function CataloguePage() {
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleCustomMaterialSubmit} className="flex flex-col gap-4">
+              <form
+                onSubmit={handleCustomMaterialSubmit}
+                className="flex flex-col gap-4"
+              >
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Material name" htmlFor="customName" required>
                     <Input
@@ -372,12 +462,19 @@ export default function CataloguePage() {
                       required
                       value={customForm.canonical_name}
                       onChange={(e) =>
-                        setCustomForm((f) => ({ ...f, canonical_name: e.target.value }))
+                        setCustomForm((f) => ({
+                          ...f,
+                          canonical_name: e.target.value,
+                        }))
                       }
                       placeholder="e.g. Verde Alpi Granite"
                     />
                   </Field>
-                  <Field label="Material family" htmlFor="customFamily" required>
+                  <Field
+                    label="Material family"
+                    htmlFor="customFamily"
+                    required
+                  >
                     <Select
                       id="customFamily"
                       value={customForm.material_family}
@@ -400,16 +497,25 @@ export default function CataloguePage() {
                       id="customSupplier"
                       value={customForm.supplier_name}
                       onChange={(e) =>
-                        setCustomForm((f) => ({ ...f, supplier_name: e.target.value }))
+                        setCustomForm((f) => ({
+                          ...f,
+                          supplier_name: e.target.value,
+                        }))
                       }
                     />
                   </Field>
-                  <Field label="Manufacturer / brand (optional)" htmlFor="customManufacturer">
+                  <Field
+                    label="Manufacturer / brand (optional)"
+                    htmlFor="customManufacturer"
+                  >
                     <Input
                       id="customManufacturer"
                       value={customForm.manufacturer_name}
                       onChange={(e) =>
-                        setCustomForm((f) => ({ ...f, manufacturer_name: e.target.value }))
+                        setCustomForm((f) => ({
+                          ...f,
+                          manufacturer_name: e.target.value,
+                        }))
                       }
                     />
                   </Field>
@@ -420,7 +526,10 @@ export default function CataloguePage() {
                       min="0"
                       value={customForm.thickness_mm}
                       onChange={(e) =>
-                        setCustomForm((f) => ({ ...f, thickness_mm: e.target.value }))
+                        setCustomForm((f) => ({
+                          ...f,
+                          thickness_mm: e.target.value,
+                        }))
                       }
                       placeholder="e.g. 20"
                     />
@@ -429,33 +538,50 @@ export default function CataloguePage() {
                     <Input
                       id="customFinish"
                       value={customForm.finish}
-                      onChange={(e) => setCustomForm((f) => ({ ...f, finish: e.target.value }))}
+                      onChange={(e) =>
+                        setCustomForm((f) => ({ ...f, finish: e.target.value }))
+                      }
                       placeholder="e.g. Polished"
                     />
                   </Field>
-                  <Field label="Slab length (mm, optional)" htmlFor="customSlabLength">
+                  <Field
+                    label="Slab length (mm, optional)"
+                    htmlFor="customSlabLength"
+                  >
                     <Input
                       id="customSlabLength"
                       type="number"
                       min="0"
                       value={customForm.slab_length_mm}
                       onChange={(e) =>
-                        setCustomForm((f) => ({ ...f, slab_length_mm: e.target.value }))
+                        setCustomForm((f) => ({
+                          ...f,
+                          slab_length_mm: e.target.value,
+                        }))
                       }
                     />
                   </Field>
-                  <Field label="Slab width (mm, optional)" htmlFor="customSlabWidth">
+                  <Field
+                    label="Slab width (mm, optional)"
+                    htmlFor="customSlabWidth"
+                  >
                     <Input
                       id="customSlabWidth"
                       type="number"
                       min="0"
                       value={customForm.slab_width_mm}
                       onChange={(e) =>
-                        setCustomForm((f) => ({ ...f, slab_width_mm: e.target.value }))
+                        setCustomForm((f) => ({
+                          ...f,
+                          slab_width_mm: e.target.value,
+                        }))
                       }
                     />
                   </Field>
-                  <Field label="Your buy cost per slab (optional)" htmlFor="customBuyCost">
+                  <Field
+                    label="Your buy cost per slab (optional)"
+                    htmlFor="customBuyCost"
+                  >
                     <Input
                       id="customBuyCost"
                       type="number"
@@ -463,11 +589,17 @@ export default function CataloguePage() {
                       step="0.01"
                       value={customForm.buy_cost_per_slab}
                       onChange={(e) =>
-                        setCustomForm((f) => ({ ...f, buy_cost_per_slab: e.target.value }))
+                        setCustomForm((f) => ({
+                          ...f,
+                          buy_cost_per_slab: e.target.value,
+                        }))
                       }
                     />
                   </Field>
-                  <Field label="Your selling price per slab (optional)" htmlFor="customSellingPrice">
+                  <Field
+                    label="Your selling price per slab (optional)"
+                    htmlFor="customSellingPrice"
+                  >
                     <Input
                       id="customSellingPrice"
                       type="number"
@@ -475,7 +607,10 @@ export default function CataloguePage() {
                       step="0.01"
                       value={customForm.selling_price_per_slab}
                       onChange={(e) =>
-                        setCustomForm((f) => ({ ...f, selling_price_per_slab: e.target.value }))
+                        setCustomForm((f) => ({
+                          ...f,
+                          selling_price_per_slab: e.target.value,
+                        }))
                       }
                     />
                   </Field>
@@ -485,13 +620,17 @@ export default function CataloguePage() {
                   label="Save to my private catalogue, so I can reuse it on future quotes"
                   checked={customForm.save_to_catalogue}
                   onChange={(e) =>
-                    setCustomForm((f) => ({ ...f, save_to_catalogue: e.target.checked }))
+                    setCustomForm((f) => ({
+                      ...f,
+                      save_to_catalogue: e.target.checked,
+                    }))
                   }
                 />
                 {!customForm.save_to_catalogue && (
                   <p className="text-xs text-muted">
-                    Unchecked: this is used for this quote only and is never saved anywhere —
-                    not to your private catalogue, and never to the shared global catalogue.
+                    Unchecked: this is used for this quote only and is never
+                    saved anywhere — not to your private catalogue, and never to
+                    the shared global catalogue.
                   </p>
                 )}
 
@@ -505,7 +644,11 @@ export default function CataloguePage() {
                   <Button type="submit" disabled={customSubmitting}>
                     {customSubmitting ? "Saving…" : "Add material"}
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => setShowCustomForm(false)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowCustomForm(false)}
+                  >
                     Cancel
                   </Button>
                 </div>
@@ -517,7 +660,10 @@ export default function CataloguePage() {
 
       <Card className="mb-6">
         <CardContent className="pt-4">
-          <form onSubmit={handleSearchSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-end">
+          <form
+            onSubmit={handleSearchSubmit}
+            className="flex flex-col gap-4 sm:flex-row sm:items-end"
+          >
             <Field label="Search" htmlFor="catalogueQuery" className="flex-1">
               <Input
                 id="catalogueQuery"
@@ -526,11 +672,17 @@ export default function CataloguePage() {
                 placeholder="e.g. Calacatta, white quartz, Silestone"
               />
             </Field>
-            <Field label="Material family" htmlFor="catalogueFamily" className="sm:w-56">
+            <Field
+              label="Material family"
+              htmlFor="catalogueFamily"
+              className="sm:w-56"
+            >
               <Select
                 id="catalogueFamily"
                 value={materialFamily}
-                onChange={(e) => setMaterialFamily(e.target.value as MaterialFamily | "")}
+                onChange={(e) =>
+                  setMaterialFamily(e.target.value as MaterialFamily | "")
+                }
               >
                 <option value="">All families</option>
                 {MATERIAL_FAMILIES.map((f) => (
@@ -541,7 +693,11 @@ export default function CataloguePage() {
               </Select>
             </Field>
             {suppliers.length > 0 && (
-              <Field label="Supplier" htmlFor="catalogueSupplier" className="sm:w-56">
+              <Field
+                label="Supplier"
+                htmlFor="catalogueSupplier"
+                className="sm:w-56"
+              >
                 <Select
                   id="catalogueSupplier"
                   value={supplierId}
@@ -565,7 +721,9 @@ export default function CataloguePage() {
       </Card>
 
       {error && (
-        <p className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>
+        <p className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+          {error}
+        </p>
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
@@ -573,7 +731,9 @@ export default function CataloguePage() {
           <Card>
             <CardHeader>
               <CardTitle>
-                {results ? `${results.length} surface${results.length === 1 ? "" : "s"}` : "Surfaces"}
+                {results
+                  ? `${results.length} surface${results.length === 1 ? "" : "s"}`
+                  : "Surfaces"}
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-4">
@@ -582,7 +742,11 @@ export default function CataloguePage() {
                   title="Your material catalogue is empty"
                   description="GeoCore's shared reference catalogue hasn't been loaded for your workspace yet. You can still add your own materials and quote them straight away."
                   action={
-                    <Button variant="outline" size="sm" onClick={() => setShowCustomForm(true)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowCustomForm(true)}
+                    >
                       Add custom material
                     </Button>
                   }
@@ -595,11 +759,19 @@ export default function CataloguePage() {
                   action={
                     <div className="flex flex-wrap justify-center gap-2">
                       {hasActiveFilters && (
-                        <Button variant="ghost" size="sm" onClick={clearFilters}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={clearFilters}
+                        >
                           Clear search
                         </Button>
                       )}
-                      <Button variant="outline" size="sm" onClick={() => setShowCustomForm(true)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowCustomForm(true)}
+                      >
                         Add custom material
                       </Button>
                     </div>
@@ -619,18 +791,31 @@ export default function CataloguePage() {
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-foreground">{surface.canonical_name}</span>
-                        <Badge tone="neutral">{MATERIAL_FAMILY_LABELS[surface.material_family]}</Badge>
+                        <span className="font-medium text-foreground">
+                          {surface.canonical_name}
+                        </span>
+                        <Badge tone="neutral">
+                          {MATERIAL_FAMILY_LABELS[surface.material_family]}
+                        </Badge>
                       </div>
                       <p className="mt-0.5 text-xs text-muted">
-                        {[surface.supplier_name, surface.manufacturer_name, surface.brand_name]
+                        {[
+                          surface.supplier_name,
+                          surface.manufacturer_name,
+                          surface.brand_name,
+                        ]
                           .filter(Boolean)
                           .join(" · ") || "No supplier on file"}
-                        {surface.is_tenant_private && " · Your private catalogue"}
+                        {surface.is_tenant_private &&
+                          " · Your private catalogue"}
                       </p>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                        {surface.discontinued && <Badge tone="danger">Discontinued</Badge>}
-                        {!surface.active && <Badge tone="warning">Inactive</Badge>}
+                        {surface.discontinued && (
+                          <Badge tone="danger">Discontinued</Badge>
+                        )}
+                        {!surface.active && (
+                          <Badge tone="warning">Inactive</Badge>
+                        )}
                         {surface.has_tenant_price ? (
                           <Badge tone="success">Your price set</Badge>
                         ) : (
@@ -638,7 +823,9 @@ export default function CataloguePage() {
                         )}
                         {surface.thicknesses_mm.length > 0 && (
                           <span className="text-xs text-muted">
-                            {surface.thicknesses_mm.map((t) => `${t}mm`).join(", ")}
+                            {surface.thicknesses_mm
+                              .map((t) => `${t}mm`)
+                              .join(", ")}
                           </span>
                         )}
                       </div>
@@ -657,14 +844,20 @@ export default function CataloguePage() {
             </CardHeader>
             <CardContent className="pt-4">
               {!selectedId && (
-                <p className="text-sm text-muted">Select a surface to see its details.</p>
+                <p className="text-sm text-muted">
+                  Select a surface to see its details.
+                </p>
               )}
               {detailLoading && <p className="text-sm text-muted">Loading…</p>}
-              {detailError && <p className="text-sm text-danger">{detailError}</p>}
+              {detailError && (
+                <p className="text-sm text-danger">{detailError}</p>
+              )}
               {detail && (
                 <div className="flex flex-col gap-4">
                   <div>
-                    <h3 className="text-lg font-semibold text-foreground">{detail.canonical_name}</h3>
+                    <h3 className="text-lg font-semibold text-foreground">
+                      {detail.canonical_name}
+                    </h3>
                     <p className="text-sm text-muted">
                       {MATERIAL_FAMILY_LABELS[detail.material_family]}
                       {detail.colour_family ? ` · ${detail.colour_family}` : ""}
@@ -673,17 +866,28 @@ export default function CataloguePage() {
 
                   <dl className="grid grid-cols-2 gap-y-1.5 text-sm">
                     <dt className="text-muted">Supplier</dt>
-                    <dd className="text-right text-foreground">{detail.supplier?.name ?? "—"}</dd>
+                    <dd className="text-right text-foreground">
+                      {detail.supplier?.name ?? "—"}
+                    </dd>
                     <dt className="text-muted">Manufacturer</dt>
-                    <dd className="text-right text-foreground">{detail.manufacturer?.name ?? "—"}</dd>
+                    <dd className="text-right text-foreground">
+                      {detail.manufacturer?.name ?? "—"}
+                    </dd>
                     <dt className="text-muted">Brand</dt>
-                    <dd className="text-right text-foreground">{detail.brand?.name ?? "—"}</dd>
+                    <dd className="text-right text-foreground">
+                      {detail.brand?.name ?? "—"}
+                    </dd>
                     <dt className="text-muted">Collection</dt>
-                    <dd className="text-right text-foreground">{detail.collection?.name ?? "—"}</dd>
+                    <dd className="text-right text-foreground">
+                      {detail.collection?.name ?? "—"}
+                    </dd>
                   </dl>
 
                   {detail.variants.length > 0 && (
-                    <Field label="Thickness / finish / slab size" htmlFor="variantSelect">
+                    <Field
+                      label="Thickness / finish / slab size"
+                      htmlFor="variantSelect"
+                    >
                       <Select
                         id="variantSelect"
                         value={selectedVariantId}
@@ -717,7 +921,8 @@ export default function CataloguePage() {
                           className="tap-link text-xs text-accent hover:underline"
                           onClick={() => setEditingPrice(true)}
                         >
-                          {detail.tenant_override?.resolved_price_per_slab != null
+                          {detail.tenant_override?.resolved_price_per_slab !=
+                          null
                             ? "Edit price"
                             : "Set your price"}
                         </button>
@@ -725,8 +930,14 @@ export default function CataloguePage() {
                     </div>
 
                     {editingPrice ? (
-                      <form onSubmit={savePrice} className="mt-2 flex flex-col gap-3">
-                        <Field label="Your buy cost per slab" htmlFor="priceBuyCost">
+                      <form
+                        onSubmit={savePrice}
+                        className="mt-2 flex flex-col gap-3"
+                      >
+                        <Field
+                          label="Your buy cost per slab"
+                          htmlFor="priceBuyCost"
+                        >
                           <Input
                             id="priceBuyCost"
                             type="number"
@@ -736,7 +947,11 @@ export default function CataloguePage() {
                             onChange={(e) => setPriceBuyCost(e.target.value)}
                           />
                         </Field>
-                        <Field label="Your markup (%)" htmlFor="priceMarkup" hint="Used only when no selling price is set below.">
+                        <Field
+                          label="Your markup (%)"
+                          htmlFor="priceMarkup"
+                          hint="Used only when no selling price is set below."
+                        >
                           <Input
                             id="priceMarkup"
                             type="number"
@@ -746,19 +961,46 @@ export default function CataloguePage() {
                             onChange={(e) => setPriceMarkup(e.target.value)}
                           />
                         </Field>
-                        <Field label="Your selling price per slab" htmlFor="priceSellingPrice" hint="Overrides buy cost + markup when set.">
+                        <Field
+                          label="Your selling price per slab"
+                          htmlFor="priceSellingPrice"
+                          hint="Overrides buy cost + markup when set."
+                        >
                           <Input
                             id="priceSellingPrice"
                             type="number"
                             min="0"
                             step="0.01"
                             value={priceSellingPrice}
-                            onChange={(e) => setPriceSellingPrice(e.target.value)}
+                            onChange={(e) =>
+                              setPriceSellingPrice(e.target.value)
+                            }
                           />
                         </Field>
-                        {priceError && <p className="text-xs text-danger">{priceError}</p>}
+                        <Field
+                          label="Material photo URL"
+                          htmlFor="priceImageUrl"
+                          hint="Public HTTPS link to a photograph you own or have permission to use. Visible only in this workspace’s catalogue."
+                        >
+                          <Input
+                            id="priceImageUrl"
+                            type="url"
+                            value={priceImageUrl}
+                            onChange={(event) =>
+                              setPriceImageUrl(event.target.value)
+                            }
+                            placeholder="https://…/stone.jpg"
+                          />
+                        </Field>
+                        {priceError && (
+                          <p className="text-xs text-danger">{priceError}</p>
+                        )}
                         <div className="flex gap-2">
-                          <Button type="submit" size="sm" disabled={priceSubmitting}>
+                          <Button
+                            type="submit"
+                            size="sm"
+                            disabled={priceSubmitting}
+                          >
                             {priceSubmitting ? "Saving…" : "Save price"}
                           </Button>
                           <Button
@@ -771,21 +1013,26 @@ export default function CataloguePage() {
                           </Button>
                         </div>
                       </form>
-                    ) : detail.tenant_override?.resolved_price_per_slab != null ? (
+                    ) : detail.tenant_override?.resolved_price_per_slab !=
+                      null ? (
                       <p className="mt-1 text-lg font-semibold text-foreground">
-                        {formatCurrencyGBP(detail.tenant_override.resolved_price_per_slab)}{" "}
-                        <span className="text-sm font-normal text-muted">per slab</span>
+                        {formatCurrencyGBP(
+                          detail.tenant_override.resolved_price_per_slab,
+                        )}{" "}
+                        <span className="text-sm font-normal text-muted">
+                          per slab
+                        </span>
                       </p>
                     ) : (
                       <p className="mt-1 text-sm text-muted">
-                        No price set yet — this is global reference data only. Set your buy
-                        cost and markup to price it in a quote.
+                        No price set yet — this is global reference data only.
+                        Set your buy cost and markup to price it in a quote.
                       </p>
                     )}
                     {detail.is_tenant_private && (
                       <p className="mt-1 text-xs text-muted">
-                        This is a private material in your own catalogue — not visible to
-                        other GeoCore workspaces.
+                        This is a private material in your own catalogue — not
+                        visible to other GeoCore workspaces.
                       </p>
                     )}
                   </div>
@@ -800,7 +1047,12 @@ export default function CataloguePage() {
                   )}
 
                   <div className="flex flex-wrap gap-2">
-                    <Button onClick={useInQuote} disabled={detail.variants.length > 0 && !selectedVariantId}>
+                    <Button
+                      onClick={useInQuote}
+                      disabled={
+                        detail.variants.length > 0 && !selectedVariantId
+                      }
+                    >
                       Use in a stone quote
                     </Button>
                     {!showRequirementForm && (
@@ -825,7 +1077,8 @@ export default function CataloguePage() {
                       {requirementSuccess ? (
                         <div className="flex flex-col gap-2">
                           <p className="text-sm text-foreground">
-                            Added as a material requirement on the selected project.
+                            Added as a material requirement on the selected
+                            project.
                           </p>
                           <Button
                             type="button"
@@ -838,12 +1091,18 @@ export default function CataloguePage() {
                         </div>
                       ) : (
                         <div className="flex flex-col gap-3">
-                          <Field label="Project" htmlFor="requirementProject" required>
+                          <Field
+                            label="Project"
+                            htmlFor="requirementProject"
+                            required
+                          >
                             <Select
                               id="requirementProject"
                               required
                               value={requirementProjectId}
-                              onChange={(e) => setRequirementProjectId(e.target.value)}
+                              onChange={(e) =>
+                                setRequirementProjectId(e.target.value)
+                              }
                             >
                               <option value="">Select a project</option>
                               {projects.map((p) => (
@@ -854,35 +1113,48 @@ export default function CataloguePage() {
                             </Select>
                           </Field>
                           <div className="grid grid-cols-2 gap-3">
-                            <Field label="Quantity" htmlFor="requirementQuantity">
+                            <Field
+                              label="Quantity"
+                              htmlFor="requirementQuantity"
+                            >
                               <Input
                                 id="requirementQuantity"
                                 type="number"
                                 min="0"
                                 step="0.01"
                                 value={requirementQuantity}
-                                onChange={(e) => setRequirementQuantity(e.target.value)}
+                                onChange={(e) =>
+                                  setRequirementQuantity(e.target.value)
+                                }
                               />
                             </Field>
                             <Field label="Unit" htmlFor="requirementUnit">
                               <Input
                                 id="requirementUnit"
                                 value={requirementUnit}
-                                onChange={(e) => setRequirementUnit(e.target.value)}
+                                onChange={(e) =>
+                                  setRequirementUnit(e.target.value)
+                                }
                                 placeholder="e.g. slab"
                               />
                             </Field>
                           </div>
                           {requirementError && (
-                            <p className="text-xs text-danger">{requirementError}</p>
+                            <p className="text-xs text-danger">
+                              {requirementError}
+                            </p>
                           )}
                           <div className="flex gap-2">
                             <Button
                               type="submit"
                               size="sm"
-                              disabled={requirementSubmitting || !requirementProjectId}
+                              disabled={
+                                requirementSubmitting || !requirementProjectId
+                              }
                             >
-                              {requirementSubmitting ? "Adding…" : "Add requirement"}
+                              {requirementSubmitting
+                                ? "Adding…"
+                                : "Add requirement"}
                             </Button>
                             <Button
                               type="button"

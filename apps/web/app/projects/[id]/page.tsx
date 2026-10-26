@@ -297,6 +297,7 @@ export default function ProjectDetailPage() {
         </div>
         <ProjectForm
           initial={project}
+          currency={project.currency}
           submitLabel="Save changes"
           onSubmit={async (values) => {
             setProject(await api.updateProject(project.id, values));
@@ -315,7 +316,7 @@ export default function ProjectDetailPage() {
         <ProjectOverview
           project={project}
           customer={customer}
-          currency={currency}
+          currency={project.currency ?? currency}
           showConvertAction={showConvertAction}
           showConvertForm={showConvertForm}
           convertName={convertName}

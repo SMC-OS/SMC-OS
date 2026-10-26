@@ -196,3 +196,19 @@ def test_quote_items_are_tenant_isolated(client, auth_headers, other_tenant_auth
     # browsing must not be able to reach it or its items at all.
     other = client.get(f"/api/v1/quotes/{quote_id}", headers=other_tenant_auth_headers)
     assert other.status_code == 404
+
+
+def test_explicit_layout_group_shares_slab_cost_and_persists_allocation(client, auth_headers):
+    payload = _multi_item_payload()
+    payload['items'] = payload['items'][:2]
+    for item in payload['items']:
+        item['slab_group'] = 'layout-qa'
+    response = client.post('/api/v1/quote', json=payload, headers=auth_headers)
+    assert response.status_code == 200, response.text
+    created = response.json()
+    assert created['slabs'] == 1
+    assert sum(item['line_total'] for item in created['items']) == created['price_before_vat']
+    fetched = client.get(f"/api/v1/quotes/{created['id']}", headers=auth_headers)
+    assert fetched.status_code == 200
+    assert all(item['slab_allocation']['group_slabs'] == 1 for item in fetched.json()['items'])
+    assert fetched.json()['items'][0]['slab_allocation']['group'] == 'layout-qa'

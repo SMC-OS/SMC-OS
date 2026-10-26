@@ -166,7 +166,7 @@ export default function ProjectsPage() {
 
                     {project.estimated_value != null && (
                       <span className="hidden shrink-0 text-sm font-medium text-foreground sm:block">
-                        {formatCurrency(project.estimated_value, currency)}
+                        {formatCurrency(project.estimated_value, project.currency ?? currency)}
                       </span>
                     )}
 

@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { usePolling } from "@/hooks/usePolling";
 import { ApiError, api } from "@/lib/api";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/lib/projects";
-import { formatCurrencyGBP } from "@/lib/utils";
+import { formatMoney } from "@/lib/utils";
 import type { DocumentOut } from "@/types/document";
 import type { MessageOut } from "@/types/message";
 import type { PortalPublicOut } from "@/types/portal";
@@ -215,14 +215,16 @@ export default function ClientPortalPage() {
                     <li key={quote.id} className="flex items-center gap-3 px-5 py-3">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">
-                          {quote.material} — {quote.thickness}
+                          {quote.quote_kind === "general"
+                            ? quote.title || "Construction quote"
+                            : [quote.material || "Stone quote", quote.thickness].filter(Boolean).join(" — ")}
                         </p>
                         <p className="truncate text-xs text-muted">
                           Quoted {formatDate(quote.created_at)}
                         </p>
                       </div>
                       <p className="text-sm font-semibold text-foreground">
-                        {formatCurrencyGBP(quote.total)}
+                        {formatMoney(quote.total, quote.currency ?? "GBP")}
                       </p>
                       <Button
                         type="button"

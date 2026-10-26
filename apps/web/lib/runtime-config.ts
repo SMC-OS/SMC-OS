@@ -1,4 +1,5 @@
-const DEVELOPMENT_API_BASE_URL = "http://127.0.0.1:8000";
+// Keep the dev API on the frontend's localhost site for HttpOnly SameSite cookies.
+const DEVELOPMENT_API_BASE_URL = "http://localhost:8000";
 const RAW_HTTPS_ORIGIN = /^https:\/\/[^/?#\\\s]+\/?$/i;
 
 function isLoopbackHostname(hostname: string): boolean {
@@ -72,4 +73,22 @@ export function resolveApiBaseUrl(
   }
 
   return url.origin;
+}
+
+/** Optional fixed server-side upstream for same-origin API transport.
+ * No request parameter can choose a destination. It shares the strict
+ * HTTPS-origin validation and never relaxes production cookie flags. */
+export function resolveApiProxyTarget(
+  candidate = process.env.API_PROXY_URL,
+  browserBase = resolveApiBaseUrl(),
+): string | null {
+  if (!candidate) return null;
+  let target: string;
+  try {
+    target = resolveApiBaseUrl("production", candidate);
+  } catch {
+    throw new Error("API_PROXY_URL must be a non-loopback absolute HTTPS origin");
+  }
+  if (target === browserBase) throw new Error("API_PROXY_URL cannot proxy back to the browser API origin");
+  return target;
 }
