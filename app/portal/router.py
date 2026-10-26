@@ -39,6 +39,7 @@ from app.portal.service import (
     portal_service,
 )
 from app.quotes.pdf import PDFGenerator, build_line_items, build_document_fields
+from app.quotes.numbering import invoice_reference
 from app.tenants import identity as tenant_identity
 from app.tenants.service import tenant_service
 
@@ -116,9 +117,11 @@ def download_portal_invoice(token: str, quote_id: uuid.UUID, db: Session = Depen
     customer = customer_service.get(db, quote.customer_id, tenant_id=quote.tenant_id)
     customer_name = customer.name if customer is not None else "No customer linked"
 
+    reference = invoice_reference(db, quote)
     pdf_bytes = PDFGenerator().create(
         {
             "id": quote.id,
+            "invoice_number": reference,
             "customer": customer_name,
             # Sprint 034 — the customer downloading this over a portal link
             # sees the identity of the tenant that issued the quote, keyed
@@ -142,11 +145,12 @@ def download_portal_invoice(token: str, quote_id: uuid.UUID, db: Session = Depen
         }
     )
 
+    db.commit()
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="invoice-{str(quote.id)[:8]}.pdf"'
+            "Content-Disposition": f'attachment; filename="{reference}.pdf"'
         },
     )
 

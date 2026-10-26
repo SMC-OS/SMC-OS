@@ -47,3 +47,6 @@ typing_extensions==4.16.0
 urllib3==2.7.0
 uvicorn==0.52.0
 websockets==16.1.1
+
+# Reliable PDF text inspection for document regression tests.
+pypdf==6.21.2

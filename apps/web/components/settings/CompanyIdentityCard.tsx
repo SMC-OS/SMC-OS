@@ -14,8 +14,27 @@ import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 // quotes and invoices. Deliberately not the platform's brand: the product
 // a tenant subscribes to is not the company their customer is buying from,
 // so nothing on this screen is prefilled with a platform name.
-const FIELDS: { key: keyof TenantProfileUpdate; label: string; hint?: string; wide?: boolean }[] = [
-  { key: "name", label: "Workspace name", hint: "Shown to your team inside the product." },
+const FIELDS: {
+  key: keyof TenantProfileUpdate;
+  label: string;
+  hint?: string;
+  wide?: boolean;
+}[] = [
+  {
+    key: "invoice_prefix",
+    label: "Invoice prefix",
+    hint: "For example Invoice or SMC-INV. Existing invoice numbers stay unchanged.",
+  },
+  {
+    key: "invoice_next_number",
+    label: "Next invoice number",
+    hint: "Starts at 1 and displays as 000001. Existing numbers are never reused.",
+  },
+  {
+    key: "name",
+    label: "Workspace name",
+    hint: "Shown to your team inside the product.",
+  },
   {
     key: "legal_name",
     label: "Registered company name",
@@ -51,7 +70,17 @@ type FormState = Record<string, string>;
 
 function toForm(profile: TenantProfile): FormState {
   return Object.fromEntries(
-    FIELDS.map(({ key }) => [key, (profile[key as keyof TenantProfile] as string | null) ?? ""])
+    FIELDS.map(({ key }) => [
+      key,
+      String(
+        profile[key as keyof TenantProfile] ??
+          (key === "invoice_prefix"
+            ? "Invoice"
+            : key === "invoice_next_number"
+              ? 1
+              : ""),
+      ),
+    ]),
   );
 }
 
@@ -94,9 +123,26 @@ export default function CompanyIdentityCard() {
     const changed: TenantProfileUpdate = {};
     for (const { key } of FIELDS) {
       const next = form[key] ?? "";
-      const previous = (profile[key as keyof TenantProfile] as string | null) ?? "";
+      const previous = String(
+        profile[key as keyof TenantProfile] ??
+          (key === "invoice_prefix"
+            ? "Invoice"
+            : key === "invoice_next_number"
+              ? 1
+              : ""),
+      );
       if (next !== previous) {
-        (changed as Record<string, string>)[key] = next;
+        if (key === "invoice_next_number") {
+          const number = Number(next);
+          if (!Number.isInteger(number) || number < 1 || number > 2000000000) {
+            setSaveError(
+              "Next invoice number must be a whole number from 1 to 2000000000.",
+            );
+            setSaving(false);
+            return;
+          }
+          changed.invoice_next_number = number;
+        } else (changed as Record<string, string>)[key] = next;
       }
     }
 
@@ -123,7 +169,7 @@ export default function CompanyIdentityCard() {
       setSaveError(
         err instanceof ApiError && err.status === 403
           ? "Only workspace owners can change company details."
-          : "Something went wrong."
+          : "Something went wrong.",
       );
     } finally {
       setSaving(false);
@@ -160,6 +206,19 @@ export default function CompanyIdentityCard() {
                 >
                   <Input
                     id={`company-${key}`}
+                    type={key === "invoice_next_number" ? "number" : "text"}
+                    min={key === "invoice_next_number" ? 1 : undefined}
+                    max={key === "invoice_next_number" ? 2000000000 : undefined}
+                    step={key === "invoice_next_number" ? 1 : undefined}
+                    maxLength={key === "invoice_prefix" ? 40 : undefined}
+                    pattern={
+                      key === "invoice_prefix"
+                        ? "[A-Za-z0-9][A-Za-z0-9 _-]{0,39}"
+                        : undefined
+                    }
+                    required={
+                      key === "invoice_prefix" || key === "invoice_next_number"
+                    }
                     value={form[key] ?? ""}
                     onChange={(e) => update(key, e.target.value)}
                   />

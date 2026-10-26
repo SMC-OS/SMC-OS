@@ -451,7 +451,7 @@ export const api = {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `invoice-${quoteId.slice(0, 8)}.pdf`;
+    link.download = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "Invoice.pdf";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -832,7 +832,7 @@ export const api = {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `invoice-${id.slice(0, 8)}.pdf`;
+    link.download = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "Invoice.pdf";
     document.body.appendChild(link);
     link.click();
     link.remove();

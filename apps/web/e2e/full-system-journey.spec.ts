@@ -1,3 +1,4 @@
+import { setStoneJobPrice } from "./stone-pricing-helper";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -241,6 +242,10 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("3200");
   const quoteCreated = page.waitForResponse(
@@ -250,8 +255,28 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({
   await page
     .getByRole("button", { name: "Next: Design details", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Next: Pricing", exact: true })
+    .click();
+  await setStoneJobPrice(page);
   await page.getByRole("button", { name: "Next: Review", exact: true }).click();
-  await page.getByRole("button", { name: "Calculate Quote" }).click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote" }).click();
   const quoteResponse = await quoteCreated;
   expect(quoteResponse.status()).toBe(200);
   const quoteId = (await quoteResponse.json()).id as string;

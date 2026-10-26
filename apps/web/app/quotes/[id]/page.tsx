@@ -33,7 +33,10 @@ const STATUS_TONE: Record<QuoteStatus, "neutral" | "info" | "success"> = {
  * quote's, so a future quote mixing a worktop with two days of fitting
  * labour renders both correctly with no further change here.
  */
-function describeLine(item: QuoteItem, currency: string): { title: string; detail: string } {
+function describeLine(
+  item: QuoteItem,
+  currency: string,
+): { title: string; detail: string } {
   if (item.line_kind === "stone") {
     const material = item.material
       ? `${item.material}${item.thickness ? ` (${item.thickness})` : ""}`
@@ -47,14 +50,18 @@ function describeLine(item: QuoteItem, currency: string): { title: string; detai
           ? `${item.quantity} × ${item.length_mm}mm × ${item.width_mm}mm`
           : `${item.quantity}`,
         item.notes,
-      ].filter(Boolean).join(". "),
+      ]
+        .filter(Boolean)
+        .join(". "),
     };
   }
 
   return {
     title: item.description ?? "Line item",
     detail: `${item.quantity} ${item.unit ?? "item"}${
-      item.unit_price !== null ? ` @ ${formatMoney(item.unit_price, currency)}` : ""
+      item.unit_price !== null
+        ? ` @ ${formatMoney(item.unit_price, currency)}`
+        : ""
     }`,
   };
 }
@@ -82,15 +89,18 @@ export default function QuoteDetailPage() {
       .then((loaded) => {
         setQuote(loaded);
         if (loaded.customer_id) {
-          api.getCustomer(loaded.customer_id).then(setCustomer).catch(() => {});
+          api
+            .getCustomer(loaded.customer_id)
+            .then(setCustomer)
+            .catch(() => {});
         }
       })
       .catch((err) =>
         setError(
           err instanceof ApiError && err.status === 404
             ? "Quote not found."
-            : "Something went wrong."
-        )
+            : "Something went wrong.",
+        ),
       );
   }, [isReady, isAuthenticated, router, params.id]);
 
@@ -99,7 +109,7 @@ export default function QuoteDetailPage() {
   async function run(
     action: () => Promise<void>,
     setBusy: (busy: boolean) => void,
-    failure: string
+    failure: string,
   ) {
     setBusy(true);
     setError(null);
@@ -121,7 +131,10 @@ export default function QuoteDetailPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <Link href="/quotes" className="tap-link text-sm text-muted hover:text-foreground">
+        <Link
+          href="/quotes"
+          className="tap-link text-sm text-muted hover:text-foreground"
+        >
           &larr; Quotes
         </Link>
       </div>
@@ -158,7 +171,8 @@ export default function QuoteDetailPage() {
                   </h1>
                   <p className="text-xs text-muted">
                     Created {formatRelativeTime(quote.created_at)}
-                    {quote.valid_until && ` · valid until ${formatDate(quote.valid_until)}`}
+                    {quote.valid_until &&
+                      ` · valid until ${formatDate(quote.valid_until)}`}
                   </p>
                 </div>
                 <span className="text-2xl font-semibold text-foreground">
@@ -198,7 +212,9 @@ export default function QuoteDetailPage() {
 
               {quote.scope_of_works && (
                 <div className="mt-4 border-t border-border pt-4">
-                  <p className="text-xs font-medium text-muted">Scope of works</p>
+                  <p className="text-xs font-medium text-muted">
+                    Scope of works
+                  </p>
                   <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
                     {quote.scope_of_works}
                   </p>
@@ -213,7 +229,7 @@ export default function QuoteDetailPage() {
                       run(
                         async () => setQuote(await api.sendQuote(quote.id)),
                         setSending,
-                        "Could not mark the quote as sent."
+                        "Could not mark the quote as sent.",
                       )
                     }
                   >
@@ -222,21 +238,23 @@ export default function QuoteDetailPage() {
                   </Button>
                 )}
 
-                {(quote.status === "draft" || quote.status === "sent") && canAct && (
-                  <Button
-                    variant={quote.status === "sent" ? "primary" : "outline"}
-                    disabled={approving}
-                    onClick={() =>
-                      run(
-                        async () => setQuote(await api.approveQuote(quote.id)),
-                        setApproving,
-                        "Could not approve the quote."
-                      )
-                    }
-                  >
-                    {approving ? "Approving…" : "Approve"}
-                  </Button>
-                )}
+                {(quote.status === "draft" || quote.status === "sent") &&
+                  canAct && (
+                    <Button
+                      variant={quote.status === "sent" ? "primary" : "outline"}
+                      disabled={approving}
+                      onClick={() =>
+                        run(
+                          async () =>
+                            setQuote(await api.approveQuote(quote.id)),
+                          setApproving,
+                          "Could not approve the quote.",
+                        )
+                      }
+                    >
+                      {approving ? "Approving…" : "Approve"}
+                    </Button>
+                  )}
 
                 {quote.status === "approved" && canAct && (
                   <Button
@@ -248,7 +266,7 @@ export default function QuoteDetailPage() {
                           router.push(`/projects/${project.id}`);
                         },
                         setHandingOff,
-                        "Could not hand off the quote."
+                        "Could not hand off the quote.",
                       )
                     }
                   >
@@ -262,11 +280,13 @@ export default function QuoteDetailPage() {
                     quote is a document someone else already has (matches
                     app/quotes/service.py's QuoteService.update_general
                     refusals exactly). */}
-                {quote.status === "draft" && quote.quote_kind === "general" && canAct && (
-                  <Link href={`/quotes/${quote.id}/edit`}>
-                    <Button variant="outline">Edit</Button>
-                  </Link>
-                )}
+                {quote.status === "draft" &&
+                  quote.quote_kind === "general" &&
+                  canAct && (
+                    <Link href={`/quotes/${quote.id}/edit`}>
+                      <Button variant="outline">Edit</Button>
+                    </Link>
+                  )}
 
                 <Button
                   variant="outline"
@@ -275,7 +295,7 @@ export default function QuoteDetailPage() {
                     run(
                       () => api.downloadInvoice(quote.id),
                       setDownloading,
-                      "Could not download the PDF."
+                      "Could not download the PDF.",
                     )
                   }
                 >
@@ -289,8 +309,9 @@ export default function QuoteDetailPage() {
                 // that a person sent it, and pretending otherwise here
                 // would be the exact kind of claim this sprint forbids.
                 <p className="mt-3 text-xs text-muted">
-                  GeoCore doesn&rsquo;t email customers yet. Download the PDF or share a
-                  portal link, then mark the quote as sent so it can be chased.
+                  GeoCore doesn&rsquo;t email customers yet. Download the PDF or
+                  share a portal link, then mark the quote as sent so it can be
+                  chased.
                 </p>
               )}
             </CardContent>
@@ -312,12 +333,16 @@ export default function QuoteDetailPage() {
                       className="flex items-start justify-between gap-3 rounded-lg bg-surface-hover px-3 py-2.5"
                     >
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground">{title}</p>
+                        <p className="text-sm font-medium text-foreground">
+                          {title}
+                        </p>
                         <p className="text-xs text-muted">{detail}</p>
                       </div>
-                      <span className="shrink-0 text-sm text-foreground">
-                        {money(item.line_total)}
-                      </span>
+                      {quote.pricing_mode !== "manual" && (
+                        <span className="shrink-0 text-sm text-foreground">
+                          {money(item.line_total)}
+                        </span>
+                      )}
                     </li>
                   );
                 })}
@@ -333,7 +358,9 @@ export default function QuoteDetailPage() {
                 {quote.discount_amount ? (
                   <div className="flex justify-between">
                     <dt className="text-muted">Discount</dt>
-                    <dd className="text-foreground">−{money(quote.discount_amount)}</dd>
+                    <dd className="text-foreground">
+                      −{money(quote.discount_amount)}
+                    </dd>
                   </div>
                 ) : null}
                 <div className="flex justify-between">
@@ -344,7 +371,9 @@ export default function QuoteDetailPage() {
                 </div>
                 <div className="flex justify-between border-t border-border pt-2 text-base">
                   <dt className="font-semibold text-foreground">Total</dt>
-                  <dd className="font-semibold text-foreground">{money(quote.total)}</dd>
+                  <dd className="font-semibold text-foreground">
+                    {money(quote.total)}
+                  </dd>
                 </div>
               </dl>
             </CardContent>
@@ -366,7 +395,9 @@ export default function QuoteDetailPage() {
                 )}
                 {quote.terms && (
                   <div>
-                    <p className="text-xs font-medium text-muted">Payment terms</p>
+                    <p className="text-xs font-medium text-muted">
+                      Payment terms
+                    </p>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
                       {quote.terms}
                     </p>

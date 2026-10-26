@@ -281,9 +281,7 @@ describe("NewQuotePage — multi-item editor (Sprint 033)", () => {
     await userEvent.clear(screen.getByLabelText(/width\/depth \(mm\)/i));
     await userEvent.type(screen.getByLabelText(/width\/depth \(mm\)/i), "600");
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -315,14 +313,15 @@ describe("NewQuotePage — multi-item editor (Sprint 033)", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /\+ add item/i }));
     expect(screen.getByText("Item 2")).toBeInTheDocument();
+    fireEvent.change(screen.getAllByLabelText("Material")[1], {
+      target: { value: "My second stone" },
+    });
 
     const lengthInputs = screen.getAllByLabelText(/^length \(mm\)$/i);
     expect(lengthInputs).toHaveLength(2);
     await userEvent.type(lengthInputs[1], "1200");
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([u]) =>
@@ -421,9 +420,7 @@ describe("NewQuotePage — multi-item editor (Sprint 033)", () => {
       "2400",
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     const resultHeading = await screen.findByText(/quote for sarah whitfield/i);
     const card = resultHeading.closest("div")?.parentElement as HTMLElement;
@@ -446,9 +443,7 @@ describe("NewQuotePage — Master Catalogue integration (Sprint 042, Plan 03)", 
       "Sarah Whitfield",
     );
     await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -474,16 +469,17 @@ describe("NewQuotePage — Master Catalogue integration (Sprint 042, Plan 03)", 
     await userEvent.click(screen.getByRole("button", { name: /change/i }));
 
     expect(screen.queryByText("From catalogue")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Material")).toBeInTheDocument();
+    expect(screen.getByLabelText("Material")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("Material"), {
+      target: { value: "My chosen stone" },
+    });
 
     await userEvent.type(
       screen.getByLabelText(/customer name/i),
       "Sarah Whitfield",
     );
     await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([u]) =>
@@ -506,9 +502,7 @@ describe("NewQuotePage — Master Catalogue integration (Sprint 042, Plan 03)", 
       "Sarah Whitfield",
     );
     await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([u]) =>
@@ -555,9 +549,7 @@ describe("NewQuotePage — post-release remediation (§4): inline catalogue mate
       "Sarah Whitfield",
     );
     await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([u]) =>
@@ -599,9 +591,7 @@ describe("NewQuotePage — post-release remediation (§4): layout picker and ext
       "Sarah Whitfield",
     );
     await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([u]) =>
@@ -637,9 +627,7 @@ describe("NewQuotePage — post-release remediation (§4): layout picker and ext
         length,
       );
     }
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
     await waitFor(() =>
       expect(
         fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
@@ -666,9 +654,7 @@ describe("NewQuotePage — post-release remediation (§4): layout picker and ext
       "Sarah Whitfield",
     );
     await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([u]) =>
@@ -692,9 +678,7 @@ describe("NewQuotePage — post-release remediation (§4): layout picker and ext
       "Sarah Whitfield",
     );
     await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-    await userEvent.click(
-      screen.getByRole("button", { name: /calculate quote/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([u]) =>
@@ -740,14 +724,12 @@ it("keeps a quote-only custom material in the submitted stone quote", async () =
     "Synthetic customer",
   );
   await userEvent.type(screen.getByLabelText("Length (mm)"), "2400");
-  await userEvent.click(
-    screen.getByRole("button", { name: /calculate quote/i }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
   await waitFor(() =>
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/quote"),
       expect.objectContaining({
-        body: expect.stringContaining('"custom_material":'),
+        body: expect.stringContaining('"pricing_mode":"manual"'),
       }),
     ),
   );
@@ -758,7 +740,6 @@ it("keeps a quote-only custom material in the submitted stone quote", async () =
   expect(JSON.parse(String(call?.[1]?.body)).items[0]).toEqual(
     expect.objectContaining({
       material: custom.canonical_name,
-      custom_material: custom,
       catalogue_surface_id: null,
     }),
   );
@@ -771,7 +752,7 @@ it("blocks a lost quote-only draft and provides a real Catalogue return link", a
     screen.getByRole("link", { name: "Return to the Catalogue" }),
   ).toHaveAttribute("href", "/catalogue");
   expect(
-    screen.queryByRole("button", { name: /calculate quote/i }),
+    screen.queryByRole("button", { name: /save quote/i }),
   ).not.toBeInTheDocument();
 });
 
@@ -788,6 +769,14 @@ function renderEditor() {
     });
   const postcode = screen.queryByLabelText("Postcode");
   if (postcode) fireEvent.change(postcode, { target: { value: "NW2 7RP" } });
+  for (const material of screen.queryAllByLabelText("Material")) {
+    if (material instanceof HTMLInputElement && !material.value)
+      fireEvent.change(material, { target: { value: "Calacatta Oro" } });
+  }
+  const price = screen.queryByLabelText(
+    "Your job price before discount and VAT (£)",
+  );
+  if (price) fireEvent.change(price, { target: { value: "2350" } });
   return view;
 }
 
@@ -805,6 +794,9 @@ it("guides material to layout to details to review without losing measurements",
   });
   fireEvent.change(screen.getByLabelText("Postcode"), {
     target: { value: "NW2 7RP" },
+  });
+  fireEvent.change(screen.getByLabelText("Material"), {
+    target: { value: "Synthetic test stone" },
   });
   await userEvent.click(screen.getByRole("button", { name: "Next: Layout" }));
   await userEvent.selectOptions(
@@ -835,11 +827,19 @@ it("returns to Material when adding an item from Review", async () => {
   fireEvent.change(screen.getByLabelText("Postcode"), {
     target: { value: "NW2 7RP" },
   });
+  fireEvent.change(screen.getByLabelText("Material"), {
+    target: { value: "Synthetic test stone" },
+  });
   await userEvent.click(screen.getByRole("button", { name: "Next: Layout" }));
   await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
   await userEvent.type(screen.getByLabelText("Width/Depth (mm)"), "600");
   await userEvent.click(
     screen.getByRole("button", { name: "Next: Design details" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Next: Pricing" }));
+  fireEvent.change(
+    screen.getByLabelText("Your job price before discount and VAT (£)"),
+    { target: { value: "1000" } },
   );
   await userEvent.click(screen.getByRole("button", { name: "Next: Review" }));
 
@@ -866,9 +866,7 @@ it("records sink details and prices measured upstands as a separate line", async
   await userEvent.click(screen.getByLabelText(/upstand included/i));
   await userEvent.type(screen.getByLabelText("Upstand length (mm)"), "3000");
   await userEvent.type(screen.getByLabelText("Upstand height (mm)"), "100");
-  await userEvent.click(
-    screen.getByRole("button", { name: /calculate quote/i }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
   await waitFor(() =>
     expect(
       fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
@@ -930,9 +928,7 @@ it("saves a drawing through the existing customer-document API and references it
   await waitFor(() =>
     expect(screen.getByText(/Saved drawing: kitchen.pdf/)).toBeInTheDocument(),
   );
-  await userEvent.click(
-    screen.getByRole("button", { name: /calculate quote/i }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
   await waitFor(() =>
     expect(
       fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
@@ -962,9 +958,7 @@ it("records the selected polished edge profile in the saved quote notes", async 
   ])
     expect(within(profiles).getByRole("option", { name })).toBeInTheDocument();
   await userEvent.selectOptions(profiles, "Double ogee");
-  await userEvent.click(
-    screen.getByRole("button", { name: /calculate quote/i }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
   await waitFor(() =>
     expect(
       fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
@@ -976,38 +970,50 @@ it("records the selected polished edge profile in the saved quote notes", async 
   );
 });
 
-it("can quote a manually named material with an explicit slab selling price", async () => {
+it("sends only the user job price with percentage discount and optional VAT", async () => {
   renderEditor();
-  await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");
-  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-  await userEvent.clear(screen.getByLabelText("Material"));
-  await userEvent.type(screen.getByLabelText("Material"), "My own marble");
-  if (
-    !(screen.getByLabelText("Enter my own slab price") as HTMLInputElement)
-      .checked
-  )
-    await userEvent.click(screen.getByLabelText("Enter my own slab price"));
-  await userEvent.type(
-    screen.getByLabelText("Selling price per slab (£)"),
-    "975",
+  fireEvent.change(screen.getByLabelText("Customer name"), {
+    target: { value: "Pilot" },
+  });
+  fireEvent.change(screen.getByLabelText("Length (mm)"), {
+    target: { value: "2400" },
+  });
+  fireEvent.change(screen.getByLabelText("Material"), {
+    target: { value: "My own marble" },
+  });
+  fireEvent.change(
+    screen.getByLabelText("Your job price before discount and VAT (£)"),
+    { target: { value: "3000" } },
   );
-  await userEvent.click(
-    screen.getByRole("button", { name: /calculate quote/i }),
-  );
+  fireEvent.change(screen.getByLabelText("Discount (%)"), {
+    target: { value: "10" },
+  });
+  await userEvent.click(screen.getByLabelText("Add VAT"));
+  expect(screen.getByLabelText("VAT rate (%)")).toHaveValue(20);
+  expect(screen.getByText("£3,240.00")).toBeVisible();
+  expect(
+    screen.queryByLabelText("Selling price per slab (£)"),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
   await waitFor(() =>
     expect(
       fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
     ).toBe(true),
   );
-  const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
-  expect(
-    JSON.parse(String(call?.[1]?.body)).items[0].custom_material,
-  ).toMatchObject({
-    canonical_name: "My own marble",
-    selling_price_per_slab: 975,
-    save_to_catalogue: false,
-    variant: { thickness_mm: 20, slab_length_mm: 3200, slab_width_mm: 1600 },
+  const body = JSON.parse(
+    String(
+      fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"))?.[1]
+        ?.body,
+    ),
+  );
+  expect(body).toMatchObject({
+    pricing_mode: "manual",
+    manual_price: 3000,
+    discount_percent: 10,
+    vat_rate: 0.2,
   });
+  expect(body.items[0].material).toBe("My own marble");
+  expect(body.items[0].custom_material).toBeUndefined();
 });
 
 it("queues a drawing for a new customer and saves it before creating the quote", async () => {
@@ -1044,9 +1050,7 @@ it("queues a drawing for a new customer and saves it before creating the quote",
   expect(
     fetchMock.mock.calls.some(([u]) => String(u).includes("/documents?")),
   ).toBe(false);
-  await userEvent.click(
-    screen.getByRole("button", { name: /calculate quote/i }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
   await waitFor(() =>
     expect(
       fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
@@ -1066,9 +1070,7 @@ it("keeps a draft and blocks saving when the session is signed out", async () =>
     "Retained Pilot",
   );
   await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-  await userEvent.click(
-    screen.getByRole("button", { name: /calculate quote/i }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
   expect(screen.getByRole("alert")).toHaveTextContent(/sign in again/i);
   expect(screen.getByLabelText(/customer name/i)).toHaveValue("Retained Pilot");
   expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote"))).toBe(
@@ -1076,92 +1078,45 @@ it("keeps a draft and blocks saving when the session is signed out", async () =>
   );
 });
 
-it("can supply a quote-only price for a selected catalogue material without ambiguous linkage", async () => {
+it("keeps catalogue linkage as a specification without sending catalogue prices", async () => {
   currentSearch =
     "catalogue_surface_id=unpriced-surface&catalogue_variant_id=unpriced-variant&material=Unpriced%20marble&thickness=20mm";
   renderEditor();
-  await userEvent.type(screen.getByLabelText(/customer name/i), "Pilot");
-  await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-  if (
-    !(screen.getByLabelText("Enter my own slab price") as HTMLInputElement)
-      .checked
-  )
-    await userEvent.click(screen.getByLabelText("Enter my own slab price"));
-  await userEvent.type(
-    screen.getByLabelText("Selling price per slab (£)"),
-    "900",
-  );
-  await userEvent.click(
-    screen.getByRole("button", { name: /calculate quote/i }),
-  );
+  fireEvent.change(screen.getByLabelText("Customer name"), {
+    target: { value: "Pilot" },
+  });
+  fireEvent.change(screen.getByLabelText("Length (mm)"), {
+    target: { value: "2400" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
   await waitFor(() =>
     expect(
       fetchMock.mock.calls.some(([u]) => String(u).endsWith("/quote")),
     ).toBe(true),
   );
-  const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"));
-  const row = JSON.parse(String(call?.[1]?.body)).items[0];
-  expect(row.custom_material).toMatchObject({
-    canonical_name: "Unpriced marble",
-    selling_price_per_slab: 900,
-    save_to_catalogue: false,
+  const body = JSON.parse(
+    String(
+      fetchMock.mock.calls.find(([u]) => String(u).endsWith("/quote"))?.[1]
+        ?.body,
+    ),
+  );
+  expect(body.items[0]).toMatchObject({
+    catalogue_surface_id: "unpriced-surface",
+    catalogue_variant_id: "unpriced-variant",
   });
-  expect(row.catalogue_surface_id).toBeNull();
-  expect(row.catalogue_variant_id).toBeNull();
+  expect(body.items[0].custom_material).toBeUndefined();
+  expect(body.vat_rate).toBe(0);
 });
 
-it("requires a fresh price and uses known slab dimensions when choosing another unpriced material", async () => {
-  const original = fetchMock.getMockImplementation() as (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ) => Promise<Response>;
-  fetchMock.mockImplementation(async (input, init) => {
-    const response = await original(
-      String(input).includes("/catalogue/surfaces?")
-        ? `${input}&q=Silestone`
-        : input,
-      init,
-    );
-    if (String(input).includes("/catalogue/surfaces?"))
-      return jsonResponse(
-        (await response.json()).map((row: object) => ({
-          ...row,
-          has_tenant_price: false,
-        })),
-      );
-    if (String(input).endsWith("/catalogue/surfaces/surface-search-1")) {
-      const detail = await response.json();
-      detail.variants[0].slab_length_mm = 3000;
-      detail.variants[0].slab_width_mm = 1400;
-      return jsonResponse(detail);
-    }
-    return response;
-  });
-  renderEditor();
-  if (
-    !(screen.getByLabelText("Enter my own slab price") as HTMLInputElement)
-      .checked
-  )
-    await userEvent.click(screen.getByLabelText("Enter my own slab price"));
-  await userEvent.type(
-    screen.getByLabelText("Selling price per slab (£)"),
-    "900",
-  );
-  await userEvent.click(
-    screen.getByRole("button", { name: "Browse materials" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("button", { name: /calacatta gold/i }),
-  );
-  expect(screen.getByLabelText("Selling price per slab (£)")).toHaveValue(null);
-  expect(screen.getByLabelText("Slab length (mm)")).toHaveValue(3000);
-  expect(screen.getByLabelText("Slab width (mm)")).toHaveValue(1400);
-  await userEvent.type(
-    screen.getByLabelText("Selling price per slab (£)"),
-    "950",
-  );
+it("starts new materials empty and clears a selected material on Change", async () => {
+  const view = render(<NewQuotePage />);
+  expect(screen.getByLabelText("Material")).toHaveValue("");
+  view.unmount();
+  currentSearch =
+    "catalogue_surface_id=surface&material=Calacatta%20Gold&thickness=20mm";
+  render(<NewQuotePage />);
   await userEvent.click(screen.getByRole("button", { name: "Change" }));
-  expect(screen.getByLabelText("Selling price per slab (£)")).toHaveValue(null);
+  expect(screen.getByLabelText("Material")).toHaveValue("");
 });
 
 it("checks an expired session before submitting a workspace quote", async () => {
@@ -1182,9 +1137,7 @@ it("checks an expired session before submitting a workspace quote", async () => 
     "Retained Pilot",
   );
   await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");
-  await userEvent.click(
-    screen.getByRole("button", { name: /calculate quote/i }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: /save quote/i }));
   await waitFor(() =>
     expect(screen.getByRole("alert")).toHaveTextContent(/sign in again/i),
   );
@@ -1229,9 +1182,7 @@ it("records splashback without dimensions and saves any typed stone as pricing p
   await userEvent.click(screen.getByLabelText("Splashback included"));
   expect(screen.queryByLabelText(/splashback length/i)).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/splashback height/i)).not.toBeInTheDocument();
-  await userEvent.click(
-    screen.getByRole("button", { name: "Calculate Quote" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Save Quote" }));
   expect(
     await screen.findByText("Draft saved — pricing pending"),
   ).toBeInTheDocument();
@@ -1242,7 +1193,7 @@ it("records splashback without dimensions and saves any typed stone as pricing p
   expect(body.items).toHaveLength(1);
   expect(body.items[0].material).toBe("Any stone I choose");
   expect(body.items[0].notes).toContain("Splashback included");
-  expect(body.items[0].custom_material.selling_price_per_slab).toBeUndefined();
+  expect(body.items[0].custom_material).toBeUndefined();
   expect(body).toMatchObject({
     allow_unpriced: true,
     site_address_line1: "1 Synthetic Street, London",

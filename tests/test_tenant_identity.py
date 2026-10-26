@@ -60,29 +60,10 @@ class _FakeTenant:
 
 
 def _pdf_text(pdf: bytes) -> str:
-    """Read the rendered text back out of a ReportLab PDF.
-
-    ReportLab writes content streams as ASCII85-then-Flate, so the visible
-    text is not present in the raw bytes — a naive `b"Acme" in pdf` assert
-    would pass vacuously against *any* document, including a wrong one.
-    Decoding both layers keeps these assertions honest without adding a
-    PDF-parsing dependency to the project for one test module.
-    """
-    chunks = []
-    for match in re.finditer(rb"stream(.*?)endstream", pdf, re.S):
-        raw = match.group(1).strip()
-        if raw.endswith(b"~>"):
-            raw = raw[:-2]
-        try:
-            raw = base64.a85decode(raw)
-        except Exception:
-            pass
-        try:
-            raw = zlib.decompress(raw)
-        except Exception:
-            pass
-        chunks.append(raw.decode("latin-1", "replace"))
-    return "\n".join(chunks)
+    """Parse real PDF objects, including embedded font and content streams."""
+    from io import BytesIO
+    from pypdf import PdfReader
+    return "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
 
 
 def _invoice(company: CompanyIdentity | None) -> dict:

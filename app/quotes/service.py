@@ -281,7 +281,9 @@ class QuoteService:
             # quote (ADR-023, tenant_id=None) has no workspace to ask,
             # and falls back to the column default.
             currency=self._tenant_currency(db, tenant_id),
-            subtotal=result["price_before_vat"],
+            subtotal=result.get("subtotal", result["price_before_vat"]),
+            discount_amount=result.get("discount_amount"),
+            vat_rate=result.get("vat_rate", 0.20),
             site_address_line1=quote.site_address_line1,
             site_postcode=quote.postcode,
         )

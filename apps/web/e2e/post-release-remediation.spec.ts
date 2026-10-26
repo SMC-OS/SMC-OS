@@ -1,3 +1,4 @@
+import { setStoneJobPrice } from "./stone-pricing-helper";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
@@ -127,6 +128,10 @@ test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").first().fill("2400");
 
@@ -137,8 +142,28 @@ test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links
   await page
     .getByRole("button", { name: "Next: Design details", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Next: Pricing", exact: true })
+    .click();
+  await setStoneJobPrice(page);
   await page.getByRole("button", { name: "Next: Review", exact: true }).click();
-  await page.getByRole("button", { name: "Calculate Quote" }).click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote" }).click();
   const created = await (await quoteCreated).json();
 
   await expect(page.getByRole("heading", { name: /quote for/i })).toBeVisible();
@@ -162,6 +187,10 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page
     .getByLabel("Worktop layout", { exact: true })
@@ -179,20 +208,38 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
   await page
     .getByLabel("Sink mounting", { exact: true })
     .selectOption("Undermount");
+  await page
+    .getByRole("button", { name: "Next: Pricing", exact: true })
+    .click();
+  await setStoneJobPrice(page);
   await page.getByRole("button", { name: "Next: Review", exact: true }).click();
   const createdResponse = page.waitForResponse(
     (res) =>
       res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
-  await page
-    .getByRole("button", { name: "Calculate Quote", exact: true })
-    .click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote", exact: true }).click();
   const created = await (await createdResponse).json();
   expect(
     created.items.map((item: { length_mm: number }) => item.length_mm),
   ).toEqual([2400, 1800, 1600]);
-  expect(created.slabs).toBe(1);
-  expect(created.items[2].slab_allocation.group_slabs).toBe(1);
+  expect(created.slabs).toBeNull();
+  expect(created.items[2].price_per_slab).toBeNull();
   // Assert on the itemised RESULT, not the form: the picker labels stay
   // on screen after calculating, so a bare getByText(/U-shape/) matched
   // the picker (passing without checking the result at all) or, once the
@@ -211,7 +258,7 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
   ).toBeVisible();
 });
 
-test("C_unknown_material_draft_can_be_priced_with_edges_and_new_customer_drawing", async ({
+test("C_manual_job_price_records_edges_and_new_customer_drawing", async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -228,32 +275,9 @@ test("C_unknown_material_draft_can_be_priced_with_edges_and_new_customer_drawing
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
   await page.getByLabel("Material", { exact: true }).fill(materialName);
   await page.getByLabel("Length (mm)", { exact: true }).fill("2400");
-  const rejected = page.waitForResponse(
-    (res) =>
-      res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
-  );
   await page
-    .getByRole("button", { name: "Calculate Quote", exact: true })
-    .click();
-  const rejection = await rejected;
-  expect(rejection.status()).toBe(200);
-  const pending = await rejection.json();
-  expect(pending.pricing_pending).toBe(true);
-  expect(pending.total).toBeNull();
-  await expect(
-    page.getByRole("heading", { name: "Draft saved — pricing pending" }),
-  ).toBeVisible();
-  const refused = await api.post(`/api/v1/quotes/${pending.id}/approve`, {
-    headers: authHeaders,
-  });
-  expect(refused.status()).toBe(409);
-  await expect(page.getByLabel("Customer name", { exact: true })).toHaveValue(
-    customerName,
-  );
-
-  await page.getByLabel("Enter my own slab price").check();
-  await page.getByLabel("Manual material type").selectOption("marble");
-  await page.getByLabel("Selling price per slab (£)").fill("900");
+    .getByLabel("Your job price before discount and VAT (£)")
+    .fill("900");
   await page.getByLabel("Splashback included", { exact: true }).check();
   await expect(page.getByLabel("Splashback length (mm)")).toHaveCount(0);
   await page.getByLabel("Polished edge", { exact: true }).check();
@@ -274,20 +298,33 @@ test("C_unknown_material_draft_can_be_priced_with_edges_and_new_customer_drawing
     (res) =>
       res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
-  await page
-    .getByRole("button", { name: "Calculate Quote", exact: true })
-    .click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote", exact: true }).click();
   const response = await accepted;
   expect(response.status()).toBe(200);
   const created = await response.json();
   expect(created.customer_id).toBeTruthy();
-  expect(created.id).toBe(pending.id);
-  expect(created.items[0].price_per_slab).toBe(900);
+  expect(created.items[0].price_per_slab).toBeNull();
   expect(created.items[0].notes).toContain(
     "Polished edge profile: Double ogee",
   );
   expect(created.items[0].notes).toContain("pilot-plan.pdf");
-  expect(created.total).toBe(1080);
+  expect(created.total).toBe(900);
   await expect(
     page.getByRole("heading", { name: `Quote for ${customerName}` }),
   ).toBeVisible();
@@ -377,9 +414,23 @@ test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymou
     if (request.method() === "POST" && request.url().endsWith("/api/v1/quote"))
       quotePosts++;
   });
-  await page
-    .getByRole("button", { name: "Calculate Quote", exact: true })
-    .click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote", exact: true }).click();
   await expect(
     page.getByRole("alert").filter({ hasText: "Sign in again" }),
   ).toContainText("Sign in again");
@@ -407,15 +458,30 @@ test("D_expired_session_keeps_the_quote_draft_and_selected_file_without_anonymou
   await expect(
     page.getByText(/Ready to attach: retained-plan.pdf/),
   ).toBeVisible();
-  await page.getByLabel("Enter my own slab price").check();
-  await page.getByLabel("Selling price per slab (£)").fill("900");
+  await page
+    .getByLabel("Your job price before discount and VAT (£)")
+    .fill("900");
   const accepted = page.waitForResponse(
     (res) =>
       res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
-  await page
-    .getByRole("button", { name: "Calculate Quote", exact: true })
-    .click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote", exact: true }).click();
   const response = await accepted;
   expect(response.status()).toBe(200);
   const created = await response.json();
