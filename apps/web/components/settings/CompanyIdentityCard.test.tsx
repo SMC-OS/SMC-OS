@@ -12,7 +12,13 @@
  *     exact confusion this sprint exists to fix.
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCompanyProfileMock = vi.fn();
@@ -24,7 +30,8 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     api: {
       getCompanyProfile: (...args: unknown[]) => getCompanyProfileMock(...args),
-      updateCompanyProfile: (...args: unknown[]) => updateCompanyProfileMock(...args),
+      updateCompanyProfile: (...args: unknown[]) =>
+        updateCompanyProfileMock(...args),
     },
   };
 });
@@ -72,15 +79,17 @@ describe("CompanyIdentityCard", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("Registered company name")).toHaveValue(
-        "Riverside Stoneworks Ltd"
+        "Riverside Stoneworks Ltd",
       );
     });
-    expect(screen.getByLabelText("VAT registration number")).toHaveValue("GB123456789");
+    expect(screen.getByLabelText("VAT registration number")).toHaveValue(
+      "GB123456789",
+    );
   });
 
   it("never_prefills_a_platform_or_hardcoded_company_name", async () => {
     getCompanyProfileMock.mockResolvedValue(
-      profile({ legal_name: null, company_number: null, vat_number: null })
+      profile({ legal_name: null, company_number: null, vat_number: null }),
     );
     render(<CompanyIdentityCard />);
 
@@ -107,10 +116,14 @@ describe("CompanyIdentityCard", () => {
     fireEvent.change(screen.getByLabelText("Town / city"), {
       target: { value: "Bradford" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /save company details/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save company details/i }),
+    );
 
     await waitFor(() => {
-      expect(updateCompanyProfileMock).toHaveBeenCalledWith({ city: "Bradford" });
+      expect(updateCompanyProfileMock).toHaveBeenCalledWith({
+        city: "Bradford",
+      });
     });
   });
 
@@ -121,7 +134,9 @@ describe("CompanyIdentityCard", () => {
       expect(screen.getByLabelText("Town / city")).toHaveValue("Leeds");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /save company details/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save company details/i }),
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Company details saved.")).toBeInTheDocument();
@@ -134,13 +149,17 @@ describe("CompanyIdentityCard", () => {
     render(<CompanyIdentityCard />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("VAT registration number")).toHaveValue("GB123456789");
+      expect(screen.getByLabelText("VAT registration number")).toHaveValue(
+        "GB123456789",
+      );
     });
 
     fireEvent.change(screen.getByLabelText("VAT registration number"), {
       target: { value: "" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /save company details/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /save company details/i }),
+    );
 
     await waitFor(() => {
       expect(updateCompanyProfileMock).toHaveBeenCalledWith({ vat_number: "" });
@@ -148,7 +167,8 @@ describe("CompanyIdentityCard", () => {
   });
 
   it("explains_a_403_rather_than_showing_a_generic_error", async () => {
-    const { ApiError } = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+    const { ApiError } =
+      await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
     updateCompanyProfileMock.mockRejectedValue(new ApiError("Forbidden", 403));
     render(<CompanyIdentityCard />);
 
@@ -156,13 +176,40 @@ describe("CompanyIdentityCard", () => {
       expect(screen.getByLabelText("Town / city")).toHaveValue("Leeds");
     });
 
-    fireEvent.change(screen.getByLabelText("Town / city"), { target: { value: "York" } });
-    fireEvent.click(screen.getByRole("button", { name: /save company details/i }));
+    fireEvent.change(screen.getByLabelText("Town / city"), {
+      target: { value: "York" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: /save company details/i }),
+    );
 
     await waitFor(() => {
       expect(
-        screen.getByText("Only workspace owners can change company details.")
+        screen.getByText("Only workspace owners can change company details."),
       ).toBeInTheDocument();
     });
   });
+});
+
+it("saves a customised invoice prefix and numeric next sequence only", async () => {
+  updateCompanyProfileMock.mockResolvedValue(
+    profile({ invoice_prefix: "SMC-INV", invoice_next_number: 164 }),
+  );
+  render(<CompanyIdentityCard />);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Invoice prefix")).toHaveValue("Invoice"),
+  );
+  fireEvent.change(screen.getByLabelText("Invoice prefix"), {
+    target: { value: "SMC-INV" },
+  });
+  fireEvent.change(screen.getByLabelText("Next invoice number"), {
+    target: { value: "164" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save company details" }));
+  await waitFor(() =>
+    expect(updateCompanyProfileMock).toHaveBeenCalledWith({
+      invoice_prefix: "SMC-INV",
+      invoice_next_number: 164,
+    }),
+  );
 });

@@ -22,19 +22,13 @@ import {
 import { MaterialCatalogueSearch } from "@/components/quotes/MaterialCatalogueSearch";
 import { ApiError, api } from "@/lib/api";
 import { readQuoteCustomMaterial } from "@/lib/quote-custom-material";
-import {
-  MATERIAL_FAMILIES,
-  MATERIAL_FAMILY_LABELS,
-  type MaterialFamily,
-  type CustomMaterialInput,
-} from "@/types/catalogue";
+import { type CustomMaterialInput } from "@/types/catalogue";
 import { formatCurrencyGBP } from "@/lib/utils";
 import {
   EXTRA_LABELS,
   ITEM_TYPE_LABELS,
   ITEM_TYPES,
   LAYOUT_LABELS,
-  MATERIAL_OPTIONS,
   THICKNESS_OPTIONS,
   type AIQuoteItemDraft,
   type ExtraOption,
@@ -61,11 +55,6 @@ interface ItemRow {
   catalogue_variant_id: string | null;
   // A layout expands into separately measured quote lines on submission.
   custom_material: CustomMaterialInput | null;
-  manualPricing: boolean;
-  manualPrice: string;
-  manualFamily: MaterialFamily;
-  slabLength: string;
-  slabWidth: string;
   layout: LayoutOption | "";
   extras: ExtraOption[];
   pieces: WorktopPiece[];
@@ -84,7 +73,7 @@ function blankItem(overrides: Partial<ItemRow> = {}): ItemRow {
   return {
     key: newRowKey(),
     item_type: "worktop",
-    material: MATERIAL_OPTIONS[0],
+    material: "",
     thickness: THICKNESS_OPTIONS[0],
     quantity: "1",
     length_mm: "",
@@ -92,11 +81,6 @@ function blankItem(overrides: Partial<ItemRow> = {}): ItemRow {
     catalogue_surface_id: null,
     catalogue_variant_id: null,
     custom_material: null,
-    manualPricing: false,
-    manualPrice: "",
-    manualFamily: "quartz",
-    slabLength: "3200",
-    slabWidth: "1600",
     layout: "",
     extras: [],
     designDetails: blankDesignDetails(),
@@ -148,7 +132,7 @@ function composeItemNotes(row: ItemRow): string | null {
 function draftToRow(draft: AIQuoteItemDraft): ItemRow {
   return blankItem({
     item_type: draft.item_type,
-    material: draft.material ?? MATERIAL_OPTIONS[0],
+    material: draft.material ?? "",
     thickness: draft.thickness ?? THICKNESS_OPTIONS[0],
     quantity: draft.quantity !== null ? String(draft.quantity) : "1",
     length_mm: draft.length_mm !== null ? String(draft.length_mm) : "",
@@ -198,7 +182,7 @@ function NewQuotePageEntry() {
     initialItem = {
       catalogue_surface_id: searchParams.get("catalogue_surface_id"),
       catalogue_variant_id: searchParams.get("catalogue_variant_id"),
-      material: searchParams.get("material") ?? MATERIAL_OPTIONS[0],
+      material: searchParams.get("material") ?? "",
       thickness: searchParams.get("thickness") ?? THICKNESS_OPTIONS[0],
     };
   }
@@ -227,7 +211,21 @@ function NewQuotePageInner({
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [showAll, setShowAll] = useState(false);
-  const stepNames = ["Material", "Layout", "Design details", "Review"];
+  const stepNames = [
+    "Material",
+    "Layout",
+    "Design details",
+    "Pricing",
+    "Review",
+  ];
+  const [jobPrice, setJobPrice] = useState("");
+  const [discountPercent, setDiscountPercent] = useState("0");
+  const [addVat, setAddVat] = useState(false);
+  const [vatPercent, setVatPercent] = useState("20");
+  const subtotal = Number(jobPrice) || 0;
+  const discount = Math.round(subtotal * (Number(discountPercent) || 0)) / 100;
+  const net = subtotal - discount;
+  const vat = addVat ? Math.round(net * (Number(vatPercent) || 0)) / 100 : 0;
   const showStep = (index: number) => showAll || step === index;
   const [customer, setCustomer] = useState("");
   const [customerId, setCustomerId] = useState(initialCustomerId);
@@ -399,7 +397,7 @@ function NewQuotePageInner({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (uploadingKey) return;
-    if (!showAll && step < 3) {
+    if (!showAll && step < 4) {
       setStep(step + 1);
       return;
     }
@@ -410,21 +408,20 @@ function NewQuotePageInner({
       return;
     }
     if (
-      items.some(
-        (row) =>
-          row.manualPricing &&
-          row.manualPrice.trim() !== "" &&
-          (!Number.isFinite(Number(row.manualPrice)) ||
-            Number(row.manualPrice) < 0 ||
-            !Number.isFinite(Number(row.slabLength)) ||
-            !Number.isFinite(Number(row.slabWidth)) ||
-            Number(row.slabLength) <= 0 ||
-            Number(row.slabWidth) <= 0),
-      )
+      !jobPrice.trim() ||
+      !Number.isFinite(Number(jobPrice)) ||
+      Number(jobPrice) < 0 ||
+      !Number.isFinite(Number(discountPercent)) ||
+      Number(discountPercent) < 0 ||
+      Number(discountPercent) > 100 ||
+      (addVat &&
+        (!Number.isFinite(Number(vatPercent)) ||
+          Number(vatPercent) < 0 ||
+          Number(vatPercent) > 100))
     ) {
-      setStep(0);
+      setStep(3);
       setError(
-        "Enter a slab selling price and positive slab dimensions for each manually priced material.",
+        "Enter your job price, a discount from 0 to 100%, and a valid VAT rate.",
       );
       return;
     }
@@ -512,25 +509,12 @@ function NewQuotePageInner({
         postcode: postcode.trim(),
         site_address_line1: address.trim(),
         allow_unpriced: true,
+        pricing_mode: "manual",
+        manual_price: Number(jobPrice),
+        discount_percent: Number(discountPercent),
+        vat_rate: addVat ? Number(vatPercent) / 100 : 0,
         draft_id: pendingDraftId,
         items: quoteRows.flatMap((row) => {
-          const customMaterial: CustomMaterialInput | null =
-            row.custom_material ??
-            (row.manualPricing
-              ? {
-                  canonical_name: row.material.trim(),
-                  material_family: row.manualFamily,
-                  selling_price_per_slab: row.manualPrice.trim()
-                    ? Number(row.manualPrice)
-                    : undefined,
-                  save_to_catalogue: false,
-                  variant: {
-                    thickness_mm: Number.parseFloat(row.thickness),
-                    slab_length_mm: Number(row.slabLength),
-                    slab_width_mm: Number(row.slabWidth),
-                  },
-                }
-              : null);
           const pieces = row.layout
             ? planPieces(row.layout)
             : [{ label: "A", island: false }];
@@ -552,13 +536,8 @@ function NewQuotePageInner({
                   ) || 650,
                 slab_group: row.layout ? row.key : undefined,
                 unit_input: "mm" as const,
-                custom_material: customMaterial,
-                catalogue_surface_id: row.manualPricing
-                  ? null
-                  : row.catalogue_surface_id,
-                catalogue_variant_id: row.manualPricing
-                  ? null
-                  : row.catalogue_variant_id,
+                catalogue_surface_id: row.catalogue_surface_id,
+                catalogue_variant_id: row.catalogue_variant_id,
                 notes:
                   [
                     row.layout ? `Piece ${piece.label}` : null,
@@ -579,13 +558,8 @@ function NewQuotePageInner({
                 width_mm: Number(row.designDetails[`${kind}Height`]),
                 slab_group: row.layout ? row.key : undefined,
                 unit_input: "mm" as const,
-                custom_material: customMaterial,
-                catalogue_surface_id: row.manualPricing
-                  ? null
-                  : row.catalogue_surface_id,
-                catalogue_variant_id: row.manualPricing
-                  ? null
-                  : row.catalogue_variant_id,
+                catalogue_surface_id: row.catalogue_surface_id,
+                catalogue_variant_id: row.catalogue_variant_id,
                 notes: `Measured ${kind} for ${row.material}`,
               })),
           ];
@@ -680,9 +654,9 @@ function NewQuotePageInner({
           Stone &amp; worktop quote
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Priced from your material catalogue by slab area. Add a worktop, an
-          island, splashbacks or upstands — each with its own material and
-          dimensions in mm.
+          Choose or type your materials and enter your own job price. Add a
+          worktop, an island, splashbacks or upstands — each with its own
+          material and dimensions in mm.
         </p>
         <p className="mt-2 text-sm text-muted">
           Quoting other work?{" "}
@@ -827,7 +801,7 @@ function NewQuotePageInner({
         </details>
       )}
 
-      <nav aria-label="Quote steps" className="mb-5 grid grid-cols-4 gap-2">
+      <nav aria-label="Quote steps" className="mb-5 grid grid-cols-5 gap-2">
         {stepNames.map((name, index) => (
           <div
             key={name}
@@ -1061,11 +1035,7 @@ function NewQuotePageInner({
                                 custom_material: null,
                                 catalogue_surface_id: null,
                                 catalogue_variant_id: null,
-                                material: MATERIAL_OPTIONS[0],
-                                manualPrice: "",
-                                manualFamily: "quartz",
-                                slabLength: "3200",
-                                slabWidth: "1600",
+                                material: "",
                               })
                             }
                           >
@@ -1082,8 +1052,7 @@ function NewQuotePageInner({
                           onFreeTextChange={(text) =>
                             updateItem(row.key, {
                               material: text,
-                              manualPricing: true,
-                              manualPrice: "",
+
                               catalogue_surface_id: null,
                               catalogue_variant_id: null,
                             })
@@ -1092,20 +1061,12 @@ function NewQuotePageInner({
                             surface,
                             thicknessLabel,
                             variantId,
-                            variant,
                           ) =>
                             updateItem(row.key, {
                               material: surface.canonical_name,
                               thickness: thicknessLabel,
                               catalogue_surface_id: surface.id,
                               catalogue_variant_id: variantId,
-                              manualPricing: !surface.has_tenant_price,
-                              manualFamily: surface.material_family,
-                              manualPrice: "",
-                              slabLength: String(
-                                variant?.slab_length_mm ?? 3200,
-                              ),
-                              slabWidth: String(variant?.slab_width_mm ?? 1600),
                             })
                           }
                         />
@@ -1133,109 +1094,6 @@ function NewQuotePageInner({
                         </Select>
                       )}
                     </Field>
-                    {!row.custom_material && (
-                      <div className="sm:col-span-3">
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={row.manualPricing}
-                            onChange={(event) =>
-                              updateItem(row.key, {
-                                manualPricing: event.target.checked,
-                              })
-                            }
-                          />
-                          Enter my own slab price
-                        </label>
-                        <p className="mt-2 text-xs text-muted">
-                          Browse the catalogue above, or type a material name.
-                          Enter a selling price to calculate a total, or leave
-                          it blank to save a draft with pricing pending.
-                        </p>
-                        {row.manualPricing && (
-                          <div className="mt-3 grid grid-cols-1 gap-4 rounded-xl border border-border p-4 sm:grid-cols-2">
-                            <Field
-                              label="Manual material type"
-                              htmlFor={`${row.key}-manual-family`}
-                            >
-                              <Select
-                                id={`${row.key}-manual-family`}
-                                value={row.manualFamily}
-                                onChange={(event) =>
-                                  updateItem(row.key, {
-                                    manualFamily: event.target
-                                      .value as MaterialFamily,
-                                  })
-                                }
-                              >
-                                {MATERIAL_FAMILIES.map((family) => (
-                                  <option value={family} key={family}>
-                                    {MATERIAL_FAMILY_LABELS[family]}
-                                  </option>
-                                ))}
-                              </Select>
-                            </Field>
-                            <Field
-                              label="Selling price per slab (£)"
-                              htmlFor={`${row.key}-manual-price`}
-                            >
-                              <Input
-                                id={`${row.key}-manual-price`}
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={row.manualPrice}
-                                onChange={(event) =>
-                                  updateItem(row.key, {
-                                    manualPrice: event.target.value,
-                                  })
-                                }
-                              />
-                            </Field>
-                            <Field
-                              label="Slab length (mm)"
-                              htmlFor={`${row.key}-slab-length`}
-                            >
-                              <Input
-                                id={`${row.key}-slab-length`}
-                                type="number"
-                                min="1"
-                                step="1"
-                                required
-                                value={row.slabLength}
-                                onChange={(event) =>
-                                  updateItem(row.key, {
-                                    slabLength: event.target.value,
-                                  })
-                                }
-                              />
-                            </Field>
-                            <Field
-                              label="Slab width (mm)"
-                              htmlFor={`${row.key}-slab-width`}
-                            >
-                              <Input
-                                id={`${row.key}-slab-width`}
-                                type="number"
-                                min="1"
-                                step="1"
-                                required
-                                value={row.slabWidth}
-                                onChange={(event) =>
-                                  updateItem(row.key, {
-                                    slabWidth: event.target.value,
-                                  })
-                                }
-                              />
-                            </Field>
-                            <p className="text-xs text-muted sm:col-span-2">
-                              Used for this quote only. No catalogue material or
-                              supplier price is created.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </fieldset>
                 <fieldset disabled={!showStep(1)} hidden={!showStep(1)}>
@@ -1305,10 +1163,8 @@ function NewQuotePageInner({
                     {row.layout && (
                       <p className="mt-4 text-sm text-muted">
                         Enter the finished size of each piece. Measurements are
-                        in millimetres. Pieces in this layout share a
-                        material-area estimate including 15% waste. This is not
-                        a cutting or grain-matching plan; review slab fit before
-                        issuing a final price.
+                        in millimetres. Review the cutting and grain-matching
+                        plan before issuing your final price.
                       </p>
                     )}
                     {row.layout &&
@@ -1406,9 +1262,9 @@ function NewQuotePageInner({
                     {!customerId && (
                       <p className="mt-2 text-sm text-muted">
                         You can attach a drawing without an existing customer.
-                        On Calculate Quote, a new customer record will be
-                        created from the name in step 1 unless you link an
-                        existing customer first.
+                        On Save Quote, a new customer record will be created
+                        from the name in step 1 unless you link an existing
+                        customer first.
                       </p>
                     )}
                     {uploadingKey === row.key && (
@@ -1461,10 +1317,85 @@ function NewQuotePageInner({
         </div>
 
         {showStep(3) && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>4. Pricing</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5 pt-4">
+              <p className="text-sm text-muted">
+                Set your selling price for the complete job. Include all
+                materials, fabrication, fitting and selected extras in your
+                price.
+              </p>
+              <Field
+                label="Your job price before discount and VAT (£)"
+                htmlFor="job-price"
+              >
+                <Input
+                  id="job-price"
+                  type="number"
+                  min="0"
+                  max="100000000"
+                  step="0.01"
+                  required
+                  value={jobPrice}
+                  onChange={(e) => setJobPrice(e.target.value)}
+                />
+              </Field>
+              <Field label="Discount (%)" htmlFor="discount-percent">
+                <Input
+                  id="discount-percent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  required
+                  value={discountPercent}
+                  onChange={(e) => setDiscountPercent(e.target.value)}
+                />
+              </Field>
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={addVat}
+                  onChange={(e) => setAddVat(e.target.checked)}
+                />{" "}
+                Add VAT
+              </label>
+              {addVat && (
+                <Field label="VAT rate (%)" htmlFor="vat-percent">
+                  <Input
+                    id="vat-percent"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    required
+                    value={vatPercent}
+                    onChange={(e) => setVatPercent(e.target.value)}
+                  />
+                </Field>
+              )}
+              <dl className="grid grid-cols-2 gap-3 border-t border-border pt-4">
+                <dt>Subtotal</dt>
+                <dd className="text-right">{formatCurrencyGBP(subtotal)}</dd>
+                <dt>Discount ({discountPercent || 0}%)</dt>
+                <dd className="text-right">-{formatCurrencyGBP(discount)}</dd>
+                <dt>VAT{addVat ? ` (${vatPercent}%)` : " not added"}</dt>
+                <dd className="text-right">{formatCurrencyGBP(vat)}</dd>
+                <dt className="font-semibold">Total</dt>
+                <dd className="text-right text-xl font-semibold">
+                  {formatCurrencyGBP(net + vat)}
+                </dd>
+              </dl>
+            </CardContent>
+          </Card>
+        )}
+        {showStep(4) && (
           <Card className="mt-5">
             <CardContent>
               <h2 className="mb-4 text-xl font-semibold">
-                4. Review your quote
+                5. Review your quote
               </h2>
               <p className="mb-4 text-sm text-muted">
                 {customer || "Customer not entered"}
@@ -1519,24 +1450,17 @@ function NewQuotePageInner({
                         .
                       </p>
                     )}
-                    {row.manualPricing && (
-                      <p className="mt-2 text-sm">
-                        {row.manualPrice.trim()
-                          ? `Your slab selling price: £${row.manualPrice} · slab ${row.slabLength} × ${row.slabWidth} mm`
-                          : "Pricing pending — add your slab price when available."}
-                      </p>
-                    )}
                   </li>
                 ))}
               </ul>
               <p className="mt-4 text-sm text-muted">
-                The estimate uses your catalogue prices and pools the material
-                area of each selected layout, including 15% waste. Review the
-                cutting plan before issuing a final price. Measured upstands add
-                separate lines. Splashback is recorded as an inclusion. Cut-out,
-                tap-hole and polished-edge selections are specifications only.
-                Calculating creates a saved quote; it does not send it to the
-                customer.
+                Your job price is {formatCurrencyGBP(subtotal)}, with a{" "}
+                {discountPercent || 0}% discount and{" "}
+                {addVat ? `${vatPercent}% VAT` : "no VAT added"}. Total:{" "}
+                {formatCurrencyGBP(net + vat)}. Your price covers all listed
+                works and inclusions. No catalogue prices, slab estimates or
+                automatic charges are applied. Saving creates a quote; it does
+                not send it to the customer.
               </p>
             </CardContent>
           </Card>
@@ -1566,7 +1490,7 @@ function NewQuotePageInner({
                 Previous
               </Button>
             )}
-            {!showAll && step < 3 ? (
+            {!showAll && step < 4 ? (
               <Button
                 type="button"
                 onClick={(event) => {
@@ -1583,7 +1507,7 @@ function NewQuotePageInner({
                 type="submit"
                 disabled={submitting || uploadingKey !== null}
               >
-                {submitting ? "Calculating…" : "Calculate Quote"}
+                {submitting ? "Saving…" : "Save Quote"}
               </Button>
             )}
           </div>
@@ -1621,22 +1545,12 @@ function NewQuotePageInner({
                       {item.material} ({item.thickness})
                     </p>
                     <p className="text-xs text-muted">
-                      {item.quantity} x {item.length_mm}mm x {item.width_mm}mm ·{" "}
-                      {item.slab_allocation
-                        ? `shares ${item.slab_allocation.group_slabs} slab${item.slab_allocation.group_slabs === 1 ? "" : "s"} across the layout`
-                        : item.slabs === null
-                          ? "Slab requirement pending pricing"
-                          : `${item.slabs} slab${item.slabs === 1 ? "" : "s"}`}
+                      {item.quantity} x {item.length_mm}mm x {item.width_mm}mm
                     </p>
                     {item.notes && (
                       <p className="mt-1 text-xs text-muted">{item.notes}</p>
                     )}
                   </div>
-                  <span className="text-foreground">
-                    {item.line_total !== null
-                      ? formatCurrencyGBP(item.line_total)
-                      : "—"}
-                  </span>
                 </li>
               ))}
             </ul>
@@ -1644,11 +1558,21 @@ function NewQuotePageInner({
             <dl className="grid grid-cols-2 gap-y-2 border-t border-border pt-4 text-sm">
               <dt className="text-muted">Subtotal</dt>
               <dd className="text-right text-foreground">
-                {result.price_before_vat === null
+                {result.subtotal === null
                   ? "Pricing pending"
-                  : formatCurrencyGBP(result.price_before_vat)}
+                  : formatCurrencyGBP(
+                      result.subtotal ?? result.price_before_vat ?? 0,
+                    )}
               </dd>
-              <dt className="text-muted">VAT (20%)</dt>
+              <dt className="text-muted">
+                Discount ({result.discount_percent ?? 0}%)
+              </dt>
+              <dd className="text-right">
+                -{formatCurrencyGBP(result.discount_amount ?? 0)}
+              </dd>
+              <dt className="text-muted">
+                VAT ({Math.round((result.vat_rate ?? 0) * 100)}%)
+              </dt>
               <dd className="text-right text-foreground">
                 {result.vat === null
                   ? "Pricing pending"

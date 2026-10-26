@@ -921,6 +921,8 @@ def create_quote(
     # test that predates this sprint keeps working with the old signature.
     currency: str = "GBP",
     subtotal: float | None = None,
+    discount_amount: float | None = None,
+    vat_rate: float = 0.20,
     site_address_line1: str | None = None,
     site_postcode: str | None = None,
     replace_pending: Quote | None = None,
@@ -942,6 +944,8 @@ def create_quote(
         trade="stone",
         currency=currency,
         subtotal=subtotal,
+        discount_amount=discount_amount,
+        vat_rate=vat_rate,
         material=material,
         thickness=thickness,
         kitchen_length=kitchen_length,

@@ -175,6 +175,10 @@ export interface QuoteRequest {
   postcode?: string;
   site_address_line1?: string;
   allow_unpriced?: boolean;
+  pricing_mode?: "manual" | "catalogue";
+  manual_price?: number;
+  discount_percent?: number;
+  vat_rate?: number;
   draft_id?: string;
   items?: QuoteItemRequest[];
 
@@ -195,6 +199,11 @@ export interface QuoteRequest {
 }
 
 export interface QuoteResult {
+  subtotal?: number | null;
+  discount_amount?: number | null;
+  discount_percent?: number;
+  vat_rate?: number;
+  pricing_mode?: string;
   customer: string;
   // Best-effort single-item summary (see app/quotes/calculator.py's
   // summarize_items()) — "Multiple materials"/"Mixed" when items disagree.
@@ -332,6 +341,8 @@ export type GeneralQuoteUpdate = Partial<GeneralQuoteRequest>;
  * source of truth (Sprint 033); the flat fields below stay as a
  * best-effort single-item summary for any older reader. */
 export interface Quote {
+  invoice_number?: string | null;
+  pricing_mode?: string;
   id: string;
   customer_id: string | null;
 

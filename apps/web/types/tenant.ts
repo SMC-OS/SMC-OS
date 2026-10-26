@@ -29,6 +29,8 @@ export interface TenantProfile {
   // --- Sprint 036 — workspace configuration. ---
   /** Drives every money format in the app and denominates new quotes.
    * GBP is the default, not a hardcoded assumption. */
+  invoice_prefix?: string;
+  invoice_next_number?: number;
   currency: string;
   /** Trade keys selected during onboarding, in catalogue order. */
   trades: string[];

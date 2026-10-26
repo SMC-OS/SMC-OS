@@ -285,7 +285,7 @@ export function MaterialCatalogueSearch({
                       </span>
                       {!r.has_tenant_price && (
                         <span className="block px-3 pb-2 text-xs text-muted">
-                          Pricing pending — add your slab price or save a draft
+                          Choose this material; set your job price in Pricing
                         </span>
                       )}
                       {(r.supplier_name ||
@@ -329,11 +329,11 @@ export function MaterialCatalogueSearch({
           : outcome === "sign_in"
             ? "Sign in again to browse your workspace catalogue. Your typed material is kept."
             : outcome === "no_match"
-              ? `No catalogue match for “${value.trim()}” — keep the name, add your own slab price or save a draft with pricing pending.`
+              ? `No catalogue match for “${value.trim()}” — keep the name, set your job price in the Pricing step.`
               : outcome === "catalogue_empty"
-                ? "The material catalogue has no materials yet — enter a material name; add your own slab price or save a draft with pricing pending."
+                ? "The material catalogue has no materials yet — enter a material name; set your job price in the Pricing step."
                 : outcome === "unavailable"
-                  ? "Catalogue search is unavailable right now. Your typed name is kept; add your own slab price or save a draft with pricing pending."
+                  ? "Catalogue search is unavailable right now. Your typed name is kept; set your job price in the Pricing step."
                   : null}
       </p>
       {outcome === "sign_in" && (

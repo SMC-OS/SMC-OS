@@ -1,3 +1,4 @@
+import { setStoneJobPrice } from "./stone-pricing-helper";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
@@ -100,7 +101,23 @@ test("a_three_item_quote_can_be_created_manually_and_remains_accessible", async 
     (res) =>
       res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "Calculate Quote" }).click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote" }).click();
   const quoteResponse = await quoteCreated;
   expect(quoteResponse.status()).toBe(200);
   const body = await quoteResponse.json();
@@ -247,7 +264,23 @@ test("a_multi_item_quote_can_be_generated_through_simo_ai", async ({
     (res) =>
       res.url().endsWith("/api/v1/quote") && res.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "Calculate Quote" }).click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote" }).click();
   const quoteResponse = await quoteCreated;
   expect(quoteResponse.status()).toBe(200);
   const body = await quoteResponse.json();
