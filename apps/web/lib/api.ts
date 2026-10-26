@@ -275,7 +275,7 @@ export const api = {
   // the caller can tell "a new email was actually queued" apart from a
   // silent no-op for an account that's already verified — both return 200.
   resendVerificationEmail: () =>
-    request<{ message: string; already_verified: boolean }>(
+    request<{ message: string; already_verified: boolean; delivery_status?: "sent" | "failed" | "suppressed" | "pending" | null }>(
       "/auth/email/verify/resend",
       { method: "POST" }
     ),

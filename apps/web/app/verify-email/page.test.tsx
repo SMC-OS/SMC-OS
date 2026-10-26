@@ -154,12 +154,12 @@ describe("VerifyEmailPage — confirming a token", () => {
 
 describe("VerifyEmailPage — resend states", () => {
   it("shows_a_truthful_sent_confirmation_on_a_genuine_new_send", async () => {
-    resendMock.mockResolvedValue({ message: "Verification email sent.", already_verified: false });
+    resendMock.mockResolvedValue({ message: "Verification email accepted for sending.", already_verified: false, delivery_status: "sent" });
 
     render(<VerifyEmailPage />);
     fireEvent.click(screen.getByRole("button", { name: "Resend verification email" }));
     await waitFor(() => {
-      expect(screen.getByText("Verification email sent — check your inbox.")).toBeInTheDocument();
+      expect(screen.getByText("Verification email accepted for sending.")).toBeInTheDocument();
     });
   });
 
@@ -208,4 +208,21 @@ it("keeps the verification screen recoverable when server logout fails", async (
   fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(/Could not sign out/);
   expect(pushMock).not.toHaveBeenCalled();
+});
+
+
+describe("Verification delivery outcomes", () => {
+  it.each(["failed", "suppressed"])("does not claim success when delivery is %s", async (delivery_status) => {
+    resendMock.mockResolvedValue({already_verified: false, delivery_status, message: "We could not send your verification email. Please contact support."});
+    render(<VerifyEmailPage />);
+    fireEvent.click(screen.getByRole("button", {name: "Resend verification email"}));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("We could not send your verification email."));
+    expect(screen.queryByText("Verification email sent — check your inbox.")).toBeNull();
+  });
+  it("does not assume provider acceptance when an older backend omits the outcome", async () => {
+    resendMock.mockResolvedValue({already_verified: false, message: "Verification email sent."});
+    render(<VerifyEmailPage />);
+    fireEvent.click(screen.getByRole("button", {name: "Resend verification email"}));
+    await waitFor(() => expect(screen.getByText(/Delivery status could not be confirmed/)).toBeInTheDocument());
+  });
 });
