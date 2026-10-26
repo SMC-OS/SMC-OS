@@ -242,6 +242,10 @@ test("the_connected_v1_journey_works_end_to_end_through_the_browser", async ({
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("3200");
   const quoteCreated = page.waitForResponse(

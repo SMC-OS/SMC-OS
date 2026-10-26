@@ -116,6 +116,10 @@ test("A_stone_catalogue_quote_prices_from_the_surface_and_its_snapshot_survives_
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2400");
 
@@ -242,6 +246,10 @@ test("B_a_tenant_can_set_their_own_price_and_a_new_quote_reflects_it", async ({
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2000");
 
@@ -320,6 +328,10 @@ test("C_a_custom_material_saved_to_the_catalogue_is_immediately_reusable_from_se
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("1800");
 
@@ -473,6 +485,10 @@ test("E_construction_quoting_is_untouched_alongside_a_stone_catalogue_quote_in_t
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2400");
 

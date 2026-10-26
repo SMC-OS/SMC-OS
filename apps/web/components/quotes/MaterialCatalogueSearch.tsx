@@ -198,6 +198,7 @@ export function MaterialCatalogueSearch({
     <div className="relative">
       <Input
         id={id}
+        required
         value={value}
         onChange={(e) => handleChange(e.target.value)}
         onFocus={() => setOpen(results.length > 0)}

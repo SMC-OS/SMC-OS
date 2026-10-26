@@ -795,6 +795,9 @@ it("guides material to layout to details to review without losing measurements",
   fireEvent.change(screen.getByLabelText("Postcode"), {
     target: { value: "NW2 7RP" },
   });
+  fireEvent.change(screen.getByLabelText("Material"), {
+    target: { value: "Synthetic test stone" },
+  });
   await userEvent.click(screen.getByRole("button", { name: "Next: Layout" }));
   await userEvent.selectOptions(
     screen.getByLabelText("Worktop layout"),
@@ -823,6 +826,9 @@ it("returns to Material when adding an item from Review", async () => {
   });
   fireEvent.change(screen.getByLabelText("Postcode"), {
     target: { value: "NW2 7RP" },
+  });
+  fireEvent.change(screen.getByLabelText("Material"), {
+    target: { value: "Synthetic test stone" },
   });
   await userEvent.click(screen.getByRole("button", { name: "Next: Layout" }));
   await userEvent.type(screen.getByLabelText(/^length \(mm\)$/i), "2400");

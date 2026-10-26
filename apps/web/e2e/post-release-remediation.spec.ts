@@ -128,6 +128,10 @@ test("A_inline_catalogue_material_search_on_the_stone_quote_page_finds_and_links
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").first().fill("2400");
 
@@ -183,6 +187,10 @@ test("B_layout_and_extras_pickers_record_their_choice_on_the_itemised_result", a
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page
     .getByLabel("Worktop layout", { exact: true })
