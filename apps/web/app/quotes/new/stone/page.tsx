@@ -23,7 +23,7 @@ import { MaterialCatalogueSearch } from "@/components/quotes/MaterialCatalogueSe
 import { ApiError, api } from "@/lib/api";
 import { readQuoteCustomMaterial } from "@/lib/quote-custom-material";
 import { type CustomMaterialInput } from "@/types/catalogue";
-import { formatCurrencyGBP } from "@/lib/utils";
+import { formatMoney as formatCurrencyGBP } from "@/lib/utils";
 import {
   EXTRA_LABELS,
   ITEM_TYPE_LABELS,

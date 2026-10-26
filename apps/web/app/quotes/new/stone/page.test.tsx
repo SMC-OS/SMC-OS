@@ -984,7 +984,7 @@ it("sends only the user job price with percentage discount and optional VAT", as
   });
   await userEvent.click(screen.getByLabelText("Add VAT"));
   expect(screen.getByLabelText("VAT rate (%)")).toHaveValue(20);
-  expect(screen.getByText("£3,240")).toBeVisible();
+  expect(screen.getByText("£3,240.00")).toBeVisible();
   expect(
     screen.queryByLabelText("Selling price per slab (£)"),
   ).not.toBeInTheDocument();

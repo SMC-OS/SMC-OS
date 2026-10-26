@@ -122,3 +122,57 @@ def test_wrapped_invoice_retains_long_specifications_and_stable_reference():
     assert "Worktop with full bullnose" in text
     assert "Discount" in text
     assert len(pdf)>10000  # embedded fonts, not a printer-dependent substitution
+
+
+def test_invoice_download_uses_persisted_reference_and_original_price(monkeypatch):
+    from app.quotes.service import QuoteService
+    from app.quotes.router import download_invoice
+    from app.quotes import service
+    from tests.test_tenant_identity import _pdf_text
+    monkeypatch.setattr(service.activity_service, "log", Mock())
+    monkeypatch.setattr(service.automation_dispatcher, "dispatch_quote_created", Mock())
+    engine=create_engine("sqlite://")
+    Tenant.__table__.create(engine);Quote.__table__.create(engine);QuoteItem.__table__.create(engine)
+    with Session(engine) as db:
+        tenant=Tenant(name="Synthetic",slug="invoice-route")
+        db.add(tenant);db.commit()
+        created=QuoteService().create(db,request(manual_price=1234.56,vat_rate=0),tenant.id)
+        user=SimpleNamespace(tenant_id=tenant.id)
+        first=download_invoice(created["id"],user,db)
+        second=download_invoice(created["id"],user,db)
+        assert first.headers["content-disposition"] == 'attachment; filename="Invoice-000001.pdf"'
+        assert second.headers["content-disposition"] == first.headers["content-disposition"]
+        text=_pdf_text(second.body)
+        assert "Invoice-000001" in text and "1,234.56" in text
+        assert db.get(Tenant,tenant.id).invoice_next_number==2
+
+
+def test_postgres_concurrent_downloads_allocate_one_reference_per_quote(db):
+    """Hosted PostgreSQL gate: exercise the real row lock with two sessions."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from app.database.database import SessionLocal
+    tenant=Tenant(name="Synthetic sequence concurrency",slug=f"sequence-{uuid4()}")
+    db.add(tenant);db.flush()
+    quotes=[Quote(tenant_id=tenant.id) for _ in range(3)]
+    db.add_all(quotes);db.commit()
+    ids=[q.id for q in quotes]
+    def pair(quote_ids):
+        barrier=Barrier(2)
+        def allocate(quote_id):
+            with SessionLocal() as worker:
+                row=worker.get(Quote,quote_id)
+                barrier.wait(timeout=15)
+                reference=invoice_reference(worker,row)
+                worker.commit()
+                return reference
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            return list(pool.map(allocate,quote_ids))
+    try:
+        assert pair([ids[0],ids[0]])==["Invoice-000001","Invoice-000001"]
+        assert set(pair(ids[1:]))=={"Invoice-000002","Invoice-000003"}
+    finally:
+        for quote_id in ids:
+            db.delete(db.get(Quote,quote_id))
+        db.commit()
+        db.delete(tenant);db.commit()

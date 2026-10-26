@@ -12,11 +12,11 @@ PDF descriptions use escaped, wrapping Paragraph cells with embedded Vera fonts,
 
 ## Validation at preparation
 
-- 20 focused backend/manual-price/document checks passed (one database integration test excluded because no PostgreSQL service is available locally).
+- 21 focused backend/manual-price/document checks passed (one database integration test excluded because no PostgreSQL service is available locally).
 - 5 existing pure PDF/tenant identity checks passed.
-- 50 affected web component checks passed before the additional invoice-settings regression was added; the final full suite and hosted CI are recorded in the PR.
+- 400 web component checks passed, including manual pricing, empty materials and numeric invoice sequence settings.
 - TypeScript passed. PDF one-page and multi-page previews rendered and visually inspected.
-- SQLite tests prove persistence, per-tenant sequencing, repeated downloads and collision skipping. Actual PostgreSQL migration and hosted browser checks remain CI release gates.
+- SQLite tests prove persistence, per-tenant sequencing, repeated downloads and collision skipping. Actual PostgreSQL migration, concurrent invoice allocation and hosted browser checks remain CI release gates.
 
 ## Deployment order
 
