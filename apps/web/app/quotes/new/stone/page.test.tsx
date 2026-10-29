@@ -1216,29 +1216,62 @@ it("requires address and postcode while email and phone remain optional", () => 
   expect(screen.getByLabelText("Customer address")).toBeInvalid();
 });
 
-
 it("does not write customers or quotes when navigating to Review or back", async () => {
   render(<NewQuotePage />);
-  fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Navigation only" } });
-  fireEvent.change(screen.getByLabelText("Customer address"), { target: { value: "1 Test Street" } });
-  fireEvent.change(screen.getByLabelText("Postcode"), { target: { value: "NW2 7RP" } });
-  fireEvent.change(screen.getByLabelText("Material"), { target: { value: "Test quartz" } });
+  fireEvent.change(screen.getByLabelText("Customer name"), {
+    target: { value: "Navigation only" },
+  });
+  fireEvent.change(screen.getByLabelText("Customer address"), {
+    target: { value: "1 Test Street" },
+  });
+  fireEvent.change(screen.getByLabelText("Postcode"), {
+    target: { value: "NW2 7RP" },
+  });
+  fireEvent.change(screen.getByLabelText("Material"), {
+    target: { value: "Test quartz" },
+  });
   await userEvent.click(screen.getByRole("button", { name: "Next: Layout" }));
-  fireEvent.change(screen.getByLabelText("Length (mm)"), { target: { value: "3000" } });
-  await userEvent.click(screen.getByRole("button", { name: "Next: Design details" }));
+  fireEvent.change(screen.getByLabelText("Length (mm)"), {
+    target: { value: "3000" },
+  });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Next: Design details" }),
+  );
   await userEvent.click(screen.getByRole("button", { name: "Next: Pricing" }));
-  fireEvent.change(screen.getByLabelText("Your job price before discount and VAT (£)"), { target: { value: "3000" } });
-  fireEvent.change(screen.getByLabelText("Discount (%)"), { target: { value: "10" } });
-  const writes = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+  fireEvent.change(
+    screen.getByLabelText("Your job price before discount and VAT (£)"),
+    { target: { value: "3000" } },
+  );
+  fireEvent.change(screen.getByLabelText("Discount (%)"), {
+    target: { value: "10" },
+  });
+  const writes = () =>
+    fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
   await userEvent.click(screen.getByRole("button", { name: "Next: Review" }));
-  expect(screen.getByRole("heading", { name: "5. Review your quote" })).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "5. Review your quote" }),
+  ).toBeVisible();
   expect(writes()).toHaveLength(0);
   await userEvent.click(screen.getByRole("button", { name: "Previous" }));
-  expect(screen.getByLabelText("Your job price before discount and VAT (£)")).toHaveValue(3000);
+  expect(
+    screen.getByLabelText("Your job price before discount and VAT (£)"),
+  ).toHaveValue(3000);
   expect(writes()).toHaveLength(0);
   await userEvent.click(screen.getByRole("button", { name: "Next: Review" }));
   expect(writes()).toHaveLength(0);
   await userEvent.click(screen.getByRole("button", { name: "Save Quote" }));
-  await waitFor(() => expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/quote") && init?.method === "POST")).toHaveLength(1));
-  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/customers") && init?.method === "POST")).toHaveLength(1);
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/quote") && init?.method === "POST",
+      ),
+    ).toHaveLength(1),
+  );
+  expect(
+    fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith("/customers") && init?.method === "POST",
+    ),
+  ).toHaveLength(1);
 });

@@ -202,6 +202,29 @@ async function requestNoContent(path: string, init?: RequestInit): Promise<void>
 }
 
 export const api = {
+  downloadWorkspaceExport: async (): Promise<void> => {
+    const created = await request<{ id: string }>("/privacy/exports", {
+      method: "POST",
+    });
+    const response = await sessionFetch(
+      `${API_BASE_URL}/api/v1/privacy/exports/${created.id}/download`,
+    );
+    if (!response.ok) {
+      if (response.status === 401) clearToken();
+      throw new ApiError(
+        "Workspace export could not be downloaded. Please try again.",
+        response.status,
+      );
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "geocore-workspace-export.zip";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
   getDashboardStats: () => request<DashboardStats>("/dashboard"),
 
   getCommandCentre: () => request<CommandCentreStats>("/dashboard/command-centre"),

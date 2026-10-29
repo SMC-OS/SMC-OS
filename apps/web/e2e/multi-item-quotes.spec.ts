@@ -27,6 +27,67 @@ function uniqueRunId(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+test("stone_review_navigation_never_saves_before_explicit_save", async ({
+  page,
+}) => {
+  await signUpAndLogIn(page, uniqueRunId("review-navigation"));
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      /\/api\/v1\/(quote|customers)$/.test(new URL(request.url()).pathname)
+    ) {
+      writes.push(new URL(request.url()).pathname);
+    }
+  });
+  await page.goto("/quotes/new/stone");
+  await page.getByLabel("Customer name").fill("Review navigation regression");
+  await page
+    .getByLabel("Customer address", { exact: true })
+    .fill("1 Synthetic Street");
+  await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  await page.getByLabel("Material", { exact: true }).fill("Synthetic quartz");
+  await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
+  await page.getByLabel("Length (mm)", { exact: true }).fill("3000");
+  await page
+    .getByRole("button", { name: "Next: Design details", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Next: Pricing", exact: true })
+    .click();
+  await page
+    .getByLabel("Your job price before discount and VAT (£)")
+    .fill("3000");
+  await page.getByLabel("Discount (%)", { exact: true }).fill("10");
+  await page.getByRole("button", { name: "Next: Review", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "5. Review your quote" }),
+  ).toBeVisible();
+  // Negative assertions need an observation window: the original bug first
+  // revalidated the session asynchronously before it sent the two writes.
+  await page.waitForTimeout(750);
+  expect(writes).toEqual([]);
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(
+    page.getByLabel("Your job price before discount and VAT (£)"),
+  ).toHaveValue("3000");
+  await page.getByRole("button", { name: "Next: Review", exact: true }).click();
+  await page.waitForTimeout(750);
+  expect(writes).toEqual([]);
+  const created = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/quote") &&
+      response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Save Quote", exact: true }).click();
+  expect((await created).status()).toBe(200);
+  await expect(
+    page.getByRole("button", { name: "Download Invoice" }),
+  ).toBeVisible();
+  expect(writes.filter((path) => path.endsWith("/quote"))).toHaveLength(1);
+  expect(writes.filter((path) => path.endsWith("/customers"))).toHaveLength(1);
+});
+
 async function signUpAndLogIn(
   page: import("@playwright/test").Page,
   runId: string,

@@ -46,6 +46,7 @@ import { Topbar } from "./Topbar";
  * remain the real authorization layer and are untouched.
  */
 const STANDALONE_ROUTES = [
+  "/privacy-controls",
   "/login",
   "/signup",
   "/forgot-password",
@@ -89,6 +90,7 @@ const VERIFICATION_EXEMPT_ROUTES = [
 // app/auth/dependencies.py's require_billing_access) — a user who
 // bypasses this redirect still gets a 402 from every protected route.
 const BILLING_EXEMPT_ROUTES = [
+  "/privacy-controls",
   "/login",
   "/signup",
   "/forgot-password",
