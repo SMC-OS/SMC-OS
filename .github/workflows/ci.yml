@@ -5,6 +5,27 @@ on:
   pull_request:
 
 jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit pinned Python requirements
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --no-deps --disable-pip
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Audit production JavaScript lockfile
+        run: pnpm audit --prod --audit-level high
+
   backend:
     runs-on: ubuntu-latest
     # Normal runs take 5-7 minutes. A hung runner (one e2e job sat 88 minutes
