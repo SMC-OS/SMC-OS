@@ -1481,6 +1481,8 @@ function NewQuotePageInner({
           <div className="flex flex-wrap gap-2">
             {!showAll && step > 0 && (
               <Button
+                key="quote-previous"
+                type="button"
                 variant="outline"
                 onClick={() => {
                   setStep(step - 1);
@@ -1492,8 +1494,11 @@ function NewQuotePageInner({
             )}
             {!showAll && step < 4 ? (
               <Button
+                key="quote-next"
                 type="button"
                 onClick={(event) => {
+                  // Cancel activation before React replaces this control with Save.
+                  event.preventDefault();
                   if (event.currentTarget.form?.reportValidity()) {
                     setStep(step + 1);
                     setError(null);
@@ -1504,6 +1509,7 @@ function NewQuotePageInner({
               </Button>
             ) : (
               <Button
+                key="quote-save"
                 type="submit"
                 disabled={submitting || uploadingKey !== null}
               >

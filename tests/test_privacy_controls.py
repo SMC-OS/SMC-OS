@@ -226,3 +226,39 @@ def test_copyright_intake_is_public_but_administration_requires_internal_token(c
         db.commit()
     finally:
         db.close()
+
+
+def test_expired_billing_does_not_block_privacy_controls(client, workspace):
+    headers, tenant_id, _ = workspace
+    db = SessionLocal()
+    try:
+        db.execute(update(Subscription).where(Subscription.tenant_id == tenant_id).values(status="canceled", legacy_grandfathered=False))
+        db.commit()
+    finally:
+        db.close()
+    # Privacy self-service remains authenticated, verified and tenant-scoped;
+    # ordinary business access must still require an active subscription.
+    assert client.get("/api/v1/customers", headers=headers).status_code == 402
+    assert client.get("/api/v1/privacy/marketing-preference", headers=headers).status_code == 200
+    assert client.put("/api/v1/privacy/marketing-preference", headers=headers, json={"enabled": False}).status_code == 200
+    exported = client.post("/api/v1/privacy/exports", headers=headers)
+    assert exported.status_code == 201
+    assert client.get(f"/api/v1/privacy/exports/{exported.json()['id']}/download", headers=headers).status_code == 200
+    assert client.get("/api/v1/privacy/workspace-deletion", headers=headers).status_code == 200
+    assert client.post("/api/v1/privacy/workspace-deletion", headers=headers, json={"confirmation": "DELETE WORKSPACE"}).status_code == 200
+    assert client.post("/api/v1/privacy/workspace-deletion/cancel", headers=headers).status_code == 200
+
+
+def test_expired_billing_keeps_privacy_owner_and_auth_boundaries(client, workspace):
+    headers, tenant_id, email = workspace
+    db = SessionLocal()
+    try:
+        db.execute(update(Subscription).where(Subscription.tenant_id == tenant_id).values(status="canceled", legacy_grandfathered=False))
+        db.execute(update(User).where(User.email == email).values(role=UserRole.STAFF))
+        db.commit()
+    finally:
+        db.close()
+    assert client.get("/api/v1/privacy/marketing-preference").status_code == 401
+    assert client.post("/api/v1/privacy/exports", headers=headers).status_code == 403
+    assert client.post("/api/v1/privacy/workspace-deletion", headers=headers, json={"confirmation": "DELETE WORKSPACE"}).status_code == 403
+    assert client.put("/api/v1/privacy/marketing-preference", headers=headers, json={"enabled": False}).status_code == 200

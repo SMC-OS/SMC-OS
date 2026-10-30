@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -167,6 +168,14 @@ export default function PricingPage() {
             {dayLabel(daysRemaining(subscription.trial_end))} left in your trial
           </p>
         ) : null}
+
+        {isAuthenticated && (
+          <p className="mt-4 text-center text-sm">
+            <Link className="underline" href="/privacy-controls">
+              Privacy preferences and data access
+            </Link>
+          </p>
+        )}
 
         {canStartTrial && (
           <div className="mx-auto mt-6 max-w-xl rounded-lg border border-border bg-surface px-4 py-4 text-sm">
