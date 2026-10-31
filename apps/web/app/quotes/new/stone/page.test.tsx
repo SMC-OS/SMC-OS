@@ -1274,4 +1274,38 @@ it("does not write customers or quotes when navigating to Review or back", async
         String(url).endsWith("/customers") && init?.method === "POST",
     ),
   ).toHaveLength(1);
+  await screen.findByRole("button", { name: "Download Invoice" });
+  // A completed wizard must not create another invoice on a repeated submit.
+  const save = screen.getByRole("button", { name: /quote saved|save quote/i });
+  await userEvent.click(save);
+  fireEvent.submit(save.closest("form")!);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(
+    fetchMock.mock.calls.filter(
+      ([url, init]) => String(url).endsWith("/quote") && init?.method === "POST",
+    ),
+  ).toHaveLength(1);
+  expect(screen.getByLabelText("Customer name")).toBeDisabled();
+});
+
+it("ignores overlapping submits while the session check is pending", async () => {
+  const baseFetch = fetchMock.getMockImplementation() as (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  let releaseSession!: () => void;
+  const sessionBarrier = new Promise<void>((resolve) => { releaseSession = resolve; });
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/auth/me")) await sessionBarrier;
+    return baseFetch(input, init);
+  });
+  renderEditor();
+  fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Single submit" } });
+  fireEvent.change(screen.getByLabelText("Length (mm)"), { target: { value: "2400" } });
+  const form = screen.getByRole("button", { name: "Save Quote" }).closest("form")!;
+  fireEvent.submit(form);
+  fireEvent.submit(form);
+  releaseSession();
+  await screen.findByRole("button", { name: "Download Invoice" });
+  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/quote") && init?.method === "POST")).toHaveLength(1);
 });

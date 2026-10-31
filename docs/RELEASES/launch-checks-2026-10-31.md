@@ -24,13 +24,13 @@ The candidate carries forward PR #54's email-delivery outcome fix onto the deplo
 
 It also adds a server-derived complimentary-billing disclosure. A legacy access grant without a Stripe subscription is shown as complimentary, with no recurring charge or expiry; paid portal/cancel controls are omitted for that state. A grant that also has a Stripe subscription is not described as free. This is presentation of the existing entitlement, not a new privilege grant.
 
-These changes need CI, review and deployment before they change the live application.
+PR #58 passed full CI and is merged. These changes are deployed to staging; they have not yet replaced the production baseline listed above.
 
-Local validation passed 101 focused backend checks and all 413 frontend tests, plus TypeScript, scoped ESLint and whitespace checks. Full PostgreSQL/E2E CI remains a release gate. The initial CI dependency audit found seven advisories in the existing pypdf 6.21.2 pin; the candidate updates that PDF inspection dependency to the maintainer's patched 6.21.4 release and requires a clean audit rerun.
+PR #58 validation passed 101 focused backend checks and all 413 frontend tests, plus TypeScript, scoped ESLint and whitespace checks. Full PostgreSQL/E2E CI and the dependency audit passed. The initial seven pypdf 6.21.2 advisories were resolved by the maintainer's patched 6.21.4 release.
 
 ## Gate 1 — onboarding
 
-Status: PREPARED, not passed. The owner requested preparation before supplying a new test mailbox.
+Status: core production signup → delivered verification → verified email → fresh sign-in → correct workspace access PASSED. The owner completed mailbox verification; independent database and browser checks confirmed the result. Company-profile/onboarding completion remains open. The tests below distinguish any unexercised edge cases from this completed core journey.
 
 1. Use an owner-controlled unused mailbox and an isolated fresh browser session. Create a uniquely named QA Launch workspace through public signup; do not reuse the permanent owner account.
 2. Record selected plan, trial start/end and workspace identity. Confirm no card or paid subscription is created at signup.
@@ -96,7 +96,7 @@ Owner-operated support still needs documented hours, target acknowledgement/reso
 
 Status: NOT RUN for representative concurrent writes/PDFs/uploads. Supported simultaneous-use limit remains unverified.
 
-Staging currently runs an older release. A staging-only source update was prepared for all three application services to pin the deployed production baseline. Review the patch before applying; it contains source changes only and no production or volume changes. Subsequent fix-candidate testing must identify its exact SHA separately from the production baseline.
+Staging runs the merged PR #58 candidate. The follow-up quote-integrity patch below still requires its own full CI, staged deployment and load-test rerun. Every capacity result must identify its exact deployed SHA separately from production.
 
 Execution specification after staging is current and ready:
 
@@ -118,3 +118,20 @@ Current upload storage is a volume on a single API replica. Do not add API repli
 5. Deploy approved production release and repeat live smoke checks before handing over to external businesses.
 
 Production promotion to 100 businesses remains on hold pending these gates.
+
+## Follow-up: quote integrity and measured concurrency
+
+PR #58 is merged. Its full CI run passed, and the reviewed candidate was deployed successfully to all three staging application services. Staging reached migration head `94e5f6a7b8c9`. Production remains on the previous deployed baseline.
+
+Fresh production signup, provider-reported delivery, owner-confirmed inbox verification, fresh sign-in and correct empty-workspace access have passed. The new workspace's business profile/onboarding details remain incomplete.
+
+The authenticated staging smoke matrix passed 20 gates with zero failures. This includes real quote creation and invoice download, quote approval/handoff, staff and customer-portal document hash checks, portal revocation, tenant isolation, messages, appointments, assignment/status changes and CORS. Seven separately operated gates are not fulfilled by this harness run.
+
+A bounded mixed-workload run completed 181 journeys at 1, 5 and 10 concurrent clients across two synthetic tenants, checking saved/reopened totals, generated PDF text, upload/download hashes and cross-tenant denial. These were short ramps, not a capacity certificate. A 25-client ramp hit 30-second timeouts and was stopped; Railway logged exhaustion of its 5+10 connection pool. Cold test-client connections also took approximately 5–6 seconds and are reported separately from warm-operation latency. No supported concurrent-user limit is established.
+
+Two defects were reproduced before fixing:
+
+- Repeated submit after the stone wizard reported success created additional quotes. The editor now guards overlapping submits and locks a completed priced quote; it directs the user to Quotes to reopen it or start another.
+- Quote creation and activity logging used separate database sessions while the first still held a connection. A one-connection regression reproduced the pool timeout. Audit-write failure could also leave a saved quote despite reporting failure. Stone/general creation and quote approval/handoff now share the caller's transaction with their activity record. CRUD callers retain their existing commit defaults; quote creation/handoff explicitly defer commit until the audit write succeeds.
+
+The follow-up patch must pass full CI, deploy to staging and repeat the failing concurrency case before it is promoted. Recovery, the complete sandbox billing lifecycle, account-specific provider/legal records and support coverage remain open. No live payment or active-volume restore was performed.

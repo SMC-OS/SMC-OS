@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Badge } from "@/components/ui/Badge";
@@ -237,6 +237,8 @@ function NewQuotePageInner({
   const [items, setItems] = useState<ItemRow[]>(() => [blankItem(initialItem)]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const savingRef = useRef(false);
+  const [savedQuoteId, setSavedQuoteId] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const customMaterialError = initialError;
   const [result, setResult] = useState<QuoteResult | null>(null);
@@ -396,7 +398,7 @@ function NewQuotePageInner({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (uploadingKey) return;
+    if (uploadingKey || savingRef.current || savedQuoteId) return;
     if (!showAll && step < 4) {
       setStep(step + 1);
       return;
@@ -462,6 +464,7 @@ function NewQuotePageInner({
       );
       return;
     }
+    savingRef.current = true;
     setSubmitting(true);
     setError(null);
     setResult(null);
@@ -566,6 +569,7 @@ function NewQuotePageInner({
         }),
       });
       setPendingDraftId(quote.pricing_pending ? quote.id : undefined);
+      setSavedQuoteId(quote.pricing_pending ? undefined : quote.id);
       setResult(quote);
     } catch (err) {
       setError(
@@ -576,6 +580,7 @@ function NewQuotePageInner({
             : "Something went wrong.",
       );
     } finally {
+      savingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -849,6 +854,7 @@ function NewQuotePageInner({
         </div>
       )}
       <form onSubmit={handleSubmit}>
+        <fieldset disabled={!!savedQuoteId} className="contents">
         <fieldset disabled={!showStep(0)} hidden={!showStep(0)}>
           <h2 className="mb-4 text-xl font-semibold">
             1. Material &amp; customer
@@ -1511,9 +1517,9 @@ function NewQuotePageInner({
               <Button
                 key="quote-save"
                 type="submit"
-                disabled={submitting || uploadingKey !== null}
+                disabled={submitting || uploadingKey !== null || !!savedQuoteId}
               >
-                {submitting ? "Saving…" : "Save Quote"}
+                {submitting ? "Saving…" : savedQuoteId ? "Quote saved" : "Save Quote"}
               </Button>
             )}
           </div>
@@ -1527,6 +1533,7 @@ function NewQuotePageInner({
             {error}
           </p>
         )}
+        </fieldset>
       </form>
 
       {result && (
@@ -1539,6 +1546,11 @@ function NewQuotePageInner({
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-4">
+            {savedQuoteId && (
+              <p role="status" className="mb-4 text-sm text-muted">
+                Quote saved. <Link href="/quotes" className="text-accent hover:underline">Open Quotes</Link> to reopen it or start another quote.
+              </p>
+            )}
             <ul className="mb-4 flex flex-col gap-2">
               {result.items.map((item) => (
                 <li

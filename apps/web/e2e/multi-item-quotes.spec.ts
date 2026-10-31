@@ -86,6 +86,11 @@ test("stone_review_navigation_never_saves_before_explicit_save", async ({
   ).toBeVisible();
   expect(writes.filter((path) => path.endsWith("/quote"))).toHaveLength(1);
   expect(writes.filter((path) => path.endsWith("/customers"))).toHaveLength(1);
+  await expect(page.getByRole("button", { name: "Quote saved", exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Customer name")).toBeDisabled();
+  await page.locator("form").evaluate((form) => (form as HTMLFormElement).requestSubmit());
+  await page.waitForTimeout(750);
+  expect(writes.filter((path) => path.endsWith("/quote"))).toHaveLength(1);
 });
 
 async function signUpAndLogIn(
