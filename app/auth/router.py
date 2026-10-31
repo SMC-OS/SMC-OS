@@ -38,6 +38,7 @@ from app.auth.service import EmailAlreadyRegisteredError, auth_service
 from app.auth.verification_service import (
     VerificationTokenInvalidError,
     email_verification_service,
+    verification_delivery_outcome,
 )
 from app.core.config import settings
 from app.database import crud
@@ -68,11 +69,13 @@ def signup(data: SignupRequest, request: Request, response: Response, db: Sessio
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
-    email_verification_service.send_verification_email(db, user)
+    delivery = email_verification_service.send_verification_email(db, user)
+    delivery_status, _ = verification_delivery_outcome(delivery)
     activity_service.log(
         ActivityEventCreate(
             type=ActivityType.EMAIL_VERIFICATION_REQUESTED,
-            title="Verification email sent",
+            title=("Verification email accepted" if delivery_status == "sent"
+                   else "Verification email delivery " + delivery_status),
             description=user.email,
         ),
         tenant_id=tenant.id,
@@ -102,16 +105,20 @@ def resend_verification_email(
         str(current_user.id),
         cooldown_seconds=settings.email_verification_resend_cooldown_seconds,
     )
-    email_verification_service.send_verification_email(db, current_user)
+    delivery = email_verification_service.send_verification_email(db, current_user)
+    delivery_status, message = verification_delivery_outcome(delivery)
     activity_service.log(
         ActivityEventCreate(
             type=ActivityType.EMAIL_VERIFICATION_REQUESTED,
-            title="Verification email re-sent",
+            title=("Verification email accepted" if delivery_status == "sent"
+                   else "Verification email delivery " + delivery_status),
             description=current_user.email,
         ),
         tenant_id=current_user.tenant_id,
     )
-    return VerificationResendResponse(message="Verification email sent.", already_verified=False)
+    return VerificationResendResponse(
+        message=message, already_verified=False, delivery_status=delivery_status
+    )
 
 
 @router.post("/email/verify/confirm", response_model=MessageResponse)

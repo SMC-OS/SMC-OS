@@ -110,9 +110,11 @@ export function BillingCard() {
                     {currentPlan?.name ?? subscription.plan}
                   </p>
                   <p className="text-sm text-muted">
-                    Billed {subscription.billing_period}
-                    {subscription.current_period_end &&
-                      ` · renews ${formatDate(subscription.current_period_end)}`}
+                    {subscription.complimentary
+                      ? "Complimentary access — no recurring charge or expiry."
+                      : <>Billed {subscription.billing_period}
+                        {subscription.current_period_end &&
+                          ` · renews ${formatDate(subscription.current_period_end)}`}</>}
                   </p>
                 </div>
                 <Badge tone={STATUS_TONE[subscription.status] ?? "neutral"}>
@@ -120,7 +122,7 @@ export function BillingCard() {
                 </Badge>
               </div>
 
-              {subscription.status === "trialing" && subscription.trial_end && (
+              {!subscription.complimentary && subscription.status === "trialing" && subscription.trial_end && (
                 <p className="rounded-lg bg-info/10 px-3 py-2 text-sm text-info">
                   {daysRemaining(subscription.trial_end)} days left in your free trial. Your card
                   won&apos;t be charged until the trial ends, and you can cancel any time before
@@ -157,7 +159,7 @@ export function BillingCard() {
                 </dl>
               )}
 
-              {subscription.cancel_at_period_end && (
+              {!subscription.complimentary && subscription.cancel_at_period_end && (
                 <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
                   Your plan ends on{" "}
                   {subscription.current_period_end
@@ -167,7 +169,7 @@ export function BillingCard() {
                 </p>
               )}
 
-              <div className="flex flex-wrap gap-2">
+              {!subscription.complimentary && <><div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
                   disabled={busy}
@@ -210,7 +212,7 @@ export function BillingCard() {
 
               <p className="text-xs text-muted">
                 Invoices and receipts are in the payment portal above.
-              </p>
+              </p></>}
             </div>
           )}
 
