@@ -85,6 +85,9 @@ def list_plans():
 
 def _subscription_out(subscription) -> SubscriptionOut:
     out = SubscriptionOut.model_validate(subscription)
+    out.complimentary = bool(
+        subscription.legacy_grandfathered and not subscription.stripe_subscription_id
+    )
     status_ = trial_status(subscription)
     if status_ is not None:
         out.trial_state = status_.state

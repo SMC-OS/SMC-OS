@@ -43,6 +43,7 @@ export interface Subscription {
   status: SubscriptionStatus;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  complimentary?: boolean;
   // Sprint 039 Blocker 3 — both null for a subscription that was never a
   // trial.
   trial_start: string | null;
