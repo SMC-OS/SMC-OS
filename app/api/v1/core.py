@@ -8,7 +8,7 @@ app/quotes/router.py), and /dashboard computes real numbers instead of
 returning hardcoded ones.
 
 Sprint 012 (ADR-029) — /quote and /estimate stay deliberately public
-(ADR-023), but now use get_current_user_optional to opportunistically tag
+(ADR-023), but now use optional authentication to opportunistically tag
 the created Quote with the caller's tenant when a valid token is present;
 called with no token, the quote is still created, just with no tenant
 (visible to nobody's authenticated /quotes browsing). /dashboard now
@@ -16,6 +16,11 @@ requires auth and returns only the caller's tenant's counts — it had no
 auth at all before this sprint (see docs/USER_ROLES.md §1's now-resolved
 "still true" list). /process is untouched: it only ever reads the shared,
 tenant-agnostic materials catalogue (app/assistant/sales.py, search.py).
+
+Launch review: a valid session must satisfy verification and billing
+before a quote is written into its workspace. Anonymous catalogue estimates
+keep their existing contract. The legacy dashboard uses the same workspace
+access gate as the other dashboard routes.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,7 +28,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.assistant.estimator import EstimatorAssistant
-from app.auth.dependencies import get_current_user_optional, require_role
+from app.auth.dependencies import require_optional_billing_access, require_role_and_billing
 from app.auth.models import UserRole
 from app.brain.manager import BrainManager
 from app.database import crud
@@ -50,7 +55,7 @@ def process(prompt: Prompt, db: Session = Depends(get_db)):
 @router.post("/quote")
 def create_quote(
     request: QuoteRequest,
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User | None = Depends(require_optional_billing_access),
     db: Session = Depends(get_db),
 ):
     tenant_id = current_user.tenant_id if current_user is not None else None
@@ -67,7 +72,7 @@ def create_quote(
 @router.post("/estimate")
 def estimate(
     prompt: Prompt,
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User | None = Depends(require_optional_billing_access),
     db: Session = Depends(get_db),
 ):
     request = estimator.parse(prompt.text)
@@ -85,7 +90,7 @@ def estimate(
 
 @router.get("/dashboard")
 def dashboard(
-    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    current_user: User = Depends(require_role_and_billing(UserRole.OWNER, UserRole.STAFF)),
     db: Session = Depends(get_db),
 ):
     tenant_id = current_user.tenant_id
