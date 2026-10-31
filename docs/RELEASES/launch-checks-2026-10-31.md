@@ -26,6 +26,8 @@ It also adds a server-derived complimentary-billing disclosure. A legacy access 
 
 These changes need CI, review and deployment before they change the live application.
 
+Local validation passed 101 focused backend checks and all 413 frontend tests, plus TypeScript, scoped ESLint and whitespace checks. Full PostgreSQL/E2E CI remains a release gate. The initial CI dependency audit found seven advisories in the existing pypdf 6.21.2 pin; the candidate updates that PDF inspection dependency to the maintainer's patched 6.21.4 release and requires a clean audit rerun.
+
 ## Gate 1 — onboarding
 
 Status: PREPARED, not passed. The owner requested preparation before supplying a new test mailbox.
