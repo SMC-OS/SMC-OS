@@ -154,15 +154,17 @@ export default function OnboardingPage() {
 
   async function finish() {
     setBusy(true);
+    setError(null);
     try {
       await api.updateOnboarding({ complete: true });
       refresh();
-    } catch {
-      // Marking completion is best effort. Someone who has reached the
-      // end of setup must not be held there by a failed write — the
-      // backend also treats a workspace with real data as complete.
-    } finally {
       router.replace("/");
+    } catch {
+      // A failed completion write must not be represented as a completed
+      // setup: keep the final step visible and allow a safe retry.
+      setError("Could not finish setup. Please try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
