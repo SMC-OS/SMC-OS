@@ -135,3 +135,15 @@ Two defects were reproduced before fixing:
 - Quote creation and activity logging used separate database sessions while the first still held a connection. A one-connection regression reproduced the pool timeout. Audit-write failure could also leave a saved quote despite reporting failure. Stone/general creation and quote approval/handoff now share the caller's transaction with their activity record. CRUD callers retain their existing commit defaults; quote creation/handoff explicitly defer commit until the audit write succeeds.
 
 The follow-up patch must pass full CI, deploy to staging and repeat the failing concurrency case before it is promoted. Recovery, the complete sandbox billing lifecycle, account-specific provider/legal records and support coverage remain open. No live payment or active-volume restore was performed.
+
+## Staging verification after owner approval
+
+PR #59 candidate `b36ce24d19d3ca2b70d85d0e8eee98e965f51e75` passed full CI (1559 backend checks, 414 web checks, 75 browser checks and dependency audits). The owner applied the staged API/web release on 31 October at 18:33 UTC. Both deployments reached SUCCESS at the exact reviewed SHA; migration head remains `94e5f6a7b8c9`. Marketing and production were not changed by that release.
+
+The fresh authenticated smoke run passed 20 checks with zero failures. Short mixed-workload phases at 1, 5, 10 and 25 concurrent clients completed 327 quote/PDF/upload journeys without errors. The 25-client phase completed 175 journeys, with warm p95 save 1.003 seconds and PDF 1.042 seconds. Cold test-client connection setup was approximately 5 seconds, separately recorded. A 30-minute, 10-client soak was started; its final result is not claimed in this source snapshot.
+
+An additional live staging access check found that `POST /quote` accepted a tenant-owned manual quote while the same account was denied normal workspace access: unverified customers returned 403 and verified expired-trial customers returned 402, but each quote write returned 200. The legacy `/estimate` path had the same dependency, and the legacy dashboard omitted its billing guard. The follow-up patch applies verification/billing to valid sessions on these core routes without changing anonymous catalogue estimates or converting a denied valid session to anonymous. It adds no migration and does not change the permanent complimentary entitlement.
+
+Live privacy checks on a disposable expired-trial staging workspace passed one-time export/download (reuse returned 410), marketing opt-out, deletion-confirmation validation, recoverable deletion request/repeat and cancellation. These do not establish a complete personal-data export, permanent purge, matched hosted restore or final legal retention approval.
+
+The newly found access fix requires full CI, its own staging deployment and live denial/allowed-session verification. The PR #59 capacity observations apply to the deployed SHA tested; they must not be silently attributed to an undeployed follow-up candidate.

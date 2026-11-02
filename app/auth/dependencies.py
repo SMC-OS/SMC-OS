@@ -290,3 +290,16 @@ def require_role_and_billing(*allowed_roles: UserRole):
         return current_user
 
     return checker
+
+
+def require_optional_billing_access(
+    current_user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Keep public estimates anonymous, but enforce workspace access when
+    a valid session would attach the resulting write to a tenant. Access
+    denial must not downgrade that session to an anonymous write.
+    """
+    if current_user is None:
+        return None
+    return require_billing_access(require_verified_email(current_user), db)

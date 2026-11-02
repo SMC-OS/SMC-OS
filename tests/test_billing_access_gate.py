@@ -37,6 +37,7 @@ API calls, not a UI redirect):
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import delete
 
 from app.auth.dependencies import has_active_billing_access
@@ -206,6 +207,25 @@ def test_role_gated_routes_are_also_blocked_not_just_plain_authenticated_ones(cl
         assert client.get("/api/v1/users", headers=headers).status_code == 402
     finally:
         _cleanup(tenant_name=company, emails=[_unique_email("role-gated-block")])
+
+
+@pytest.mark.parametrize("unverified,expected", [(True, 403), (False, 402)])
+def test_legacy_core_routes_enforce_workspace_access_for_signed_in_users(client, unverified, expected):
+    label = "core-unverified" if unverified else "core-no-subscription"
+    headers, tenant_id, company = _signup_and_verify(client, label=label, without_subscription=True)
+    try:
+        if unverified:
+            with SessionLocal() as db:
+                db.query(User).filter(User.tenant_id == tenant_id).update({"email_verified_at": None})
+                db.commit()
+        body = {"customer": "Synthetic access test", "site_address_line1": "1 Test Street",
+                "postcode": "NW2 7RP", "pricing_mode": "manual", "manual_price": 1200,
+                "items": [{"material": "Synthetic quartz", "thickness": "20mm", "length_mm": 2000}]}
+        assert client.post("/api/v1/quote", headers=headers, json=body).status_code == expected
+        assert client.post("/api/v1/estimate", headers=headers, json={"text": "Synthetic estimate"}).status_code == expected
+        assert client.get("/api/v1/dashboard", headers=headers).status_code == expected
+    finally:
+        _cleanup(tenant_name=company, emails=[_unique_email(label)])
 
 
 def test_account_session_and_billing_routes_stay_reachable_pre_activation(client):
