@@ -17,7 +17,7 @@ from app.auth.dependencies import require_role
 from app.auth.models import UserRole
 from app.compliance.internal_auth import require_internal_compliance_auth
 from app.database.database import get_db
-from app.database.models import ActivityLog, Customer, Document, MarketingPreference, MarketingUnsubscribeToken, Project, Quote, Tenant, User, WorkspaceDeletion, WorkspaceExport
+from app.database.models import ActivityLog, Customer, Document, MarketingPreference, MarketingUnsubscribeToken, PortalLink, Project, Quote, Tenant, User, WorkspaceDeletion, WorkspaceExport
 from app.core.config import settings
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
@@ -171,6 +171,7 @@ def purge_workspace(tenant_id: uuid.UUID, db: Session = Depends(get_db)):
     tenant = db.get(Tenant, tenant_id)
     if tenant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    db.execute(update(PortalLink).where(PortalLink.tenant_id == tenant_id).values(status="revoked"))
     # Ordinary workspace data is disposed of here. Retained audit, billing,
     # suppression and copyright records are intentionally not deleted.
     for document in db.scalars(select(Document).where(Document.tenant_id == tenant_id)):
