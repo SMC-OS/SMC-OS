@@ -58,9 +58,9 @@ async function reachFinalStep() {
   render(<OnboardingPage />);
   await screen.findByText("What kind of work do you do?");
   fireEvent.click(screen.getByRole("button", { name: "Skip" }));
-  await screen.findByText("Your company");
+  await screen.findByRole("heading", { name: "Your company" });
   fireEvent.click(screen.getByRole("button", { name: "Skip" }));
-  await screen.findByText("Bring your team in");
+  await screen.findByRole("heading", { name: "Bring your team in" });
   fireEvent.click(screen.getByRole("button", { name: "Skip" }));
   await screen.findByRole("button", { name: "Go to GeoCore" });
 }
