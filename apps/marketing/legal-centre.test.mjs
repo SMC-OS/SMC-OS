@@ -17,6 +17,8 @@ test("Legal Centre publishes all seven substantive document routes", () => {
 
 test("Legal Centre keeps pending facts and prohibited claims out of customer copy", () => {
   assert.match(legal, /Mohammad Al Kawarit, trading as GeoCore/);
+  assert.match(legal, /Suite RA01, 195-197 Wood Street, London, E17 3NU, United Kingdom/);
+  assert.match(legal, /Business correspondence can be directed to the virtual-office address shown above/);
   assert.match(legal, /sole trader/i);
   assert.doesNotMatch(legal, /GEOCORE OS LTD|Vincent Gardens|registration is in progress/i);
   assert.match(legal, /does not state an ICO registration number/i);
