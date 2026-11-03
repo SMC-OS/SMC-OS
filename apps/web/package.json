@@ -19,7 +19,7 @@
     "test:e2e:traffic-gate": "playwright test unauthenticated-redirect.spec.ts demo-workspace.spec.ts traffic-mobile.spec.ts general-quoting.spec.ts quote-handoff.spec.ts full-system-journey.spec.ts trade-workflows.spec.ts project-operations.spec.ts site-visit-scheduling.spec.ts job-financials-variations.spec.ts procurement-materials-operations.spec.ts geocore-ai-and-settings.spec.ts"
   },
   "dependencies": {
-    "next": "16.2.12",
+    "next": "16.4.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -34,7 +34,7 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.4.1",
     "jsdom": "^30.0.1",
     "tailwindcss": "^4",
     "typescript": "^5",
