@@ -47,6 +47,10 @@ _TEST_STRIPE_EVENT_IDS = [
     "evt_test_replay_1",
     "evt_test_updated_1",
     "evt_test_trial_conversion_1",
+    "evt_test_invoice_legacy_payment_failed",
+    "evt_test_invoice_legacy_paid",
+    "evt_test_invoice_2026_parent_payment_failed",
+    "evt_test_invoice_2026_parent_paid",
 ]
 
 
@@ -613,6 +617,99 @@ def test_webhook_subscription_updated_syncs_status_and_period_end(
         assert row.cancel_at_period_end is True
         assert row.plan == "business"
         assert row.billing_period == "annual"
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("invoice_shape", ["legacy", "2026_parent"])
+def test_invoice_payment_lifecycle_reconciles_legacy_and_current_stripe_events(
+    client, owner_and_staff, monkeypatch, invoice_shape
+):
+    """Real Stripe 2026-08-26.dahlia invoice events use parent.subscription_details.
+
+    A failed payment must revoke paid status, a subsequent paid invoice must
+    recover it, and redelivery of the same event must be idempotent.
+    """
+    tenant, _, _ = owner_and_staff
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_fake")
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_fake")
+    fake_stripe = MagicMock()
+    billing_service._stripe = fake_stripe
+    subscription_id = f"sub_invoice_{invoice_shape}"
+    db = SessionLocal()
+    try:
+        crud.upsert_subscription(
+            db,
+            tenant_id=tenant.id,
+            plan="starter",
+            billing_period="monthly",
+            status="active",
+            stripe_customer_id=f"cus_invoice_{invoice_shape}",
+            stripe_subscription_id=subscription_id,
+        )
+    finally:
+        db.close()
+
+    subscription_reference = (
+        {"subscription": subscription_id}
+        if invoice_shape == "legacy"
+        else {
+            "parent": {
+                "type": "subscription_details",
+                "subscription_details": {"subscription": subscription_id},
+            }
+        }
+    )
+
+    for event_type, expected_status in (
+        ("invoice.payment_failed", "past_due"),
+        ("invoice.paid", "active"),
+    ):
+        event_id = f"evt_test_invoice_{invoice_shape}_{event_type.split('.')[-1]}"
+        fake_stripe.Webhook.construct_event.return_value = {
+            "id": event_id,
+            "type": event_type,
+            "data": {"object": {"id": f"in_{invoice_shape}", **subscription_reference}},
+        }
+        response = client.post(
+            "/api/v1/billing/webhook",
+            content=b"{}",
+            headers={"stripe-signature": "signed-test-event"},
+        )
+        assert response.status_code == 200
+        db = SessionLocal()
+        try:
+            row = crud.get_subscription_by_tenant_id(db, tenant.id)
+            assert row.status == expected_status
+            assert row.stripe_subscription_id == subscription_id
+        finally:
+            db.close()
+
+    # Even if a newer event has changed the subscription, Stripe's retry of
+    # the already-processed paid invoice must not re-activate it.
+    db = SessionLocal()
+    try:
+        crud.upsert_subscription(
+            db,
+            tenant_id=tenant.id,
+            plan="starter",
+            billing_period="monthly",
+            status="past_due",
+            stripe_customer_id=f"cus_invoice_{invoice_shape}",
+            stripe_subscription_id=subscription_id,
+        )
+    finally:
+        db.close()
+    assert client.post(
+        "/api/v1/billing/webhook",
+        content=b"{}",
+        headers={"stripe-signature": "signed-test-event"},
+    ).status_code == 200
+    db = SessionLocal()
+    try:
+        assert crud.get_subscription_by_tenant_id(db, tenant.id).status == "past_due"
     finally:
         db.close()
 
