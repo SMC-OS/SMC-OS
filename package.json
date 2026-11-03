@@ -16,5 +16,13 @@
   "packageManager": "pnpm@9.0.0",
   "engines": {
     "node": ">=18"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "8.5.23",
+      "source-map-js": "1.2.2",
+      "sharp": "0.35.5",
+      "baseline-browser-mapping": "2.11.0"
+    }
   }
 }
