@@ -49,4 +49,4 @@ uvicorn==0.52.0
 websockets==16.1.1
 
 # Reliable PDF text inspection for document regression tests.
-pypdf==6.21.2
+pypdf==6.21.4
