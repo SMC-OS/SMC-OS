@@ -497,6 +497,7 @@ def create_project(
     # and both do so.
     workflow_template_id: uuid.UUID,
     workflow_stage_id: uuid.UUID,
+    commit: bool = True,
 ) -> Project:
     row = Project(
         id=id,
@@ -520,7 +521,10 @@ def create_project(
         workflow_stage_id=workflow_stage_id,
     )
     db.add(row)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 
@@ -704,6 +708,7 @@ def create_general_quote(
     customer_id: uuid.UUID | None,
     currency: str,
     fields: dict,
+    commit: bool = True,
 ) -> Quote:
     """Sprint 036 (Workstream E) — the general construction quote's own
     INSERT, separate from create_quote() above rather than adding a dozen
@@ -739,7 +744,10 @@ def create_general_quote(
         **{key: value for key, value in fields.items() if key in _GENERAL_QUOTE_COLUMNS},
     )
     db.add(row)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 
@@ -791,7 +799,7 @@ def update_general_quote(
     return row
 
 
-def replace_quote_items(db: Session, quote: Quote, items: list[dict]) -> None:
+def replace_quote_items(db: Session, quote: Quote, items: list[dict], *, commit: bool = True) -> None:
     """Sprint 036 — wholesale replacement of a quote's line items.
 
     Uses the existing `Quote.items` relationship with its
@@ -805,7 +813,10 @@ def replace_quote_items(db: Session, quote: Quote, items: list[dict]) -> None:
     db.flush()
     for index, item in enumerate(items):
         quote.items.append(QuoteItem(id=uuid.uuid4(), position=index, **item))
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(quote)
 
 

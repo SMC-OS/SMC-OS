@@ -123,8 +123,6 @@ class QuoteService:
         quote.status = "approved"
         quote.approved_at = datetime.now(timezone.utc)
         quote.approved_by_user_id = actor_user_id
-        db.commit()
-        db.refresh(quote)
 
         # Same backend-logs-its-own-ActivityEvent pattern as create() above.
         activity_service.log(
@@ -134,7 +132,10 @@ class QuoteService:
                 description=f"Quote {quote.id}",
             ),
             tenant_id=tenant_id,
+            db=db,
         )
+        db.commit()
+        db.refresh(quote)
 
         # Sprint 036 (Workstream G) — dispatched here rather than from the
         # route, so the trigger fires wherever a quote is approved rather
@@ -205,6 +206,7 @@ class QuoteService:
             site_city=quote.site_city,
             site_postcode=quote.site_postcode,
             estimated_value=quote.total,
+            commit=False,
         )
 
         # Same backend-logs-its-own-ActivityEvent pattern as approve() above.
@@ -215,7 +217,10 @@ class QuoteService:
                 description=f"Quote {quote.id} to project {project.id}",
             ),
             tenant_id=tenant_id,
+            db=db,
         )
+        db.commit()
+        db.refresh(project)
 
         return project
 
@@ -314,12 +319,9 @@ class QuoteService:
             ],
             commit=False,
         )
-        db.commit()
-        db.expire(row, ["items"])
-        db.refresh(row)
-
-        # Sprint 004/006 established this pattern: the backend logs its own
-        # ActivityEvent, replacing a standalone frontend call.
+        # Keep the audit event in the quote transaction. Opening a second
+        # session while this one holds a connection starves the pool under
+        # concurrent saves and can report failure after saving the quote.
         activity_service.log(
             ActivityEventCreate(
                 type=ActivityType.QUOTE_CREATED,
@@ -327,7 +329,11 @@ class QuoteService:
                 description=f"{quote.customer} — {result['material']}, " + ("pricing pending" if result["total"] is None else f"£{result['total']:,.2f}"),
             ),
             tenant_id=tenant_id,
+            db=db,
         )
+        db.commit()
+        db.expire(row, ["items"])
+        db.refresh(row)
 
         # Sprint 036 — a stone quote fires quote.created exactly like a
         # general one. Dispatching from the service rather than the route
@@ -443,8 +449,9 @@ class QuoteService:
             customer_id=data.customer_id,
             currency=self._tenant_currency(db, tenant_id),
             fields=fields,
+            commit=False,
         )
-        crud.replace_quote_items(db, row, self._line_rows(data.lines, totals.line_totals))
+        crud.replace_quote_items(db, row, self._line_rows(data.lines, totals.line_totals), commit=False)
 
         activity_service.log(
             ActivityEventCreate(
@@ -453,7 +460,10 @@ class QuoteService:
                 description=f"{data.title} — {row.currency} {totals.total:,.2f}",
             ),
             tenant_id=tenant_id,
+            db=db,
         )
+        db.commit()
+        db.refresh(row)
         automation_dispatcher.dispatch_quote_created(db, row)
         return row
 
