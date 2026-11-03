@@ -57,12 +57,16 @@ def _marketing_footer(unsubscribe_url: str) -> tuple[str, str]:
     """Return the one reusable footer for marketing-classified messages."""
     return (
         (
-            '<p style="font-size:12px;color:#666">GeoCore OS LTD, Vincent Gardens, '
-            'NW2 7RP, United Kingdom. '
+            '<p style="font-size:12px;color:#666">GeoCore, operated by '
+            'Mohammad Al Kawarit (sole trader), Suite RA01, 195-197 Wood Street, '
+            'London, E17 3NU, United Kingdom. '
+            'Contact: support@geocore.one. '
             f'<a href="{unsubscribe_url}">Unsubscribe from marketing</a>.</p>'
         ),
         (
-            "GeoCore OS LTD, Vincent Gardens, NW2 7RP, United Kingdom. "
+            "GeoCore, operated by Mohammad Al Kawarit (sole trader), "
+            "Suite RA01, 195-197 Wood Street, London, E17 3NU, United Kingdom. "
+            "Contact: support@geocore.one. "
             f"Unsubscribe: {unsubscribe_url}"
         ),
     )

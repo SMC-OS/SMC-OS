@@ -2,11 +2,16 @@
 
 This is an internal pre-publication review aid. It is not customer-facing legal advice.
 
-## Entity and tax
+## Operator, trading identity and tax
 
-- Confirm the final contracting entity once GEOCORE OS LTD registration completes; do not publish a registration number before then.
-- Confirm registered office, trading address and statutory company disclosures.
-- Confirm VAT registration status, number and pricing/tax presentation only when available.
+- Owner decision (2 November 2026): GeoCore is currently operated by **Mohammad Al Kawarit, trading as GeoCore**, as a UK **sole trader**. There is no incorporated GeoCore legal entity; do not describe the operator as GEOCORE OS LTD or show a Companies House number. Incorporating in the future is a separate decision.
+- LVA welcome email and owner-provided portal screenshot dated 3 November 2026 show the GeoCore virtual-office account as **Active** with its allocated mailing address: **Suite RA01, 195-197 Wood Street, London, E17 3NU, United Kingdom**. The portal displays the business name **GeoCore**, member since **03 Nov 2026**, the nature of business as an operating system for stone and construction businesses, and a **blank company number**. The portal's checked add-on items (Registered Office + Director's Service Address and Zempler bank account) are not evidence that a limited company exists or that a bank account was approved.
+- Owner confirms LVA upgrade to a business-address-enabled suite on 3 November 2026. Provider service terms explicitly permit websites, invoices, business correspondence and marketing use. The previously recorded registered-office-only restriction is superseded for business use, subject to the new service being active.
+- The allocated GeoCore business address is Suite RA01, 195-197 Wood Street, London, E17 3NU. Draft public use is supported by the owner's upgrade confirmation. Confirm mail handling, KYC completion and any separate conditions for formal legal notices before final release. Do not imply limited company registration.
+- Confirm whether any real trading has begun. Although the owner considers the product pre-trading, the live Stripe account was observed to contain an active and a cancelled subscription; establish whether these are internal tests or actual customer transactions and reconcile any tax/accounting consequences.
+- Check HMRC Self Assessment sole-trader obligations if trading receipts require it; do not claim completed HMRC registration. Confirm VAT status, any VAT number and price/tax presentation only with evidence.
+- Before taking paid orders, verify the legal operator identity in the live Stripe account, business disclosures, billing receipts, invoices, subscription cancellation and support pages are consistent. Never alter existing subscriptions as part of an identity-only change.
+- If incorporating later, execute a separately reviewed transfer of contracts, privacy-controller notices and payment account details.
 
 ## Privacy and data processing
 

@@ -73,7 +73,7 @@ test.describe("GeoCore Premium OS Plan 02 (Sprint 041) — public marketing site
       await expect(page.getByRole("link", { name: `Read ${name}` })).toHaveAttribute("href", `/legal/${path}`);
     }
     await page.goto(`${MARKETING_URL}/legal/privacy-policy`);
-    await expect(page.getByText(/Version 1\.0/)).toBeVisible();
+    await expect(page.getByText(/Version 1\.2/)).toBeVisible();
     await expect(page.getByText(/30-day recovery period/i)).toBeVisible();
   });
 
