@@ -64,8 +64,8 @@ def _marketing_footer(unsubscribe_url: str) -> tuple[str, str]:
             f'<a href="{unsubscribe_url}">Unsubscribe from marketing</a>.</p>'
         ),
         (
-            ("GeoCore, operated by Mohammad Al Kawarit (sole trader), "
-             "Suite RA01, 195-197 Wood Street, London, E17 3NU, United Kingdom. ")
+            "GeoCore, operated by Mohammad Al Kawarit (sole trader), "
+            "Suite RA01, 195-197 Wood Street, London, E17 3NU, United Kingdom. "
             "Contact: support@geocore.one. "
             f"Unsubscribe: {unsubscribe_url}"
         ),
