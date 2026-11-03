@@ -232,8 +232,7 @@ class TestMarketingControls:
         assert url.startswith("https://api.example.test/api/v1/privacy/marketing-unsubscribe/")
         assert message.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
         assert str(tenant.id) not in url
-        assert "GeoCore, operated by Mohammad Al Kawarit (sole trader), United Kingdom." in message.text
-        assert "Suite RA01" not in message.text
+        assert "GeoCore, operated by Mohammad Al Kawarit (sole trader), Suite RA01, 195-197 Wood Street, London, E17 3NU, United Kingdom." in message.text
         assert "Contact: support@geocore.one." in message.text
         assert "Unsubscribe: https://api.example.test" in message.text
         assert db.query(MarketingUnsubscribeToken).filter_by(tenant_id=tenant.id).count() == 1
