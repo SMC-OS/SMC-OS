@@ -26,6 +26,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import delete as sa_delete, func, or_ as sa_or, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database.models import (
@@ -1547,11 +1548,21 @@ def upsert_subscription(
 def mark_stripe_event_processed(db: Session, event_id: str, event_type: str) -> bool:
     """Returns True if this call recorded the event (first delivery),
     False if it was already processed (a retried webhook delivery) — the
-    caller must skip re-applying side effects in the False case."""
+    caller must skip re-applying side effects in the False case.
+
+    The marker is only flushed, not committed: the caller commits it in the
+    same transaction as the event's effect, so a handler failure rolls the
+    marker back too and Stripe's retry can still apply the event. A
+    concurrent duplicate delivery hits the primary key and is reported as
+    already processed."""
     if db.get(ProcessedStripeEvent, event_id) is not None:
         return False
     db.add(ProcessedStripeEvent(id=event_id, event_type=event_type))
-    db.commit()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        return False
     return True
 
 
