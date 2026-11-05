@@ -17,7 +17,7 @@
 | 4 | Billing incl. webhook atomicity | `pytest tests/test_billing_webhook_atomicity.py tests/test_billing_webhook_resources.py tests/test_billing.py` | 49 passed | |
 | 5 | Ledger generator rules | `pytest tests/test_qa_matrix_rules.py` | 5 passed | |
 | 6 | Full backend, run 2 (procurement fix complete; admission and webhook changes not yet included) | `pytest` | 1627 passed, 1 skipped (25m34s) | `evidence/full-backend-run2-summary.txt` |
-| 7 | Full backend, run 3 (final code) | `pytest` | see the "Final full backend run" section below | |
+| 7 | Full backend, run 3 (final code except `tests/test_qa_matrix_rules.py`, which was added after collection) | `pytest` | 1637 passed, 1 skipped (21m14s) | `evidence/full-backend-run3-summary.txt` |
 | 8 | Frontend unit tests, changed areas | `cd apps/web && npx vitest run components/projects/ProjectMaterialsPanel app/signup lib --testTimeout=30000` | 78 passed | |
 | 9 | Frontend unit tests, full suite | `cd apps/web && npx vitest run` | 415 passed, 4 failed in `app/quotes/new/stone/page.test.tsx` (5 s timeouts) | Pre-existing flake, see below |
 | 10 | Typecheck | `cd apps/web && npx tsc --noEmit` | exit 0 | |
@@ -51,8 +51,17 @@
 
 ## Final full backend run
 
-To be filled from `full-backend-3.txt` once the run finishes. No figure is stated before then.
+Local run 3: 1637 passed, 1 skipped, 0 failed. CI's backend job on `73f7dd4` (below) is the authoritative full run on the committed SHA.
 
-## CI
+## CI (GitHub Actions, exact SHA `73f7dd4`)
 
-To be filled with the GitHub Actions run URL and result for the pushed QA commit. CI runs the full backend, frontend, build and Playwright suites on the same SHA.
+Push run https://github.com/SMC-OS/SMC-OS/actions/runs/42127242681 and pull-request run https://github.com/SMC-OS/SMC-OS/actions/runs/42127317387 both concluded **success**.
+
+| Job | Result |
+|---|---|
+| backend | 1643 passed (5m06s), with migrations applied from scratch by `alembic upgrade head` |
+| frontend | lint, type-check, build and contract tests passed; vitest 53 files, 422 of 422 tests passed |
+| e2e | Playwright: 77 passed (8.3m), the full suite, including procurement journeys A–I |
+| dependency-audit | passed |
+
+This is CI evidence on the QA SHA. It is **not** staging evidence, and no ledger status is changed by it.

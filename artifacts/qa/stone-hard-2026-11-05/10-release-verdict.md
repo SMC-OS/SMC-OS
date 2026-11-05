@@ -26,7 +26,7 @@ The historical "28 routes / 426 candidates" was not reused. The current count is
 
 | Gate (ledger) | State | Evidence | Owner / dependency | Single next safe action |
 |---|---|---|---|---|
-| ci | Pending | QA branch CI (see 03) | Agent | Read the CI result on the pushed SHA |
+| ci | Pending (QA SHA green: runs 42127242681 and 42127317387 on `73f7dd4`) | 03 | Agent | Re-run CI on the final promoted SHA; the QA SHA is not the release SHA |
 | stone-staging | Blocked | None on staging | Owner: approve backup + staging deploy (06 §A) | Approve the staging backup and deploy of the QA SHA |
 | receipt-material | Pending (local) | 02 checklist, local tests, E2E G/H/I | Same | Same, then run journeys G/H/I on staging |
 | quote-pdf | Unknown | Not tested this session | Agent, after staging | Run quote review/save/PDF journeys on staging |
