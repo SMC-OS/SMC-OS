@@ -487,3 +487,143 @@ test("a_stone_project_cannot_enter_fabrication_until_its_materials_are_received"
 
   await api.dispose();
 });
+
+async function advanceStoneProjectToTemplate(page: Page, projectId: string) {
+  await page.getByRole("tab", { name: /workflow/i }).click();
+  for (const stageLabel of ["Measure / Site Visit", "Quote", "Approved", "Deposit", "Material Ordered / Reserved", "Template"]) {
+    const moveButton = page.getByRole("button", { name: `Move to ${stageLabel}` });
+    await expect(moveButton).toBeVisible();
+    const transitionResponse = page.waitForResponse(
+      (res) =>
+        res.url().endsWith(`/api/v1/projects/${projectId}/workflow/transition`) && res.request().method() === "POST"
+    );
+    await moveButton.click();
+    await transitionResponse;
+  }
+}
+
+// ---- Journey H: STONE-GATE repro — an unlinked PO line, repaired in the UI ----
+// The reported defect: everything was delivered, yet Fabrication stayed
+// locked, because the PO line was never linked to the requirement and
+// there was no way to link it after ordering. This drives the repair
+// entirely through the Materials tab: record the delivery, see the gate
+// still closed, link the line with the per-line selector, and see the gate
+// open on reload. The PO is created without a link on purpose — that is
+// the legacy/unlinked data shape, and it must not be linked automatically
+// on a matching name or quantity.
+test("an_unlinked_delivered_line_can_be_linked_in_the_ui_and_then_opens_fabrication", async ({ page }) => {
+  const runId = uniqueRunId("journey-h");
+  const { api, authHeaders } = await signUpAndLogIn(page, runId);
+  const projectId = await createProject(api, authHeaders, runId, "stone", "Unlinked delivery job");
+
+  const requirementRes = await api.post(`/api/v1/projects/${projectId}/requirements`, {
+    headers: authHeaders,
+    data: { description: "Calacatta 20mm slab", required_quantity: 2, unit: "slab" },
+  });
+  expect(requirementRes.ok()).toBeTruthy();
+  const requirement = await requirementRes.json();
+
+  const poRes = await api.post("/api/v1/purchase-orders", {
+    headers: authHeaders,
+    data: {
+      project_id: projectId,
+      items: [{ description: "Calacatta slab delivery", quantity: 2, unit: "slab", unit_cost: 650 }],
+    },
+  });
+  expect(poRes.ok()).toBeTruthy();
+  const po = await poRes.json();
+  expect(po.items[0].material_requirement_id).toBeNull();
+  await api.post(`/api/v1/purchase-orders/${po.id}/approve`, { headers: authHeaders });
+  await api.post(`/api/v1/purchase-orders/${po.id}/order`, { headers: authHeaders, data: {} });
+
+  await page.goto(`/projects/${projectId}`);
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("tab", { name: "Materials" }).click();
+
+  // The unlinked line is called out, not silently ignored.
+  await expect(page.getByText(/isn.t linked to a requirement/i)).toBeVisible();
+
+  // Deliver everything that was ordered, through the UI, with a retry key.
+  const receiptResponse = page.waitForResponse(
+    (res) => res.url().endsWith(`/api/v1/purchase-orders/${po.id}/receipts`) && res.request().method() === "POST"
+  );
+  await page.getByRole("button", { name: /record delivery/i }).click();
+  await page.getByRole("button", { name: /save delivery/i }).click();
+  const receipt = await receiptResponse;
+  expect(receipt.status()).toBe(201);
+  expect(receipt.request().postDataJSON().idempotency_key).toBeTruthy();
+
+  // Delivered but unlinked: the requirement is still outstanding.
+  let reqs = await (await api.get(`/api/v1/projects/${projectId}/requirements`, { headers: authHeaders })).json();
+  expect(reqs.find((r: { id: string }) => r.id === requirement.id).status).toBe("required");
+
+  // Repair the link in the UI.
+  const linkResponse = page.waitForResponse(
+    (res) => res.url().includes(`/items/${po.items[0].id}/link-requirement`) && res.request().method() === "POST"
+  );
+  await page.getByLabel(/link .* to a requirement/i).selectOption(requirement.id);
+  expect((await linkResponse).status()).toBe(200);
+  await expect(page.getByText(/isn.t linked to a requirement/i)).toHaveCount(0);
+
+  reqs = await (await api.get(`/api/v1/projects/${projectId}/requirements`, { headers: authHeaders })).json();
+  expect(reqs.find((r: { id: string }) => r.id === requirement.id).status).toBe("received");
+
+  // A fresh load shows the gate is satisfied: Fabrication is no longer
+  // blocked by materials.
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+  await advanceStoneProjectToTemplate(page, projectId);
+  await expect(page.getByText(/materials have not all been received/i)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Move to Fabrication" })).toBeEnabled();
+
+  await api.dispose();
+});
+
+// ---- Journey I: a short delivery never opens the gate ----
+test("a_delivery_short_of_the_required_quantity_keeps_the_requirement_outstanding", async ({ page }) => {
+  const runId = uniqueRunId("journey-i");
+  const { api, authHeaders } = await signUpAndLogIn(page, runId);
+  const projectId = await createProject(api, authHeaders, runId, "stone", "Short delivery job");
+
+  const requirement = await (
+    await api.post(`/api/v1/projects/${projectId}/requirements`, {
+      headers: authHeaders,
+      data: { description: "Quartz 30mm slab", required_quantity: 3, unit: "slab" },
+    })
+  ).json();
+  // Ordered less than the job needs: receiving all of it is still short.
+  const po = await (
+    await api.post("/api/v1/purchase-orders", {
+      headers: authHeaders,
+      data: {
+        project_id: projectId,
+        items: [
+          { description: "Quartz slab", material_requirement_id: requirement.id, quantity: 2, unit: "slab", unit_cost: 300 },
+        ],
+      },
+    })
+  ).json();
+  await api.post(`/api/v1/purchase-orders/${po.id}/approve`, { headers: authHeaders });
+  await api.post(`/api/v1/purchase-orders/${po.id}/order`, { headers: authHeaders, data: {} });
+
+  await page.goto(`/projects/${projectId}`);
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("tab", { name: "Materials" }).click();
+  await page.getByRole("button", { name: /record delivery/i }).click();
+  const receiptResponse = page.waitForResponse(
+    (res) => res.url().endsWith(`/api/v1/purchase-orders/${po.id}/receipts`) && res.request().method() === "POST"
+  );
+  await page.getByRole("button", { name: /save delivery/i }).click();
+  expect((await receiptResponse).status()).toBe(201);
+
+  const reqs = await (await api.get(`/api/v1/projects/${projectId}/requirements`, { headers: authHeaders })).json();
+  expect(reqs.find((r: { id: string }) => r.id === requirement.id).status).toBe("partially_received");
+
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+  await advanceStoneProjectToTemplate(page, projectId);
+  await expect(page.getByText(/materials have not all been received/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Move to Fabrication" })).toBeDisabled();
+
+  await api.dispose();
+});

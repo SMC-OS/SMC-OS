@@ -2460,18 +2460,22 @@ def list_project_cost_entries(
     return list(db.scalars(stmt).all())
 
 
-def update_project_cost_entry(db: Session, entry: ProjectCostEntry, fields: dict) -> ProjectCostEntry:
+def update_project_cost_entry(
+    db: Session, entry: ProjectCostEntry, fields: dict, *, commit: bool = True
+) -> ProjectCostEntry:
     for key, value in fields.items():
         setattr(entry, key, value)
     db.add(entry)
-    db.commit()
-    db.refresh(entry)
+    _commit_or_flush(db, entry, commit)
     return entry
 
 
-def delete_project_cost_entry(db: Session, entry: ProjectCostEntry) -> None:
+def delete_project_cost_entry(db: Session, entry: ProjectCostEntry, *, commit: bool = True) -> None:
     db.delete(entry)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
 
 def sum_cost_by_state(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> dict[str, float]:
@@ -2677,13 +2681,12 @@ def list_material_requirements_by_project(
 
 
 def update_material_requirement(
-    db: Session, requirement: ProjectMaterialRequirement, fields: dict
+    db: Session, requirement: ProjectMaterialRequirement, fields: dict, *, commit: bool = True
 ) -> ProjectMaterialRequirement:
     for key, value in fields.items():
         setattr(requirement, key, value)
     db.add(requirement)
-    db.commit()
-    db.refresh(requirement)
+    _commit_or_flush(db, requirement, commit)
     return requirement
 
 
@@ -2740,6 +2743,37 @@ def get_purchase_order_by_id(db: Session, purchase_order_id: uuid.UUID, tenant_i
     return db.scalars(stmt).first()
 
 
+def lock_purchase_order(db: Session, purchase_order_id: uuid.UUID, tenant_id: uuid.UUID) -> PurchaseOrder | None:
+    """Row-locks a PO until the next commit, so two concurrent deliveries
+    cannot both pass the over-receipt check."""
+    stmt = (
+        select(PurchaseOrder)
+        .where(PurchaseOrder.id == purchase_order_id, PurchaseOrder.tenant_id == tenant_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return db.scalars(stmt).first()
+
+
+def get_purchase_receipt_by_idempotency_key(db: Session, tenant_id: uuid.UUID, key: str) -> PurchaseReceipt | None:
+    stmt = select(PurchaseReceipt).where(
+        PurchaseReceipt.tenant_id == tenant_id, PurchaseReceipt.idempotency_key == key
+    )
+    return db.scalars(stmt).first()
+
+
+def list_requirement_po_lines(
+    db: Session, requirement_id: uuid.UUID, tenant_id: uuid.UUID
+) -> list[tuple[PurchaseOrderItem, str]]:
+    """Every PO line linked to a requirement, with its PO's status."""
+    stmt = (
+        select(PurchaseOrderItem, PurchaseOrder.status)
+        .join(PurchaseOrder, PurchaseOrderItem.purchase_order_id == PurchaseOrder.id)
+        .where(PurchaseOrderItem.material_requirement_id == requirement_id, PurchaseOrder.tenant_id == tenant_id)
+    )
+    return [(item, po_status) for item, po_status in db.execute(stmt).all()]
+
+
 def list_purchase_orders(
     db: Session,
     tenant_id: uuid.UUID,
@@ -2770,12 +2804,13 @@ def list_purchase_orders(
     return rows
 
 
-def update_purchase_order(db: Session, purchase_order: PurchaseOrder, fields: dict) -> PurchaseOrder:
+def update_purchase_order(
+    db: Session, purchase_order: PurchaseOrder, fields: dict, *, commit: bool = True
+) -> PurchaseOrder:
     for key, value in fields.items():
         setattr(purchase_order, key, value)
     db.add(purchase_order)
-    db.commit()
-    db.refresh(purchase_order)
+    _commit_or_flush(db, purchase_order, commit)
     return purchase_order
 
 
@@ -2816,7 +2851,7 @@ def sum_received_quantity_for_item(db: Session, purchase_order_item_id: uuid.UUI
     return float(total) if total is not None else 0.0
 
 
-def create_purchase_receipt(db: Session, *, items: list[dict], **fields) -> PurchaseReceipt:
+def create_purchase_receipt(db: Session, *, items: list[dict], commit: bool = True, **fields) -> PurchaseReceipt:
     receipt = PurchaseReceipt(id=fields.pop("id", uuid.uuid4()), **fields)
     db.add(receipt)
     db.flush()
@@ -2824,9 +2859,19 @@ def create_purchase_receipt(db: Session, *, items: list[dict], **fields) -> Purc
         PurchaseReceiptItem(id=uuid.uuid4(), purchase_receipt_id=receipt.id, **item) for item in items
     ]
     db.add_all(rows)
-    db.commit()
-    db.refresh(receipt)
+    _commit_or_flush(db, receipt, commit)
     return receipt
+
+
+def _commit_or_flush(db: Session, row, commit: bool) -> None:
+    """commit=False lets a service fold several writes into one transaction
+    (the session has autoflush off, so later reads in that transaction need
+    the explicit flush to see these rows)."""
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
 
 
 def list_purchase_receipts(db: Session, purchase_order_id: uuid.UUID) -> list[PurchaseReceipt]:

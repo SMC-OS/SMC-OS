@@ -22,6 +22,7 @@ const approvePurchaseOrderMock = vi.fn();
 const orderPurchaseOrderMock = vi.fn();
 const cancelPurchaseOrderMock = vi.fn();
 const recordPurchaseOrderReceiptMock = vi.fn();
+const linkPurchaseOrderItemMock = vi.fn();
 const downloadPurchaseOrderPdfMock = vi.fn();
 const getSuppliersMock = vi.fn();
 // GeoCore Premium OS Plan 05 (Sprint 044), Task 35-36 — the "Suggested
@@ -43,6 +44,7 @@ vi.mock("@/lib/api", async () => {
       approvePurchaseOrder: (...args: unknown[]) => approvePurchaseOrderMock(...args),
       orderPurchaseOrder: (...args: unknown[]) => orderPurchaseOrderMock(...args),
       cancelPurchaseOrder: (...args: unknown[]) => cancelPurchaseOrderMock(...args),
+      linkPurchaseOrderItem: (...args: unknown[]) => linkPurchaseOrderItemMock(...args),
       recordPurchaseOrderReceipt: (...args: unknown[]) => recordPurchaseOrderReceiptMock(...args),
       downloadPurchaseOrderPdf: (...args: unknown[]) => downloadPurchaseOrderPdfMock(...args),
       getSuppliers: (...args: unknown[]) => getSuppliersMock(...args),
@@ -138,7 +140,7 @@ describe("ProjectMaterialsPanel", () => {
     render(<ProjectMaterialsPanel projectId="project-1" />);
 
     await waitFor(() => {
-      expect(screen.getByText("40mm quartz worktop slabs")).toBeInTheDocument();
+      expect(screen.getAllByText("40mm quartz worktop slabs").length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Required")).toBeInTheDocument();
     expect(screen.getByText("PO-001")).toBeInTheDocument();
@@ -273,6 +275,68 @@ describe("ProjectMaterialsPanel", () => {
       );
     });
     expect(await screen.findByText("Received")).toBeInTheDocument();
+  });
+
+  it("reuses_the_delivery_key_when_the_same_delivery_is_resubmitted_after_a_failure", async () => {
+    getProjectRequirementsMock.mockResolvedValue([]);
+    getPurchaseOrdersMock.mockResolvedValue([purchaseOrder({ status: "ordered" })]);
+    getSuppliersMock.mockResolvedValue([]);
+    recordPurchaseOrderReceiptMock.mockRejectedValueOnce(new Error("network"));
+    recordPurchaseOrderReceiptMock.mockResolvedValueOnce({});
+    getPurchaseOrderMock.mockResolvedValue(purchaseOrder({ status: "received" }));
+
+    render(<ProjectMaterialsPanel projectId="project-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: /record delivery/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save delivery/i }));
+    await screen.findByText(/could not record the delivery/i);
+    fireEvent.click(screen.getByRole("button", { name: /save delivery/i }));
+
+    await waitFor(() => expect(recordPurchaseOrderReceiptMock).toHaveBeenCalledTimes(2));
+    const [first, second] = recordPurchaseOrderReceiptMock.mock.calls.map((call) => call[1]);
+    expect(first.idempotency_key).toBeTruthy();
+    expect(second.idempotency_key).toBe(first.idempotency_key);
+  });
+
+  it.each([
+    [
+      "purchase order item x: 0 + 6 would exceed ordered quantity 5",
+      /receive more than was ordered/i,
+    ],
+    [
+      "A delivery can only be recorded once the purchase order is on order",
+      /can't be recorded on this purchase order right now/i,
+    ],
+  ])("explains_a_409_from_the_servers_detail_%#", async (detail, shown) => {
+    const { ApiError } = await import("@/lib/api");
+    getProjectRequirementsMock.mockResolvedValue([]);
+    getPurchaseOrdersMock.mockResolvedValue([purchaseOrder({ status: "ordered" })]);
+    getSuppliersMock.mockResolvedValue([]);
+    recordPurchaseOrderReceiptMock.mockRejectedValueOnce(
+      new ApiError("Request to /purchase-orders/po-1/receipts failed with 409", 409, detail)
+    );
+
+    render(<ProjectMaterialsPanel projectId="project-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: /record delivery/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save delivery/i }));
+
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+  });
+
+  it("links_an_unlinked_line_to_a_requirement_and_shows_the_recomputed_status", async () => {
+    const requirement = { id: "req-1", description: "Calacatta 20mm", status: "ordered" };
+    getProjectRequirementsMock.mockResolvedValueOnce([requirement]);
+    getPurchaseOrdersMock.mockResolvedValue([purchaseOrder({ status: "received" })]);
+    getSuppliersMock.mockResolvedValue([]);
+    linkPurchaseOrderItemMock.mockResolvedValue(purchaseOrder({ status: "received", items: [] }));
+    getProjectRequirementsMock.mockResolvedValueOnce([{ ...requirement, status: "received" }]);
+
+    render(<ProjectMaterialsPanel projectId="project-1" />);
+    const select = await screen.findByLabelText(/link .* to a requirement/i);
+    fireEvent.change(select, { target: { value: "req-1" } });
+
+    await waitFor(() => expect(linkPurchaseOrderItemMock).toHaveBeenCalledWith("po-1", "poi-1", "req-1"));
+    await waitFor(() => expect(screen.queryByLabelText(/link .* to a requirement/i)).not.toBeInTheDocument());
+    expect(getProjectRequirementsMock).toHaveBeenCalledTimes(2);
   });
 
   // GeoCore Premium OS Plan 05 (Sprint 044), Task 35-36 — "Send to
