@@ -10,7 +10,7 @@ root .env, same file docker-compose.yml and the previous ad-hoc reads used.
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
@@ -125,6 +125,11 @@ class Settings(BaseSettings):
     # docs/SPRINTS/sprint-039.md §14.3 for the exact owner-gate spec of
     # what to create in Stripe and which of these 8 variables each one
     # fills). No value here is a real Stripe id; none is fabricated.
+    # Issue #67 release freeze — `closed` refuses new sign-ups, new trials
+    # and first-time checkout server-side (app/core/admission.py). Existing
+    # accounts and subscriptions are unaffected. Default `open` = no change.
+    new_account_admission: Literal["open", "closed"] = "open"
+
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
     stripe_price_starter_monthly: str | None = None
