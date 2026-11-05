@@ -42,6 +42,19 @@ curl -fsS $STAGING_API_URL/health
 - **Application rollback:** redeploy the previous staging API and web deployments (their IDs are recorded outside Git, per the runbook). The added column and index are ignored by older code, so a schema downgrade is not needed. The runbook requires reviewed reversibility before any downgrade.
 - **Schema downgrade:** only with owner authorisation, via `alembic downgrade 94e5f6a7b8c9`.
 
+## Owner sign-off sheet
+
+Tick each line and write the date to approve it. Each line approves only what it says.
+
+- [ ] **A1. Staging backup before the migration:** Railway manual backup of `simo-postgres-staging`. Backup ID recorded outside Git.
+- [ ] **A2. Staging deploy of QA SHA `<sha>`:** API first, then web. Migration `a5f6b7c8d9e0` is applied by pre-deploy. Verify `alembic current` and run journeys G/H/I with synthetic tenants.
+- [ ] **A3. Staging admission closed:** set `NEW_ACCOUNT_ADMISSION=closed` on `simo-api-staging` and verify 403 on sign-up.
+- [ ] **A4. Production read-only aggregate audit:** the same script as staging, `READ ONLY`, prints counts only. It looks for requirements wrongly `received` and for delivered unlinked lines.
+- [ ] **A5. Stripe test mode:** connector authentication in test mode, used only with staging and synthetic tenants.
+- [ ] **B1–B6. Backup/PITR, Drive, scratch resources, restore and cleanup:** each needs its own approval (section B).
+
+Already verified read-only (2026-11-05): staging `alembic current` = `94e5f6a7b8c9`, which is the new migration's parent, so the migration applies as a single step.
+
 ## B. Backup/PITR and scratch restore drill (gate `restore`, journey `recovery-restore`)
 
 | Step | Runbook gate | State |

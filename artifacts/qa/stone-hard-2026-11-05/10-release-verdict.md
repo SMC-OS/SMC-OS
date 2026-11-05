@@ -29,12 +29,12 @@ The historical "28 routes / 426 candidates" was not reused. The current count is
 | ci | Pending (QA SHA green: runs 42127242681 and 42127317387 on `73f7dd4`) | 03 | Agent | Re-run CI on the final promoted SHA; the QA SHA is not the release SHA |
 | stone-staging | Blocked | None on staging | Owner: approve backup + staging deploy (06 §A) | Approve the staging backup and deploy of the QA SHA |
 | receipt-material | Pending (local) | 02 checklist, local tests, E2E G/H/I | Same | Same, then run journeys G/H/I on staging |
-| quote-pdf | Unknown | Not tested this session | Agent, after staging | Run quote review/save/PDF journeys on staging |
+| quote-pdf | Unknown (CI evidence only) | CI on `73f7dd4`: the quote E2E journeys and `test_stone_manual_pricing.py` passed (per-workspace `Invoice-000001`, stable re-download, one number under concurrent downloads) | Agent, after staging | Run the quote review/save/PDF journeys on staging and check the PDF text and hash |
 | billing-portal | Blocked | No Stripe access | Owner: Stripe test-mode access | Authenticate the Stripe connector in test mode |
 | inbox | Blocked | Needs a real mailbox | Owner | Owner sends and receives a test from the support and privacy addresses |
 | restore | Blocked | Runbook STOP gates | Owner | Approve the backup/PITR maintenance window (06 §B) |
 | capacity | Blocked | Needs staging on the release SHA | Owner + agent | After the staging deploy, run a bounded load test (07) |
-| security | Unknown | Local tenant-isolation tests for procurement only | Agent | Run the cross-tenant suite on staging |
+| security | Unknown (local/CI evidence only) | Every API module has tenant-B-against-tenant-A tests (passed in CI). New `tests/test_api_unauthenticated_sweep.py`: all 163 operations deny anonymous callers without data or 5xx; only 6 public, data-free operations answer 2xx | Agent | Run the cross-tenant and anonymous sweeps against staging after the deploy |
 | legal | Blocked | External professional review | Owner + solicitor | Commission the review (08) |
 | support | Blocked | No adopted SLA | Owner | Decide hours and targets (08) |
 | onboarding | Pending | Admission gate built, default open | Owner | Set `NEW_ACCOUNT_ADMISSION=closed` on staging after review |

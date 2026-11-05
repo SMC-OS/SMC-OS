@@ -11,7 +11,7 @@ Status words: Verified, Defective, Blocked, Pending or Unknown. In this register
 | QA-ALLOC-XPROJ | High | not in ledger | Found by code review; fixed (local) | QA branch, P0 commit | CI and staging |
 | QA-ADMISSION | Critical (#67 P0) | gate `onboarding` / Issue #67 | Server-side gate implemented, default open | QA branch, admission commit | Owner must set `NEW_ACCOUNT_ADMISSION=closed` on staging, then production, after review |
 | QA-VITEST-FLAKE | Low | not in ledger | Pre-existing timing flake in `app/quotes/new/stone/page.test.tsx` | Not fixed | Already present at `63e8ac9` (see 03) |
-| HIST-RECEIVED | High (data) | not in ledger | Requirements may be wrongly `received` from before the fix | Read-only audit SQL only | Owner-approved read-only run on staging and production; humans decide each row |
+| HIST-RECEIVED | High (data) | not in ledger | Staging checked read-only (2026-11-05): 0 suspects. Production not checked | Read-only audit SQL | Owner approval for a production read-only, aggregate-only run; humans decide each row |
 
 ## STONE-GATE — "Fully received material does not unlock Fabrication"
 
@@ -38,7 +38,14 @@ Reproduced at `63e8ac9` on a disposable PostgreSQL 16.2, against the seeded `sto
 2. Retried deliveries were counted twice.
 3. Cancelling the only PO left the requirement `ordered`.
 
-**Which cause produced the owner's incident is NOT established.** That needs the affected staging job's data, read-only. `scripts/qa/stone_gate_historical_audit.sql` lists candidates for both directions.
+**Which cause produced the owner's incident is NOT established.** `scripts/qa/stone_gate_historical_audit.sql` lists candidates for both directions.
+
+**Staging investigation (2026-11-05):**
+- **Method:** run inside the `simo-api-staging` container via `railway ssh`, as a `READ ONLY` transaction that was rolled back. It printed aggregate counts only; no identifiers were exported.
+- **Schema:** staging `alembic_version` is `94e5f6a7b8c9`, the parent of the new migration.
+- **Data:** 1 material requirement (`received`) with 1 linked PO line. Suspects found: 0 received-but-short, 0 received-with-undelivered-lines, 0 receipts on draft/approved POs, 0 receipts on cancelled POs, 0 delivered unlinked lines.
+- **Conclusion:** the reported symptom is **not present in staging's current data**. It may have occurred in production, in data since removed, or only in the acceptance site's local workspace (its export says "Not live-synced").
+- **Production:** not queried. Running the same aggregate-only check there needs owner approval (06).
 
 ### Fix (QA branch)
 

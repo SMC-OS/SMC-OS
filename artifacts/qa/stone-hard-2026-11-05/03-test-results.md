@@ -25,6 +25,8 @@
 | 12 | Playwright procurement journeys A–I | `cd apps/web && npx playwright test procurement-materials-operations.spec.ts` | 6 passed, 3 failed on the 30 s per-test timeout; those 3 passed with `--timeout=120000` | `evidence/e2e-procurement-2-summary.txt`, `evidence/e2e-procurement-3-summary.txt` |
 | 13 | Migration `a5f6b7c8d9e0` | `alembic upgrade head; alembic downgrade -1; alembic upgrade head` | passed | Disposable DB only |
 | 14 | Historical audit SQL | executed read-only (`BEGIN READ ONLY … ROLLBACK`) | runs; 0 rows on the disposable DB | Says nothing about real data |
+| 16 | Anonymous access sweep, every API operation | `pytest tests/test_api_unauthenticated_sweep.py` | 163 passed | No 5xx. Only 6 allow-listed public operations answer 2xx; the rest of the protected API returns 401 |
+| 17 | Staging historical audit (read-only, aggregate) | `railway ssh` into `simo-api-staging`, `READ ONLY` transaction, counts only | 1 requirement, 0 suspects; `alembic_version` 94e5f6a7b8c9 | No identifiers exported; see 02 |
 | 15 | Secret and personal-data scan of the diff | `git diff` grep for Stripe, JWT, AWS and PEM key patterns, password literals, personal e-mail domains | no hits | |
 
 ## Failures and how they were triaged
