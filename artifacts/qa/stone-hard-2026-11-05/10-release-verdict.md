@@ -52,7 +52,7 @@ The historical "28 routes / 426 candidates" was not reused. The current count is
 
 ## Rollback readiness
 
-- **Staging:** previous deployments `e82048f8` (API) and `b262174e` (web). The migration is additive, so an application rollback needs no schema downgrade (06).
+- **Staging:** redeploy the previous API and web deployments (IDs recorded outside Git, per the runbook). The migration is additive, so an application rollback needs no schema downgrade (06).
 - **Production:** untouched. Its pre-deploy writes schema and catalogue data, so any future promotion needs a matched backup first.
 
 ## Customer handover gaps

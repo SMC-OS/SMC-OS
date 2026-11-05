@@ -33,13 +33,13 @@ git merge-base --is-ancestor bb1c1e9 <QA_SHA> && git merge-base --is-ancestor 0d
 # 2. Backup (owner-approved route), record the backup id outside Git
 # 3. Deploy API at <QA_SHA>; then verify the schema, not only health:
 railway ssh --service simo-api-staging --environment staging -- alembic current   # must print a5f6b7c8d9e0 (head)
-curl -fsS https://simo-api-staging-staging.up.railway.app/health
+curl -fsS $STAGING_API_URL/health
 # 4. Deploy web at <QA_SHA>; run Playwright journeys G, H and I and the STONE-GATE checklist with synthetic tenants
 ```
 
 ### Rollback
 
-- **Application rollback:** redeploy the previous staging deployment (`e82048f8` API, `b262174e` web). The added column and index are ignored by older code, so a schema downgrade is not needed. The runbook requires reviewed reversibility before any downgrade.
+- **Application rollback:** redeploy the previous staging API and web deployments (their IDs are recorded outside Git, per the runbook). The added column and index are ignored by older code, so a schema downgrade is not needed. The runbook requires reviewed reversibility before any downgrade.
 - **Schema downgrade:** only with owner authorisation, via `alembic downgrade 94e5f6a7b8c9`.
 
 ## B. Backup/PITR and scratch restore drill (gate `restore`, journey `recovery-restore`)
@@ -55,7 +55,7 @@ curl -fsS https://simo-api-staging-staging.up.railway.app/health
 
 - Active Railway volumes are never restored, remounted or redeployed.
 - No RPO or RTO is claimed.
-- Upload ownership: both API services mount a volume at `/var/lib/simo-os/uploads`: production volume `a31e6943…`, staging volume `5aa95535…`. There is a single replica, so uploads are not shared between instances.
+- Upload ownership: both API services mount a volume at `/var/lib/simo-os/uploads`: production volume `<volume-id>`, staging volume `<volume-id>`. There is a single replica, so uploads are not shared between instances.
 
 ## C. Production pre-deploy is data-writing
 

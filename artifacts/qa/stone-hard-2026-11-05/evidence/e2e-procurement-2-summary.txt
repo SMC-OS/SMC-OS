@@ -9,12 +9,12 @@
   ok 9 [chromium] › e2e\procurement-materials-operations.spec.ts:583:5 › a_delivery_short_of_the_required_quantity_keeps_the_requirement_outstanding (27.9s)
   1) [chromium] › e2e\procurement-materials-operations.spec.ts:85:5 › a_stone_projects_materials_tab_carries_a_requirement_through_to_a_full_receipt
     Error: locator.click: Test timeout of 30000ms exceeded.
-    ..\..\..\..\..\..\..\AppData\Local\Temp\claude\C--Users-simo1-Downloads-Ai-Operating-system-SMC-OS\bcdd470a-d35f-45ec-929e-af5cf0f05cee\scratchpad\pw-results\procurement-materials-oper-b432a-t-through-to-a-full-receipt-chromium\test-failed-1.png
+    <local-path>
   2) [chromium] › e2e\procurement-materials-operations.spec.ts:264:5 › a_second_tenant_cannot_read_the_first_tenants_procurement_data
     Error: page.waitForLoadState: Test timeout of 30000ms exceeded.
-    ..\..\..\..\..\..\..\AppData\Local\Temp\claude\C--Users-simo1-Downloads-Ai-Operating-system-SMC-OS\bcdd470a-d35f-45ec-929e-af5cf0f05cee\scratchpad\pw-results\procurement-materials-oper-4350c-st-tenants-procurement-data-chromium\test-failed-1.png
+    <local-path>
   3) [chromium] › e2e\procurement-materials-operations.spec.ts:400:5 › a_stone_project_cannot_enter_fabrication_until_its_materials_are_received
     Error: page.waitForLoadState: Test timeout of 30000ms exceeded.
-    ..\..\..\..\..\..\..\AppData\Local\Temp\claude\C--Users-simo1-Downloads-Ai-Operating-system-SMC-OS\bcdd470a-d35f-45ec-929e-af5cf0f05cee\scratchpad\pw-results\procurement-materials-oper-9fa30--its-materials-are-received-chromium\test-failed-1.png
+    <local-path>
   3 failed
   6 passed (5.0m)
