@@ -22,7 +22,7 @@ from app.customers.service import customer_service
 from app.database.database import get_db
 from app.database.models import User
 from app.documents.models import DocumentOut
-from app.documents.service import document_service
+from app.documents.service import document_service, media_type_for
 from app.messages.models import MessageOut
 from app.portal.models import (
     PortalLinkCreate,
@@ -171,7 +171,9 @@ def download_portal_document(token: str, document_id: uuid.UUID, db: Session = D
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return FileResponse(
         path=document_service.file_path(row),
-        media_type=row.content_type,
+        # Derived from the stored extension, so rows saved before this
+        # change are also served with a server-chosen type.
+        media_type=media_type_for(row.storage_filename),
         filename=row.original_filename,
     )
 

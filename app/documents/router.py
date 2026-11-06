@@ -20,6 +20,7 @@ from app.documents.service import (
     DocumentNotFoundError,
     DocumentDeleteError,
     FileTooLargeError,
+    media_type_for,
     document_service,
 )
 
@@ -76,7 +77,9 @@ def download_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return FileResponse(
         path=document_service.file_path(row),
-        media_type=row.content_type,
+        # Derived from the stored extension, so rows saved before this
+        # change are also served with a server-chosen type.
+        media_type=media_type_for(row.storage_filename),
         filename=row.original_filename,
     )
 
