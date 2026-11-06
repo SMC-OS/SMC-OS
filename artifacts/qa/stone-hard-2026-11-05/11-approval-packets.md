@@ -10,6 +10,23 @@ Facts below were gathered read-only on 2026-11-06 at about 00:10 UTC through `ra
 
 ## A1 — Staging backup before the migration
 
+### A1 execution record (owner approved A1 on 2026-11-06)
+
+- **T0 snapshot**, 2026-11-06 01:51:01 UTC, read-only:
+  - schema `94e5f6a7b8c9`;
+  - 146 tenants, 154 users, 3,766 documents, 3,778 quotes and 4,323 activity rows;
+  - uploads: 3,766 files and 275,645,492 bytes, equal to the database total;
+  - last activity and document write: 2026-11-01 07:31 UTC;
+  - SHA-256 computed for the 3 synthetic documents.
+  - Values are kept outside Git.
+- **Manual backups: NOT CREATED.** Railway refused both with "Plan limit of 10 backups per volume exceeded".
+  - Each volume already holds 10 backups: 5 manual ones from August 2026 (Sprint 019 recovery work, set to never expire) and 5–6 rolling daily backups that expire after 6 days.
+  - Nothing was created, deleted or changed.
+- **Found along the way:**
+  - Staging already has **daily volume backups** for both volumes. The latest are 2026-11-05 11:17 (postgres) and 11:14 (uploads), both taken after the last write on 2026-11-01.
+  - PITR status reports "Restorable up to 2026-11-05 07:02 UTC", with the latest pgBackRest set at 2026-11-05 07:00.
+- **Status: A1 BLOCKED.** It needs an owner choice between: locking an existing post-write daily backup, deleting old August manual backups to free slots, a logical dump and archive to the operator machine, or a plan change.
+
 **Operation.** Take Railway manual backups of two staging volumes:
 - `simo-postgres-staging` → `postgres-volume` (2,000 MB allocated);
 - `simo-api-staging` → its uploads volume.
