@@ -70,4 +70,6 @@ Push run https://github.com/SMC-OS/SMC-OS/actions/runs/42127242681 and pull-requ
 | e2e | Playwright: 77 passed (8.3m), the full suite, including procurement journeys A–I |
 | dependency-audit | passed |
 
+Later run on `740b6b4` (the A2 deploy candidate): push run https://github.com/SMC-OS/SMC-OS/actions/runs/42138695942 and PR run https://github.com/SMC-OS/SMC-OS/actions/runs/42138702465 both concluded success. Results: backend 1807 passed, vitest 424 of 424, Playwright 77 passed, dependency audit passed.
+
 This is CI evidence on the QA SHA. It is **not** staging evidence, and no ledger status is changed by it.

@@ -77,13 +77,13 @@ Record one matched recovery point. Nothing is restored, and no service is restar
 
 ## A2 — Staging deploy of the tested SHA and STONE-GATE/DEF-003 browser acceptance
 
-**SHA to deploy.** The QA-branch head that CI has proved green; this packet's commit records it in 03 and 10. Re-check that it contains `bb1c1e9` and `0d745af` (`git merge-base --is-ancestor`) on the day.
+**SHA to deploy: `740b6b4`** (full SHA `740b6b4` on `qa/geocore-closure-20261105`). CI is green on exactly this commit: push run 42138695942 and PR run 42138702465, with backend 1807 passed, frontend 424/424, Playwright 77 passed, and the dependency audit passed. Later documentation-only commits do not change the code. Pin `740b6b4` itself, not the branch head. Re-check that it contains `bb1c1e9` and `0d745af` (`git merge-base --is-ancestor`) on the day.
 
 **Prerequisite:** A1 complete, with T0 = T1.
 
 ### Steps, in order (STOP on any failure)
 
-1. **Pin the SHA.** Create the branch `staging/stone-gate-acceptance` at exactly `<SHA>`. Nothing else ever pushes to it.
+1. **Pin the SHA.** Create the branch `staging/stone-gate-acceptance` at exactly `740b6b4`. Nothing else ever pushes to it.
 2. **API first.**
    - Change `simo-api-staging`'s source branch from `fix/billing-invoice-parent-20261103` to `staging/stone-gate-acceptance` and deploy.
    - The pre-deploy runs `alembic upgrade head`, applying `a5f6b7c8d9e0` (additive: one nullable column plus a partial unique index).
@@ -134,7 +134,7 @@ Record one matched recovery point. Nothing is restored, and no service is restar
 
 ### Approve as
 
-"A2 approved for SHA `<SHA>`, API then web, two synthetic owners."
+"A2 approved for SHA `740b6b4`, API then web, two synthetic owners."
 
 ---
 
