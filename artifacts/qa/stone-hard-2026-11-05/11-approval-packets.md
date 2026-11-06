@@ -12,6 +12,8 @@ Facts below were gathered read-only on 2026-11-06 at about 00:10 UTC through `ra
 
 ### A1 execution record (owner approved A1 on 2026-11-06)
 
+> **Process deviation, disclosed.** At about 01:51 UTC this session ran the *old* A1 steps: a read-only T0 snapshot and two backup-create calls. It had not fetched the review override (commits `11a85ca` and `4cc8e2f`, pushed at 01:31–01:33 UTC), which says not to execute the old procedure. Both backup calls were refused, so **no backup, dump, archive, barrier or other change was made**. A1 is stopped. The next attempt must follow [12-A1-writer-block-verification.md](./12-A1-writer-block-verification.md) in full, within an owner-recorded UTC window.
+
 - **T0 snapshot**, 2026-11-06 01:51:01 UTC, read-only:
   - schema `94e5f6a7b8c9`;
   - 146 tenants, 154 users, 3,766 documents, 3,778 quotes and 4,323 activity rows;
