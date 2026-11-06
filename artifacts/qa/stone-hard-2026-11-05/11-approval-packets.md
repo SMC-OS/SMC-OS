@@ -1,5 +1,7 @@
 # 11 — Approval packets (prepared 2026-11-06; NOTHING EXECUTED)
 
+> **A1 REVIEW OVERRIDE — 6 November 2026:** Owner authorised an improved A1 plan and conditional A2 only after verified A1. The earlier procedural writer-freeze and matching row-count method in section A1 below is **not sufficient**. The **authoritative revised procedure and STOP conditions** are [12-A1-writer-block-verification.md](./12-A1-writer-block-verification.md). No specific 30-minute UTC window, enforced staging writer barrier, matched backup or restoration evidence has yet been entered. A1 is authorised in principle but **not executed/verified**; A2 SHA `740b6b4` is still **BLOCKED until A1 completes**. Eight real-staging browser tests are required, not waived. Do not execute the old procedure as written.
+
 Each packet is a separate decision. Approving one does not approve another. Production stays HARD NO-GO throughout: no packet touches production data, production deploys or live payments, except A4, which is a read-only query.
 
 Facts below were gathered read-only on 2026-11-06 at about 00:10 UTC through `railway ssh` into `simo-api-staging` (a `READ ONLY` transaction, aggregate output only) and the Railway configuration API.
