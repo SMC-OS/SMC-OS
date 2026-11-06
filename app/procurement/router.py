@@ -16,6 +16,7 @@ from app.procurement.models import (
     MaterialRequirementOut,
     MaterialRequirementUpdate,
     OrderPurchaseOrderRequest,
+    LinkRequirementRequest,
     OverReceiptError,
     PurchaseOrderCreate,
     PurchaseOrderItemOut,
@@ -27,6 +28,11 @@ from app.procurement.models import (
 )
 from app.procurement.pdf import build_purchase_order_pdf
 from app.procurement.service import (
+    PurchaseOrderItemLinkConflictError,
+    PurchaseOrderReceiptStateError,
+    ReceiptIdempotencyConflictError,
+    AllocationLinkError,
+    RequirementLinkError,
     ProjectNotFoundError,
     PurchaseOrderEditStateError,
     PurchaseOrderNotFoundError,
@@ -41,6 +47,8 @@ from app.procurement.service import (
 # /catalogue/suppliers/..., same convention as app/appointments/router.py
 # and app/variations/router.py.
 router = APIRouter(tags=["procurement"], dependencies=[Depends(require_billing_access)])
+
+_REQUIREMENT_LINK_DETAIL = "Requirement is not available on this purchase order's project"
 
 
 def _serialize_po(db: Session, purchase_order: PurchaseOrder) -> PurchaseOrderOut:
@@ -191,6 +199,8 @@ def create_purchase_order(
         po = procurement_service.create_purchase_order(db, current_user.tenant_id, current_user.id, data)
     except ProjectNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    except RequirementLinkError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_REQUIREMENT_LINK_DETAIL)
     return _serialize_po(db, po)
 
 
@@ -220,6 +230,8 @@ def update_purchase_order(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase order not found")
     except PurchaseOrderEditStateError:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only a draft purchase order can be edited")
+    except RequirementLinkError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_REQUIREMENT_LINK_DETAIL)
     return _serialize_po(db, po)
 
 
@@ -328,6 +340,32 @@ def list_receipts(
 
 
 @router.post(
+    "/purchase-orders/{purchase_order_id}/items/{item_id}/link-requirement", response_model=PurchaseOrderOut
+)
+def link_purchase_order_item(
+    purchase_order_id: uuid.UUID,
+    item_id: uuid.UUID,
+    data: LinkRequirementRequest,
+    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    db: Session = Depends(get_db),
+):
+    try:
+        purchase_order = procurement_service.link_item_to_requirement(
+            db, purchase_order_id, item_id, current_user.tenant_id, data.material_requirement_id
+        )
+    except PurchaseOrderNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase order item not found")
+    except RequirementLinkError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_REQUIREMENT_LINK_DETAIL)
+    except PurchaseOrderItemLinkConflictError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This line is already linked to another requirement, or its purchase order is cancelled",
+        )
+    return _serialize_po(db, purchase_order)
+
+
+@router.post(
     "/purchase-orders/{purchase_order_id}/receipts",
     response_model=PurchaseReceiptOut,
     status_code=status.HTTP_201_CREATED,
@@ -346,6 +384,15 @@ def record_receipt(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase order item not found")
     except OverReceiptError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except PurchaseOrderReceiptStateError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A delivery can only be recorded once the purchase order is on order",
+        )
+    except ReceiptIdempotencyConflictError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="This delivery key was already used for a different delivery"
+        )
     return PurchaseReceiptOut(
         id=receipt.id,
         purchase_order_id=receipt.purchase_order_id,
@@ -386,3 +433,8 @@ def allocate_material(
         return procurement_service.allocate_material(db, project_id, current_user.tenant_id, current_user.id, data)
     except ProjectNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    except AllocationLinkError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Allocate only against this project's own requirements and this workspace's purchase order lines",
+        )

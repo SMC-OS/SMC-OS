@@ -1,0 +1,4 @@
+  ok 1 [chromium] › e2e\procurement-materials-operations.spec.ts:85:5 › a_stone_projects_materials_tab_carries_a_requirement_through_to_a_full_receipt (26.5s)
+  ok 2 [chromium] › e2e\procurement-materials-operations.spec.ts:264:5 › a_second_tenant_cannot_read_the_first_tenants_procurement_data (38.9s)
+  ok 3 [chromium] › e2e\procurement-materials-operations.spec.ts:400:5 › a_stone_project_cannot_enter_fabrication_until_its_materials_are_received (29.9s)
+  3 passed (1.8m)

@@ -190,13 +190,22 @@ class BillingService:
         if not crud.mark_stripe_event_processed(db, event["id"], event["type"]):
             return  # already processed — idempotent no-op on a retried delivery
 
-        handler = self._EVENT_HANDLERS.get(event["type"])
-        if handler is not None:
-            event_object = event["data"]["object"]
-            to_dict = getattr(event_object, "to_dict", None)
-            if callable(to_dict):
-                event_object = to_dict()
-            handler(self, db, event_object)
+        # The processed marker and the event's effect commit together. If
+        # the handler fails, both roll back and the error reaches Stripe as
+        # a 5xx, so its retry applies the event instead of being dropped as
+        # a duplicate of an event that never took effect.
+        try:
+            handler = self._EVENT_HANDLERS.get(event["type"])
+            if handler is not None:
+                event_object = event["data"]["object"]
+                to_dict = getattr(event_object, "to_dict", None)
+                if callable(to_dict):
+                    event_object = to_dict()
+                handler(self, db, event_object)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
 
     def _handle_checkout_completed(self, db: Session, session_obj: dict) -> None:
         """Wires up tenant<->Stripe linkage (customer/subscription ids,

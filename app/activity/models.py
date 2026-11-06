@@ -66,6 +66,7 @@ class ActivityType(str, Enum):
     PURCHASE_ORDER_ORDERED = "purchase_order_ordered"
     PURCHASE_ORDER_CANCELLED = "purchase_order_cancelled"
     PURCHASE_ORDER_RECEIPT_RECORDED = "purchase_order_receipt_recorded"
+    PURCHASE_ORDER_ITEM_LINKED = "purchase_order_item_linked"
     MATERIAL_ALLOCATED = "material_allocated"
 
 

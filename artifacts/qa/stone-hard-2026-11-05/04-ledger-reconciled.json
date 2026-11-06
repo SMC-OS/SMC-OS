@@ -1,0 +1,1702 @@
+{
+  "schemaVersion": 1,
+  "cells": {
+    "LIVE-A-050::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-050::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-050::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-050::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-050::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-050::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-050::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-050::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-050::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-050::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-051::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-052::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-053::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-054::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-055::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-056::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-057::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-058::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-059::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Procurement": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Requirements & Orders": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Receipts": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Task Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Workflow Transitions": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Fabrication": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Quality Control": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Installation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Snagging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "LIVE-A-060::Completion": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    }
+  },
+  "journeys": {
+    "stone-receipt-gate": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "stone-partial": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "stone-qc-install": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "quote-review-save": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "quote-reopen-pdf": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "billing-activation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "billing-failure": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "billing-portal": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "billing-complimentary": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "billing-email": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "sec-tenant": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "sec-rbac": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "portal-onboarding": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "portal-isolation": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "recovery-restore": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "support-monitored": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "legal-ico": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "capacity": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    }
+  },
+  "gates": {
+    "ci": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "stone-staging": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "receipt-material": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "quote-pdf": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "billing-portal": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "inbox": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "restore": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "capacity": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "security": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "legal": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "support": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    },
+    "onboarding": {
+      "status": "Unknown",
+      "notes": "",
+      "evidence": {
+        "ref": "",
+        "datetime": "",
+        "environment": "",
+        "tester": "",
+        "result": ""
+      }
+    }
+  },
+  "approval": null,
+  "decisions": [],
+  "events": [],
+  "defects": [
+    {
+      "id": "STONE-GATE",
+      "title": "Fully received material does not unlock Fabrication",
+      "severity": "Critical",
+      "scope": "Global operational issue — not attributed to any specific batch.",
+      "expected": "Procurement requirement is linked to its PO item; a full receipt syncs the requirement to status 'received'; the material-ready gate re-evaluates and allows Template → Fabrication only after every outstanding requirement is cleared.",
+      "actual": "Material that is fully received does not unlock the Fabrication transition.",
+      "codeContract": "Expected gate behaviour is documented (Sprint 044 spec, E2E journey spec). Documentation is not a passing test.",
+      "realWorldRetest": "No real-world retest recorded.",
+      "checklist": [
+        {
+          "id": "g1",
+          "label": "Requirement ↔ PO item linkage present for the tested job",
+          "done": false
+        },
+        {
+          "id": "g2",
+          "label": "Full receipt sets requirement status to 'received'",
+          "done": false
+        },
+        {
+          "id": "g3",
+          "label": "Material-ready gate re-evaluates after receipt",
+          "done": false
+        },
+        {
+          "id": "g4",
+          "label": "Template → Fabrication allowed only once all requirements cleared",
+          "done": false
+        },
+        {
+          "id": "g5",
+          "label": "Real-world retest on staging recorded with evidence",
+          "done": false
+        }
+      ],
+      "links": [
+        {
+          "label": "Sprint 044 spec (documentation)",
+          "url": "https://github.com/SMC-OS/SMC-OS/blob/main/docs/SPRINTS/sprint-044.md"
+        },
+        {
+          "label": "E2E journey spec (documentation)",
+          "url": "https://github.com/SMC-OS/SMC-OS/blob/main/apps/web/e2e/procurement-materials-operations.spec.ts"
+        }
+      ],
+      "fixReference": "",
+      "record": {
+        "status": "Defective",
+        "notes": "",
+        "evidence": {
+          "ref": "",
+          "datetime": "",
+          "environment": "",
+          "tester": "",
+          "result": ""
+        }
+      }
+    },
+    {
+      "id": "DEF-003",
+      "title": "Requirement-to-order linkage and receipt-sync fixes",
+      "severity": "High",
+      "scope": "Open — awaiting a verified fix and retest. Not shipped / not fixed.",
+      "expected": "PO items explicitly reference material_requirement_id; receipts sync requirement status correctly; workflow gate recomputes.",
+      "actual": "Linkage and receipt-sync behaviour unverified; fix not confirmed by any linked run.",
+      "codeContract": "PR evidence alone is not proof of behaviour in a running environment.",
+      "realWorldRetest": "No retest recorded.",
+      "checklist": [
+        {
+          "id": "d1",
+          "label": "PO items explicitly link to material_requirement_id",
+          "done": false
+        },
+        {
+          "id": "d2",
+          "label": "Partial receipt remains partially_received (does not unlock)",
+          "done": false
+        },
+        {
+          "id": "d3",
+          "label": "Full receipt advances requirement to received",
+          "done": false
+        },
+        {
+          "id": "d4",
+          "label": "Workflow gate recomputed after receipt",
+          "done": false
+        },
+        {
+          "id": "d5",
+          "label": "Retry is idempotent (no double receipt)",
+          "done": false
+        },
+        {
+          "id": "d6",
+          "label": "Over-receipt is rejected",
+          "done": false
+        },
+        {
+          "id": "d7",
+          "label": "Cancellation handled correctly",
+          "done": false
+        },
+        {
+          "id": "d8",
+          "label": "Tenant isolation holds",
+          "done": false
+        },
+        {
+          "id": "d9",
+          "label": "Ledger alignment confirmed",
+          "done": false
+        }
+      ],
+      "links": [
+        {
+          "label": "E2E journey spec (documentation)",
+          "url": "https://github.com/SMC-OS/SMC-OS/blob/main/apps/web/e2e/procurement-materials-operations.spec.ts"
+        },
+        {
+          "label": "PR #58 (merged Oct 31, 2026 — not verification)",
+          "url": "https://github.com/SMC-OS/SMC-OS/pull/58"
+        }
+      ],
+      "fixReference": "",
+      "record": {
+        "status": "Defective",
+        "notes": "",
+        "evidence": {
+          "ref": "",
+          "datetime": "",
+          "environment": "",
+          "tester": "",
+          "result": ""
+        }
+      }
+    }
+  ],
+  "exportedAt": "2026-11-05T04:59:07.047Z",
+  "note": "Local workspace export. Not live-synced.",
+  "provenance": {
+    "source_ledger_sha256": "34e1e76d1fb3b4a9aa1e9edce4027cd2be156b586e06da42c2fc6f33fc68c69e",
+    "generated_at": "2026-11-05T23:03:24Z",
+    "generator": "scripts/qa/build_qa_matrix.py",
+    "release_sha": "",
+    "rule": "status upgraded only by staging evidence on release_sha; local/CI evidence never upgrades",
+    "site_sync": "BLOCKED - acceptance site requires ChatGPT sign-in; no source or API access"
+  }
+}

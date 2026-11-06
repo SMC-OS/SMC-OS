@@ -4,8 +4,10 @@ interface, request-scoped Session via get_db().
 """
 
 import uuid
+from collections import defaultdict
 from datetime import date, datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
@@ -15,6 +17,7 @@ from app.database import crud
 from app.database.models import ProjectCostEntry, PurchaseOrder, PurchaseOrderItem
 from app.procurement.models import (
     PO_ALLOWED_TRANSITIONS,
+    QUANTITY_TOLERANCE,
     MaterialAllocationCreate,
     MaterialRequirementIn,
     MaterialRequirementUpdate,
@@ -25,6 +28,7 @@ from app.procurement.models import (
     PurchaseReceiptCreate,
     derive_po_status,
     next_requirement_status,
+    requirement_progress,
 )
 from app.quotes.general import GeneralQuoteLineRequest, price as price_lines
 
@@ -48,6 +52,32 @@ class PurchaseOrderNotFoundError(Exception):
 
 class PurchaseOrderEditStateError(Exception):
     """Raised when a non-draft PO's commercial fields are edited."""
+
+
+class RequirementLinkError(Exception):
+    """A PO line may only link a live requirement on the PO's own project.
+    One message for every cause, so another tenant's ids are not confirmed."""
+
+
+class PurchaseOrderItemLinkConflictError(Exception):
+    """The line is already linked elsewhere, or its PO is cancelled."""
+
+
+class PurchaseOrderReceiptStateError(Exception):
+    """A delivery can only be recorded against a PO that is on order."""
+
+
+class ReceiptIdempotencyConflictError(Exception):
+    """An idempotency key was reused for a different delivery."""
+
+
+class AllocationLinkError(Exception):
+    """An allocation may only reference this project's own live requirement
+    and a PO line of this workspace."""
+
+
+RECEIVABLE_PO_STATUSES = {"ordered", "partially_received", "received"}
+LIVE_PO_STATUSES = RECEIVABLE_PO_STATUSES
 
 
 class PurchaseOrderTransitionError(Exception):
@@ -158,6 +188,7 @@ class ProcurementService:
         if data.project_id is not None and crud.get_project_by_id(db, data.project_id, tenant_id) is None:
             raise ProjectNotFoundError(data.project_id)
 
+        self._validate_requirement_links(db, tenant_id, data.project_id, data.items)
         totals = _price_items(data.items, data.vat_rate)
         reference = _next_po_reference(db, tenant_id)
         purchase_order = crud.create_purchase_order(
@@ -230,6 +261,9 @@ class ProcurementService:
 
         changes = data.model_dump(exclude_unset=True, exclude={"items"})
         if data.items is not None:
+            self._validate_requirement_links(
+                db, tenant_id, changes.get("project_id", purchase_order.project_id), data.items
+            )
             vat_rate = changes.get("vat_rate", purchase_order.vat_rate)
             totals = _price_items(data.items, vat_rate)
             changes["subtotal"] = totals.subtotal
@@ -307,39 +341,55 @@ class ProcurementService:
                 tenant_id=tenant_id,
             )
             automation_dispatcher.dispatch_purchase_order_ordered(db, purchase_order, self._project_name(db, purchase_order))
-            self._sync_requirement_statuses(db, purchase_order, "ordered")
+            self._sync_requirement_statuses(db, purchase_order)
         return purchase_order
 
     def cancel(self, db: Session, purchase_order_id: uuid.UUID, tenant_id: uuid.UUID):
-        purchase_order = self.get_purchase_order(db, purchase_order_id, tenant_id)
+        # Locked like a receipt, so a delivery and a cancellation of the same
+        # PO cannot interleave. Status, requirement release, cost removal and
+        # the audit entry commit together or not at all.
+        purchase_order = crud.lock_purchase_order(db, purchase_order_id, tenant_id)
+        if purchase_order is None:
+            raise PurchaseOrderNotFoundError(purchase_order_id)
         if purchase_order.status == "cancelled":
+            db.commit()
             return purchase_order
-        purchase_order = self._transition(db, purchase_order, target="cancelled")
+        try:
+            purchase_order = self._transition(db, purchase_order, target="cancelled", commit=False)
+            self._sync_requirement_statuses(db, purchase_order, commit=False)
 
-        # Committed cost this PO contributed is removed — never left as a
-        # phantom commitment on a project that no longer has this order
-        # (Task 16). The PO's own ActivityLog entry below is the audit
-        # trail for the removal; no per-row entry is added on top of it.
-        for entry in crud.list_cost_entries_by_purchase_order(db, purchase_order.id):
-            crud.delete_project_cost_entry(db, entry)
+            # Committed cost this PO contributed is removed — never left as a
+            # phantom commitment on a project that no longer has this order
+            # (Task 16). The PO's own ActivityLog entry below is the audit
+            # trail for the removal; no per-row entry is added on top of it.
+            for entry in crud.list_cost_entries_by_purchase_order(db, purchase_order.id):
+                crud.delete_project_cost_entry(db, entry, commit=False)
 
-        activity_service.log(
-            ActivityEventCreate(
-                type=ActivityType.PURCHASE_ORDER_CANCELLED,
-                title="Purchase order cancelled",
-                description=purchase_order.reference,
-            ),
-            tenant_id=tenant_id,
-        )
+            activity_service.log(
+                ActivityEventCreate(
+                    type=ActivityType.PURCHASE_ORDER_CANCELLED,
+                    title="Purchase order cancelled",
+                    description=purchase_order.reference,
+                ),
+                tenant_id=tenant_id,
+                db=db,
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        db.refresh(purchase_order)
         return purchase_order
 
-    def _transition(self, db: Session, purchase_order: PurchaseOrder, *, target: str) -> PurchaseOrder:
+    def _transition(
+        self, db: Session, purchase_order: PurchaseOrder, *, target: str, commit: bool = True
+    ) -> PurchaseOrder:
         if purchase_order.status == target:
             return purchase_order
         allowed = PO_ALLOWED_TRANSITIONS.get(purchase_order.status, set())
         if target not in allowed:
             raise PurchaseOrderTransitionError(f"{purchase_order.status} -> {target}")
-        return crud.update_purchase_order(db, purchase_order, {"status": target})
+        return crud.update_purchase_order(db, purchase_order, {"status": target}, commit=commit)
 
     def _create_committed_costs(self, db: Session, purchase_order: PurchaseOrder, actor_user_id: uuid.UUID | None):
         items = crud.list_purchase_order_items(db, purchase_order.id)
@@ -368,18 +418,96 @@ class ProcurementService:
         project = crud.get_project_by_id(db, purchase_order.project_id, purchase_order.tenant_id)
         return project.name if project else None
 
-    def _sync_requirement_statuses(self, db: Session, purchase_order: PurchaseOrder, po_item_status: str):
-        for item in crud.list_purchase_order_items(db, purchase_order.id):
+    def _validate_requirement_links(self, db: Session, tenant_id: uuid.UUID, project_id, items: list) -> None:
+        for requirement_id in {i.material_requirement_id for i in items if i.material_requirement_id is not None}:
+            self._linkable_requirement(db, tenant_id, project_id, requirement_id)
+
+    def _linkable_requirement(self, db: Session, tenant_id: uuid.UUID, project_id, requirement_id: uuid.UUID):
+        requirement = crud.get_material_requirement_by_id(db, requirement_id, tenant_id)
+        if requirement is None or requirement.project_id != project_id or requirement.status == "cancelled":
+            raise RequirementLinkError(requirement_id)
+        return requirement
+
+    def _sync_requirement_statuses(self, db: Session, purchase_order: PurchaseOrder, *, commit: bool = True) -> None:
+        requirement_ids = {
+            item.material_requirement_id
+            for item in crud.list_purchase_order_items(db, purchase_order.id)
+            if item.material_requirement_id is not None
+        }
+        for requirement_id in requirement_ids:
+            self._sync_requirement(db, requirement_id, purchase_order.tenant_id, commit=commit)
+
+    def _sync_requirement(
+        self, db: Session, requirement_id: uuid.UUID, tenant_id: uuid.UUID, *, commit: bool = True
+    ) -> None:
+        """Recomputes one requirement from every PO line linked to it, not
+        just the line that changed. Delivered goods still count after their
+        PO is cancelled; the undelivered balance of that PO no longer does."""
+        requirement = crud.get_material_requirement_by_id(db, requirement_id, tenant_id)
+        if requirement is None:
+            return
+        lines = []
+        for item, po_status in crud.list_requirement_po_lines(db, requirement_id, tenant_id):
+            received = crud.sum_received_quantity_for_item(db, item.id)
+            if po_status in LIVE_PO_STATUSES:
+                lines.append((item.quantity, received, item.unit))
+            elif po_status == "cancelled" and received > QUANTITY_TOLERANCE:
+                lines.append((received, received, item.unit))
+        if not lines:
+            # Nothing is on order any more: stop claiming that it is. Only
+            # `ordered` is released; every other status has its own meaning.
+            if requirement.status == "ordered":
+                crud.update_material_requirement(db, requirement, {"status": "required"}, commit=commit)
+            return
+        target = next_requirement_status(
+            requirement.status,
+            requirement_progress(requirement.required_quantity, requirement.unit, lines) or "",
+        )
+        if target is not None:
+            crud.update_material_requirement(db, requirement, {"status": target}, commit=commit)
+
+    def link_item_to_requirement(
+        self,
+        db: Session,
+        purchase_order_id: uuid.UUID,
+        item_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        requirement_id: uuid.UUID,
+    ) -> PurchaseOrder:
+        """Repairs a line created without a link (including POs from before
+        linking existed) and immediately applies what it has already received."""
+        purchase_order = crud.lock_purchase_order(db, purchase_order_id, tenant_id)
+        if purchase_order is None:
+            raise PurchaseOrderNotFoundError(purchase_order_id)
+        item = next((i for i in crud.list_purchase_order_items(db, purchase_order.id) if i.id == item_id), None)
+        if item is None:
+            raise PurchaseOrderNotFoundError(item_id)
+        try:
+            if purchase_order.status == "cancelled":
+                raise PurchaseOrderItemLinkConflictError(item_id)
+            if item.material_requirement_id not in (None, requirement_id):
+                raise PurchaseOrderItemLinkConflictError(item_id)
+            requirement = self._linkable_requirement(db, tenant_id, purchase_order.project_id, requirement_id)
             if item.material_requirement_id is None:
-                continue
-            requirement = crud.get_material_requirement_by_id(
-                db, item.material_requirement_id, purchase_order.tenant_id
-            )
-            if requirement is None:
-                continue
-            target = next_requirement_status(requirement.status, po_item_status)
-            if target is not None:
-                crud.update_material_requirement(db, requirement, {"status": target})
+                item.material_requirement_id = requirement_id
+                db.add(item)
+                db.flush()
+                activity_service.log(
+                    ActivityEventCreate(
+                        type=ActivityType.PURCHASE_ORDER_ITEM_LINKED,
+                        title="Purchase order line linked to requirement",
+                        description=f"{purchase_order.reference} — {requirement.description}",
+                    ),
+                    tenant_id=tenant_id,
+                    db=db,
+                )
+            self._sync_requirement(db, requirement_id, tenant_id, commit=False)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        db.refresh(purchase_order)
+        return purchase_order
 
     # --- Receipts -------------------------------------------------------
 
@@ -391,84 +519,141 @@ class ProcurementService:
         actor_user_id: uuid.UUID | None,
         data: PurchaseReceiptCreate,
     ):
-        purchase_order = self.get_purchase_order(db, purchase_order_id, tenant_id)
+        """One delivery is one transaction: the receipt rows, cost ledger
+        changes, requirement statuses, PO status and audit entry commit
+        together, or nothing is written. The PO row lock serialises
+        concurrent deliveries (and cancellation) of the same PO, so the
+        over-receipt check cannot be raced. Automations run after commit,
+        because a failing automation must not undo a real delivery."""
+        purchase_order = crud.lock_purchase_order(db, purchase_order_id, tenant_id)
+        if purchase_order is None:
+            raise PurchaseOrderNotFoundError(purchase_order_id)
 
-        # Over-receipt safety (Task 11) — validated for every line before
-        # any row is written, so a rejected receipt never partially
-        # applies.
-        item_by_id: dict[uuid.UUID, PurchaseOrderItem] = {
-            item.id: item for item in crud.list_purchase_order_items(db, purchase_order.id)
-        }
-        for line in data.items:
-            item = item_by_id.get(line.purchase_order_item_id)
-            if item is None:
-                raise PurchaseOrderNotFoundError(line.purchase_order_item_id)
-            already_received = crud.sum_received_quantity_for_item(db, item.id)
-            if already_received + line.quantity_received > item.quantity:
-                raise OverReceiptError(item.id, item.quantity, already_received, line.quantity_received)
+        try:
+            replay = self._replayed_receipt(db, purchase_order, tenant_id, data)
+            if replay is not None:
+                db.commit()
+                return replay
 
-        receipt = crud.create_purchase_receipt(
-            db,
-            tenant_id=tenant_id,
-            purchase_order_id=purchase_order.id,
-            received_at=data.received_at,
-            received_by_user_id=actor_user_id,
-            delivery_reference=data.delivery_reference,
-            notes=data.notes,
-            items=[
-                {"purchase_order_item_id": line.purchase_order_item_id, "quantity_received": line.quantity_received}
-                for line in data.items
-            ],
-        )
+            if purchase_order.status not in RECEIVABLE_PO_STATUSES:
+                raise PurchaseOrderReceiptStateError(purchase_order.status)
 
-        # Per-item effects: a fully-received item's committed cost row
-        # flips in place to `actual` (never a second row — see ADR-050's
-        # documented V1 rule: partial receipt does not split the amount,
-        # it stays committed until the item itself is fully received).
-        for line in data.items:
-            item = item_by_id[line.purchase_order_item_id]
-            received_total = crud.sum_received_quantity_for_item(db, item.id)
-            item_status = derive_po_status("ordered", item.quantity, received_total)
-            if item_status == "received":
-                self._mark_item_cost_actual(db, item.id)
-            if item.material_requirement_id is not None:
-                requirement = crud.get_material_requirement_by_id(db, item.material_requirement_id, tenant_id)
-                if requirement is not None:
-                    target = next_requirement_status(requirement.status, item_status)
-                    if target is not None:
-                        crud.update_material_requirement(db, requirement, {"status": target})
+            # Over-receipt safety (Task 11) — validated for every item before
+            # any row is written. Several lines for the same item in one
+            # delivery are added together before the check.
+            item_by_id: dict[uuid.UUID, PurchaseOrderItem] = {
+                item.id: item for item in crud.list_purchase_order_items(db, purchase_order.id)
+            }
+            requested: dict[uuid.UUID, float] = defaultdict(float)
+            for line in data.items:
+                if line.purchase_order_item_id not in item_by_id:
+                    raise PurchaseOrderNotFoundError(line.purchase_order_item_id)
+                requested[line.purchase_order_item_id] += line.quantity_received
+            for item_id, quantity in requested.items():
+                item = item_by_id[item_id]
+                already_received = crud.sum_received_quantity_for_item(db, item.id)
+                if already_received + quantity > item.quantity + QUANTITY_TOLERANCE:
+                    raise OverReceiptError(item.id, item.quantity, already_received, quantity)
 
-        # Overall PO status: derived across every item, not just the
-        # ones this receipt touched (Task 12).
-        all_items = crud.list_purchase_order_items(db, purchase_order.id)
-        ordered_qty = sum(item.quantity for item in all_items)
-        received_qty = sum(crud.sum_received_quantity_for_item(db, item.id) for item in all_items)
-        new_status = derive_po_status(purchase_order.status, ordered_qty, received_qty)
-        if new_status != purchase_order.status:
-            fields = {"status": new_status}
-            if new_status == "received":
-                fields["received_date"] = data.received_at.date()
-            purchase_order = crud.update_purchase_order(db, purchase_order, fields)
+            receipt = crud.create_purchase_receipt(
+                db,
+                tenant_id=tenant_id,
+                purchase_order_id=purchase_order.id,
+                received_at=data.received_at,
+                received_by_user_id=actor_user_id,
+                delivery_reference=data.delivery_reference,
+                notes=data.notes,
+                idempotency_key=data.idempotency_key,
+                items=[
+                    {"purchase_order_item_id": line.purchase_order_item_id, "quantity_received": line.quantity_received}
+                    for line in data.items
+                ],
+                commit=False,
+            )
+
+            # Per-item effects: a fully-received item's committed cost row
+            # flips in place to `actual` (never a second row — see ADR-050's
+            # documented V1 rule: partial receipt does not split the amount,
+            # it stays committed until the item itself is fully received).
+            requirement_ids = set()
+            for item_id in requested:
+                item = item_by_id[item_id]
+                received_total = crud.sum_received_quantity_for_item(db, item.id)
+                if derive_po_status("ordered", item.quantity, received_total) == "received":
+                    self._mark_item_cost_actual(db, item.id, commit=False)
+                if item.material_requirement_id is not None:
+                    requirement_ids.add(item.material_requirement_id)
+            for requirement_id in requirement_ids:
+                self._sync_requirement(db, requirement_id, tenant_id, commit=False)
+
+            # Overall PO status: derived across every item, not just the
+            # ones this receipt touched (Task 12).
+            ordered_qty = sum(item.quantity for item in item_by_id.values())
+            received_qty = sum(crud.sum_received_quantity_for_item(db, item_id) for item_id in item_by_id)
+            new_status = derive_po_status(purchase_order.status, ordered_qty, received_qty)
+            status_changed = new_status != purchase_order.status
+            if status_changed:
+                fields = {"status": new_status}
+                if new_status == "received":
+                    fields["received_date"] = data.received_at.date()
+                purchase_order = crud.update_purchase_order(db, purchase_order, fields, commit=False)
+
+            activity_service.log(
+                ActivityEventCreate(
+                    type=ActivityType.PURCHASE_ORDER_RECEIPT_RECORDED,
+                    title="Delivery recorded",
+                    description=f"{purchase_order.reference} — {len(data.items)} line(s)",
+                ),
+                tenant_id=tenant_id,
+                db=db,
+            )
+            db.commit()
+        except IntegrityError:
+            # The partial unique index on (tenant_id, idempotency_key) is the
+            # backstop for the same key arriving on two different POs at once.
+            db.rollback()
+            if data.idempotency_key is None:
+                raise
+            existing = crud.get_purchase_receipt_by_idempotency_key(db, tenant_id, data.idempotency_key)
+            if existing is None:
+                raise
+            raise ReceiptIdempotencyConflictError(data.idempotency_key)
+        except Exception:
+            db.rollback()
+            raise
+
+        db.refresh(receipt)
+        db.refresh(purchase_order)
+        if status_changed:
             project_name = self._project_name(db, purchase_order)
             if new_status == "received":
                 automation_dispatcher.dispatch_purchase_order_received(db, purchase_order, project_name)
             elif new_status == "partially_received":
                 automation_dispatcher.dispatch_purchase_order_partially_received(db, purchase_order, project_name)
-
-        activity_service.log(
-            ActivityEventCreate(
-                type=ActivityType.PURCHASE_ORDER_RECEIPT_RECORDED,
-                title="Delivery recorded",
-                description=f"{purchase_order.reference} — {len(data.items)} line(s)",
-            ),
-            tenant_id=tenant_id,
-        )
         return receipt
 
-    def _mark_item_cost_actual(self, db: Session, purchase_order_item_id: uuid.UUID):
+    def _replayed_receipt(self, db: Session, purchase_order: PurchaseOrder, tenant_id: uuid.UUID, data):
+        """A retried delivery with the same key returns the original receipt
+        unchanged. The same key with a different PO or different lines is a
+        conflict: a replay can never change what was recorded."""
+        if data.idempotency_key is None:
+            return None
+        existing = crud.get_purchase_receipt_by_idempotency_key(db, tenant_id, data.idempotency_key)
+        if existing is None:
+            return None
+        sent = sorted((str(line.purchase_order_item_id), line.quantity_received) for line in data.items)
+        stored = sorted(
+            (str(row.purchase_order_item_id), row.quantity_received)
+            for row in crud.list_purchase_receipt_items(db, existing.id)
+        )
+        if existing.purchase_order_id != purchase_order.id or sent != stored:
+            raise ReceiptIdempotencyConflictError(data.idempotency_key)
+        return existing
+
+    def _mark_item_cost_actual(self, db: Session, purchase_order_item_id: uuid.UUID, *, commit: bool = True):
         entry: ProjectCostEntry | None = crud.get_cost_entry_by_purchase_order_item(db, purchase_order_item_id)
         if entry is not None and entry.state != "actual":
-            crud.update_project_cost_entry(db, entry, {"state": "actual"})
+            crud.update_project_cost_entry(db, entry, {"state": "actual"}, commit=commit)
 
     def list_receipts(self, db: Session, purchase_order_id: uuid.UUID, tenant_id: uuid.UUID):
         purchase_order = self.get_purchase_order(db, purchase_order_id, tenant_id)
@@ -487,6 +672,19 @@ class ProcurementService:
         project = crud.get_project_by_id(db, project_id, tenant_id)
         if project is None:
             raise ProjectNotFoundError(project_id)
+
+        # An allocation can mark a requirement `allocated`, which clears the
+        # materials gate. It must not reach another project's requirement
+        # (opening that job's gate) or reference another workspace's PO line.
+        if data.material_requirement_id is not None:
+            requirement = crud.get_material_requirement_by_id(db, data.material_requirement_id, tenant_id)
+            if requirement is None or requirement.project_id != project_id or requirement.status == "cancelled":
+                raise AllocationLinkError(data.material_requirement_id)
+        if data.purchase_order_item_id is not None:
+            item = crud.get_purchase_order_item_by_id(db, data.purchase_order_item_id)
+            owner = crud.get_purchase_order_by_id(db, item.purchase_order_id, tenant_id) if item else None
+            if owner is None:
+                raise AllocationLinkError(data.purchase_order_item_id)
 
         allocation = crud.create_material_allocation(
             db,

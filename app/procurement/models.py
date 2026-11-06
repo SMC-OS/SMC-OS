@@ -10,6 +10,7 @@ construction material with only a free-text description prices and
 tracks identically.
 """
 
+import math
 import uuid
 from datetime import date, datetime
 
@@ -73,8 +74,8 @@ class MaterialRequirementIn(BaseModel):
     @field_validator("required_quantity")
     @classmethod
     def _not_negative(cls, value: float | None) -> float | None:
-        if value is not None and value < 0:
-            raise ValueError("required_quantity must not be negative")
+        if value is not None and (not math.isfinite(value) or value < 0):
+            raise ValueError("required_quantity must be a finite number, not negative")
         return value
 
 
@@ -154,8 +155,8 @@ class PurchaseOrderItemIn(BaseModel):
     @field_validator("quantity", "unit_cost")
     @classmethod
     def _not_negative(cls, value: float) -> float:
-        if value < 0:
-            raise ValueError("must not be negative")
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("must be a finite number, not negative")
         return value
 
 
@@ -251,8 +252,8 @@ class PurchaseReceiptItemIn(BaseModel):
     @field_validator("quantity_received")
     @classmethod
     def _positive(cls, value: float) -> float:
-        if value <= 0:
-            raise ValueError("quantity_received must be greater than zero")
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("quantity_received must be a finite number greater than zero")
         return value
 
 
@@ -260,7 +261,12 @@ class PurchaseReceiptCreate(BaseModel):
     received_at: datetime
     delivery_reference: str | None = None
     notes: str | None = None
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
     items: list[PurchaseReceiptItemIn] = Field(min_length=1, max_length=MAX_PO_ITEMS)
+
+
+class LinkRequirementRequest(BaseModel):
+    material_requirement_id: uuid.UUID
 
 
 class PurchaseReceiptItemOut(BaseModel):
@@ -312,8 +318,8 @@ class MaterialAllocationCreate(BaseModel):
     @field_validator("quantity")
     @classmethod
     def _positive(cls, value: float) -> float:
-        if value <= 0:
-            raise ValueError("quantity must be greater than zero")
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("quantity must be a finite number greater than zero")
         return value
 
 
@@ -333,6 +339,15 @@ class MaterialAllocationOut(BaseModel):
 # --- Pure calculation functions -----------------------------------------
 
 
+# Quantities are binary floats: 1.1 + 1.1 + 1.1 > 3.3. Comparisons allow for
+# that rounding so a genuine final delivery is neither refused nor left short.
+QUANTITY_TOLERANCE = 1e-6
+
+
+def quantity_reached(actual: float, target: float) -> bool:
+    return actual >= target - QUANTITY_TOLERANCE
+
+
 def derive_po_status(current_status: str, ordered_qty: float, received_qty: float) -> str:
     """Task 12 — receiving progress is always derived from real receipt
     data, never toggled independently. Only meaningful once a PO has
@@ -342,9 +357,36 @@ def derive_po_status(current_status: str, ordered_qty: float, received_qty: floa
         return current_status
     if ordered_qty <= 0 or received_qty <= 0:
         return "ordered"
-    if received_qty >= ordered_qty:
+    if quantity_reached(received_qty, ordered_qty):
         return "received"
     return "partially_received"
+
+
+def requirement_progress(
+    required_quantity: float | None,
+    requirement_unit: str | None,
+    lines: list[tuple[float, float, str | None]],
+) -> str | None:
+    """Receiving state of a whole requirement from all its live PO lines,
+    each `(ordered, received, unit)`. Returns None with no lines.
+
+    A requirement is only `received` when what arrived covers what the job
+    needs: its required_quantity when the units can honestly be compared,
+    otherwise every linked line being fully delivered. Quantities in
+    different units are never added together to reach a verdict."""
+    if not lines:
+        return None
+    total_received = sum(received for _, received, _ in lines)
+    if total_received <= QUANTITY_TOLERANCE:
+        return "ordered"
+    units_comparable = requirement_unit is None or all(
+        unit is None or unit.strip().casefold() == requirement_unit.strip().casefold() for _, _, unit in lines
+    )
+    if required_quantity is not None and units_comparable:
+        complete = quantity_reached(total_received, required_quantity)
+    else:
+        complete = all(quantity_reached(received, ordered) for ordered, received, _ in lines)
+    return "received" if complete else "partially_received"
 
 
 def is_po_late(status: str, expected_delivery_date: date | None, today: date) -> bool:

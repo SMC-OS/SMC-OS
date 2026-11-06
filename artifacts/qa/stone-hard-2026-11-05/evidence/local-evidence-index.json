@@ -1,0 +1,145 @@
+[
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "STONE-GATE.g1",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "STONE-GATE.g2",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "STONE-GATE.g3",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "STONE-GATE.g4",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-3-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "DEF-003.d1",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "DEF-003.d2",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "DEF-003.d3",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "DEF-003.d4",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-3-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "DEF-003.d5",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/full-backend-run2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "DEF-003.d6",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "DEF-003.d7",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/full-backend-run2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "DEF-003.d8",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-3-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ },
+ {
+  "datetime": "2026-11-05",
+  "environment": "local-disposable-postgres",
+  "tester": "Claude Code QA session",
+  "release_sha": "uncommitted-on-63e8ac9",
+  "result": "pass",
+  "actor": "synthetic tenants A/B (owner)",
+  "item": "DEF-003.d9",
+  "ref": "artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt",
+  "actual": "local pass; see 02-defect-register.md for the test names"
+ }
+]
