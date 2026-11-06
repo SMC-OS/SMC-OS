@@ -59,7 +59,8 @@ Already verified read-only (2026-11-05): staging `alembic current` = `94e5f6a7b8
 
 | Step | Runbook gate | State |
 |---|---|---|
-| Enable PITR/daily backups, matched recovery point | STOP: owner approval | BLOCKED, not requested |
+| PITR/WAL archiving | Already active on staging (read-only check 2026-11-06: archive_mode on, last archived 00:09 UTC, 2 archive failures, last 2026-11-04). Health and retention are unverified | B1 in 11-approval-packets.md |
+| Matched recovery point before the migration | STOP: owner approval | Packet A1 in 11-approval-packets.md; not executed |
 | Upload archive + manifest + dump + correlation, four SHA-256 values | Same | BLOCKED |
 | Google Drive access/upload | STOP | BLOCKED |
 | Paid scratch services `simo-postgres-recovery-<RUN_ID>`, `simo-api-recovery-<RUN_ID>`, `simo-uploads-recovery-<RUN_ID>` | STOP | BLOCKED |

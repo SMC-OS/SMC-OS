@@ -27,7 +27,7 @@ The historical "28 routes / 426 candidates" was not reused. The current count is
 | Gate (ledger) | State | Evidence | Owner / dependency | Single next safe action |
 |---|---|---|---|---|
 | ci | Pending (QA SHA green: runs 42127242681 and 42127317387 on `73f7dd4`) | 03 | Agent | Re-run CI on the final promoted SHA; the QA SHA is not the release SHA |
-| stone-staging | Blocked | None on staging | Owner: approve backup + staging deploy (06 §A) | Approve the staging backup and deploy of the QA SHA |
+| stone-staging | Blocked | None on staging. The staging acceptance suite is ready and passed a local dry run | Owner: A1 then A2 in 11-approval-packets.md | Approve A1 (staging backup window) |
 | receipt-material | Pending (local) | 02 checklist, local tests, E2E G/H/I | Same | Same, then run journeys G/H/I on staging |
 | quote-pdf | Unknown (CI evidence only) | CI on `73f7dd4`: the quote E2E journeys and `test_stone_manual_pricing.py` passed (per-workspace `Invoice-000001`, stable re-download, one number under concurrent downloads) | Agent, after staging | Run the quote review/save/PDF journeys on staging and check the PDF text and hash |
 | billing-portal | Blocked | No Stripe access | Owner: Stripe test-mode access | Authenticate the Stripe connector in test mode |

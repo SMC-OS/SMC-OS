@@ -27,6 +27,10 @@
 | 14 | Historical audit SQL | executed read-only (`BEGIN READ ONLY … ROLLBACK`) | runs; 0 rows on the disposable DB | Says nothing about real data |
 | 16 | Anonymous access sweep, every API operation | `pytest tests/test_api_unauthenticated_sweep.py` | 163 passed | No 5xx. Only 6 allow-listed public operations answer 2xx; the rest of the protected API returns 401 |
 | 17 | Staging historical audit (read-only, aggregate) | `railway ssh` into `simo-api-staging`, `READ ONLY` transaction, counts only | 1 requirement, 0 suspects; `alembic_version` 94e5f6a7b8c9 | No identifiers exported; see 02 |
+| 18 | Staging acceptance suite, local dry run (`playwright.staging.config.ts`, production build, `STAGING_DRY_RUN_LOCAL=1`) | `pnpm exec playwright test -c playwright.staging.config.ts` | all 8 tests passed across runs 2–4; run 2's 4 failures were a test-helper bug (fixed), and run 3's 1 failure was ENOSPC (disk full) | `evidence/staging-acceptance-dryrun-summary.txt`. Not staging evidence |
+| 19 | Synthetic-owner provisioning guards | `scripts/qa/provision_synthetic_owner.py` | refuses a non-`.invalid` e-mail, environment mismatch and production; provisions locally | Local only |
+| 20 | Unlinked-line warning (UI) | `vitest run components/projects/ProjectMaterialsPanel` | 16 passed | |
+| 21 | Server-controlled document media type | `pytest tests/test_documents.py tests/test_portal.py tests/test_purged_workspace_portal.py tests/test_workspace_setup.py` | 60 passed | |
 | 15 | Secret and personal-data scan of the diff | `git diff` grep for Stripe, JWT, AWS and PEM key patterns, password literals, personal e-mail domains | no hits | |
 
 ## Failures and how they were triaged

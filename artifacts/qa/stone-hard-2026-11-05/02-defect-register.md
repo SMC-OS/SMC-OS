@@ -10,6 +10,8 @@ Status words: Verified, Defective, Blocked, Pending or Unknown. In this register
 | QA-NAN-500 | Medium | not in ledger | Found while testing; fixed (local) | QA branch, P0 commit | CI and staging |
 | QA-ALLOC-XPROJ | High | not in ledger | Found by code review; fixed (local) | QA branch, P0 commit | CI and staging |
 | QA-ADMISSION | Critical (#67 P0) | gate `onboarding` / Issue #67 | Server-side gate implemented, default open | QA branch, admission commit | Owner must set `NEW_ACCOUNT_ADMISSION=closed` on staging, then production, after review |
+| QA-UI-UNLINKED-DEFAULT | High (root cause, UX) | part of STONE-GATE | The PO form defaults every line to "No linked requirement", so the ordinary UI path creates unlinked lines whose deliveries never count (existing Journey A does exactly this) | QA branch: warning shown before saving; the per-line link repair after saving was already added. Nothing is auto-selected | Staging acceptance (A2) |
+| QA-UPLOAD-MEDIA-TYPE | Low (hardening) | not in ledger | Documents were stored and served with the uploader-supplied Content-Type (a `.pdf` declared `text/html` was served as HTML; mitigated by attachment disposition, nosniff and a separate API origin) | QA branch: the served type is derived from the allowlisted extension, for new and existing rows | CI and staging |
 | QA-VITEST-FLAKE | Low | not in ledger | Pre-existing timing flake in `app/quotes/new/stone/page.test.tsx` | Not fixed | Already present at `63e8ac9` (see 03) |
 | HIST-RECEIVED | High (data) | not in ledger | Staging checked read-only (2026-11-05): 0 suspects. Production not checked | Read-only audit SQL | Owner approval for a production read-only, aggregate-only run; humans decide each row |
 
