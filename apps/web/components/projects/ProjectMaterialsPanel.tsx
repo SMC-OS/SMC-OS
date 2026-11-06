@@ -634,6 +634,16 @@ export function ProjectMaterialsPanel({
                         <option key={req.id} value={req.id}>{req.description}</option>
                       ))}
                     </Select>
+                    {/* STONE-GATE: an unlinked line is the usual way a fully
+                        delivered order leaves the materials gate shut. Say so
+                        before saving; never pick a requirement for the user. */}
+                    {!item.material_requirement_id &&
+                      (requirements ?? []).some((req) => req.status !== "cancelled") && (
+                        <p role="note" className="col-span-2 text-xs text-muted sm:col-span-5">
+                          Not linked to a requirement: deliveries on this line won’t count towards this
+                          project’s materials or unlock Fabrication.
+                        </p>
+                      )}
                     <Input
                       className="sm:col-span-2"
                       aria-label="Item description"

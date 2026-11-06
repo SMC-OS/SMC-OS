@@ -429,6 +429,27 @@ it("links a purchase-order line to its project requirement", async () => {
     items: [expect.objectContaining({ material_requirement_id: "req-1", description: "40mm quartz worktop slabs", quantity: 3, unit: "slab", unit_cost: 400 })],
   })));
 });
+it("warns before saving that an unlinked line will not count towards materials, without choosing for the user", async () => {
+  getProjectRequirementsMock.mockResolvedValue([requirement()]);
+  getPurchaseOrdersMock.mockResolvedValue([]);
+  getSuppliersMock.mockResolvedValue([]);
+  render(<ProjectMaterialsPanel projectId="project-1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "New purchase order" }));
+  const selector = await screen.findByRole("combobox", { name: "Requirement for item 1" });
+  expect(selector).toHaveValue("");
+  expect(screen.getByRole("note")).toHaveTextContent(/won.t count towards this project.s materials/i);
+  fireEvent.change(selector, { target: { value: "req-1" } });
+  expect(screen.queryByRole("note")).not.toBeInTheDocument();
+});
+it("does not warn about linking when the project has no live requirements", async () => {
+  getProjectRequirementsMock.mockResolvedValue([requirement({ status: "cancelled" })]);
+  getPurchaseOrdersMock.mockResolvedValue([]);
+  getSuppliersMock.mockResolvedValue([]);
+  render(<ProjectMaterialsPanel projectId="project-1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "New purchase order" }));
+  await screen.findByRole("combobox", { name: "Requirement for item 1" });
+  expect(screen.queryByRole("note")).not.toBeInTheDocument();
+});
 it("blocks an empty purchase order instead of silently doing nothing", async () => {
   getProjectRequirementsMock.mockResolvedValue([]);
   getPurchaseOrdersMock.mockResolvedValue([]);
