@@ -511,3 +511,231 @@ def test_10_violations_pure_function():
     assert wb.violations(base, base) == []
     bad = {"barrier": {"engaged": False}, "stale_sessions": [{"pid": 1}], "counters": {"inserted": 6, "updated": 1, "deleted": 0}}
     record("monitor: violation detector flags lifted barrier, stale RW session and write counters", len(wb.violations(base, bad)) == 3)
+
+
+# =========================================================================== #
+# A1 capture rehearsal (local only): success path, restore proof, every STOP.
+# =========================================================================== #
+import a1_capture as a1  # noqa: E402
+
+A1: dict = {"n": 0}
+APP_PREFIX = " ".join(APP)
+
+
+def a1_args(env, **override):
+    A1["n"] += 1
+    n = A1["n"]
+    out = env["base"] / f"a1-out-{n}"
+    out.mkdir(mode=0o700)
+    now = datetime.now(a1.timezone.utc).replace(microsecond=0)
+    values = {
+        "run_id": f"rehearsal-{n}", "operator": "rehearsal-operator", "confirm_environment": "local",
+        "window_start": a1.utc(now - a1.timedelta(minutes=1)), "window_end": a1.utc(now + a1.timedelta(minutes=20)),
+        "expect_system_identifier": env["system_id"], "barrier_record": A1["record"], "uploads_dir": str(env["uploads"]),
+        "remote_prefix": APP_PREFIX, "remote_python": PYTHON, "out_dir": out, "hash_record": env["private"] / f"hash-{n}.txt",
+        "provider_backups": "", "pg_dump": f"{PG_BINS[-1]}/pg_dump", "pg_restore": f"{PG_BINS[-1]}/pg_restore", "min_free_multiple": 3.0,
+    }
+    values.update(override)
+    A1["last_out"] = out
+    return a1.argparse.Namespace(**values)
+
+
+def expect_stop(env, monkeypatch, label, needle, hooks=None, **override):
+    monkeypatch.setenv(wb.ADMIN_DSN_ENV, env["dsn"]("simo_admin", "rehearsal"))
+    args = a1_args(env, **override)
+    with pytest.raises(a1.Stop) as caught:
+        a1.capture(args, hooks=hooks)
+    reason = f"{caught.value.phase}: {caught.value.reason}"
+    q = sorted(args.out_dir.glob("quarantine-*"))
+    stop_file = json.loads((q[0] / "STOP.json").read_text()) if q else {}
+    record(f"STOP: {label}", needle in reason and stop_file.get("capture_verified") is False and not (args.out_dir / "RESULT.json").exists(),
+           reason=reason, quarantined=bool(q))
+    return args, q
+
+
+def expect_refused(env, monkeypatch, label, **override):
+    monkeypatch.setenv(wb.ADMIN_DSN_ENV, env["dsn"]("simo_admin", "rehearsal"))
+    args = a1_args(env, **override)
+    with pytest.raises(wb.BarrierError) as caught:
+        a1.capture(args)
+    record(f"REFUSED: {label}", True, reason=str(caught.value))
+
+
+def test_11_a1_engage_barrier_for_capture(env, api):
+    A1["record"] = env["private"] / "a1-barrier.json"
+    done = barrier_cli(env, "db-engage", "--record", str(A1["record"]), "--confirm-environment", "staging",
+                       "--expect-system-identifier", env["system_id"], "--drain-timeout", "30")
+    assert done.returncode == 0, done.stderr
+    A1["fp_start"] = cf.db_fingerprint(env["dsn"]("simo_admin", "rehearsal"))
+    A1["m_start"] = cf.uploads_manifest(env["uploads"])
+
+
+def test_12_stop_when_uploads_are_not_frozen(env, monkeypatch):
+    expect_stop(env, monkeypatch, "uploads still writable (database barrier alone is not enough)", "not frozen")
+
+
+def test_13_freeze_uploads_for_capture(env):
+    A1["state"] = env["private"] / "a1-uploads-state.json"
+    done = barrier_cli(env, "uploads-freeze", "--dir", str(env["uploads"]), "--state", str(A1["state"]), as_app=True)
+    assert done.returncode == 0, done.stderr
+
+
+def test_14_refusals_and_preflight_stops(env, monkeypatch, tmp_path):
+    now = datetime.now(a1.timezone.utc).replace(microsecond=0)
+    expect_refused(env, monkeypatch, "window longer than 30 minutes",
+                   window_start=a1.utc(now), window_end=a1.utc(now + a1.timedelta(minutes=31)))
+    expect_stop(env, monkeypatch, "window already expired", "expired",
+                window_start=a1.utc(now - a1.timedelta(minutes=40)), window_end=a1.utc(now - a1.timedelta(minutes=10)))
+    expect_stop(env, monkeypatch, "window not yet open", "not opened",
+                window_start=a1.utc(now + a1.timedelta(minutes=10)), window_end=a1.utc(now + a1.timedelta(minutes=30)))
+    expect_stop(env, monkeypatch, "fewer than 2 minutes remain", "less than 2 minutes",
+                window_start=a1.utc(now - a1.timedelta(minutes=29)), window_end=a1.utc(now + a1.timedelta(seconds=60)))
+    expect_stop(env, monkeypatch, "wrong cluster", "identity", expect_system_identifier="1")
+    stale = env["private"] / "released.json"
+    stale.write_text(json.dumps({"status": "released", "database": "rehearsal", "events": []}))
+    expect_stop(env, monkeypatch, "barrier not recorded as engaged", "not recorded as engaged", barrier_record=stale)
+    expect_stop(env, monkeypatch, "insufficient free disk", "insufficient free disk", min_free_multiple=1e9)
+    old_dump = tmp_path / "pg_dump"
+    old_dump.write_text("#!/bin/sh\necho 'pg_dump (PostgreSQL) 13.0'\n")
+    old_dump.chmod(0o755)
+    expect_stop(env, monkeypatch, "pg_dump older than the server", "older than the server", pg_dump=str(old_dump))
+    expect_stop(env, monkeypatch, "pg_dump missing", "not usable", pg_dump="/nonexistent/pg_dump")
+    import psycopg
+    open_tx = psycopg.connect(env["dsn"]("simo_super", "rehearsal"), application_name="stray-tx")
+    open_tx.execute("SELECT 1")  # idle in transaction
+    try:
+        expect_stop(env, monkeypatch, "stray idle-in-transaction session", "unexpected active")
+    finally:
+        open_tx.close()
+    for label, bad in (("world-readable output directory", 0o755), ("non-empty output directory", None)):
+        monkeypatch.setenv(wb.ADMIN_DSN_ENV, env["dsn"]("simo_admin", "rehearsal"))
+        args = a1_args(env)
+        if bad:
+            args.out_dir.chmod(bad)
+        else:
+            (args.out_dir / "leftover").write_text("x")
+        with pytest.raises(wb.BarrierError):
+            a1.capture(args)
+        record(f"REFUSED: {label}", True)
+    inside = REPO / "a1-out-should-not-exist"
+    monkeypatch.setenv(wb.ADMIN_DSN_ENV, env["dsn"]("simo_admin", "rehearsal"))
+    args = a1_args(env, out_dir=inside)
+    inside.mkdir(mode=0o700, exist_ok=True)
+    try:
+        with pytest.raises(wb.BarrierError):
+            a1.capture(args)
+    finally:
+        inside.rmdir()
+    record("REFUSED: output directory inside the repository", True)
+
+
+def test_15_a1_capture_success_and_restore_proof(env, monkeypatch):
+    monkeypatch.setenv(wb.ADMIN_DSN_ENV, env["dsn"]("simo_admin", "rehearsal"))
+    args = a1_args(env)
+    result = a1.capture(args)
+    out = args.out_dir
+    names = sorted(p.name for p in out.iterdir())
+    record("A1: capture verified, T0 equals T1, four distinct independently computed hashes",
+           result["capture_verified"] and result["t0_equals_t1"] and len(set(result["hashes"].values())) == 4,
+           seconds=result["seconds"], files=names)
+    lines = [l.split() for l in args.hash_record.read_text().splitlines() if not l.startswith("#")]
+    sums = {name: subprocess.run(["sha256sum", str(out / name)], capture_output=True, text=True).stdout.split()[0] for _, name in lines}
+    record("A1: out-of-band hash record matches a fresh sha256sum of every artifact", all(h == sums[n] for h, n in lines) and len(lines) == 4)
+    record("A1: artifacts are owner-read-only and the working copy of customer files was removed",
+           all((out / n).stat().st_mode & 0o777 == 0o400 for n in a1.ARTIFACTS) and not (out / "work").exists())
+    corr = json.loads((out / "correlation.json").read_text())
+    record("A1: correlation record binds both digests, window, barrier cutoff and scope limits",
+           corr["t0"]["db_digest"] == corr["t1"]["db_digest"] and "NOT proven" in corr["scope"] and corr["barrier"]["samples_taken"] >= 1,
+           alembic=corr["alembic_version"], uploads=corr["uploads"], rows=corr["t0"]["rows"])
+    # restore proof into a throwaway database (LOCAL ONLY; this is not the staging B5 gate)
+    with admin(env, "postgres") as c:
+        c.execute("CREATE DATABASE rehearsal_c")
+    restore = subprocess.run([args_pg_restore(args), "--no-owner", "--exit-on-error", f"--dbname={env['dsn']('simo_admin', 'rehearsal_c')}",
+                              str(out / "dump.pgdump")], capture_output=True, text=True)
+    restored = cf.db_fingerprint(env["dsn"]("simo_admin", "rehearsal_c"))
+    record("A1: dump restores into a scratch database with an identical content fingerprint (local rehearsal only)",
+           restore.returncode == 0 and restored["digest"] == corr["t0"]["db_digest"],
+           differences=cf.diff_fingerprints(cf.db_fingerprint(env["dsn"]("simo_admin", "rehearsal")), restored)[:3], stderr=restore.stderr[:200])
+    tree = env["base"] / "restored-uploads"
+    tree.mkdir()
+    with a1.tarfile.open(out / "uploads.tar") as tar:
+        tar.extractall(tree, filter="data")
+    record("A1: uploads archive extracts to a tree identical to the live manifest",
+           not cf.diff_manifests(A1["m_start"], cf.uploads_manifest(tree)))
+    record("A1: capture changed neither database nor uploads",
+           cf.db_fingerprint(env["dsn"]("simo_admin", "rehearsal"))["digest"] == A1["fp_start"]["digest"]
+           and not cf.diff_manifests(A1["m_start"], cf.uploads_manifest(env["uploads"])))
+
+
+def args_pg_restore(args):
+    return args.pg_restore
+
+
+def test_16_stops_during_capture(env, monkeypatch):
+    # (1) a file appears in the frozen uploads (written as root, bypassing the permission barrier)
+    intruder = env["uploads"] / "intruder.pdf"
+
+    def add_file():
+        intruder.write_bytes(b"%PDF-1.4 intruder")
+
+    try:
+        args, q = expect_stop(env, monkeypatch, "an upload appears mid-capture", "do not match the live manifest", hooks={"after_dump": add_file})
+        record("STOP: the partial dump was quarantined, not deleted", (q[0] / "dump.pgdump").exists())
+    finally:
+        intruder.unlink(missing_ok=True)
+
+    # (2) the archive is corrupted before verification
+    def corrupt():
+        archive = A1["last_out"] / "uploads.tar"
+        data = bytearray(archive.read_bytes())
+        data[2048] ^= 0xFF
+        archive.write_bytes(bytes(data))
+
+    expect_stop(env, monkeypatch, "archive corrupted after creation", "do not match the manifest", hooks={"after_archive": corrupt})
+
+    # (3) the process is interrupted
+    expect_stop(env, monkeypatch, "SIGTERM mid-capture", "interrupted",
+                hooks={"after_dump": lambda: os.kill(os.getpid(), a1.signal.SIGTERM)})
+
+    # (4) a write slips past the barrier between T0 and T1 (explicit override, the documented limit)
+    import psycopg
+
+    def rogue_write():
+        with psycopg.connect(env["dsn"]("simo_super", "rehearsal"), autocommit=True, options="-c default_transaction_read_only=off") as c:
+            c.execute("INSERT INTO barrier_probe(note) VALUES ('slipped past')")
+        time.sleep(1.5)
+
+    expect_stop(env, monkeypatch, "a database write slips past the barrier mid-capture", "", hooks={"after_archive": rogue_write})
+
+
+def test_17_release_after_capture(env):
+    thaw = barrier_cli(env, "uploads-thaw", "--dir", str(env["uploads"]), "--state", str(A1["state"]), as_app=True)
+    result = json.loads(thaw.stdout)
+    # test 16 deliberately created and removed an "intruder" file as root: thaw must notice exactly that trace and nothing else
+    record("reversal after A1: thaw detects the simulated intruder's directory change and no content drift",
+           result["drift"] == [".: directory changed"], result=result)
+    release = barrier_cli(env, "db-release", "--record", str(A1["record"]))
+    with admin(env) as c:
+        record("reversal after A1: database barrier removed", release.returncode == 0 and wb.barrier_state(c, "rehearsal")["setting"] is None)
+    with wb.app_connect(env["dsn"]("simo_super", "rehearsal")) as c:
+        c.execute("INSERT INTO barrier_probe(note) VALUES ('after A1')")
+    record("reversal after A1: normal writes work again", True)
+
+
+def test_18_pure_helpers():
+    now = datetime(2026, 11, 9, 10, 0, tzinfo=a1.timezone.utc)
+    record("helper: pg_restore listing parser finds TABLE DATA entries",
+           a1.table_data_entries("1; 0 1 TABLE DATA public customers u\n2; 0 2 TABLE public x u") == {"public.customers"})
+    record("helper: version parser", a1.major("18.6") == 18 and a1.major("16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)") == 16)
+    with pytest.raises(wb.BarrierError):
+        a1.parse_utc("2026-11-09 10:00")
+    with pytest.raises(a1.Stop):
+        a1.check_window(now, now + a1.timedelta(minutes=30), now + a1.timedelta(minutes=30), phase="x")
+    bad = Path(tempfile.mkdtemp()) / "t.tar"
+    with a1.tarfile.open(bad, "w") as t:
+        info = a1.tarfile.TarInfo("../escape")
+        info.size = 0
+        t.addfile(info, io.BytesIO(b""))
+    with pytest.raises(a1.Stop):
+        a1.extract_tree(bad, bad.parent / "tree")
+    record("helper: tar extraction refuses a path-traversal member", True)

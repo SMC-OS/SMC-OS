@@ -147,3 +147,33 @@ def diff_manifests(a: dict[str, Any], b: dict[str, Any]) -> list[str]:
     problems += [f"{p}: new at second capture" for p in sorted(right.keys() - left.keys())]
     problems += [f"{p}: content differs" for p in sorted(left.keys() & right.keys()) if left[p] != right[p]]
     return problems
+
+
+def writable_entries(directory: Path) -> int:
+    """Count tree entries that still carry any write bit (0 => frozen)."""
+    root = directory.absolute()
+    count = 1 if root.lstat().st_mode & 0o222 else 0
+    for current, dirs, files in os.walk(root, followlinks=False):
+        for name in dirs + files:
+            if (Path(current) / name).lstat().st_mode & 0o222:
+                count += 1
+    return count
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Stdlib-only container-side commands: `python - <command> --dir D < content_fingerprint.py`."""
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=["uploads-manifest", "writable-count"])
+    parser.add_argument("--dir", type=Path, required=True)
+    args = parser.parse_args(argv)
+    if args.command == "uploads-manifest":
+        print(json.dumps(uploads_manifest(args.dir), sort_keys=True))
+    else:
+        print(json.dumps({"writable_entries": writable_entries(args.dir)}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
