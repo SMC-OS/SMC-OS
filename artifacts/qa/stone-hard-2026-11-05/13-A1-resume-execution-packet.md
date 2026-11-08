@@ -181,3 +181,10 @@ Owner approved the A1 objective earlier; that does not satisfy items 1–6 and w
 ## 10. A2 — remains blocked, prepared as before
 
 Gate unchanged: A1 capture verified, staging access restored, then immutable `740b6b4` (branch `staging/stone-gate-acceptance`), API first, `alembic current` = `a5f6b7c8d9e0`, health/readiness/logs/integrity, then web, two synthetic owners, all **eight** real staging Playwright tests, STONE-GATE g1–g5 and DEF-003 d1–d9. Not started: no staging access and no verified A1. The local dry run (document 11) is not staging evidence and no ledger cell was changed.
+
+### A2 pre-checks that did not need staging (re-confirmed 8 November 2026)
+
+- CI is green on exactly `740b6b4`: push run 42138695942 and pull-request run 42138702465, both completed with conclusion `success` (read from GitHub). The later branch head `bf5d710` is also green (runs 42146974934 and 42146981927).
+- `bb1c1e9` and `0d745af` are both ancestors of `740b6b4` (`git merge-base --is-ancestor`).
+- Migration `a5f6b7c8d9e0` has `down_revision = 94e5f6a7b8c9`, the last revision known on staging, so it is a single additive step.
+- The per-job counts (backend 1807, frontend 424, Playwright 77, audit passed) were taken from document 11 and were not re-read job by job.
