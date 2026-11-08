@@ -739,3 +739,27 @@ def test_18_pure_helpers():
     with pytest.raises(a1.Stop):
         a1.extract_tree(bad, bad.parent / "tree")
     record("helper: tar extraction refuses a path-traversal member", True)
+
+
+def test_19_container_side_commands_work_when_piped_on_stdin(env):
+    """How the operator runs them on Railway: `railway ssh -- python3 - <cmd> < script` (nothing is deployed)."""
+    target = Path(tempfile.mkdtemp(prefix="piped-", dir=env["base"]))
+    os.chown(target, 10001, 10001)
+    (target / "f.bin").write_bytes(b"x")
+    os.chown(target / "f.bin", 10001, 10001)
+    state = env["private"] / f"piped-{secrets.token_hex(4)}.json"
+    barrier_src = (RECOVERY / "writer_barrier.py").read_bytes()
+    finger_src = (RECOVERY / "content_fingerprint.py").read_bytes()
+
+    def piped(src, *args):
+        return subprocess.run(APP + [PYTHON, "-", *args], input=src, capture_output=True, env={"PATH": os.environ["PATH"]})
+
+    freeze = piped(barrier_src, "uploads-freeze", "--dir", str(target), "--state", str(state))
+    probe = piped(barrier_src, "uploads-probe", "--dir", str(target))
+    count = json.loads(piped(finger_src, "writable-count", "--dir", str(target)).stdout)
+    manifest = json.loads(piped(finger_src, "uploads-manifest", "--dir", str(target)).stdout)
+    thaw = piped(barrier_src, "uploads-thaw", "--dir", str(target), "--state", str(state))
+    record("operator path: freeze, probe, read-only manifest and thaw all work when piped to `python3 -` as the app user",
+           freeze.returncode == 0 and probe.returncode == 0 and count["writable_entries"] == 0
+           and manifest["file_count"] == 1 and thaw.returncode == 0,
+           exits=[freeze.returncode, probe.returncode, thaw.returncode], stderr=(freeze.stderr + probe.stderr + thaw.stderr).decode()[:200])

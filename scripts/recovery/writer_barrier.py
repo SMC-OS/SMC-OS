@@ -41,7 +41,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+# `python3 - < writer_barrier.py` (the way it is run inside the container) has no __file__
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2] if "__file__" in globals() else Path("/nonexistent-repository-root")
 ADMIN_DSN_ENV = "BARRIER_ADMIN_DSN"
 APP_DSN_ENV = "BARRIER_APP_DSN"
 ADMIN_APP_NAME = "geocore_barrier_admin"

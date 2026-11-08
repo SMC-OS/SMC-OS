@@ -1,7 +1,7 @@
 {
  "title": "A1 writer barrier + capture tool: disposable LOCAL rehearsal evidence",
  "NOT_STAGING_EVIDENCE": true,
- "run_utc": "2026-11-08T13:38:22Z",
+ "run_utc": "2026-11-08T13:41:54Z",
  "tools_commit_parent": "02fef54fc8e8d4ae2a955383332fb3d078f48b3c",
  "environment": {
   "postgres": "16.15 (local throwaway cluster, torn down after the run)",
@@ -23,7 +23,7 @@
   "note": "local disk only; the railway ssh transfer time is unmeasured"
  },
  "totals": {
-  "checks": 90,
+  "checks": 91,
   "failed": 0
  },
  "checks": [
@@ -77,12 +77,12 @@
    "check": "concurrency: engage waited for the in-flight transaction (never killed it)",
    "passed": true,
    "drain": {
-    "cutoff": "2026-11-08T13:37:03.665580+00:00",
+    "cutoff": "2026-11-08T13:39:10.036755+00:00",
     "database": "rehearsal",
-    "inflight_waited_for": 4,
-    "terminated_idle": 5
+    "inflight_waited_for": 5,
+    "terminated_idle": 4
    },
-   "seconds": 2.59
+   "seconds": 2.74
   },
   {
    "check": "concurrency: the in-flight transaction committed intact",
@@ -91,8 +91,8 @@
   {
    "check": "concurrency: every acknowledged write is present (no loss)",
    "passed": true,
-   "acknowledged": 105,
-   "present": 107
+   "acknowledged": 101,
+   "present": 103
   },
   {
    "check": "concurrency: no request STARTED after the barrier left a row",
@@ -109,21 +109,21 @@
   {
    "check": "concurrency: no write started after the barrier succeeded",
    "passed": true,
-   "attempts_after_barrier": 80,
+   "attempts_after_barrier": 100,
    "statuses": [
     500
    ],
    "slowest": [
     [
-     0.2,
+     0.1,
      500
     ],
     [
-     0.2,
+     0.1,
      500
     ],
     [
-     0.2,
+     0.1,
      500
     ],
     [
@@ -131,12 +131,12 @@
      500
     ]
    ],
-   "engage_seconds": 2.6
+   "engage_seconds": 2.7
   },
   {
    "check": "concurrency: the load was real (writes succeeded before the barrier)",
    "passed": true,
-   "acknowledged_before": 105,
+   "acknowledged_before": 101,
    "unknown": 0
   },
   {
@@ -425,7 +425,7 @@
   {
    "check": "STOP: insufficient free disk",
    "passed": true,
-   "reason": "preflight: insufficient free disk: 30807773184 bytes free, 11402539000000000 required",
+   "reason": "preflight: insufficient free disk: 30806597632 bytes free, 11402539000000000 required",
    "quarantined": true
   },
   {
@@ -486,7 +486,7 @@
     "bytes": 276,
     "files": 4
    },
-   "rows": 1491
+   "rows": 1483
   },
   {
    "check": "A1: dump restores into a scratch database with an identical content fingerprint (local rehearsal only)",
@@ -560,6 +560,16 @@
   {
    "check": "helper: tar extraction refuses a path-traversal member",
    "passed": true
+  },
+  {
+   "check": "operator path: freeze, probe, read-only manifest and thaw all work when piped to `python3 -` as the app user",
+   "passed": true,
+   "exits": [
+    0,
+    0,
+    0
+   ],
+   "stderr": ""
   }
  ]
 }
