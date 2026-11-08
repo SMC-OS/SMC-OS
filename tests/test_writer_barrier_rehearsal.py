@@ -228,13 +228,13 @@ def test_00_positive_controls(env, api):
 # ------------------------------------------------------- 1 negative engage
 def test_01_engage_refusals_change_nothing(env, api):
     rec = env["private"] / "refusals.json"
-    wrong_id = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "staging",
+    wrong_id = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "local",
                            "--expect-system-identifier", "0000000000000000000")
     record("negative: wrong cluster system identifier is refused", wrong_id.returncode == wb.EXIT_REFUSED, exit=wrong_id.returncode)
     prod = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "production",
                        "--expect-system-identifier", env["system_id"])
     record("negative: --confirm-environment production is refused", prod.returncode == wb.EXIT_REFUSED, exit=prod.returncode)
-    inside = barrier_cli(env, "db-engage", "--record", str(REPO / "barrier-record.json"), "--confirm-environment", "staging",
+    inside = barrier_cli(env, "db-engage", "--record", str(REPO / "barrier-record.json"), "--confirm-environment", "local",
                          "--expect-system-identifier", env["system_id"])
     record("negative: record file inside the repository is refused", inside.returncode == wb.EXIT_REFUSED, exit=inside.returncode)
     with admin(env) as c:
@@ -278,7 +278,7 @@ def test_02_engage_under_concurrent_load(env, api):
     time.sleep(1.5)
     rec = env["private"] / "main-barrier.json"
     t0 = time.monotonic()
-    done = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "staging",
+    done = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "local", "--allow-busy",
                        "--expect-system-identifier", env["system_id"], "--drain-timeout", "30")
     engaged_at = time.monotonic()
     assert done.returncode == 0, done.stderr
@@ -288,8 +288,8 @@ def test_02_engage_under_concurrent_load(env, api):
     [w.join() for w in workers]
     t_in.join()
     S["record"] = rec
-    record("concurrency: engage waited for the in-flight transaction (never killed it)",
-           summary["inflight_waited_for"] >= 1 and engaged_at - t0 >= 1.5, drain=summary, seconds=round(engaged_at - t0, 2))
+    record("concurrency: engage waited for the in-flight transaction (never killed it) and then took the write fence",
+           summary["inflight_waited_for"] >= 1 and engaged_at - t0 >= 1.5 and summary["locked_tables"] >= 10, drain=summary, seconds=round(engaged_at - t0, 2))
     with admin(env) as c:
         present = {r[0] for r in c.execute("SELECT name FROM customers WHERE name LIKE 'load-%'").fetchall()}
         inflight_row = c.execute("SELECT count(*) FROM barrier_probe WHERE note='inflight'").fetchone()[0]
@@ -380,7 +380,8 @@ def test_05_background_jobs_cannot_write(env, api):
               "db = SessionLocal()\ndb.execute(text(\"INSERT INTO barrier_probe(note) VALUES ('job')\"))\ndb.commit()\n")
     writer = subprocess.run(APP + [PYTHON, "-c", script], cwd=REPO, env=env["app_env"], capture_output=True, text=True)
     record("barrier: a job-style writer using the app's own SessionLocal is rejected",
-           writer.returncode != 0 and "read-only transaction" in writer.stderr, exit=writer.returncode)
+           writer.returncode != 0 and ("read-only transaction" in writer.stderr or "lock timeout" in writer.stderr),
+           exit=writer.returncode)
     for module in ("app.jobs.automations", "app.jobs.follow_up", "app.jobs.trial_reminders"):
         job = subprocess.run(APP + [PYTHON, "-m", module], cwd=REPO, env=env["app_env"], capture_output=True, text=True)
         EVIDENCE.append({"check": f"informational: {module} during the barrier", "passed": True, "exit": job.returncode,
@@ -433,15 +434,23 @@ def test_07_release_restores_service_without_loss(env, api):
 
 
 # ------------------------------------------------ 8 edge cases on database B
-def test_08_edge_cases_on_second_database(env):
+def test_08_fence_override_attempts_and_recovery_on_second_database(env):
     import psycopg
-    dsn_admin, dsn_app = env["dsn"]("simo_admin", "rehearsal_b"), env["dsn"]("simo_super", "rehearsal_b")
-    rec = env["private"] / "b-barrier.json"
-    # (a) a pending in-flight write is never killed: drain times out, barrier stays engaged, the write still commits
+    dsn_admin, dsn_app = env["dsn"]("simo_admin", "rehearsal_b"), env["dsn"]("simo_super", "rehearsal_b")  # superuser: worst case
+    rec, rec2 = env["private"] / "b-barrier.json", env["private"] / "b-barrier-2.json"
+    common = ["--expect-system-identifier", env["system_id"]]
+    # (a) an in-flight write is never killed; an undrained barrier is releasable
     pending = psycopg.connect(dsn_app, application_name="pending-writer")
     pending.execute("INSERT INTO barrier_probe(note) VALUES ('uncommitted at engage')")  # open transaction
-    slow = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "staging",
-                       "--expect-system-identifier", env["system_id"], "--drain-timeout", "2", database="rehearsal_b")
+    refused = barrier_cli(env, "db-engage", "--record", str(env["private"] / "b-default.json"), "--confirm-environment", "local",
+                          *common, "--quiet-seconds", "2", database="rehearsal_b")
+    with admin(env, "rehearsal_b") as c:
+        untouched = wb.barrier_state(c, "rehearsal_b")
+    record("refusal: default engage refuses while a transaction is open (exit 6) and changes nothing",
+           refused.returncode == wb.EXIT_NOT_QUIET and untouched == {"setting": None, "engaged": False, "lock_timeout": None},
+           exit=refused.returncode, stderr=refused.stderr[:160])
+    slow = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "local", "--allow-busy", *common,
+                       "--drain-timeout", "2", database="rehearsal_b")
     record("negative: an undrainable in-flight transaction => DRAIN_TIMEOUT (exit 3)", slow.returncode == wb.EXIT_DRAIN_TIMEOUT, exit=slow.returncode)
     pending.commit()
     with admin(env, "rehearsal_b") as c:
@@ -449,41 +458,85 @@ def test_08_edge_cases_on_second_database(env):
                c.execute("SELECT count(*) FROM barrier_probe").fetchone()[0] == 1)
         record("negative: after the timeout the barrier is still engaged (fail closed)", wb.barrier_state(c, "rehearsal_b")["engaged"])
     pending.close()
-    retry = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "staging",
-                        "--expect-system-identifier", env["system_id"], database="rehearsal_b")
+    retry = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "local", "--allow-busy", *common, database="rehearsal_b")
     record("negative: engaging an already-engaged database is refused", retry.returncode == wb.EXIT_REFUSED, exit=retry.returncode)
-    # (b) known limit: a session that explicitly overrides the default can still write; the monitor and fingerprint must catch it
+    rel = barrier_cli(env, "db-release", "--record", str(rec), database="rehearsal_b")
     with admin(env, "rehearsal_b") as c:
-        cutoff = wb._server_now(c)
+        state = wb.barrier_state(c, "rehearsal_b")
+    record("recovery: an undrained barrier is releasable", rel.returncode == 0 and state["setting"] is None and state["lock_timeout"] is None)
+
+    # (b) clean engage, then every way a SUPERUSER session could try to write
+    eng = barrier_cli(env, "db-engage", "--record", str(rec2), "--confirm-environment", "local", *common,
+                      "--quiet-seconds", "12", database="rehearsal_b")
+    assert eng.returncode == 0, eng.stderr
+    locked = json.loads(eng.stdout)["locked_tables"]
+    fp_before = cf.db_fingerprint(dsn_admin)
+
+    def override(statement, extra=""):
+        c = psycopg.connect(dsn_app, autocommit=True, options=f"-c default_transaction_read_only=off -c lock_timeout=1500 {extra}")
+        try:
+            c.execute(statement)
+            return "WRITTEN"
+        except psycopg.Error as exc:
+            return type(exc).__name__
+        finally:
+            c.close()
+
+    attempts = {sqltext: override(sqltext) for sqltext in (
+        "INSERT INTO barrier_probe(note) VALUES ('rogue')", "UPDATE barrier_probe SET note = 'x'", "DELETE FROM barrier_probe",
+        "TRUNCATE barrier_probe", "ALTER TABLE barrier_probe ADD COLUMN z int", "DROP TABLE barrier_probe")}
+    attempts["INSERT with lock_timeout=0 (would wait forever)"] = override("INSERT INTO barrier_probe(note) VALUES ('rogue')",
+                                                                            "-c lock_timeout=0 -c statement_timeout=1500")
+    record("FENCED: a superuser that overrides read-only cannot INSERT, UPDATE, DELETE, TRUNCATE, ALTER or DROP",
+           all(v in ("LockNotAvailable", "QueryCanceled") for v in attempts.values()), attempts=attempts, locked_tables=locked)
+    record("FENCED: content fingerprint identical after the override attempts", cf.db_fingerprint(dsn_admin)["digest"] == fp_before["digest"])
+    probe_cli = barrier_cli(env, "db-probe", "--table", "barrier_probe", "--override-probe", database="rehearsal_b")
+    record("monitoring: the non-mutating override probe proves the fence (exit 0)", probe_cli.returncode == 0, out=json.loads(probe_cli.stdout))
+    with admin(env, "rehearsal_b") as c:
+        cutoff = datetime.fromisoformat(json.loads(rec2.read_text())["cutoff"])
         baseline = wb.sample(c, "rehearsal_b", cutoff)
-        fp_before = cf.db_fingerprint(dsn_admin)
-        with psycopg.connect(dsn_app, autocommit=True, options="-c default_transaction_read_only=off") as rogue:
-            rogue.execute("INSERT INTO barrier_probe(note) VALUES ('rogue override')")
-        time.sleep(1.5)
+        record("monitoring: fenced state is clean (locks held, no counters moved)", wb.violations(baseline, baseline, locked) == [], sample={k: baseline[k] for k in ("holder_locks", "table_count")})
+        # residual: a NEW object is not covered by locks taken on existing tables
+        sneaky = override("CREATE TABLE sneaky(id int)")
         current = wb.sample(c, "rehearsal_b", cutoff)
-    found = wb.violations(baseline, current)
-    fp_after = cf.db_fingerprint(dsn_admin)
-    record("KNOWN LIMIT: an explicit SET ... = off override can still write", True,
-           note="default_transaction_read_only is a default, not a lock; the app never overrides it")
-    record("detection: the monitor flags the override write", any("inserted" in f for f in found), problems=found)
-    record("detection: the content fingerprint flags the override write", fp_before["digest"] != fp_after["digest"],
+        found = wb.violations(baseline, current, locked)
+        fp_after = cf.db_fingerprint(dsn_admin)
+    record("RESIDUAL: an override session can still create a NEW table", sneaky == "WRITTEN")
+    record("detection: monitor and fingerprint both flag the new table",
+           any("new table" in f for f in found) and fp_after["digest"] != fp_before["digest"], problems=found,
            differences=cf.diff_fingerprints(fp_before, fp_after))
-    # (c) release refuses a record from another cluster/database, and emergency release works with no record
+    # holder lost -> detected
+    with admin(env, "rehearsal_b") as c:
+        c.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = %s", (wb.HOLDER_APP,))
+        time.sleep(1.0)
+        lost = wb.violations(baseline, wb.sample(c, "rehearsal_b", cutoff), locked)
+    record("detection: losing the lock holder is reported within one sample", any("holder" in f for f in lost), problems=lost)
+    # (c) release refuses another database's record; emergency release works with the record DESTROYED
     wrong = env["private"] / "wrong.json"
     wrong.write_text(json.dumps({"events": [], "database": "someone_else"}))
-    refused = barrier_cli(env, "db-release", "--record", str(wrong), database="rehearsal_b")
-    record("negative: release refuses a record that belongs to another database", refused.returncode == wb.EXIT_REFUSED, exit=refused.returncode)
+    wrong_rel = barrier_cli(env, "db-release", "--record", str(wrong), database="rehearsal_b")
+    record("negative: release refuses a record that belongs to another database", wrong_rel.returncode == wb.EXIT_REFUSED, exit=wrong_rel.returncode)
+    rec2.unlink()
     emergency = barrier_cli(env, "db-release", "--record", str(env["private"] / "none.json"), "--emergency", database="rehearsal_b")
     with admin(env, "rehearsal_b") as c:
-        record("emergency: release works without the original record", emergency.returncode == 0 and wb.barrier_state(c, "rehearsal_b")["setting"] is None)
-    # (d) a pre-existing setting of unknown origin is never overwritten
+        state = wb.barrier_state(c, "rehearsal_b")
+        holders = c.execute("SELECT count(*) FROM pg_stat_activity WHERE application_name = %s", (wb.HOLDER_APP,)).fetchone()[0]
+        c.execute("DROP TABLE sneaky")
+    with psycopg.connect(dsn_app, autocommit=True) as w:
+        w.execute("INSERT INTO barrier_probe(note) VALUES ('writable again')")
+    record("emergency: release works with the record destroyed, restores writes and leaves no holder",
+           emergency.returncode == 0 and state["setting"] is None and state["lock_timeout"] is None and holders == 0)
+    # (d) a pre-existing setting of unknown origin is never adopted
     with admin(env, "rehearsal_b") as c:
-        c.execute('ALTER DATABASE "rehearsal_b" SET default_transaction_read_only = on')
-    pre = barrier_cli(env, "db-engage", "--record", str(env["private"] / "pre.json"), "--confirm-environment", "staging",
-                      "--expect-system-identifier", env["system_id"], database="rehearsal_b")
-    record("negative: a pre-existing read-only setting of unknown origin is not adopted", pre.returncode == wb.EXIT_REFUSED, exit=pre.returncode)
+        c.execute('ALTER DATABASE "rehearsal_b" SET lock_timeout = \'5s\'')
+    pre = barrier_cli(env, "db-engage", "--record", str(env["private"] / "pre.json"), "--confirm-environment", "local", *common,
+                      "--quiet-seconds", "0", database="rehearsal_b")
+    record("negative: a pre-existing lock_timeout of unknown origin is not adopted", pre.returncode == wb.EXIT_REFUSED, exit=pre.returncode)
     with admin(env, "rehearsal_b") as c:
-        c.execute('ALTER DATABASE "rehearsal_b" RESET default_transaction_read_only')
+        c.execute('ALTER DATABASE "rehearsal_b" RESET lock_timeout')
+    busy_staging = barrier_cli(env, "db-engage", "--record", str(env["private"] / "b3.json"), "--confirm-environment", "staging", "--allow-busy",
+                               *common, database="rehearsal_b")
+    record("negative: --allow-busy is refused for staging", busy_staging.returncode == wb.EXIT_REFUSED, exit=busy_staging.returncode)
 
 
 # ----------------------------------------- 9 uploads emergency thaw (owner user)
@@ -563,8 +616,8 @@ def expect_refused(env, monkeypatch, label, **override):
 
 def test_11_a1_engage_barrier_for_capture(env, api):
     A1["record"] = env["private"] / "a1-barrier.json"
-    done = barrier_cli(env, "db-engage", "--record", str(A1["record"]), "--confirm-environment", "staging",
-                       "--expect-system-identifier", env["system_id"], "--drain-timeout", "30")
+    done = barrier_cli(env, "db-engage", "--record", str(A1["record"]), "--confirm-environment", "local",
+                       "--expect-system-identifier", env["system_id"], "--drain-timeout", "30", "--quiet-seconds", "12")
     assert done.returncode == 0, done.stderr
     A1["fp_start"] = cf.db_fingerprint(env["dsn"]("simo_admin", "rehearsal"))
     A1["m_start"] = cf.uploads_manifest(env["uploads"])
@@ -697,15 +750,14 @@ def test_16_stops_during_capture(env, monkeypatch):
     expect_stop(env, monkeypatch, "SIGTERM mid-capture", "interrupted",
                 hooks={"after_dump": lambda: os.kill(os.getpid(), a1.signal.SIGTERM)})
 
-    # (4) a write slips past the barrier between T0 and T1 (explicit override, the documented limit)
-    import psycopg
+    # (4) the write fence disappears mid-capture (holder killed): the monitor must stop the run
+    def kill_holder():
+        with admin(env) as c:
+            c.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = %s", (wb.HOLDER_APP,))
+        time.sleep(1.8)
 
-    def rogue_write():
-        with psycopg.connect(env["dsn"]("simo_super", "rehearsal"), autocommit=True, options="-c default_transaction_read_only=off") as c:
-            c.execute("INSERT INTO barrier_probe(note) VALUES ('slipped past')")
-        time.sleep(1.5)
-
-    expect_stop(env, monkeypatch, "a database write slips past the barrier mid-capture", "", hooks={"after_archive": rogue_write})
+    expect_stop(env, monkeypatch, "the write-fence holder is killed mid-capture", "fence lock holder is missing",
+                hooks={"after_archive": kill_holder})
 
 
 def test_17_release_after_capture(env):
@@ -763,3 +815,241 @@ def test_19_container_side_commands_work_when_piped_on_stdin(env):
            freeze.returncode == 0 and probe.returncode == 0 and count["writable_entries"] == 0
            and manifest["file_count"] == 1 and thaw.returncode == 0,
            exits=[freeze.returncode, probe.returncode, thaw.returncode], stderr=(freeze.stderr + probe.stderr + thaw.stderr).decode()[:200])
+
+
+
+# =========================================================================== #
+# Barrier v2: refusal under load, dirty engage detection and recovery.
+# =========================================================================== #
+def test_20_default_engage_refuses_under_load_and_changes_nothing(env, api):
+    stop, results = threading.Event(), []
+
+    def hammer(worker):
+        n = 0
+        while not stop.is_set():
+            n += 1
+            r = httpx.post(f"{api}/api/v1/customers", json={"name": f"busy-{worker}-{n}"}, headers=S["token"], timeout=15)
+            results.append((time.monotonic(), r.status_code))
+
+    workers = [threading.Thread(target=hammer, args=(w,)) for w in range(4)]
+    [w.start() for w in workers]
+    time.sleep(2)
+    refused = barrier_cli(env, "db-engage", "--record", str(env["private"] / "busy.json"), "--confirm-environment", "local",
+                          "--expect-system-identifier", env["system_id"], "--quiet-seconds", "5")
+    refused_at = time.monotonic()
+    time.sleep(1.5)
+    stop.set()
+    [w.join() for w in workers]
+    with admin(env) as c:
+        state = wb.barrier_state(c, "rehearsal")
+        holders = c.execute("SELECT count(*) FROM pg_stat_activity WHERE application_name = %s", (wb.HOLDER_APP,)).fetchone()[0]
+    after = [code for t, code in results if t > refused_at]
+    record("refusal: engage under live write load exits 6 (NOT_QUIET), touches nothing, and users are not disturbed",
+           refused.returncode == wb.EXIT_NOT_QUIET and "NOT_QUIET" in refused.stderr
+           and state == {"setting": None, "engaged": False, "lock_timeout": None} and holders == 0
+           and after and all(c == 201 for c in after),
+           exit=refused.returncode, writes_after_refusal=len(after), statuses=sorted(set(after)))
+
+
+def test_21_dirty_engage_is_detected_refused_by_capture_and_recoverable(env, monkeypatch):
+    import psycopg
+    monkeypatch.setenv(wb.ADMIN_DSN_ENV, env["dsn"]("simo_admin", "rehearsal"))
+    time.sleep(12)  # let the previous test's statistics settle: this test needs a genuinely quiet database
+    rec = wb.Record.open(env["private"] / "dirty.json")
+
+    def late_write():  # a request that begins just after the quiet check passed
+        with psycopg.connect(env["dsn"]("simo_super", "rehearsal"), autocommit=True) as c:
+            c.execute("INSERT INTO barrier_probe(note) VALUES ('late write')")
+
+    with wb.admin_connect() as conn:
+        with pytest.raises(wb.BarrierError) as caught:
+            wb.engage(conn, record=rec, expect_system_identifier=env["system_id"], confirm_environment="local",
+                      drain_timeout_s=20, quiet_seconds=3, after_quiet=late_write)
+    status = json.loads(rec.path.read_text())["status"]
+    record("dirty engage: a write landing between the quiet check and the cutoff is detected (exit 7, status engaged-dirty)",
+           caught.value.code == wb.EXIT_DIRTY and status == "engaged-dirty", status=status)
+    args = a1_args(env, barrier_record=rec.path)
+    with pytest.raises(a1.Stop) as stopped:
+        a1.capture(args)
+    record("dirty engage: A1 capture refuses a barrier that is not cleanly engaged", "not recorded as engaged" in stopped.value.reason)
+    with wb.admin_connect() as conn:
+        wb.release(conn, record=wb.Record.open(rec.path))
+        state = wb.barrier_state(conn, "rehearsal")
+        holders = conn.execute("SELECT count(*) FROM pg_stat_activity WHERE application_name = %s", (wb.HOLDER_APP,)).fetchone()[0]
+    record("recovery: a dirty barrier releases cleanly (settings gone, no holder)",
+           state == {"setting": None, "engaged": False, "lock_timeout": None} and holders == 0)
+    retry = barrier_cli(env, "db-engage", "--record", str(env["private"] / "retry.json"), "--confirm-environment", "local",
+                        "--expect-system-identifier", env["system_id"], "--quiet-seconds", "3")
+    assert retry.returncode == 0, retry.stderr
+    status = json.loads((env["private"] / "retry.json").read_text())
+    release = barrier_cli(env, "db-release", "--record", str(env["private"] / "retry.json"))
+    record("recovery: after a clean quiet period the retry engages with a verified quiet period and releases again",
+           status["status"] == "engaged" and status["quiet_verified"] is True and release.returncode == 0)
+
+
+def test_22_capture_refuses_busy_engaged_barrier(env, monkeypatch):
+    rec = env["private"] / "busy-engaged.json"
+    rec.write_text(json.dumps({"status": "engaged", "database": "rehearsal", "busy_engage": True, "quiet_verified": False,
+                               "locked_tables": 10, "cutoff": "2026-01-01T00:00:00+00:00", "events": []}))
+    with admin(env) as c:
+        c.execute('ALTER DATABASE "rehearsal" SET default_transaction_read_only = on')
+    try:
+        expect_stop(env, monkeypatch, "barrier engaged without a verified quiet period", "without a verified quiet period", barrier_record=rec)
+    finally:
+        with admin(env) as c:
+            c.execute('ALTER DATABASE "rehearsal" RESET default_transaction_read_only')
+
+
+
+# =========================================================================== #
+# Owner-approval gate: staging mutation is technically impossible without it.
+# =========================================================================== #
+def approval_file(tmp, **override):
+    now = datetime.now(a1.timezone.utc).replace(microsecond=0)
+    data = {
+        "schema": "geocore-a1-approval/1", "approved_by": "Owner", "approved_at_utc": a1.utc(now - a1.timedelta(days=2)),
+        "window_start": a1.utc(now - a1.timedelta(minutes=1)), "window_end": a1.utc(now + a1.timedelta(minutes=25)),
+        "operator": "rehearsal-operator", "users_notified_at_utc": a1.utc(now - a1.timedelta(days=1, hours=2)),
+        "notification_channel": "email", "private_storage_description": "encrypted ext4 volume",
+        "private_storage_approved": True, "private_storage_encryption_attested": True,
+        "barrier_operational_procedure_approved": True, "scope_staging_only": True,
+        "historical_backups_untouched": True, "production_untouched": True,
+    }
+    data.update(override)
+    path = tmp / f"approval-{secrets.token_hex(3)}.json"
+    path.write_text(json.dumps(data))
+    return path
+
+
+def test_23_staging_is_refused_without_a_complete_owner_approval(env, tmp_path):
+    common = ["--confirm-environment", "staging", "--expect-system-identifier", env["system_id"], "--quiet-seconds", "0",
+              "--operator", "rehearsal-operator"]
+    rec = lambda: str(env["private"] / f"gate-{secrets.token_hex(3)}.json")
+    now = datetime.now(a1.timezone.utc).replace(microsecond=0)
+    cases = {
+        "no approval file": [],
+        "template (all null)": ["--approval-file", str(REPO / "artifacts/qa/stone-hard-2026-11-05/a1-owner-approval.TEMPLATE.json")],
+        "users notified only 2 hours before": ["--approval-file", str(approval_file(
+            tmp_path, users_notified_at_utc=a1.utc(now - a1.timedelta(hours=2)), window_start=a1.utc(now + a1.timedelta(hours=1)),
+            window_end=a1.utc(now + a1.timedelta(hours=1, minutes=30))))],
+        "window not open yet": ["--approval-file", str(approval_file(
+            tmp_path, window_start=a1.utc(now + a1.timedelta(days=2)), window_end=a1.utc(now + a1.timedelta(days=2, minutes=30)),
+            users_notified_at_utc=a1.utc(now - a1.timedelta(hours=1))))],
+        "window longer than 30 minutes": ["--approval-file", str(approval_file(tmp_path, window_end=a1.utc(now + a1.timedelta(minutes=45))))],
+        "private storage not approved": ["--approval-file", str(approval_file(tmp_path, private_storage_approved=False))],
+        "barrier procedure not approved": ["--approval-file", str(approval_file(tmp_path, barrier_operational_procedure_approved=False))],
+        "different operator": ["--approval-file", str(approval_file(tmp_path, operator="someone-else"))],
+    }
+    outcomes = {}
+    for label, extra in cases.items():
+        done = barrier_cli(env, "db-engage", "--record", rec(), *common, *extra)
+        outcomes[label] = done.returncode
+    with admin(env) as c:
+        untouched = wb.barrier_state(c, "rehearsal") == {"setting": None, "engaged": False, "lock_timeout": None}
+    record("approval gate: every incomplete or wrong approval is refused (exit 2) and nothing is changed",
+           set(outcomes.values()) == {wb.EXIT_REFUSED} and untouched, outcomes=outcomes)
+    # capture is gated the same way
+    args = a1_args(env, confirm_environment="staging", approval_file=None)
+    with pytest.raises(wb.BarrierError) as caught:
+        a1.capture(args)
+    record("approval gate: A1 capture on staging is refused without approval", "UNAPPROVED" in str(caught.value))
+
+
+def test_24_valid_approval_allows_the_gate_to_pass(env, tmp_path):
+    good = approval_file(tmp_path)
+    rec = env["private"] / "gate-ok.json"
+    done = barrier_cli(env, "db-engage", "--record", str(rec), "--confirm-environment", "staging",
+                       "--expect-system-identifier", env["system_id"], "--quiet-seconds", "3", "--operator", "rehearsal-operator",
+                       "--approval-file", str(good))
+    engaged = done.returncode == 0
+    release = barrier_cli(env, "db-release", "--record", str(rec))
+    record("approval gate: a complete, in-window, correctly-noticed approval lets the (local rehearsal) engage proceed, and it releases",
+           engaged and release.returncode == 0, exit=done.returncode, stderr=done.stderr[:200])
+
+
+
+# =========================================================================== #
+# Operator preflight, run for real against the local cluster and "container".
+# =========================================================================== #
+def run_preflight(env, name, *extra):
+    out = env["base"] / f"pf-out-{name}"
+    out.mkdir(mode=0o700)
+    report = env["private"] / f"pf-report-{name}.json"
+    cmd = [PYTHON, str(RECOVERY / "operator_preflight.py"), "--out-dir", str(out), "--report", str(report),
+           "--uploads-dir", str(env["uploads"]), "--remote-prefix", APP_PREFIX, "--remote-python", PYTHON,
+           "--pg-dump", f"{PG_BINS[-1]}/pg_dump", "--pg-restore", f"{PG_BINS[-1]}/pg_restore", "--psql", f"{PG_BINS[-1]}/psql",
+           "--attest-encrypted-volume", "--timing-seconds", "4", "--quiet-probe-seconds", "2", *extra]
+    e = {"PATH": os.environ["PATH"], wb.ADMIN_DSN_ENV: env["dsn"]("simo_admin", "rehearsal"), wb.APP_DSN_ENV: env["dsn"]("simo_super", "rehearsal")}
+    done = subprocess.run(cmd, env=e, capture_output=True, text=True)
+    doc = json.loads(report.read_text()) if report.exists() else {}
+    return done, doc
+
+
+def statuses(doc, status):
+    return sorted(c["check"] for c in doc.get("checks", []) if c["status"] == status)
+
+
+def test_25_operator_preflight_blocks_until_approval_and_recovery_evidence_exist(env):
+    done, doc = run_preflight(env, "base")
+    fails = statuses(doc, "FAIL")
+    record("preflight: runs read-only end to end and reports BLOCKED (exit 8) because approval and WAL archiving are absent",
+           done.returncode == 8 and doc["verdict"] == "BLOCKED" and fails == ["WAL archiver state", "owner approval file"],
+           fails=fails, unverified=statuses(doc, "UNVERIFIED"), warn=statuses(doc, "WARN"))
+    by = {c["check"]: c for c in doc["checks"]}
+    record("preflight: container checks ran as the non-root app user and measured the transfer",
+           by["runs as a non-root user"]["status"] == "PASS" and by["read-only transfer timing"]["status"] in ("PASS", "WARN")
+           and by["uploads directory owned by the running user"]["status"] == "PASS",
+           transfer=by["read-only transfer timing"]["detail"], container_user=by["runs as a non-root user"]["detail"])
+    record("preflight: database identity is reported for the approval and PITR stays UNVERIFIED without pgBackRest evidence",
+           by["identity (record this system identifier in the approval)"]["detail"]["system_identifier"] == env["system_id"]
+           and by["pgBackRest base backup + archive continuity"]["status"] == "UNVERIFIED")
+    record("preflight: it changed nothing (no barrier setting, no holder, uploads still writable)",
+           by["no barrier or lock_timeout already set on the database"]["status"] == "PASS")
+    with admin(env) as c:
+        record("preflight: database untouched afterwards", wb.barrier_state(c, "rehearsal") == {"setting": None, "engaged": False, "lock_timeout": None})
+
+
+def test_26_preflight_rejects_a_postgresql_18_server_with_a_16_client(env):
+    """The real check_workstation with the real PG16 binaries and a claimed PG18 server (no real PG18 client exists here)."""
+    out = env["base"] / "pf-out-pg18"
+    out.mkdir(mode=0o700)
+
+    def run(major, name):
+        report = env["private"] / f"pf-report-{name}.json"
+        done = subprocess.run([PYTHON, str(RECOVERY / "operator_preflight.py"), "--out-dir", str(out), "--report", str(report), "--remote-prefix", "",
+                               "--timing-seconds", "0", "--attest-encrypted-volume", "--server-major", str(major),
+                               "--pg-dump", f"{PG_BINS[-1]}/pg_dump", "--pg-restore", f"{PG_BINS[-1]}/pg_restore"],
+                              capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+        return done, {c["check"]: c for c in json.loads(report.read_text())["checks"]}
+
+    done, by = run(18, "pg18")
+    check = by["pg_dump and pg_restore >= server major"]
+    record("PG18 rule on the real code path: a PG16 pg_dump/pg_restore against a PG18 server is FAIL (exit 8)",
+           check["status"] == "FAIL" and done.returncode == 8 and "install the matching client" in check["detail"], detail=check["detail"],
+           note="rule exercised with a real PG16 client; no real PG18 client or server was available here")
+    _, by16 = run(16, "pg16")
+    record("same code path with a matching major version passes", by16["pg_dump and pg_restore >= server major"]["status"] == "PASS")
+
+
+def test_27_preflight_accepts_a_valid_approval_and_refuses_unsafe_storage(env, tmp_path):
+    good = approval_file(tmp_path)
+    done, doc = run_preflight(env, "approved", "--approval-file", str(good))
+    by = {c["check"]: c for c in doc["checks"]}
+    record("preflight: a valid approval file turns the approval check to PASS", by["owner approval file"]["status"] == "PASS")
+    syncd = env["base"] / "OneDrive" / "recovery"
+    syncd.mkdir(parents=True, mode=0o700)
+    report = env["private"] / "pf-report-sync.json"
+    done = subprocess.run([PYTHON, str(RECOVERY / "operator_preflight.py"), "--out-dir", str(syncd), "--report", str(report), "--remote-prefix", "",
+                           "--timing-seconds", "0", "--attest-encrypted-volume", "--pg-dump", f"{PG_BINS[-1]}/pg_dump",
+                           "--pg-restore", f"{PG_BINS[-1]}/pg_restore"], capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+    doc = json.loads(report.read_text()) if report.exists() else {}
+    record("preflight: an output directory inside a cloud-synced folder is FAIL",
+           any(c["status"] == "FAIL" and "cloud-synced" in str(c["detail"]) for c in doc.get("checks", [])), exit=done.returncode)
+    unattested = env["base"] / "pf-out-unattested"
+    unattested.mkdir(mode=0o700)
+    report2 = env["private"] / "pf-report-unattested.json"
+    subprocess.run([PYTHON, str(RECOVERY / "operator_preflight.py"), "--out-dir", str(unattested), "--report", str(report2), "--remote-prefix", "",
+                    "--timing-seconds", "0"], capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+    doc2 = json.loads(report2.read_text())
+    record("preflight: storage encryption is never assumed (FAIL until attested)",
+           any(c["check"].startswith("encrypted volume") and c["status"] == "FAIL" for c in doc2["checks"]))

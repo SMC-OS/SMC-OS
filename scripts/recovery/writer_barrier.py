@@ -1,30 +1,29 @@
 """Reversible staging writer barrier for the A1 matched recovery point.
 
-Two independent layers, neither of which needs an application deploy:
+Layers, none of which needs an application deploy:
 
-* DATABASE layer: ``ALTER DATABASE ... SET default_transaction_read_only = on``.
-  Every session that connects afterwards, under ANY role (API, background jobs,
-  psql, operator tools), starts read-only.  Sessions that were already open
-  keep the old default, so they are drained first: idle ones are terminated
-  (nothing to lose), in-flight ones are allowed to finish.  Nothing is
-  written to any application table, and the setting is not part of a
-  ``pg_dump`` of the database.
-* UPLOADS layer: the write bits are removed from the uploads directory tree
-  (state recorded outside the tree first).  This must be run as the user that
-  owns the files (UID 10001 on Railway); root bypasses permissions.  It stops
-  both new files and modification of existing files.
+* REFUSAL (straddling-request risk): `db-engage` refuses unless the database has been idle for
+  a quiet period (no writes counted, no open transaction).  After the cutoff it re-checks the
+  write counters; a write that landed in between marks the barrier `engaged-dirty` and A1
+  capture refuses it.  No lock can undo a commit made before the cutoff, so refusing is the fence.
+* DATABASE default: `ALTER DATABASE ... SET default_transaction_read_only = on` plus a short
+  `lock_timeout`.  Idle old sessions are terminated; in-flight ones are waited for, never killed.
+* WRITE FENCE (override risk): a detached holder process keeps `LOCK TABLE ... IN SHARE MODE`
+  on every user table.  That blocks every writer, including a superuser that has overridden the
+  read-only default, but not readers or pg_dump; it needs no schema change, is not in a dump, and
+  vanishes if the holder dies (the monitor then reports it).  Writers fail after `lock_timeout`.
+* UPLOADS: write bits removed from the uploads tree (run as the file owner, UID 10001; root
+  bypasses permissions), with the exact modes recorded outside the tree first.
 
-Honest limits (also in docs): ``default_transaction_read_only`` is a default,
-not a lock.  A session that deliberately issues ``SET ... = off`` can still
-write, and PostgreSQL does not let an administrator prevent that for a
-superuser or for the role's owner.  The application never does so (see the
-rehearsal).  The barrier is therefore paired with *detection*: ``watch``
-checks the setting, session ages and the user-table write counters
-continuously, and A1 compares complete content fingerprints at T0 and T1.
+Residual limits (rehearsed, detected, not prevented): an override session can still CREATE a
+brand-new table (not covered by locks on existing tables) and a superuser can terminate the
+holder or the barrier itself.  `watch` and the A1 capture monitor report a lost holder, a new
+table, a lifted setting, a stale session or moved write counters, and T0/T1 content fingerprints
+catch anything else.  Statistics lag: an idle pooled session can take ~10 s to report its writes.
 
-Secrets: DSNs are read only from the environment (``BARRIER_ADMIN_DSN``,
-``BARRIER_APP_DSN``) and are never printed.  The record file must live
-outside the repository.
+Staging mutation (`--confirm-environment staging`) is refused without a complete owner approval
+file (approval.py).  Secrets: DSNs are read only from the environment (BARRIER_ADMIN_DSN,
+BARRIER_APP_DSN) and are never printed.  The record file must live outside the repository.
 """
 
 from __future__ import annotations
@@ -54,6 +53,8 @@ EXIT_REFUSED = 2
 EXIT_DRAIN_TIMEOUT = 3
 EXIT_VIOLATION = 4
 EXIT_PROBE_FAILED = 5
+EXIT_NOT_QUIET = 6
+EXIT_DIRTY = 7
 
 
 class BarrierError(RuntimeError):
@@ -168,20 +169,20 @@ def barrier_state(conn, database: str) -> dict[str, Any]:
         "WHERE d.datname = %s AND s.setrole = 0",
         (database,),
     ).fetchone()
-    value = None
+    found: dict[str, str] = {}
     for item in (row[0] if row and row[0] else []):
         key, _, val = item.partition("=")
-        if key == SETTING:
-            value = val
-    return {"setting": value, "engaged": value in ("on", "true")}
+        found[key] = val
+    value = found.get(SETTING)
+    return {"setting": value, "engaged": value in ("on", "true"), "lock_timeout": found.get("lock_timeout")}
 
 
 def list_sessions(conn, database: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT pid, usename, application_name, state, backend_start FROM pg_stat_activity "
         "WHERE datname = %s AND backend_type = 'client backend' AND pid <> pg_backend_pid() "
-        "AND application_name <> %s",
-        (database, ADMIN_APP_NAME),
+        "AND application_name NOT IN (%s, %s)",
+        (database, ADMIN_APP_NAME, "geocore_barrier_hold"),
     ).fetchall()
     return [
         {"pid": r[0], "user": r[1], "application": r[2], "state": r[3], "backend_start": r[4]} for r in rows
@@ -230,6 +231,160 @@ def drain(
         sleep(poll_s)
 
 
+HOLDER_APP = "geocore_barrier_hold"
+
+
+def user_tables(conn) -> list[tuple[str, str]]:
+    return conn.execute(
+        "SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema') "
+        "AND n.nspname NOT LIKE 'pg_toast%%' AND n.nspname NOT LIKE 'pg_temp%%' ORDER BY 1, 2"
+    ).fetchall()
+
+
+def write_counters(conn) -> dict[str, int]:
+    conn.execute("SELECT pg_stat_clear_snapshot()")
+    ins, upd, dele = conn.execute(
+        "SELECT coalesce(sum(n_tup_ins),0)::bigint, coalesce(sum(n_tup_upd),0)::bigint, "
+        "coalesce(sum(n_tup_del),0)::bigint FROM pg_stat_user_tables"
+    ).fetchone()
+    return {"inserted": int(ins), "updated": int(upd), "deleted": int(dele)}
+
+
+def quiet_check(
+    conn,
+    database: str,
+    seconds: float,
+    *,
+    poll_s: float = 1.0,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> dict[str, int]:
+    """Refuse unless the database is genuinely idle: no open transaction, no write counter movement.
+
+    This is the fence for the 'request straddles the cutoff' risk.  No lock can undo a
+    first commit that happened before the cutoff, so the only safe move is to engage when
+    nobody is writing.  Cumulative statistics lag a little (an idle pooled session can
+    take up to ~10 s to report), so the default quiet period is 60 s.
+    """
+    sleep(1.2)
+    baseline = write_counters(conn)
+    end = clock() + seconds
+    while True:
+        busy = [s for s in list_sessions(conn, database) if s["state"] != "idle"]
+        if busy:
+            raise BarrierError(
+                "NOT_QUIET: active or in-transaction sessions are present; not engaging",
+                EXIT_NOT_QUIET,
+                [{"pid": s["pid"], "state": s["state"], "application": s["application"]} for s in busy],
+            )
+        now = write_counters(conn)
+        if now != baseline:
+            raise BarrierError("NOT_QUIET: writes were observed during the quiet period; not engaging", EXIT_NOT_QUIET,
+                               {"before": baseline, "after": now})
+        if clock() >= end:
+            return baseline
+        sleep(poll_s)
+
+
+def _spawn_holder(record_path: Path, wait_s: float) -> tuple[int, int]:
+    """Start the detached lock-holder process; return (tables_locked, holder_pid)."""
+    import select
+    import subprocess
+
+    if "__file__" not in globals():
+        raise BarrierError("db-engage must run from a file, not piped on stdin")
+    proc = subprocess.Popen(
+        [sys.executable, str(Path(__file__).resolve()), "db-hold", "--record", str(record_path), "--lock-wait", str(wait_s)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
+    )
+    ready, _, _ = select.select([proc.stdout], [], [], wait_s + 15)
+    line = proc.stdout.readline().decode().strip() if ready else ""
+    proc.stdout.close()
+    if not line.startswith("LOCKED "):
+        proc.kill()
+        raise BarrierError("DRAIN_TIMEOUT: could not take the write-fence locks in time; barrier left engaged",
+                           EXIT_DRAIN_TIMEOUT, {"holder_said": line or "nothing"})
+    return int(line.split()[1]), proc.pid
+
+
+def hold(record: Record, wait_s: float) -> int:
+    """The write fence: SHARE-lock every user table for as long as the barrier is engaged.
+
+    SHARE conflicts with every write lock (even a superuser's) but not with readers or
+    pg_dump, needs no schema change, is invisible to dumps, and disappears if this process
+    dies (the monitor then reports it).  Taking the locks also waits out any in-flight writer.
+    """
+    import signal
+
+    psycopg = _psycopg()
+    from psycopg import sql
+
+    conn = psycopg.connect(
+        _dsn(ADMIN_DSN_ENV), autocommit=False, application_name=HOLDER_APP,
+        options=f"-c {SETTING}=off -c lock_timeout=3000 -c idle_in_transaction_session_timeout=0 -c statement_timeout=0",
+    )
+    stop: list[bool] = []
+    signal.signal(signal.SIGTERM, lambda *_: stop.append(True))
+    tables = user_tables(conn)
+    statement = sql.SQL("LOCK TABLE {} IN SHARE MODE").format(
+        sql.SQL(", ").join(sql.SQL("{}.{}").format(sql.Identifier(s), sql.Identifier(t)) for s, t in tables)
+    )
+    deadline = time.monotonic() + wait_s
+    while True:
+        try:
+            conn.execute(statement)
+            break
+        except psycopg.errors.LockNotAvailable:
+            conn.rollback()
+            tables = user_tables(conn)
+            statement = sql.SQL("LOCK TABLE {} IN SHARE MODE").format(
+                sql.SQL(", ").join(sql.SQL("{}.{}").format(sql.Identifier(s), sql.Identifier(t)) for s, t in tables)
+            )
+            if time.monotonic() > deadline:
+                print("FAILED", flush=True)
+                return 1
+    print(f"LOCKED {len(tables)}", flush=True)
+    sys.stdout.close()
+    while not stop:
+        time.sleep(1.0)
+        try:
+            conn.execute("SELECT 1")
+            current = json.loads(record.path.read_text(encoding="utf-8")).get("status")
+        except Exception:
+            return 1
+        if current in ("releasing", "released"):
+            break
+    conn.rollback()
+    conn.close()
+    return 0
+
+
+def stop_holder(conn, database: str, record: Record | None, *, wait_s: float = 8.0) -> int:
+    """Ask the holder to stop; terminate any holder session that does not. Works without a record."""
+    import signal
+
+    pid = record.data.get("holder_pid") if record is not None else None
+    if pid:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, ValueError):
+            pass
+    deadline = time.monotonic() + wait_s
+    terminated = 0
+    while True:
+        rows = conn.execute(
+            "SELECT pid FROM pg_stat_activity WHERE application_name = %s AND datname = %s", (HOLDER_APP, database)
+        ).fetchall()
+        if not rows:
+            return terminated
+        if time.monotonic() > deadline:
+            for (p,) in rows:
+                conn.execute("SELECT pg_terminate_backend(%s)", (p,))
+                terminated += 1
+        time.sleep(0.2)
+
+
 def engage(
     conn,
     *,
@@ -237,10 +392,27 @@ def engage(
     expect_system_identifier: str | None,
     confirm_environment: str,
     drain_timeout_s: float,
+    quiet_seconds: float = 60.0,
+    lock_timeout_ms: int = 1000,
+    hold_wait_s: float = 60.0,
+    allow_busy: bool = False,
+    spawn_holder: Callable[[Path, float], tuple[int, int]] | None = None,
+    after_quiet: Callable[[], None] | None = None,
+    approval_file: Path | None = None,
+    operator: str | None = None,
     **drain_kwargs: Any,
 ) -> dict[str, Any]:
     if confirm_environment not in ("staging", "local"):
         raise BarrierError("--confirm-environment must be 'staging' or 'local'")
+    if confirm_environment == "staging":
+        from approval import ApprovalError, validate_approval  # lazy: not needed for the container-side commands
+
+        try:
+            validate_approval(approval_file, now=datetime.now(timezone.utc), operator=operator)
+        except ApprovalError as exc:
+            raise BarrierError("STAGING IS UNAPPROVED: " + str(exc), EXIT_REFUSED, exc.problems) from None
+    if allow_busy and confirm_environment != "local":
+        raise BarrierError("--allow-busy is refused outside a local rehearsal")
     ident = identity(conn)
     database = ident["database"]
     if ident["in_recovery"]:
@@ -248,29 +420,43 @@ def engage(
     if expect_system_identifier is None or ident["system_identifier"] != expect_system_identifier:
         raise BarrierError("cluster system identifier does not match --expect-system-identifier")
     state = barrier_state(conn, database)
-    if state["setting"] is not None:
-        raise BarrierError("database already has a default_transaction_read_only setting; refusing to guess its owner")
+    if state["setting"] is not None or state["lock_timeout"] is not None:
+        raise BarrierError("database already has a read-only or lock_timeout setting; refusing to guess its owner")
+    baseline = write_counters(conn) if allow_busy else quiet_check(conn, database, quiet_seconds)
+    if after_quiet is not None:
+        after_quiet()
     record.set(
-        environment=confirm_environment,
-        database=database,
-        system_identifier=ident["system_identifier"],
-        server_version=ident["server_version"],
-        admin_is_superuser=ident["admin_is_superuser"],
-        prior_setting=None,
-        status="engaging",
+        environment=confirm_environment, database=database, system_identifier=ident["system_identifier"],
+        server_version=ident["server_version"], admin_is_superuser=ident["admin_is_superuser"],
+        prior_setting=None, quiet_verified=not allow_busy, busy_engage=allow_busy,
+        lock_timeout_ms=lock_timeout_ms, status="engaging",
     )
     conn.execute(f'ALTER DATABASE "{database}" SET {SETTING} = on')
+    conn.execute(f"ALTER DATABASE \"{database}\" SET lock_timeout = '{int(lock_timeout_ms)}ms'")
     cutoff = _server_now(conn)
     record.set(cutoff=cutoff.isoformat(), status="engaged-draining")
     try:
         result = drain(conn, database, cutoff, timeout_s=drain_timeout_s, **drain_kwargs)
+        locked, holder_pid = (spawn_holder or _spawn_holder)(record.path, hold_wait_s)
     except BarrierError as exc:
         record.event("drain-timeout", detail=exc.detail)
         record.set(status="engaged-undrained")
         raise
-    record.event("drained", **result)
+    record.set(locked_tables=locked, holder_pid=holder_pid)
+    if not allow_busy:
+        time.sleep(1.5)  # old sessions have exited, so their statistics are flushed
+        after = write_counters(conn)
+        if after != baseline:
+            record.event("writes-near-cutoff", before=baseline, after=after)
+            record.set(status="engaged-dirty")
+            raise BarrierError(
+                "WRITES_NEAR_CUTOFF: a write landed between the quiet check and the cutoff; "
+                "the recovery point is not trustworthy. Release and retry when idle.",
+                EXIT_DIRTY, {"before": baseline, "after": after},
+            )
+    record.event("drained", locked_tables=locked, **result)
     record.set(status="engaged")
-    return {"database": database, "cutoff": cutoff.isoformat(), **result}
+    return {"database": database, "cutoff": cutoff.isoformat(), "locked_tables": locked, **result}
 
 
 def release(
@@ -281,11 +467,12 @@ def release(
     emergency: bool = False,
     sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
-    """Lift the barrier and evict sessions that were opened read-only under it.
+    """Lift the fence, then the read-only default, then evict sessions opened under the barrier.
 
-    Those sessions would otherwise keep their read-only default after the
-    setting is removed (found in rehearsal).  They never held a write, so
-    terminating them cannot lose data.
+    Order matters: locks go first while the read-only default still refuses writes, so there is
+    no moment in which writes are possible and unguarded.  Those evicted sessions never held a
+    write, so terminating them cannot lose data (found in rehearsal: they would otherwise stay
+    read-only after release).
     """
     ident = identity(conn)
     database = ident["database"]
@@ -295,7 +482,10 @@ def release(
         if record.data.get("system_identifier") not in (None, ident["system_identifier"]):
             raise BarrierError("record belongs to a different cluster")
     state = barrier_state(conn, database)
-    if not state["engaged"] and state["setting"] is None:
+    if record is not None and state["setting"] is not None:
+        record.set(status="releasing")
+    holders_stopped = stop_holder(conn, database, record)
+    if state["setting"] is None and state["lock_timeout"] is None:
         if record is not None:
             record.event("release-noop")
         return {"database": database, "already_released": True}
@@ -304,6 +494,7 @@ def release(
         conn.execute(f'ALTER DATABASE "{database}" RESET {SETTING}')
     else:
         conn.execute(f'ALTER DATABASE "{database}" SET {SETTING} = {prior}')
+    conn.execute(f'ALTER DATABASE "{database}" RESET lock_timeout')
     cutoff = _server_now(conn)
     deadline = time.monotonic() + grace_s
     terminated = 0
@@ -318,35 +509,33 @@ def release(
                 terminated += 1
         sleep(0.2)
     after = barrier_state(conn, database)
-    if after["setting"] is not None and prior is None:
-        raise BarrierError("release did not remove the setting", EXIT_VIOLATION)
+    if after["setting"] is not None or after["lock_timeout"] is not None:
+        raise BarrierError("release did not remove the barrier settings", EXIT_VIOLATION)
     if record is not None:
-        record.event("released", evicted_read_only_sessions=terminated, emergency=emergency)
+        record.event("released", evicted_read_only_sessions=terminated, emergency=emergency, holder_sessions_force_stopped=holders_stopped)
         record.set(status="released")
     return {"database": database, "evicted_read_only_sessions": terminated, "released": True}
 
 
-def write_counters(conn) -> dict[str, int]:
-    conn.execute("SELECT pg_stat_clear_snapshot()")
-    ins, upd, dele = conn.execute(
-        "SELECT coalesce(sum(n_tup_ins),0)::bigint, coalesce(sum(n_tup_upd),0)::bigint, "
-        "coalesce(sum(n_tup_del),0)::bigint FROM pg_stat_user_tables"
-    ).fetchone()
-    return {"inserted": int(ins), "updated": int(upd), "deleted": int(dele)}
-
-
 def sample(conn, database: str, cutoff) -> dict[str, Any]:
     stale = [s for s in list_sessions(conn, database) if cutoff is not None and s["backend_start"] < cutoff]
+    held = conn.execute(
+        "SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid WHERE l.locktype = 'relation' "
+        "AND l.mode = 'ShareLock' AND l.granted AND a.application_name = %s AND a.datname = %s",
+        (HOLDER_APP, database),
+    ).fetchone()[0]
     return {
         "at": utcnow(),
         "barrier": barrier_state(conn, database),
         "stale_sessions": [{"pid": s["pid"], "state": s["state"]} for s in stale],
         "counters": write_counters(conn),
+        "holder_locks": int(held),
+        "table_count": len(user_tables(conn)),
         "wal_lsn": conn.execute("SELECT pg_current_wal_lsn()::text").fetchone()[0],
     }
 
 
-def violations(baseline: dict[str, Any], current: dict[str, Any]) -> list[str]:
+def violations(baseline: dict[str, Any], current: dict[str, Any], expected_locks: int | None = None) -> list[str]:
     """Pure comparison used by `watch` and by the A1 capture checkpoints."""
     found: list[str] = []
     if not current["barrier"]["engaged"]:
@@ -356,40 +545,63 @@ def violations(baseline: dict[str, Any], current: dict[str, Any]) -> list[str]:
     for key in ("inserted", "updated", "deleted"):
         if current["counters"][key] != baseline["counters"][key]:
             found.append(f"user-table {key} counter changed")
+    if expected_locks and current.get("holder_locks", 0) < expected_locks:
+        found.append("write-fence lock holder is missing or incomplete")
+    if current.get("table_count", 0) > baseline.get("table_count", 0):
+        found.append("a new table appeared (created through the read-only default)")
     return found
+
+
+def _rejected(exc_types, action) -> str | None:
+    try:
+        action()
+    except exc_types as exc:
+        return type(exc).__name__
+    return None
 
 
 def probe(app_conn, *, table: str, real_write_table: str | None = None) -> dict[str, Any]:
     """Attempt writes exactly as the application's role would.
 
-    On staging only no-op writes are used (``WHERE false``): PostgreSQL rejects
-    them at command start in a read-only transaction, so the probe proves the
-    barrier without being able to change data if the barrier were absent.  A
-    real INSERT is allowed only against a disposable rehearsal database.
+    On staging only no-op writes are used (``WHERE false``): they change nothing even if the
+    barrier were absent.  A write is rejected either by the read-only default or by the lock
+    fence (the lock is requested before the read-only check, so either error proves it).
+    A real INSERT is allowed only against a disposable rehearsal database.
     """
     psycopg = _psycopg()
     from psycopg import sql
 
+    blocked = (psycopg.errors.ReadOnlySqlTransaction, psycopg.errors.LockNotAvailable, psycopg.errors.QueryCanceled)
     results: dict[str, Any] = {}
     results["session_read_only"] = app_conn.execute("SHOW transaction_read_only").fetchone()[0] == "on"
-    try:
-        app_conn.execute(sql.SQL("DELETE FROM {} WHERE false").format(sql.Identifier(table)))
-        results["noop_write_rejected"] = False
-    except psycopg.errors.ReadOnlySqlTransaction:
-        results["noop_write_rejected"] = True
+    by = _rejected(blocked, lambda: app_conn.execute(sql.SQL("DELETE FROM {} WHERE false").format(sql.Identifier(table))))
+    results["noop_write_rejected"] = by is not None
+    results["noop_rejected_by"] = by
     try:
         app_conn.execute(sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))).fetchone()
         results["read_works"] = True
     except Exception:
         results["read_works"] = False
     if real_write_table:
-        try:
-            app_conn.execute(sql.SQL("INSERT INTO {} DEFAULT VALUES").format(sql.Identifier(real_write_table)))
-            results["real_write_rejected"] = False
-        except psycopg.errors.ReadOnlySqlTransaction:
-            results["real_write_rejected"] = True
-    results["ok"] = all(results.values())
+        by = _rejected(blocked, lambda: app_conn.execute(sql.SQL("INSERT INTO {} DEFAULT VALUES").format(sql.Identifier(real_write_table))))
+        results["real_write_rejected"] = by is not None
+    results["ok"] = all(v for k, v in results.items() if k != "noop_rejected_by")
     return results
+
+
+def override_probe(dsn: str, *, table: str) -> dict[str, Any]:
+    """Non-mutating proof of the fence: a session that overrides read-only must still be refused."""
+    psycopg = _psycopg()
+    from psycopg import sql
+
+    conn = psycopg.connect(dsn, autocommit=True, application_name=PROBE_APP_NAME,
+                           options=f"-c {SETTING}=off -c lock_timeout=1500")
+    try:
+        by = _rejected((psycopg.errors.LockNotAvailable,), lambda: conn.execute(
+            sql.SQL("DELETE FROM {} WHERE false").format(sql.Identifier(table))))
+    finally:
+        conn.close()
+    return {"override_write_fenced": by == "LockNotAvailable", "ok": by == "LockNotAvailable"}
 
 
 # --------------------------------------------------------------------------- #
@@ -552,12 +764,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--confirm-environment", required=True)
     p.add_argument("--expect-system-identifier", required=True)
     p.add_argument("--drain-timeout", type=float, default=60.0)
+    p.add_argument("--quiet-seconds", type=float, default=60.0, help="refuse unless idle (no writes, no open transactions) this long")
+    p.add_argument("--lock-timeout-ms", type=int, default=1000, help="blocked writers fail after this long")
+    p.add_argument("--lock-wait", type=float, default=60.0, help="how long to wait for in-flight writers before taking the fence")
+    p.add_argument("--allow-busy", action="store_true", help="local rehearsal only")
+    p.add_argument("--approval-file", type=Path, help="owner approval file; mandatory for --confirm-environment staging")
+    p.add_argument("--operator", help="must equal the approved operator (staging)")
+    p = sub.add_parser("db-hold", help="internal: the detached write-fence lock holder")
+    with_record(p)
+    p.add_argument("--lock-wait", type=float, default=60.0)
     p = sub.add_parser("db-status")
     p.add_argument("--record", type=Path)
     p = sub.add_parser("db-probe")
     p.add_argument("--table", default="alembic_version")
     p.add_argument("--real-write-table", help="rehearsal only; refused unless --confirm-environment local")
     p.add_argument("--confirm-environment", default="staging")
+    p.add_argument("--override-probe", action="store_true", help="also prove a read-only-overriding session is fenced (no-op write)")
     p = sub.add_parser("db-watch")
     with_record(p)
     p.add_argument("--interval", type=float, default=2.0)
@@ -589,8 +811,16 @@ def main(argv: list[str] | None = None) -> int:
                         expect_system_identifier=args.expect_system_identifier,
                         confirm_environment=args.confirm_environment,
                         drain_timeout_s=args.drain_timeout,
+                        quiet_seconds=args.quiet_seconds,
+                        lock_timeout_ms=args.lock_timeout_ms,
+                        hold_wait_s=args.lock_wait,
+                        allow_busy=args.allow_busy,
+                        approval_file=args.approval_file,
+                        operator=args.operator,
                     )
                 )
+        elif cmd == "db-hold":
+            return hold(Record.open(args.record), args.lock_wait)
         elif cmd == "db-status":
             with admin_connect() as conn:
                 ident = identity(conn)
@@ -604,6 +834,9 @@ def main(argv: list[str] | None = None) -> int:
                 raise BarrierError("real-write probe is refused outside a local rehearsal")
             with app_connect() as conn:
                 result = probe(conn, table=args.table, real_write_table=args.real_write_table)
+            if args.override_probe:
+                result["override"] = override_probe(_dsn(APP_DSN_ENV), table=args.table)
+                result["ok"] = result["ok"] and result["override"]["ok"]
             _print(result)
             return EXIT_OK if result["ok"] else EXIT_PROBE_FAILED
         elif cmd == "db-watch":
@@ -612,6 +845,7 @@ def main(argv: list[str] | None = None) -> int:
                 database = identity(conn)["database"]
                 cutoff = datetime.fromisoformat(record.data["cutoff"])
                 time.sleep(1.5)  # let cumulative statistics settle before the baseline
+                expected = record.data.get("locked_tables")
                 baseline = sample(conn, database, cutoff)
                 end = time.monotonic() + args.duration
                 count = 0
@@ -619,7 +853,7 @@ def main(argv: list[str] | None = None) -> int:
                     time.sleep(args.interval)
                     current = sample(conn, database, cutoff)
                     count += 1
-                    found = violations(baseline, current)
+                    found = violations(baseline, current, expected)
                     if found:
                         record.event("VIOLATION", problems=found, sample=current)
                         _print({"violation": found})

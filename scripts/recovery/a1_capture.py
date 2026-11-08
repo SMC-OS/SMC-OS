@@ -142,8 +142,9 @@ def table_data_entries(listing: str) -> set[str]:
 class Monitor:
     """Samples the barrier in a background thread; any violation latches."""
 
-    def __init__(self, dsn: str, database: str, cutoff, interval: float = 1.0):
+    def __init__(self, dsn: str, database: str, cutoff, expected_locks: int, interval: float = 1.0):
         self.dsn, self.database, self.cutoff, self.interval = dsn, database, cutoff, interval
+        self.expected_locks = expected_locks
         self.problems: list[str] = []
         self.samples = 0
         self._stop = threading.Event()
@@ -154,7 +155,7 @@ class Monitor:
         with wb.admin_connect(self.dsn) as conn:
             time.sleep(1.5)  # let cumulative statistics settle
             self.baseline = wb.sample(conn, self.database, self.cutoff)
-        problems = wb.violations(self.baseline, self.baseline)
+        problems = wb.violations(self.baseline, self.baseline, self.expected_locks)
         if problems:
             raise Stop("preflight", "; ".join(problems))
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -166,7 +167,7 @@ class Monitor:
                 while not self._stop.wait(self.interval):
                     current = wb.sample(conn, self.database, self.cutoff)
                     self.samples += 1
-                    self.problems += wb.violations(self.baseline, current)
+                    self.problems += wb.violations(self.baseline, current, self.expected_locks)
         except Exception as exc:  # losing the monitor is itself a violation
             self.problems.append(f"barrier monitor failed: {type(exc).__name__}")
 
@@ -182,7 +183,7 @@ class Monitor:
         with wb.admin_connect(self.dsn) as conn:
             current = wb.sample(conn, self.database, self.cutoff)
         self.samples += 1
-        self.problems += wb.violations(self.baseline, current)
+        self.problems += wb.violations(self.baseline, current, self.expected_locks)
 
     def finish(self) -> int:
         self._stop.set()
@@ -274,6 +275,14 @@ def capture(args: argparse.Namespace, *, now_fn: Callable[[], datetime] = lambda
         raise wb.BarrierError("--confirm-environment must be 'staging' or 'local'")
     if not args.operator.strip():
         raise wb.BarrierError("an operator must be named")
+    if args.confirm_environment == "staging":
+        from approval import ApprovalError, validate_approval
+
+        try:
+            validate_approval(getattr(args, "approval_file", None), now=now_fn(), operator=args.operator,
+                              window_start=args.window_start, window_end=args.window_end)
+        except ApprovalError as exc:
+            raise wb.BarrierError("STAGING IS UNAPPROVED: " + str(exc)) from None
     out = check_output_dir(args.out_dir, Path(args.uploads_dir) if not args.remote_prefix else None)
     hash_record = args.hash_record.expanduser().absolute()
     for forbidden in (REPOSITORY_ROOT, out):
@@ -312,6 +321,10 @@ def capture(args: argparse.Namespace, *, now_fn: Callable[[], datetime] = lambda
             state = wb.barrier_state(conn, database)
             if not state["engaged"]:
                 raise Stop(phase, "the database barrier setting is not engaged")
+            if record.data.get("busy_engage") or not record.data.get("quiet_verified"):
+                raise Stop(phase, "the barrier was engaged without a verified quiet period")
+            if not record.data.get("locked_tables"):
+                raise Stop(phase, "the write-fence locks are not recorded")
             cutoff = datetime.fromisoformat(record.data["cutoff"])
             busy = [s for s in wb.list_sessions(conn, database) if s["state"] != "idle"]
             if busy:
@@ -334,7 +347,7 @@ def capture(args: argparse.Namespace, *, now_fn: Callable[[], datetime] = lambda
         if major(dump_version.split(")", 1)[-1]) < major(ident["server_version"]):
             raise Stop(phase, "pg_dump is older than the server; use a client of the same major version")
 
-        monitor = Monitor(admin_dsn, database, cutoff)
+        monitor = Monitor(admin_dsn, database, cutoff, int(record.data["locked_tables"]))
         monitor.start()
         monitor.check(phase)
 
@@ -491,6 +504,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--remote-python", default="python3")
     p.add_argument("--out-dir", type=Path, required=True)
     p.add_argument("--hash-record", type=Path, required=True)
+    p.add_argument("--approval-file", type=Path, help="owner approval file; mandatory for --confirm-environment staging")
     p.add_argument("--provider-backups", default="")
     p.add_argument("--pg-dump", default="pg_dump")
     p.add_argument("--pg-restore", default="pg_restore")

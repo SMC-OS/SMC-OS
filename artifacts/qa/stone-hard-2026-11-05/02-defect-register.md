@@ -122,4 +122,4 @@ Reproduced at `63e8ac9` on a disposable PostgreSQL 16.2, against the seeded `sto
 - **Found:** same rehearsal, concurrent load across the barrier cutoff.
 - **Behaviour:** creating a customer commits the customer and then writes its activity-log row in a separate step. When the second write fails, the client sees an error although the customer exists (2 of about 100 requests in the recorded run; both lacked their activity row).
 - **Effect:** under any database interruption the business operation can be half-recorded, so a client retry can create a duplicate. The database stays internally consistent.
-- **Not fixed:** a design question for the owner (single transaction versus best-effort audit). It matters for A1 only as the reason to engage the barrier when staging is idle.
+- **Not fixed:** a design question for the owner (single transaction versus best-effort audit). For A1 it is now **fenced by refusal**: barrier v2 engages only after a quiet period and detects a write that lands before the cutoff (document 14); the application behaviour itself is unchanged.

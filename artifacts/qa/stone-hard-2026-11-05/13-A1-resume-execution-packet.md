@@ -1,5 +1,7 @@
 # 13 — A1 resumed: writer barrier proven locally, alternative capture method, execution packet (8 November 2026)
 
+> **Superseded in part by [14](./14-A1-operator-procedure-and-integration-review.md) (later the same day):** findings F3 (half-applied requests) and F4 (read-only override) below are now **fenced** by barrier v2: a refusal-unless-quiet rule with dirty-engage detection, and a table-lock write fence; staging mutation is also gated on a complete owner-approval file. The 91-check rehearsal described here has been replaced by a 117-check one. Read 14 first; this document keeps the original reasoning and the PITR analysis.
+
 > **Verdict: A1 BLOCKED (not executed). A2 BLOCKED. Release HARD NO-GO.**
 > Nothing was changed on Railway, Stripe or production. No staging backup, dump, archive, barrier or deployment exists yet.
 > Everything below marked *local* ran on a throwaway PostgreSQL cluster inside the agent's container and is **not staging evidence**.
