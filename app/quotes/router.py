@@ -28,6 +28,7 @@ from app.projects.models import ProjectOut
 from app.quotes.ai_draft import AIDraftError, AIDraftUnavailable, ai_draft_service
 from app.quotes.ai_models import AIDraftRequest, AIQuoteDraft
 from app.quotes.pdf import PDFGenerator, build_line_items, build_document_fields
+from app.quotes.numbering import invoice_reference
 from app.tenants import identity as tenant_identity
 from app.tenants.service import tenant_service
 
@@ -71,6 +72,8 @@ def _serialize_item(item) -> dict:
 def _serialize(quote) -> dict:
     return {
         "id": quote.id,
+        "invoice_number": quote.invoice_number,
+        "pricing_mode": "manual" if any((i.catalogue_snapshot or {}).get("source") == "manual_job_price" for i in quote.items) else "catalogue",
         "customer_id": quote.customer_id,
         # --- Sprint 036 (Workstream E) — the universal quote envelope. ---
         # Added to the existing dict rather than replacing it: every key
@@ -379,9 +382,11 @@ def download_invoice(
         if customer is not None:
             customer_name = customer.name
 
+    reference = invoice_reference(db, quote)
     pdf_bytes = PDFGenerator().create(
         {
             "id": quote.id,
+            "invoice_number": reference,
             "customer": customer_name,
             # Sprint 034 — the letterhead is this tenant's own business
             # identity, resolved from its profile, never a global default.
@@ -405,11 +410,12 @@ def download_invoice(
         }
     )
 
+    db.commit()
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="invoice-{str(quote.id)[:8]}.pdf"'
+            "Content-Disposition": f'attachment; filename="{reference}.pdf"'
         },
     )
 

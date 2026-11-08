@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-11-05T23:03:24Z",
+  "release_sha": "",
+  "source_ledger_sha256": "34e1e76d1fb3b4a9aa1e9edce4027cd2be156b586e06da42c2fc6f33fc68c69e",
+  "denominator": {
+    "ledger-cell": 110,
+    "ledger-journey": 18,
+    "ledger-gate": 12,
+    "ledger-defect": 2,
+    "defect-checklist": 14,
+    "api-operation": 163,
+    "ui-page": 36
+  },
+  "by_kind_and_status": {
+    "ledger-cell": {
+      "Verified": 0,
+      "Defective": 0,
+      "Blocked": 0,
+      "Pending": 0,
+      "Unknown": 110
+    },
+    "ledger-journey": {
+      "Verified": 0,
+      "Defective": 0,
+      "Blocked": 0,
+      "Pending": 0,
+      "Unknown": 18
+    },
+    "ledger-gate": {
+      "Verified": 0,
+      "Defective": 0,
+      "Blocked": 0,
+      "Pending": 0,
+      "Unknown": 12
+    },
+    "ledger-defect": {
+      "Verified": 0,
+      "Defective": 2,
+      "Blocked": 0,
+      "Pending": 0,
+      "Unknown": 0
+    },
+    "defect-checklist": {
+      "Verified": 0,
+      "Defective": 0,
+      "Blocked": 0,
+      "Pending": 14,
+      "Unknown": 0
+    },
+    "api-operation": {
+      "Verified": 0,
+      "Defective": 0,
+      "Blocked": 0,
+      "Pending": 0,
+      "Unknown": 163
+    },
+    "ui-page": {
+      "Verified": 0,
+      "Defective": 0,
+      "Blocked": 0,
+      "Pending": 0,
+      "Unknown": 36
+    }
+  },
+  "go_possible": false
+}

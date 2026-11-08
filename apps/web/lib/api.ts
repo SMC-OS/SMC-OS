@@ -104,11 +104,15 @@ export const API_BASE_URL = resolveApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;
+  /** The server's own `detail` text, when it sent one. Kept separate from
+   * `message` so existing callers' messages are unchanged. */
+  detail: string | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, detail: string | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -166,8 +170,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // of retrying with a dead token.
     if (res.status === 401) clearToken();
     const body = await res.json().catch(() => null);
-    const detail = path === "/quote" && typeof body?.detail === "string" ? body.detail : null;
-    throw new ApiError(detail || `Request to ${path} failed with ${res.status}`, res.status);
+    const serverDetail = typeof body?.detail === "string" ? body.detail : null;
+    const detail = path === "/quote" ? serverDetail : null;
+    throw new ApiError(detail || `Request to ${path} failed with ${res.status}`, res.status, serverDetail);
   }
 
   return (await res.json()) as T;
@@ -202,6 +207,29 @@ async function requestNoContent(path: string, init?: RequestInit): Promise<void>
 }
 
 export const api = {
+  downloadWorkspaceExport: async (): Promise<void> => {
+    const created = await request<{ id: string }>("/privacy/exports", {
+      method: "POST",
+    });
+    const response = await sessionFetch(
+      `${API_BASE_URL}/api/v1/privacy/exports/${created.id}/download`,
+    );
+    if (!response.ok) {
+      if (response.status === 401) clearToken();
+      throw new ApiError(
+        "Workspace export could not be downloaded. Please try again.",
+        response.status,
+      );
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "geocore-workspace-export.zip";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
   getDashboardStats: () => request<DashboardStats>("/dashboard"),
 
   getCommandCentre: () => request<CommandCentreStats>("/dashboard/command-centre"),
@@ -275,7 +303,7 @@ export const api = {
   // the caller can tell "a new email was actually queued" apart from a
   // silent no-op for an account that's already verified — both return 200.
   resendVerificationEmail: () =>
-    request<{ message: string; already_verified: boolean }>(
+    request<{ message: string; already_verified: boolean; delivery_status?: "sent" | "failed" | "suppressed" | "pending" | null }>(
       "/auth/email/verify/resend",
       { method: "POST" }
     ),
@@ -451,7 +479,7 @@ export const api = {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `invoice-${quoteId.slice(0, 8)}.pdf`;
+    link.download = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "Invoice.pdf";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -832,7 +860,7 @@ export const api = {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `invoice-${id.slice(0, 8)}.pdf`;
+    link.download = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "Invoice.pdf";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1061,6 +1089,12 @@ export const api = {
     request<PurchaseOrder>(`/purchase-orders/${id}/cancel`, { method: "POST" }),
 
   getPurchaseOrderReceipts: (id: string) => request<PurchaseReceipt[]>(`/purchase-orders/${id}/receipts`),
+
+  linkPurchaseOrderItem: (id: string, itemId: string, materialRequirementId: string) =>
+    request<PurchaseOrder>(`/purchase-orders/${id}/items/${itemId}/link-requirement`, {
+      method: "POST",
+      body: JSON.stringify({ material_requirement_id: materialRequirementId }),
+    }),
 
   recordPurchaseOrderReceipt: (id: string, data: PurchaseReceiptCreate) =>
     request<PurchaseReceipt>(`/purchase-orders/${id}/receipts`, {

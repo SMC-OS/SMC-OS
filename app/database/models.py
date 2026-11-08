@@ -47,6 +47,8 @@ class Tenant(Base):
     """
 
     __tablename__ = "tenants"
+    invoice_prefix: Mapped[str] = mapped_column(String(40), nullable=False, server_default="Invoice")
+    invoice_next_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -146,6 +148,8 @@ class Customer(Base):
 
 class Quote(Base):
     __tablename__ = "quotes"
+    __table_args__ = (UniqueConstraint("tenant_id", "invoice_number", name="uq_quote_tenant_invoice_number"),)
+    invoice_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # Sprint 012 — indexed: every query is now filtered by tenant_id (ADR-029).
@@ -2013,6 +2017,9 @@ class PurchaseReceipt(Base):
     )
     delivery_reference: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Client-generated per delivery attempt, so a retried submit returns the
+    # first receipt instead of counting the same delivery twice.
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

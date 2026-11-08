@@ -14,6 +14,7 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
@@ -57,7 +58,7 @@ class TenantService:
         blank out the rest. An empty string clears a field; an omitted one
         leaves it untouched.
         """
-        tenant = self.get(db, tenant_id)
+        tenant = db.scalar(select(Tenant).where(Tenant.id == tenant_id).with_for_update())
         if tenant is None:
             return None
 
@@ -113,6 +114,8 @@ class TenantService:
             logo_url=tenant.logo_url,
             document_footer=tenant.document_footer,
             currency=tenant.currency or "GBP",
+            invoice_prefix=tenant.invoice_prefix,
+            invoice_next_number=tenant.invoice_next_number,
             trades=trade_catalogue.parse_selection(tenant.trades),
             onboarding_completed_at=tenant.onboarding_completed_at,
             has_uploaded_logo=bool(tenant.logo_storage_filename),
@@ -121,7 +124,7 @@ class TenantService:
     def update_onboarding(
         self, db: Session, tenant_id: uuid.UUID, data: TenantOnboardingUpdate
     ) -> Tenant | None:
-        tenant = self.get(db, tenant_id)
+        tenant = db.scalar(select(Tenant).where(Tenant.id == tenant_id).with_for_update())
         if tenant is None:
             return None
 
@@ -170,6 +173,8 @@ class TenantService:
             completed_at=tenant.onboarding_completed_at,
             trades=trade_catalogue.parse_selection(tenant.trades),
             currency=tenant.currency or "GBP",
+            invoice_prefix=tenant.invoice_prefix,
+            invoice_next_number=tenant.invoice_next_number,
             has_company_identity=has_identity,
             has_team_invitations=bool(invitations),
             workspace_has_data=workspace_has_data,

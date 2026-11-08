@@ -28,7 +28,7 @@ from app.communications.service import DeliveryService, delivery_service
 from app.communications.templates import render_email_verification
 from app.core.config import settings
 from app.database import crud
-from app.database.models import User
+from app.database.models import Communication, User
 
 
 class VerificationTokenInvalidError(Exception):
@@ -44,7 +44,7 @@ class EmailVerificationService:
         # than reaching into a private attribute.
         self._delivery = delivery or delivery_service
 
-    def send_verification_email(self, db: Session, user: User) -> None:
+    def send_verification_email(self, db: Session, user: User) -> Communication | None:
         """Best-effort — see this module's own docstring for why nothing
         here ever raises out to the caller."""
         raw_token = secrets.token_urlsafe(32)
@@ -68,7 +68,7 @@ class EmailVerificationService:
                 recipient_name=user.name,
                 verify_url=verify_url,
             )
-            self._delivery.send(
+            return self._delivery.send(
                 db,
                 tenant=tenant,
                 message_type=CommunicationType.EMAIL_VERIFICATION,
@@ -85,7 +85,7 @@ class EmailVerificationService:
             # DeliveryService is the place failures are actually recorded
             # (in the communications table); this except only guarantees
             # send_verification_email()'s own contract.
-            pass
+            return None
 
     def verify(self, db: Session, raw_token: str) -> User:
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
@@ -105,3 +105,16 @@ class EmailVerificationService:
 
 
 email_verification_service = EmailVerificationService()
+
+
+def verification_delivery_outcome(row: Communication | None) -> tuple[str, str]:
+    """Provider acceptance is not inbox delivery; never expose vendor details."""
+    if row is None:
+        return "failed", "We could not send your verification email. Please try again later or contact support."
+    if row.status in {"sent", "delivered"}:
+        return "sent", "Verification email accepted for sending. Check your inbox and junk folder; inbox delivery is not confirmed."
+    if row.status == "suppressed":
+        return "suppressed", "We could not send to this address. Please contact support to review email delivery."
+    if row.status in {"failed", "bounced"}:
+        return "failed", "We could not send your verification email. Please try again later or contact support."
+    return "pending", "Your verification email is pending. Delivery has not been confirmed."

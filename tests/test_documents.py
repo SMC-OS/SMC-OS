@@ -235,3 +235,19 @@ def test_portal_revoked_link_cannot_access_documents(client, auth_headers, creat
 
     r = client.get(f"/api/v1/portal-links/token/{link['token']}/documents/{doc_id}/download")
     assert r.status_code == 404
+
+
+def test_served_media_type_comes_from_the_extension_not_the_uploader(client, auth_headers, created_customer):
+    """A file named .pdf but declared text/html must never be served as HTML."""
+    upload = client.post(
+        f"/api/v1/documents?customer_id={created_customer['id']}",
+        files={"file": ("invoice.pdf", io.BytesIO(_pdf_bytes()), "text/html")},
+        headers=auth_headers,
+    )
+    assert upload.status_code == 201, upload.text
+    assert upload.json()["content_type"] == "application/pdf"
+    download = client.get(f"/api/v1/documents/{upload.json()['id']}/download", headers=auth_headers)
+    assert download.status_code == 200
+    assert download.headers["content-type"].startswith("application/pdf")
+    assert download.headers["content-disposition"].startswith("attachment")
+    assert download.headers["x-content-type-options"] == "nosniff"

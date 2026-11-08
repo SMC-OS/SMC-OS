@@ -87,7 +87,15 @@ class PortalService:
 
     def get_link_by_token(self, db: Session, token: str) -> PortalLink | None:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
-        return crud.get_portal_link_by_token_hash(db, token_hash)
+        row = crud.get_portal_link_by_token_hash(db, token_hash)
+        if row is None:
+            return None
+        # Public links have no authenticated user whose inactive state could
+        # stop them. Reject legacy links from already-purged workspaces too.
+        tenant = crud.get_tenant_by_id(db, row.tenant_id)
+        if tenant is None or tenant.status == "purged":
+            return None
+        return row
 
     def derive_status(self, row: PortalLink) -> str:
         """"expired" is never stored (see PortalLink's docstring) — a

@@ -39,7 +39,7 @@ import { ApiError, api } from "@/lib/api";
  */
 type ConfirmOutcome = "pending" | "success" | "failed";
 type ConfirmState = "verifying" | "success" | "already-verified" | "invalid" | "no-token";
-type ResendState = "idle" | "sending" | "sent" | "already-verified" | "cooldown" | "error";
+type ResendState = "idle" | "sending" | "sent" | "already-verified" | "cooldown" | "error" | "pending";
 
 function VerifyEmailContent() {
   const params = useSearchParams();
@@ -51,6 +51,7 @@ function VerifyEmailContent() {
     token ? "pending" : "success"
   );
   const [resendState, setResendState] = useState<ResendState>("idle");
+  const [resendMessage, setResendMessage] = useState("");
   const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -78,9 +79,21 @@ function VerifyEmailContent() {
 
   async function handleResend() {
     setResendState("sending");
+    setResendMessage("");
     try {
       const result = await api.resendVerificationEmail();
-      setResendState(result.already_verified ? "already-verified" : "sent");
+      if (result.already_verified) {
+        setResendState("already-verified");
+      } else if (result.delivery_status === "sent") {
+        setResendMessage(result.message);
+        setResendState("sent");
+      } else if (result.delivery_status === "failed" || result.delivery_status === "suppressed") {
+        setResendMessage(result.message);
+        setResendState("error");
+      } else {
+        setResendMessage(result.delivery_status === "pending" ? result.message : "Delivery status could not be confirmed. Check your inbox and junk folder, or contact support.");
+        setResendState("pending");
+      }
     } catch (err) {
       // Sprint 039 Blocker 2 hotfix — the resend cooldown (app.auth.
       // rate_limit's CooldownLimiter) returns 429; every other failure
@@ -154,7 +167,7 @@ function VerifyEmailContent() {
                 )}
               </p>
               {isAuthenticated && (
-                <ResendControl resendState={resendState} onResend={handleResend} />
+                <ResendControl resendState={resendState} message={resendMessage} onResend={handleResend} />
               )}
             </>
           )}
@@ -162,13 +175,13 @@ function VerifyEmailContent() {
           {state === "no-token" && (
             <>
               <p className="text-sm text-foreground">
-                We&apos;ve sent a verification link to{" "}
+                Verify your email address:{" "}
                 {email ? <span className="font-medium">{email}</span> : "your email address"}.
                 Verify your email to continue to GeoCore.
               </p>
               {isAuthenticated ? (
                 <>
-                  <ResendControl resendState={resendState} onResend={handleResend} />
+                  <ResendControl resendState={resendState} message={resendMessage} onResend={handleResend} />
                   <button
                     type="button"
                     onClick={handleLogout}
@@ -197,9 +210,11 @@ function VerifyEmailContent() {
 
 function ResendControl({
   resendState,
+  message,
   onResend,
 }: {
   resendState: ResendState;
+  message: string;
   onResend: () => void;
 }) {
   return (
@@ -212,7 +227,7 @@ function ResendControl({
         {resendState === "sending" ? "Sending…" : "Resend verification email"}
       </Button>
       {resendState === "sent" && (
-        <p className="text-sm text-success">Verification email sent — check your inbox.</p>
+        <p role="status" className="text-sm text-success">{message}</p>
       )}
       {resendState === "already-verified" && (
         <p className="text-sm text-success">Your email is already verified — you&apos;re all set.</p>
@@ -222,8 +237,9 @@ function ResendControl({
           Please wait a little before requesting another one.
         </p>
       )}
+      {resendState === "pending" && <p role="status" className="text-sm text-muted">{message}</p>}
       {resendState === "error" && (
-        <p className="text-sm text-danger">Something went wrong. Try again shortly.</p>
+        <p role="alert" className="text-sm text-danger">{message || "Something went wrong. Try again shortly."}</p>
       )}
     </div>
   );

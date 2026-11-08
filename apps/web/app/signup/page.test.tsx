@@ -50,6 +50,26 @@ function fillForm() {
 }
 
 describe("SignupPage — Sprint 027 full-system journey entry point", () => {
+  it("shows_the_servers_closed_admission_message_and_a_demo_link_on_403", async () => {
+    signupMock.mockRejectedValueOnce(
+      new ApiError(
+        "Request to /auth/signup failed with 403",
+        403,
+        "GeoCore is not accepting new accounts or new subscriptions yet."
+      )
+    );
+    render(<SignupPage />);
+    fillForm();
+    fireEvent.click(screen.getByRole("button", { name: /create workspace/i }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/not accepting new accounts/i);
+    expect(screen.getByRole("link", { name: /request a demo/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/\/request-demo$/)
+    );
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
   it("masks_both_passwords_and_toggles_each_field_independently", () => {
     render(<SignupPage />);
 

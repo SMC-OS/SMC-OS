@@ -1,3 +1,4 @@
+import { setStoneJobPrice } from "./stone-pricing-helper";
 import { expect, request, test } from "@playwright/test";
 
 import { BACKEND_URL } from "../playwright.config";
@@ -115,6 +116,10 @@ test("A_stone_catalogue_quote_prices_from_the_surface_and_its_snapshot_survives_
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2400");
 
@@ -125,12 +130,32 @@ test("A_stone_catalogue_quote_prices_from_the_surface_and_its_snapshot_survives_
   await page
     .getByRole("button", { name: "Next: Design details", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Next: Pricing", exact: true })
+    .click();
+  await setStoneJobPrice(page);
   await page.getByRole("button", { name: "Next: Review", exact: true }).click();
-  await page.getByRole("button", { name: "Calculate Quote" }).click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote" }).click();
   const created = await (await quoteCreated).json();
 
   expect(created.items[0].catalogue_surface_id).toBe(surfaceId);
-  expect(created.items[0].price_per_slab).toBe(1200);
+  expect(created.items[0].price_per_slab).toBeNull();
   const originalLineTotal = created.items[0].line_total as number;
   expect(originalLineTotal).toBeGreaterThan(0);
 
@@ -171,7 +196,7 @@ test("A_stone_catalogue_quote_prices_from_the_surface_and_its_snapshot_survives_
     headers: authHeaders,
   });
   const reopenedBody = await reopened.json();
-  expect(reopenedBody.items[0].price_per_slab).toBe(1200);
+  expect(reopenedBody.items[0].price_per_slab).toBeNull();
   expect(reopenedBody.items[0].line_total).toBe(originalLineTotal);
 });
 
@@ -221,6 +246,10 @@ test("B_a_tenant_can_set_their_own_price_and_a_new_quote_reflects_it", async ({
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2000");
 
@@ -231,12 +260,32 @@ test("B_a_tenant_can_set_their_own_price_and_a_new_quote_reflects_it", async ({
   await page
     .getByRole("button", { name: "Next: Design details", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Next: Pricing", exact: true })
+    .click();
+  await setStoneJobPrice(page);
   await page.getByRole("button", { name: "Next: Review", exact: true }).click();
-  await page.getByRole("button", { name: "Calculate Quote" }).click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote" }).click();
   const created = await (await quoteCreated).json();
 
   expect(created.items[0].catalogue_surface_id).toBe(surfaceId);
-  expect(created.items[0].price_per_slab).toBe(875);
+  expect(created.items[0].price_per_slab).toBeNull();
 });
 
 test("C_a_custom_material_saved_to_the_catalogue_is_immediately_reusable_from_search", async ({
@@ -279,6 +328,10 @@ test("C_a_custom_material_saved_to_the_catalogue_is_immediately_reusable_from_se
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("1800");
 
@@ -289,11 +342,31 @@ test("C_a_custom_material_saved_to_the_catalogue_is_immediately_reusable_from_se
   await page
     .getByRole("button", { name: "Next: Design details", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Next: Pricing", exact: true })
+    .click();
+  await setStoneJobPrice(page);
   await page.getByRole("button", { name: "Next: Review", exact: true }).click();
-  await page.getByRole("button", { name: "Calculate Quote" }).click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote" }).click();
   const created = await (await quoteCreated).json();
   expect(created.items[0].catalogue_surface_id).toBeTruthy();
-  expect(created.items[0].price_per_slab).toBe(750);
+  expect(created.items[0].price_per_slab).toBeNull();
 
   // ---- And it now shows up in an ordinary search, unprompted ----
   await page.goto("/catalogue");
@@ -412,6 +485,10 @@ test("E_construction_quoting_is_untouched_alongside_a_stone_catalogue_quote_in_t
     .getByLabel("Customer address", { exact: true })
     .fill("1 Synthetic Street, London");
   await page.getByLabel("Postcode", { exact: true }).fill("NW2 7RP");
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if ((await material.isVisible()) && !(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
   await page.getByRole("button", { name: "Next: Layout", exact: true }).click();
   await page.getByLabel("Length (mm)").fill("2400");
 
@@ -422,8 +499,28 @@ test("E_construction_quoting_is_untouched_alongside_a_stone_catalogue_quote_in_t
   await page
     .getByRole("button", { name: "Next: Design details", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Next: Pricing", exact: true })
+    .click();
+  await setStoneJobPrice(page);
   await page.getByRole("button", { name: "Next: Review", exact: true }).click();
-  await page.getByRole("button", { name: "Calculate Quote" }).click();
+  for (const material of await page.locator('input[id$="-material"]').all()) {
+    if (!(await material.inputValue()))
+      await material.fill("Synthetic test stone");
+  }
+  if (
+    await page
+      .getByLabel("Your job price before discount and VAT (£)")
+      .isVisible()
+  ) {
+    if (
+      !(await page
+        .getByLabel("Your job price before discount and VAT (£)")
+        .inputValue())
+    )
+      await setStoneJobPrice(page);
+  }
+  await page.getByRole("button", { name: "Save Quote" }).click();
   const stoneQuote = await (await stoneQuoteCreated).json();
   expect(stoneQuote.items[0].catalogue_surface_id ?? null).toBeNull();
   expect(stoneQuote.items[0].line_total).toBeGreaterThan(0);

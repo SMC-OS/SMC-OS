@@ -13,6 +13,14 @@ brand is never a candidate.
 """
 
 import io
+from pathlib import Path
+import reportlab
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+_FONT_DIR = Path(reportlab.__file__).parent / "fonts"
+pdfmetrics.registerFont(TTFont("GeoCoreBody", str(_FONT_DIR / "Vera.ttf")))
+pdfmetrics.registerFont(TTFont("GeoCoreBold", str(_FONT_DIR / "VeraBd.ttf")))
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -89,6 +97,9 @@ def build_line_items(quote) -> list[dict]:
     of fitting labour renders both correctly with no further change here.
     """
     symbol = _CURRENCY_SYMBOLS.get(getattr(quote, "currency", None) or "GBP", "")
+    if any((getattr(item, "catalogue_snapshot", None) or {}).get("source") == "manual_job_price" for item in quote.items):
+        return [{"description": "Stone & worktop works\n" + "\n".join(_describe_stone_item(item) for item in quote.items),
+                 "amount": quote.subtotal}]
     return [
         {
             "description": (
@@ -105,6 +116,7 @@ def build_line_items(quote) -> list[dict]:
 def build_document_fields(quote) -> dict:
     """Only agreed customer-facing contract fields; never internal notes."""
     return {
+        "discount_percent": next(((i.catalogue_snapshot or {}).get("discount_percent") for i in quote.items if (i.catalogue_snapshot or {}).get("source") == "manual_job_price"), None),
         "site_address": ", ".join(str(value) for value in [
             getattr(quote, "site_address_line1", None),
             getattr(quote, "site_address_line2", None),
@@ -135,6 +147,14 @@ class PDFGenerator:
             bottomMargin=20 * mm,
         )
         styles = getSampleStyleSheet()
+        for style in styles.byName.values():
+            style.fontName = "GeoCoreBold" if "Heading" in style.name or style.name == "Title" else "GeoCoreBody"
+        styles["BodyText"].fontSize = 9
+        styles["BodyText"].leading = 14
+        styles["Normal"].fontSize = 9
+        styles["Normal"].leading = 14
+        doc.title = str(invoice.get("invoice_number") or "Quote document")
+        doc.author = getattr(invoice.get("company"), "display_name", "")
         story = []
 
         # Letterhead — the issuing tenant's own business identity. A caller
@@ -158,7 +178,11 @@ class PDFGenerator:
         # heading it has had since Sprint 007 so a re-downloaded historical
         # document is identical to the one the customer already holds.
         heading = (f"Draft specification — pricing pending #{str(invoice['id'])[:8]}" if invoice.get("total") is None else invoice.get("title") or f"Invoice for Quote #{str(invoice['id'])[:8]}")
+        if invoice.get("invoice_number"):
+            heading = invoice["invoice_number"]
         story.append(Paragraph(_escape(str(heading)), styles["Heading2"]))
+        if invoice.get("title") and invoice.get("invoice_number"):
+            story.append(Paragraph(_escape(invoice["title"]), styles["BodyText"]))
         currency = invoice.get("currency") or "GBP"
         if currency not in _CURRENCY_SYMBOLS:
             story.append(Paragraph(f"All amounts in {_escape(currency)}", styles["Normal"]))
@@ -202,28 +226,34 @@ class PDFGenerator:
             return "Pricing pending" if amount is None else f"{symbol}{amount:,.2f}"
 
         rows = [["Description", "Amount"]]
-        rows += [[item["description"], money(item["amount"])] for item in line_items]
+        rows += [[Paragraph(_escape(item["description"]).replace("\n", "<br/>"), styles["BodyText"]), money(item["amount"])] for item in line_items]
 
         # A discount is shown as its own row rather than folded silently
         # into the line items: a customer who was given £250 off should be
         # able to see that they were.
         discount = invoice.get("discount_amount") or 0
+        if invoice.get("total") is not None:
+            rows.append(["Subtotal", money((invoice.get("price_before_vat") or 0) + discount)])
         if discount:
-            rows.append(["Discount", f"-{money(discount)}"])
+            percent = invoice.get("discount_percent")
+            rows.append([f"Discount ({percent:g}%)" if percent is not None else "Discount", f"-{money(discount)}"])
 
         rows += [
             [vat_label, money(invoice["vat"])],
             ["Total", money(invoice["total"])],
         ]
-        table = Table(rows, colWidths=[110 * mm, 50 * mm])
+        table = Table(rows, colWidths=[110 * mm, 50 * mm], repeatRows=1, splitInRow=1)
         table.setStyle(
             TableStyle(
                 [
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                    ("FONTNAME", (0, 0), (-1, -1), "GeoCoreBody"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("FONTNAME", (0, 0), (-1, 0), "GeoCoreBold"),
+                    ("FONTNAME", (0, -1), (-1, -1), "GeoCoreBold"),
                     ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
                     ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
                     ("TOPPADDING", (0, 0), (-1, -1), 6),
@@ -237,5 +267,12 @@ class PDFGenerator:
             story.append(Spacer(1, 16))
             story.append(Paragraph(_escape(company.document_footer), styles["Normal"]))
 
-        doc.build(story)
+        def page_footer(canvas, document):
+            canvas.saveState()
+            canvas.setFont("GeoCoreBody", 8)
+            canvas.setFillColor(colors.HexColor("#64748b"))
+            canvas.drawString(document.leftMargin, 12 * mm, str(invoice.get("invoice_number") or "Quote document"))
+            canvas.drawRightString(A4[0] - document.rightMargin, 12 * mm, f"Page {document.page}")
+            canvas.restoreState()
+        doc.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
         return buffer.getvalue()

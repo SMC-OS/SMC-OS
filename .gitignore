@@ -78,3 +78,6 @@ Thumbs.db
 
 # ---- Isolated agent worktrees ----
 .claude/worktrees/
+
+# Staging acceptance run output (traces, screenshots): evidence stays outside Git
+staging-acceptance-results/

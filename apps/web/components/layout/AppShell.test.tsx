@@ -144,3 +144,44 @@ it("retains stone draft inputs and queued files through session loss and recover
   expect(screen.getByLabelText("Draft customer")).toBe(customer);
   expect(screen.getByLabelText("Queued drawing")).toBe(file);
 });
+
+it("keeps privacy controls accessible without billing while business routes stay gated", () => {
+  authState = {
+    ...authState,
+    isAuthenticated: true,
+    billingAccessRequired: true,
+  };
+  currentPathname = "/privacy-controls";
+  const view = render(
+    <AppShell>
+      <div>Privacy content</div>
+    </AppShell>,
+  );
+  expect(screen.getByText("Privacy content")).toBeVisible();
+  expect(replaceMock).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("topbar")).not.toBeInTheDocument();
+  view.unmount();
+  currentPathname = "/customers";
+  render(
+    <AppShell>
+      <div>Business content</div>
+    </AppShell>,
+  );
+  expect(replaceMock).toHaveBeenCalledWith("/pricing");
+});
+
+it("keeps email verification required for privacy controls", () => {
+  authState = {
+    ...authState,
+    isAuthenticated: true,
+    verificationRequired: true,
+    billingAccessRequired: true,
+  };
+  currentPathname = "/privacy-controls";
+  render(
+    <AppShell>
+      <div>Privacy content</div>
+    </AppShell>,
+  );
+  expect(replaceMock).toHaveBeenCalledWith("/verify-email");
+});

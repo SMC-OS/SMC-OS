@@ -190,13 +190,22 @@ class BillingService:
         if not crud.mark_stripe_event_processed(db, event["id"], event["type"]):
             return  # already processed — idempotent no-op on a retried delivery
 
-        handler = self._EVENT_HANDLERS.get(event["type"])
-        if handler is not None:
-            event_object = event["data"]["object"]
-            to_dict = getattr(event_object, "to_dict", None)
-            if callable(to_dict):
-                event_object = to_dict()
-            handler(self, db, event_object)
+        # The processed marker and the event's effect commit together. If
+        # the handler fails, both roll back and the error reaches Stripe as
+        # a 5xx, so its retry applies the event instead of being dropped as
+        # a duplicate of an event that never took effect.
+        try:
+            handler = self._EVENT_HANDLERS.get(event["type"])
+            if handler is not None:
+                event_object = event["data"]["object"]
+                to_dict = getattr(event_object, "to_dict", None)
+                if callable(to_dict):
+                    event_object = to_dict()
+                handler(self, db, event_object)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
 
     def _handle_checkout_completed(self, db: Session, session_obj: dict) -> None:
         """Wires up tenant<->Stripe linkage (customer/subscription ids,
@@ -321,8 +330,29 @@ class BillingService:
             cancel_at_period_end=existing.cancel_at_period_end,
         )
 
+    @staticmethod
+    def _invoice_subscription_id(invoice_obj: dict) -> str | None:
+        """Get the subscription linked to an invoice across Stripe API versions.
+
+        Older invoice webhooks expose `invoice.subscription`. Current Stripe
+        API invoices (including 2026-08-26.dahlia) instead expose
+        `invoice.parent.subscription_details.subscription`. Missing or
+        non-subscription parents must not affect any tenant's billing state.
+        """
+        legacy = invoice_obj.get("subscription")
+        if isinstance(legacy, str) and legacy:
+            return legacy
+        parent = invoice_obj.get("parent")
+        if not isinstance(parent, dict) or parent.get("type") != "subscription_details":
+            return None
+        details = parent.get("subscription_details")
+        if not isinstance(details, dict):
+            return None
+        subscription_id = details.get("subscription")
+        return subscription_id if isinstance(subscription_id, str) and subscription_id else None
+
     def _handle_invoice_payment_failed(self, db: Session, invoice_obj: dict) -> None:
-        stripe_subscription_id = invoice_obj.get("subscription")
+        stripe_subscription_id = self._invoice_subscription_id(invoice_obj)
         if not stripe_subscription_id:
             return
         existing = crud.get_subscription_by_stripe_subscription_id(db, stripe_subscription_id)
@@ -343,7 +373,7 @@ class BillingService:
         )
 
     def _handle_invoice_paid(self, db: Session, invoice_obj: dict) -> None:
-        stripe_subscription_id = invoice_obj.get("subscription")
+        stripe_subscription_id = self._invoice_subscription_id(invoice_obj)
         if not stripe_subscription_id:
             return
         existing = crud.get_subscription_by_stripe_subscription_id(db, stripe_subscription_id)

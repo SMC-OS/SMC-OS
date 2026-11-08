@@ -1,0 +1,356 @@
+id,kind,feature,batch,actor_tenant,release_sha,preconditions,expected,actual,evidence,datetime_utc,environment,tester,defect_ref,severity,status,reason
+LIVE-A-050::Procurement,ledger-cell,Procurement,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-050::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-050::Receipts,ledger-cell,Receipts,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-050::Task Completion,ledger-cell,Task Completion,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-050::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-050::Fabrication,ledger-cell,Fabrication,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-050::Quality Control,ledger-cell,Quality Control,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-050::Installation,ledger-cell,Installation,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-050::Snagging,ledger-cell,Snagging,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-050::Completion,ledger-cell,Completion,LIVE-A-050,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Procurement,ledger-cell,Procurement,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Receipts,ledger-cell,Receipts,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Task Completion,ledger-cell,Task Completion,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Fabrication,ledger-cell,Fabrication,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Quality Control,ledger-cell,Quality Control,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Installation,ledger-cell,Installation,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Snagging,ledger-cell,Snagging,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-051::Completion,ledger-cell,Completion,LIVE-A-051,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Procurement,ledger-cell,Procurement,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Receipts,ledger-cell,Receipts,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Task Completion,ledger-cell,Task Completion,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Fabrication,ledger-cell,Fabrication,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Quality Control,ledger-cell,Quality Control,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Installation,ledger-cell,Installation,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Snagging,ledger-cell,Snagging,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-052::Completion,ledger-cell,Completion,LIVE-A-052,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Procurement,ledger-cell,Procurement,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Receipts,ledger-cell,Receipts,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Task Completion,ledger-cell,Task Completion,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Fabrication,ledger-cell,Fabrication,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Quality Control,ledger-cell,Quality Control,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Installation,ledger-cell,Installation,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Snagging,ledger-cell,Snagging,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-053::Completion,ledger-cell,Completion,LIVE-A-053,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Procurement,ledger-cell,Procurement,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Receipts,ledger-cell,Receipts,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Task Completion,ledger-cell,Task Completion,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Fabrication,ledger-cell,Fabrication,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Quality Control,ledger-cell,Quality Control,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Installation,ledger-cell,Installation,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Snagging,ledger-cell,Snagging,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-054::Completion,ledger-cell,Completion,LIVE-A-054,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Procurement,ledger-cell,Procurement,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Receipts,ledger-cell,Receipts,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Task Completion,ledger-cell,Task Completion,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Fabrication,ledger-cell,Fabrication,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Quality Control,ledger-cell,Quality Control,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Installation,ledger-cell,Installation,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Snagging,ledger-cell,Snagging,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-055::Completion,ledger-cell,Completion,LIVE-A-055,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Procurement,ledger-cell,Procurement,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Receipts,ledger-cell,Receipts,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Task Completion,ledger-cell,Task Completion,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Fabrication,ledger-cell,Fabrication,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Quality Control,ledger-cell,Quality Control,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Installation,ledger-cell,Installation,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Snagging,ledger-cell,Snagging,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-056::Completion,ledger-cell,Completion,LIVE-A-056,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Procurement,ledger-cell,Procurement,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Receipts,ledger-cell,Receipts,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Task Completion,ledger-cell,Task Completion,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Fabrication,ledger-cell,Fabrication,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Quality Control,ledger-cell,Quality Control,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Installation,ledger-cell,Installation,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Snagging,ledger-cell,Snagging,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-057::Completion,ledger-cell,Completion,LIVE-A-057,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Procurement,ledger-cell,Procurement,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Receipts,ledger-cell,Receipts,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Task Completion,ledger-cell,Task Completion,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Fabrication,ledger-cell,Fabrication,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Quality Control,ledger-cell,Quality Control,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Installation,ledger-cell,Installation,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Snagging,ledger-cell,Snagging,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-058::Completion,ledger-cell,Completion,LIVE-A-058,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Procurement,ledger-cell,Procurement,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Receipts,ledger-cell,Receipts,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Task Completion,ledger-cell,Task Completion,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Fabrication,ledger-cell,Fabrication,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Quality Control,ledger-cell,Quality Control,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Installation,ledger-cell,Installation,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Snagging,ledger-cell,Snagging,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-059::Completion,ledger-cell,Completion,LIVE-A-059,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Procurement,ledger-cell,Procurement,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Requirements &amp; Orders,ledger-cell,Requirements &amp; Orders,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Receipts,ledger-cell,Receipts,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Task Completion,ledger-cell,Task Completion,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Workflow Transitions,ledger-cell,Workflow Transitions,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Fabrication,ledger-cell,Fabrication,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Quality Control,ledger-cell,Quality Control,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Installation,ledger-cell,Installation,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Snagging,ledger-cell,Snagging,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+LIVE-A-060::Completion,ledger-cell,Completion,LIVE-A-060,,,,,,,,,,,,Unknown,no evidence recorded
+stone-receipt-gate,ledger-journey,stone-receipt-gate,,,,,,,,,,,,,Unknown,no evidence recorded
+stone-partial,ledger-journey,stone-partial,,,,,,,,,,,,,Unknown,no evidence recorded
+stone-qc-install,ledger-journey,stone-qc-install,,,,,,,,,,,,,Unknown,no evidence recorded
+quote-review-save,ledger-journey,quote-review-save,,,,,,,,,,,,,Unknown,no evidence recorded
+quote-reopen-pdf,ledger-journey,quote-reopen-pdf,,,,,,,,,,,,,Unknown,no evidence recorded
+billing-activation,ledger-journey,billing-activation,,,,,,,,,,,,,Unknown,no evidence recorded
+billing-failure,ledger-journey,billing-failure,,,,,,,,,,,,,Unknown,no evidence recorded
+billing-portal,ledger-journey,billing-portal,,,,,,,,,,,,,Unknown,no evidence recorded
+billing-complimentary,ledger-journey,billing-complimentary,,,,,,,,,,,,,Unknown,no evidence recorded
+billing-email,ledger-journey,billing-email,,,,,,,,,,,,,Unknown,no evidence recorded
+sec-tenant,ledger-journey,sec-tenant,,,,,,,,,,,,,Unknown,no evidence recorded
+sec-rbac,ledger-journey,sec-rbac,,,,,,,,,,,,,Unknown,no evidence recorded
+portal-onboarding,ledger-journey,portal-onboarding,,,,,,,,,,,,,Unknown,no evidence recorded
+portal-isolation,ledger-journey,portal-isolation,,,,,,,,,,,,,Unknown,no evidence recorded
+recovery-restore,ledger-journey,recovery-restore,,,,,,,,,,,,,Unknown,no evidence recorded
+support-monitored,ledger-journey,support-monitored,,,,,,,,,,,,,Unknown,no evidence recorded
+legal-ico,ledger-journey,legal-ico,,,,,,,,,,,,,Unknown,no evidence recorded
+capacity,ledger-journey,capacity,,,,,,,,,,,,,Unknown,no evidence recorded
+ci,ledger-gate,ci,,,,,,,,,,,,,Unknown,no evidence recorded
+stone-staging,ledger-gate,stone-staging,,,,,,,,,,,,,Unknown,no evidence recorded
+receipt-material,ledger-gate,receipt-material,,,,,,,,,,,,,Unknown,no evidence recorded
+quote-pdf,ledger-gate,quote-pdf,,,,,,,,,,,,,Unknown,no evidence recorded
+billing-portal,ledger-gate,billing-portal,,,,,,,,,,,,,Unknown,no evidence recorded
+inbox,ledger-gate,inbox,,,,,,,,,,,,,Unknown,no evidence recorded
+restore,ledger-gate,restore,,,,,,,,,,,,,Unknown,no evidence recorded
+capacity,ledger-gate,capacity,,,,,,,,,,,,,Unknown,no evidence recorded
+security,ledger-gate,security,,,,,,,,,,,,,Unknown,no evidence recorded
+legal,ledger-gate,legal,,,,,,,,,,,,,Unknown,no evidence recorded
+support,ledger-gate,support,,,,,,,,,,,,,Unknown,no evidence recorded
+onboarding,ledger-gate,onboarding,,,,,,,,,,,,,Unknown,no evidence recorded
+STONE-GATE,ledger-defect,Fully received material does not unlock Fabrication,,,,,,,,,,,STONE-GATE,Critical,Defective,no evidence recorded
+STONE-GATE.g1,defect-checklist,Requirement ↔ PO item linkage present for the tested job,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Requirement ↔ PO item linkage present for the tested job,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,STONE-GATE,Critical,Pending,local/CI evidence only - not target-environment proof; status unchanged
+STONE-GATE.g2,defect-checklist,Full receipt sets requirement status to &#x27;received&#x27;,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Full receipt sets requirement status to &#x27;received&#x27;,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,STONE-GATE,Critical,Pending,local/CI evidence only - not target-environment proof; status unchanged
+STONE-GATE.g3,defect-checklist,Material-ready gate re-evaluates after receipt,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Material-ready gate re-evaluates after receipt,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,STONE-GATE,Critical,Pending,local/CI evidence only - not target-environment proof; status unchanged
+STONE-GATE.g4,defect-checklist,Template → Fabrication allowed only once all requirements cleared,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Template → Fabrication allowed only once all requirements cleared,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-3-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,STONE-GATE,Critical,Pending,local/CI evidence only - not target-environment proof; status unchanged
+STONE-GATE.g5,defect-checklist,Real-world retest on staging recorded with evidence,,,,,Real-world retest on staging recorded with evidence,,,,,,STONE-GATE,Critical,Pending,no evidence recorded
+DEF-003,ledger-defect,Requirement-to-order linkage and receipt-sync fixes,,,,,,,,,,,DEF-003,High,Defective,no evidence recorded
+DEF-003.d1,defect-checklist,PO items explicitly link to material_requirement_id,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,PO items explicitly link to material_requirement_id,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,DEF-003,High,Pending,local/CI evidence only - not target-environment proof; status unchanged
+DEF-003.d2,defect-checklist,Partial receipt remains partially_received (does not unlock),,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Partial receipt remains partially_received (does not unlock),local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,DEF-003,High,Pending,local/CI evidence only - not target-environment proof; status unchanged
+DEF-003.d3,defect-checklist,Full receipt advances requirement to received,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Full receipt advances requirement to received,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,DEF-003,High,Pending,local/CI evidence only - not target-environment proof; status unchanged
+DEF-003.d4,defect-checklist,Workflow gate recomputed after receipt,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Workflow gate recomputed after receipt,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-3-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,DEF-003,High,Pending,local/CI evidence only - not target-environment proof; status unchanged
+DEF-003.d5,defect-checklist,Retry is idempotent (no double receipt),,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Retry is idempotent (no double receipt),local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/full-backend-run2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,DEF-003,High,Pending,local/CI evidence only - not target-environment proof; status unchanged
+DEF-003.d6,defect-checklist,Over-receipt is rejected,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Over-receipt is rejected,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,DEF-003,High,Pending,local/CI evidence only - not target-environment proof; status unchanged
+DEF-003.d7,defect-checklist,Cancellation handled correctly,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Cancellation handled correctly,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/full-backend-run2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,DEF-003,High,Pending,local/CI evidence only - not target-environment proof; status unchanged
+DEF-003.d8,defect-checklist,Tenant isolation holds,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Tenant isolation holds,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-3-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,DEF-003,High,Pending,local/CI evidence only - not target-environment proof; status unchanged
+DEF-003.d9,defect-checklist,Ledger alignment confirmed,,synthetic tenants A/B (owner),uncommitted-on-63e8ac9,,Ledger alignment confirmed,local pass; see 02-defect-register.md for the test names,artifacts/qa/stone-hard-2026-11-05/evidence/e2e-procurement-2-summary.txt,2026-11-05,local-disposable-postgres,Claude Code QA session,DEF-003,High,Pending,local/CI evidence only - not target-environment proof; status unchanged
+API GET /,api-operation,,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/activity,api-operation,activity,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/activity,api-operation,activity,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/ai/capabilities,api-operation,ai,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/ai/chat,api-operation,ai,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/appointments/{appointment_id}/status,api-operation,appointments,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/auth/admission,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/auth/email/verify/confirm,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/auth/email/verify/resend,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/auth/login,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/auth/logout,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/auth/me,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/auth/password/change,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/auth/password/forgot,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/auth/password/reset,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/auth/signup,api-operation,auth,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/automations,api-operation,automations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/automations,api-operation,automations,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/automations/meta,api-operation,automations,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/automations/runs,api-operation,automations,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/automations/templates,api-operation,automations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/automations/templates,api-operation,automations,,,,,,,,,,,,,Unknown,no evidence recorded
+API DELETE /api/v1/automations/{automation_id},api-operation,automations,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/automations/{automation_id},api-operation,automations,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/automations/{automation_id},api-operation,automations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/billing/cancel,api-operation,billing,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/billing/checkout,api-operation,billing,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/billing/plans,api-operation,billing,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/billing/portal,api-operation,billing,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/billing/resume,api-operation,billing,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/billing/subscription,api-operation,billing,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/billing/trial,api-operation,billing,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/calendar,api-operation,calendar,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/catalogue/custom-materials,api-operation,catalogue,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/catalogue/meta/companies,api-operation,catalogue,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/catalogue/meta/material-families,api-operation,catalogue,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/catalogue/meta/status,api-operation,catalogue,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/catalogue/suppliers,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/catalogue/surfaces,api-operation,catalogue,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/catalogue/surfaces/{surface_id},api-operation,catalogue,,,,,,,,,,,,,Unknown,no evidence recorded
+API PUT /api/v1/catalogue/surfaces/{surface_id}/override,api-operation,catalogue,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/communications,api-operation,communications,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/compliance/copyright-reports,api-operation,compliance,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/compliance/internal/copyright-reports,api-operation,compliance,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/compliance/internal/copyright-reports/{case_id},api-operation,compliance,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/customers,api-operation,customers,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/customers,api-operation,customers,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/customers/{customer_id},api-operation,customers,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/customers/{customer_id},api-operation,customers,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/customers/{customer_id}/context,api-operation,customers,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/dashboard,api-operation,core,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/dashboard/command-centre,api-operation,dashboard,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/demo-requests,api-operation,demo-requests,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/documents,api-operation,documents,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/documents,api-operation,documents,,,,,,,,,,,,,Unknown,no evidence recorded
+API DELETE /api/v1/documents/{document_id},api-operation,documents,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/documents/{document_id}/download,api-operation,documents,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/estimate,api-operation,core,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/invitations,api-operation,invitations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/invitations,api-operation,invitations,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/invitations/token/{token},api-operation,invitations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/invitations/token/{token}/accept,api-operation,invitations,,,,,,,,,,,,,Unknown,no evidence recorded
+API DELETE /api/v1/invitations/{invitation_id},api-operation,invitations,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/messages,api-operation,messages,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/messages,api-operation,messages,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/notifications,api-operation,notifications,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/notifications,api-operation,notifications,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/notifications/unread-count,api-operation,notifications,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/notifications/{notification_id}/read,api-operation,notifications,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/portal-links,api-operation,portal,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/portal-links,api-operation,portal,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/portal-links/token/{token},api-operation,portal,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/portal-links/token/{token}/documents,api-operation,portal,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/portal-links/token/{token}/documents/{document_id}/download,api-operation,portal,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/portal-links/token/{token}/invoice/{quote_id},api-operation,portal,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/portal-links/token/{token}/messages,api-operation,portal,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/portal-links/token/{token}/messages,api-operation,portal,,,,,,,,,,,,,Unknown,no evidence recorded
+API DELETE /api/v1/portal-links/{portal_link_id},api-operation,portal,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/privacy/exports,api-operation,privacy,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/privacy/exports/{export_id}/download,api-operation,privacy,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/privacy/internal/workspace-deletions/{tenant_id}/purge,api-operation,privacy,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/privacy/marketing-preference,api-operation,privacy,,,,,,,,,,,,,Unknown,no evidence recorded
+API PUT /api/v1/privacy/marketing-preference,api-operation,privacy,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/privacy/marketing-unsubscribe/{token},api-operation,privacy,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/privacy/workspace-deletion,api-operation,privacy,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/privacy/workspace-deletion,api-operation,privacy,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/privacy/workspace-deletion/cancel,api-operation,privacy,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/process,api-operation,core,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/procurement/supplier-accounts,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API PUT /api/v1/procurement/supplier-accounts/{supplier_id},api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects,api-operation,projects,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/projects,api-operation,projects,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects/{project_id},api-operation,projects,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/projects/{project_id},api-operation,projects,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects/{project_id}/allocations,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/projects/{project_id}/allocations,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects/{project_id}/appointments,api-operation,appointments,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/projects/{project_id}/appointments,api-operation,appointments,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/projects/{project_id}/assign,api-operation,projects,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/projects/{project_id}/convert-to-customer,api-operation,projects,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects/{project_id}/costs,api-operation,financials,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/projects/{project_id}/costs,api-operation,financials,,,,,,,,,,,,,Unknown,no evidence recorded
+API DELETE /api/v1/projects/{project_id}/costs/{cost_entry_id},api-operation,financials,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/projects/{project_id}/costs/{cost_entry_id},api-operation,financials,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects/{project_id}/financials/summary,api-operation,financials,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects/{project_id}/requirements,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/projects/{project_id}/requirements,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/projects/{project_id}/status,api-operation,projects,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects/{project_id}/variations,api-operation,variations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/projects/{project_id}/variations,api-operation,variations,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects/{project_id}/workflow,api-operation,workflows,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/projects/{project_id}/workflow/history,api-operation,workflows,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/projects/{project_id}/workflow/transition,api-operation,workflows,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/purchase-orders,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/purchase-orders,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/purchase-orders/{purchase_order_id},api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/purchase-orders/{purchase_order_id},api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/purchase-orders/{purchase_order_id}/approve,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/purchase-orders/{purchase_order_id}/cancel,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/purchase-orders/{purchase_order_id}/items/{item_id}/link-requirement,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/purchase-orders/{purchase_order_id}/order,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/purchase-orders/{purchase_order_id}/pdf,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/purchase-orders/{purchase_order_id}/receipts,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/purchase-orders/{purchase_order_id}/receipts,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/quote,api-operation,core,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/quotes,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/quotes,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/quotes/ai-draft,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/quotes/meta/trades,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/quotes/meta/units,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/quotes/{quote_id},api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/quotes/{quote_id},api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/quotes/{quote_id}/approve,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/quotes/{quote_id}/handoff,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/quotes/{quote_id}/invoice,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/quotes/{quote_id}/send,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/quotes/{quote_id}/send-email,api-operation,quotes,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/requirements/{requirement_id},api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/requirements/{requirement_id}/cancel,api-operation,procurement,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/tasks,api-operation,tasks,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/tasks,api-operation,tasks,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/tasks/{task_id}/status,api-operation,tasks,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/tenants,api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/tenants,api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API DELETE /api/v1/tenants/me/logo,api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/tenants/me/logo,api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/tenants/me/logo,api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/tenants/me/onboarding,api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/tenants/me/onboarding,api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/tenants/me/profile,api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/tenants/me/profile,api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/tenants/{tenant_id},api-operation,tenants,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/users,api-operation,users,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/users/{user_id}/deactivate,api-operation,users,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/variations/{variation_id},api-operation,variations,,,,,,,,,,,,,Unknown,no evidence recorded
+API PATCH /api/v1/variations/{variation_id},api-operation,variations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/variations/{variation_id}/approve,api-operation,variations,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /api/v1/variations/{variation_id}/pdf,api-operation,variations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/variations/{variation_id}/reject,api-operation,variations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/variations/{variation_id}/send,api-operation,variations,,,,,,,,,,,,,Unknown,no evidence recorded
+API POST /api/v1/variations/{variation_id}/void,api-operation,variations,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /health,api-operation,,,,,,,,,,,,,,Unknown,no evidence recorded
+API GET /ready,api-operation,,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /ai,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /automations,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /calendar,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /catalogue,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /customers/[id],ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /customers/new,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /customers,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /dashboard,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /demo,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /forgot-password,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /invite/[token],ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /login,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /onboarding,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /portal/[token],ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /pricing,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /privacy-controls,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /projects/[id],ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /projects/new,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /projects,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /quotes/[id]/edit,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /quotes/[id],ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /quotes/new,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /quotes/new/stone,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /quotes,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /reset-password,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /settings,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /signup,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE web /verify-email,ui-page,web,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE marketing /founding-100,ui-page,marketing,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE marketing /legal/[slug],ui-page,marketing,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE marketing /legal,ui-page,marketing,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE marketing /,ui-page,marketing,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE marketing /pricing,ui-page,marketing,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE marketing /request-demo,ui-page,marketing,,,,,,,,,,,,,Unknown,no evidence recorded
+PAGE marketing /start,ui-page,marketing,,,,,,,,,,,,,Unknown,no evidence recorded

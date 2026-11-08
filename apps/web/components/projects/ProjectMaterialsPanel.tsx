@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -93,6 +93,9 @@ export function ProjectMaterialsPanel({
   const [receiptQuantities, setReceiptQuantities] = useState<Record<string, number>>({});
   const [receiptReference, setReceiptReference] = useState("");
   const [savingReceipt, setSavingReceipt] = useState(false);
+  // One key per distinct delivery: resubmitting the same delivery after a lost
+  // response reuses it, so the server cannot count the delivery twice.
+  const receiptAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const [orderingId, setOrderingId] = useState<string | null>(null);
   const [orderSupplierReference, setOrderSupplierReference] = useState("");
@@ -356,12 +359,18 @@ export function ProjectMaterialsPanel({
     if (items.length === 0) return;
     setSavingReceipt(true);
     setError(null);
+    const fingerprint = JSON.stringify([po.id, items]);
+    if (receiptAttempt.current?.fingerprint !== fingerprint) {
+      receiptAttempt.current = { fingerprint, key: crypto.randomUUID() };
+    }
     try {
       await api.recordPurchaseOrderReceipt(po.id, {
         received_at: new Date().toISOString(),
         delivery_reference: receiptReference || null,
+        idempotency_key: receiptAttempt.current.key,
         items,
       });
+      receiptAttempt.current = null;
       // The receipt itself flips the PO/item status server-side — re-fetch
       // the PO so this panel shows the real, recomputed status rather than
       // guessing it locally.
@@ -371,13 +380,32 @@ export function ProjectMaterialsPanel({
     } catch (err) {
       setError(
         err instanceof ApiError
-          ? err.status === 409
+          ? err.status === 409 && err.detail?.includes("would exceed")
             ? "That would receive more than was ordered — check the quantities and try again."
-            : err.message
+            : err.status === 409
+              ? "This delivery can't be recorded on this purchase order right now — refresh and try again."
+              : err.message
           : "Could not record the delivery."
       );
     } finally {
       setSavingReceipt(false);
+    }
+  }
+
+  async function linkItem(po: PurchaseOrder, itemId: string, requirementId: string) {
+    if (!requirementId) return;
+    setBusyId(po.id);
+    setError(null);
+    try {
+      const updated = await api.linkPurchaseOrderItem(po.id, itemId, requirementId);
+      setPurchaseOrders((current) => (current ?? []).map((p) => (p.id === po.id ? updated : p)));
+      // Linking applies what this line already received, so the requirement's
+      // status can change server-side: show the real value, not a guess.
+      setRequirements(await api.getProjectRequirements(projectId));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not link this line to a requirement.");
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -606,6 +634,16 @@ export function ProjectMaterialsPanel({
                         <option key={req.id} value={req.id}>{req.description}</option>
                       ))}
                     </Select>
+                    {/* STONE-GATE: an unlinked line is the usual way a fully
+                        delivered order leaves the materials gate shut. Say so
+                        before saving; never pick a requirement for the user. */}
+                    {!item.material_requirement_id &&
+                      (requirements ?? []).some((req) => req.status !== "cancelled") && (
+                        <p role="note" className="col-span-2 text-xs text-muted sm:col-span-5">
+                          Not linked to a requirement: deliveries on this line won’t count towards this
+                          project’s materials or unlock Fabrication.
+                        </p>
+                      )}
                     <Input
                       className="sm:col-span-2"
                       aria-label="Item description"
@@ -732,6 +770,33 @@ export function ProjectMaterialsPanel({
                       Download PDF
                     </Button>
                   </div>
+
+                  {po.status !== "cancelled" &&
+                    po.items
+                      .filter((item) => !item.material_requirement_id)
+                      .map((item) => (
+                        <div key={item.id} className="mt-3 rounded-lg border border-border p-3">
+                          <p className="mb-2 text-xs text-muted">
+                            “{item.description}” isn’t linked to a requirement, so its deliveries
+                            won’t count towards this project’s materials.
+                          </p>
+                          <Select
+                            aria-label={`Link ${item.description} to a requirement`}
+                            value=""
+                            disabled={busyId === po.id}
+                            onChange={(e) => linkItem(po, item.id, e.target.value)}
+                          >
+                            <option value="">Link to a requirement…</option>
+                            {(requirements ?? [])
+                              .filter((req) => req.status !== "cancelled")
+                              .map((req) => (
+                                <option key={req.id} value={req.id}>
+                                  {req.description}
+                                </option>
+                              ))}
+                          </Select>
+                        </div>
+                      ))}
 
                   {orderingId === po.id && (
                     <div className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-border p-3 sm:grid-cols-2">

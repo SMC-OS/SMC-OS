@@ -88,7 +88,7 @@ describe("MaterialCatalogueSearch — Phase A empty states", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       /catalogue has no materials yet/i,
     );
-    expect(screen.getByRole("status")).toHaveTextContent(/slab price/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/job price/i);
   });
 
   it("says nothing matched when the catalogue has materials", async () => {

@@ -188,6 +188,7 @@ export interface PurchaseReceiptCreate {
   received_at: string;
   delivery_reference?: string | null;
   notes?: string | null;
+  idempotency_key?: string | null;
   items: PurchaseReceiptItemIn[];
 }
 

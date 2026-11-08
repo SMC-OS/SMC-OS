@@ -34,6 +34,28 @@ ALLOWED_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".heic", ".webp",
 }
 
+# The served media type comes from the allowlisted extension, never from
+# the uploader's Content-Type header: a ".pdf" declared as text/html must not
+# be served as HTML. Keyed by the same extensions as ALLOWED_EXTENSIONS.
+MEDIA_TYPES = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".txt": "text/plain; charset=utf-8",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".heic": "image/heic",
+    ".webp": "image/webp",
+}
+
+
+def media_type_for(filename: str) -> str:
+    return MEDIA_TYPES.get(Path(filename).suffix.lower(), "application/octet-stream")
+
+
 _CHUNK_SIZE = 1024 * 1024
 
 
@@ -108,7 +130,7 @@ class DocumentService:
             uploaded_by_user_id=uploaded_by_user_id,
             original_filename=original_filename,
             storage_filename=storage_filename,
-            content_type=file.content_type or "application/octet-stream",
+            content_type=media_type_for(storage_filename),
             size_bytes=size_bytes,
         )
 

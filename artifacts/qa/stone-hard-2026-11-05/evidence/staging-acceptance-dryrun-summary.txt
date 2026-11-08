@@ -1,0 +1,32 @@
+Staging acceptance suite, LOCAL DRY RUN ONLY (STAGING_DRY_RUN_LOCAL=1, next build + next start, local API, disposable DB). Not staging evidence.
+== run 2
+g1 g2 g3 g4 d1 d3 d4: UI-linked line, full delivery, gate opens only then (32.5s)
+g1 d1 (reported symptom): unlinked UI line delivered, gate stays shut until linked in the UI (44.1s)
+d2 stone-partial: a part delivery keeps the gate shut; the balance opens it (43.2s)
+d2 short order: receiving everything ordered but less than required keeps the gate shut (35.5s)
+d6: over-receipt is refused in the UI and changes nothing (12.6s)
+d5 d9: a retried delivery is recorded once and cost moves committed to actual once (12.8s)
+d7: cancelling the only PO releases the requirement and refuses later deliveries (16.5s)
+d8: another workspace cannot read, receive or link on this PO (1.0s)
+    Error: expect(locator).toBeEnabled() failed
+    staging-acceptance-results\artifacts\stone-gate.staging-g1-g2-g-79110-livery-gate-opens-only-then-chromium\test-failed-1.png
+    Error: expect(locator).toBeDisabled() failed
+    staging-acceptance-results\artifacts\stone-gate.staging-g1-d1-r-8d4ed-shut-until-linked-in-the-UI-chromium\test-failed-1.png
+    Error: expect(locator).toBeDisabled() failed
+    staging-acceptance-results\artifacts\stone-gate.staging-d2-ston-187f5-e-shut-the-balance-opens-it-chromium\test-failed-1.png
+    Error: expect(locator).toBeDisabled() failed
+    staging-acceptance-results\artifacts\stone-gate.staging-d2-shor-30257-equired-keeps-the-gate-shut-chromium\test-failed-1.png
+  4 failed
+  4 passed (4.2m)
+== run 3
+g1 g2 g3 g4 d1 d3 d4: UI-linked line, full delivery, gate opens only then (14.0s)
+g1 d1 (reported symptom): unlinked UI line delivered, gate stays shut until linked in the UI (22.1s)
+d2 stone-partial: a part delivery keeps the gate shut; the balance opens it (23.9s)
+d2 short order: receiving everything ordered but less than required keeps the gate shut (10.2s)
+    Error: ENOSPC: no space left on device, write
+  1 failed
+  3 passed (1.3m)
+== run 4
+d2 short order: receiving everything ordered but less than required keeps the gate shut (13.0s)
+  1 passed (29.2s)
+Run 2 failures were a test-helper bug (stage walk skipped unrendered buttons), fixed before run 3; run 3's one failure was ENOSPC (disk full), re-run as run 4.

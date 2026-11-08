@@ -24,6 +24,8 @@ from app.database.models import (
     EmailVerificationToken,
     MarketingPreference,
     MarketingUnsubscribeToken,
+    Message,
+    PortalLink,
     Subscription,
     Tenant,
     User,
@@ -179,17 +181,29 @@ def test_internal_purge_requires_dedicated_token_and_is_idempotent(client, works
     project_response = client.post("/api/v1/projects", headers=headers, json={"name": "Private project"})
     assert project_response.status_code == 201
     project_id = uuid.UUID(project_response.json()["id"])
+    customer_id, link_id = uuid.uuid4(), uuid.uuid4()
+    portal_token = f"synthetic-purge-{uuid.uuid4().hex}"
     db = SessionLocal()
     try:
         db.execute(update(WorkspaceDeletion).where(WorkspaceDeletion.tenant_id == tenant_id).values(eligible_for_purge_at=datetime.now(timezone.utc) - timedelta(seconds=1)))
         db.add(EmailSuppression(id=uuid.uuid4(), tenant_id=tenant_id, email="retained@example.invalid", reason="complaint"))
-        db.add(Customer(id=uuid.uuid4(), tenant_id=tenant_id, name="Private customer", email="customer@example.invalid", address_line1="1 Private Road", postcode="NW2 7RP", notes="private notes"))
+        db.add(Customer(id=customer_id, tenant_id=tenant_id, name="Private customer", email="customer@example.invalid", address_line1="1 Private Road", postcode="NW2 7RP", notes="private notes"))
+        owner = db.query(User).filter_by(tenant_id=tenant_id).one()
+        db.flush()
+        db.add(PortalLink(id=link_id, tenant_id=tenant_id, customer_id=customer_id,
+                         created_by_user_id=owner.id, status="active",
+                         token_hash=hashlib.sha256(portal_token.encode()).hexdigest(),
+                         expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
+        db.add(Message(id=uuid.uuid4(), tenant_id=tenant_id, customer_id=customer_id,
+                       sender_type="customer", body="Private synthetic portal message"))
         db.execute(update(Project).where(Project.id == project_id).values(notes="private notes", description="private description", site_address_line1="1 Private Road", site_postcode="NW2 7RP"))
         db.add(Quote(id=uuid.uuid4(), tenant_id=tenant_id, title="Private quote", site_address_line1="1 Private Road", site_postcode="NW2 7RP", scope_of_works="private scope", notes="private notes"))
         db.commit()
     finally:
         db.close()
     endpoint = f"/api/v1/privacy/internal/workspace-deletions/{tenant_id}/purge"
+    portal_messages = f"/api/v1/portal-links/token/{portal_token}/messages"
+    assert client.get(portal_messages).status_code == 200
     assert client.post(endpoint, headers=headers).status_code == 403
     internal_token = "t" * 32
     monkeypatch.setattr(settings, "internal_compliance_token", internal_token)
@@ -197,9 +211,13 @@ def test_internal_purge_requires_dedicated_token_and_is_idempotent(client, works
     assert first.status_code == 200 and first.json()["state"] == "purged"
     second = client.post(endpoint, headers={"X-GeoCore-Internal-Token": internal_token})
     assert second.status_code == 200 and second.json()["state"] == "purged"
+    assert client.get(portal_messages).status_code == 404
+    assert client.post(portal_messages, json={"body": "Must not be saved"}).status_code == 404
     db = SessionLocal()
     try:
         assert db.query(EmailSuppression).filter_by(tenant_id=tenant_id, email="retained@example.invalid").count() == 1
+        assert db.get(PortalLink, link_id).status == "revoked"
+        assert db.query(Message).filter_by(tenant_id=tenant_id).count() == 1
         customer = db.query(Customer).filter_by(tenant_id=tenant_id).one()
         project = db.query(Project).filter_by(tenant_id=tenant_id).one()
         quote = db.query(Quote).filter_by(tenant_id=tenant_id).one()
@@ -226,3 +244,39 @@ def test_copyright_intake_is_public_but_administration_requires_internal_token(c
         db.commit()
     finally:
         db.close()
+
+
+def test_expired_billing_does_not_block_privacy_controls(client, workspace):
+    headers, tenant_id, _ = workspace
+    db = SessionLocal()
+    try:
+        db.execute(update(Subscription).where(Subscription.tenant_id == tenant_id).values(status="canceled", legacy_grandfathered=False))
+        db.commit()
+    finally:
+        db.close()
+    # Privacy self-service remains authenticated, verified and tenant-scoped;
+    # ordinary business access must still require an active subscription.
+    assert client.get("/api/v1/customers", headers=headers).status_code == 402
+    assert client.get("/api/v1/privacy/marketing-preference", headers=headers).status_code == 200
+    assert client.put("/api/v1/privacy/marketing-preference", headers=headers, json={"enabled": False}).status_code == 200
+    exported = client.post("/api/v1/privacy/exports", headers=headers)
+    assert exported.status_code == 201
+    assert client.get(f"/api/v1/privacy/exports/{exported.json()['id']}/download", headers=headers).status_code == 200
+    assert client.get("/api/v1/privacy/workspace-deletion", headers=headers).status_code == 200
+    assert client.post("/api/v1/privacy/workspace-deletion", headers=headers, json={"confirmation": "DELETE WORKSPACE"}).status_code == 200
+    assert client.post("/api/v1/privacy/workspace-deletion/cancel", headers=headers).status_code == 200
+
+
+def test_expired_billing_keeps_privacy_owner_and_auth_boundaries(client, workspace):
+    headers, tenant_id, email = workspace
+    db = SessionLocal()
+    try:
+        db.execute(update(Subscription).where(Subscription.tenant_id == tenant_id).values(status="canceled", legacy_grandfathered=False))
+        db.execute(update(User).where(User.email == email).values(role=UserRole.STAFF))
+        db.commit()
+    finally:
+        db.close()
+    assert client.get("/api/v1/privacy/marketing-preference").status_code == 401
+    assert client.post("/api/v1/privacy/exports", headers=headers).status_code == 403
+    assert client.post("/api/v1/privacy/workspace-deletion", headers=headers, json={"confirmation": "DELETE WORKSPACE"}).status_code == 403
+    assert client.put("/api/v1/privacy/marketing-preference", headers=headers, json={"enabled": False}).status_code == 200

@@ -56,7 +56,7 @@ print(raw_token)
   return output.trim().split("\n").pop() as string;
 }
 
-test("signup_lands_on_verify_email_and_confirming_the_emailed_link_unlocks_the_workspace", async ({
+test("signup_requires_verification_and_a_valid_token_unlocks_the_workspace", async ({
   page,
 }) => {
   const api = await request.newContext({ baseURL: BACKEND_URL });
@@ -94,8 +94,21 @@ test("signup_lands_on_verify_email_and_confirming_the_emailed_link_unlocks_the_w
   // ---- Resend, from the verification screen itself ----
   const resendButton = page.getByRole("button", { name: "Resend verification email" });
   await expect(resendButton).toBeVisible();
+  const resendResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v1/auth/email/verify/resend") &&
+    response.request().method() === "POST"
+  );
   await resendButton.click();
-  await expect(page.getByText(/verification email sent/i)).toBeVisible();
+  // This suite deliberately has no live email provider. An HTTP 200 must
+  // preserve the failed delivery outcome rather than claim a sent email.
+  const resend = await resendResponse;
+  expect(resend.ok()).toBeTruthy();
+  expect((await resend.json()).delivery_status).toBe("failed");
+  await expect(page.getByText(
+    "We could not send your verification email. Please try again later or contact support.",
+    { exact: true }
+  )).toBeVisible();
+  await expect(page.getByText(/verification email sent/i)).toHaveCount(0);
 
   // ---- Confirm via the real link target, with a token minted the same
   // way the real email would have (see mintVerificationToken's docstring

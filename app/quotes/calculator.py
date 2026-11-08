@@ -68,6 +68,9 @@ class QuoteCalculator:
     def calculate(self, db: Session, quote, tenant_id: uuid.UUID | None = None):
         validate_dimensions(quote)
 
+        if getattr(quote, "pricing_mode", "catalogue") == "manual":
+            return self._manual(db, quote, tenant_id)
+
         item_results = []
         slab_groups = {}
         price_before_vat = 0.0
@@ -189,6 +192,51 @@ class QuoteCalculator:
             "total": None if pricing_pending else round(price_before_vat + vat, 2),
             "pricing_pending": pricing_pending,
         }
+
+    def _manual(self, db, quote, tenant_id):
+        if tenant_id is None:
+            raise DimensionError("Manual job pricing requires an authenticated workspace.")
+        # Validate catalogue ownership even though its price is deliberately ignored.
+        for item in quote.items:
+            if not item.material.strip():
+                raise DimensionError("Choose or type a material name for every item.")
+            if item.catalogue_surface_id is not None:
+                surface = crud.get_catalogue_surface_by_id(db, item.catalogue_surface_id, tenant_id)
+                if surface is None:
+                    raise KeyError("catalogue surface")
+                if item.catalogue_variant_id is not None:
+                    variant = db.get(crud.CatalogueSurfaceVariant, item.catalogue_variant_id)
+                    if variant is None or variant.surface_id != surface.id:
+                        raise KeyError("catalogue variant")
+        def money(value):
+            return Decimal(str(value)).quantize(Decimal("0.01"), rounding="ROUND_HALF_UP")
+        pending = quote.manual_price is None
+        subtotal = None if pending else money(quote.manual_price)
+        discount = None if pending else money(subtotal * Decimal(str(quote.discount_percent)) / 100)
+        net = None if pending else subtotal - discount
+        vat = None if pending else money(net * Decimal(str(quote.vat_rate)))
+        # One job price covers every specification. Only the first persisted
+        # line carries the amount; documents present one job row, not invented
+        # per-piece prices. Sum of stored line totals equals the gross subtotal.
+        rows = [dict(
+            item_type=item.item_type, material=item.material.strip(), thickness=item.thickness,
+            quantity=item.quantity, length_mm=item.length_mm, width_mm=item.width_mm,
+            thickness_mm=item.thickness_mm, unit_input=item.unit_input, notes=item.notes,
+            price_per_slab=None, slabs=None,
+            line_total=None if pending else float(subtotal) if index == 0 else 0.0,
+            catalogue_surface_id=item.catalogue_surface_id,
+            catalogue_variant_id=item.catalogue_variant_id,
+            catalogue_snapshot={"source": "manual_job_price", "discount_percent": quote.discount_percent},
+        ) for index, item in enumerate(quote.items)]
+        summary = summarize_items(rows)
+        return dict(customer=quote.customer, **summary, items=rows,
+                    subtotal=None if pending else float(subtotal),
+                    discount_amount=None if pending else float(discount),
+                    discount_percent=quote.discount_percent, vat_rate=quote.vat_rate,
+                    price_before_vat=None if pending else float(net),
+                    vat=None if pending else float(vat),
+                    total=None if pending else float(net + vat), pricing_pending=pending,
+                    pricing_mode="manual")
 
     def _resolve_catalogue_item(self, db: Session, item, tenant_id: uuid.UUID | None) -> tuple[float, dict]:
         """Sprint 042 (Plan 03) — the catalogue-selected path. Builds the

@@ -90,6 +90,11 @@ class QuoteRequest(BaseModel):
     # never a guessed price or a zero-value offer. Legacy callers still fail
     # on missing prices unless they request this behaviour.
     allow_unpriced: bool = False
+    # Explicit job price: no slab lookup, estimates or installation surcharges.
+    pricing_mode: str = Field(default="catalogue", pattern="^(catalogue|manual)$")
+    manual_price: float | None = Field(default=None, ge=0, le=100000000, allow_inf_nan=False)
+    discount_percent: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    vat_rate: float = Field(default=0.20, ge=0, le=1, allow_inf_nan=False)
     draft_id: uuid.UUID | None = None
 
     # Sprint 033 (Workstream C) — the source of truth. A quote is one or
@@ -121,7 +126,7 @@ class QuoteRequest(BaseModel):
 
     @model_validator(mode="after")
     def _build_items(self) -> "QuoteRequest":
-        if self.allow_unpriced and (not (self.site_address_line1 or "").strip() or not (self.postcode or "").strip()):
+        if (self.allow_unpriced or self.pricing_mode == "manual") and (not (self.site_address_line1 or "").strip() or not (self.postcode or "").strip()):
             raise ValueError("Customer address and postcode are required for a stone quote draft.")
         if self.items:
             return self

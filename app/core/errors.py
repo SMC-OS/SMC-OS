@@ -8,6 +8,7 @@ never leaks a stack trace to the client.
 """
 
 import logging
+import math
 
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -49,6 +50,19 @@ def _redact_sensitive_inputs(errors: list[dict]) -> list[dict]:
     return errors
 
 
+def _json_safe(value):
+    """A rejected NaN/Infinity echoed back under "input" would make the 422
+    body itself unserialisable (strict JSON has no such numbers), turning a
+    clean validation error into a 500. They are echoed as text instead."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(val) for val in value]
+    return value
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -56,7 +70,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         # raises ValueError (e.g. app/appointments/models.py's
         # scheduled_at check) puts the live exception object in each
         # error's ctx["error"], which plain json.dumps can't serialize.
-        errors = _redact_sensitive_inputs(jsonable_encoder(exc.errors()))
+        errors = _json_safe(_redact_sensitive_inputs(jsonable_encoder(exc.errors())))
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={"detail": "Invalid request", "errors": errors},

@@ -13,11 +13,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_role_and_billing
+from app.auth.dependencies import require_role
 from app.auth.models import UserRole
 from app.compliance.internal_auth import require_internal_compliance_auth
 from app.database.database import get_db
-from app.database.models import ActivityLog, Customer, Document, MarketingPreference, MarketingUnsubscribeToken, Project, Quote, Tenant, User, WorkspaceDeletion, WorkspaceExport
+from app.database.models import ActivityLog, Customer, Document, MarketingPreference, MarketingUnsubscribeToken, PortalLink, Project, Quote, Tenant, User, WorkspaceDeletion, WorkspaceExport
 from app.core.config import settings
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
@@ -72,7 +72,7 @@ def _export_bytes(db: Session, tenant_id: uuid.UUID) -> bytes:
 
 
 @router.post("/exports", response_model=ExportRequestOut, status_code=status.HTTP_201_CREATED)
-def request_export(current_user: User = Depends(require_role_and_billing(UserRole.OWNER)), db: Session = Depends(get_db)):
+def request_export(current_user: User = Depends(require_role(UserRole.OWNER)), db: Session = Depends(get_db)):
     row = WorkspaceExport(id=uuid.uuid4(), tenant_id=current_user.tenant_id, requested_by_user_id=current_user.id)
     db.add(row)
     db.commit()
@@ -80,7 +80,7 @@ def request_export(current_user: User = Depends(require_role_and_billing(UserRol
 
 
 @router.get("/exports/{export_id}/download")
-def download_export(export_id: uuid.UUID, current_user: User = Depends(require_role_and_billing(UserRole.OWNER)), db: Session = Depends(get_db)):
+def download_export(export_id: uuid.UUID, current_user: User = Depends(require_role(UserRole.OWNER)), db: Session = Depends(get_db)):
     row = db.get(WorkspaceExport, export_id)
     if row is None or row.tenant_id != current_user.tenant_id or row.requested_by_user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Export not found")
@@ -93,13 +93,13 @@ def download_export(export_id: uuid.UUID, current_user: User = Depends(require_r
 
 
 @router.get("/marketing-preference", response_model=MarketingPreferenceOut)
-def get_marketing_preference(current_user: User = Depends(require_role_and_billing(UserRole.OWNER, UserRole.STAFF)), db: Session = Depends(get_db)):
+def get_marketing_preference(current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)), db: Session = Depends(get_db)):
     row = db.scalars(select(MarketingPreference).where(MarketingPreference.tenant_id == current_user.tenant_id, MarketingPreference.email == current_user.email.lower())).first()
     return MarketingPreferenceOut(enabled=False if row is None else row.enabled, source="default" if row is None else row.source, updated_at=None if row is None else row.updated_at)
 
 
 @router.put("/marketing-preference", response_model=MarketingPreferenceOut)
-def set_marketing_preference(payload: MarketingPreferenceIn, current_user: User = Depends(require_role_and_billing(UserRole.OWNER, UserRole.STAFF)), db: Session = Depends(get_db)):
+def set_marketing_preference(payload: MarketingPreferenceIn, current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)), db: Session = Depends(get_db)):
     email = current_user.email.lower()
     row = db.scalars(select(MarketingPreference).where(MarketingPreference.tenant_id == current_user.tenant_id, MarketingPreference.email == email)).first()
     if row is None:
@@ -126,12 +126,12 @@ def unsubscribe_marketing(token: str, db: Session = Depends(get_db)):
 
 
 @router.get("/workspace-deletion", response_model=DeletionStatus)
-def deletion_status(current_user: User = Depends(require_role_and_billing(UserRole.OWNER)), db: Session = Depends(get_db)):
+def deletion_status(current_user: User = Depends(require_role(UserRole.OWNER)), db: Session = Depends(get_db)):
     return _status(db.get(WorkspaceDeletion, current_user.tenant_id))
 
 
 @router.post("/workspace-deletion", response_model=DeletionStatus)
-def request_deletion(_: DeletionRequest, current_user: User = Depends(require_role_and_billing(UserRole.OWNER)), db: Session = Depends(get_db)):
+def request_deletion(_: DeletionRequest, current_user: User = Depends(require_role(UserRole.OWNER)), db: Session = Depends(get_db)):
     existing = db.get(WorkspaceDeletion, current_user.tenant_id)
     if existing and not existing.cancelled_at and not existing.purged_at:
         return _status(existing)
@@ -147,7 +147,7 @@ def request_deletion(_: DeletionRequest, current_user: User = Depends(require_ro
 
 
 @router.post("/workspace-deletion/cancel", response_model=DeletionStatus)
-def cancel_deletion(current_user: User = Depends(require_role_and_billing(UserRole.OWNER)), db: Session = Depends(get_db)):
+def cancel_deletion(current_user: User = Depends(require_role(UserRole.OWNER)), db: Session = Depends(get_db)):
     row = db.get(WorkspaceDeletion, current_user.tenant_id)
     if row is None or row.cancelled_at or row.purged_at:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No cancellable workspace deletion exists")
@@ -171,6 +171,7 @@ def purge_workspace(tenant_id: uuid.UUID, db: Session = Depends(get_db)):
     tenant = db.get(Tenant, tenant_id)
     if tenant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    db.execute(update(PortalLink).where(PortalLink.tenant_id == tenant_id).values(status="revoked"))
     # Ordinary workspace data is disposed of here. Retained audit, billing,
     # suppression and copyright records are intentionally not deleted.
     for document in db.scalars(select(Document).where(Document.tenant_id == tenant_id)):

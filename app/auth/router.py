@@ -38,7 +38,9 @@ from app.auth.service import EmailAlreadyRegisteredError, auth_service
 from app.auth.verification_service import (
     VerificationTokenInvalidError,
     email_verification_service,
+    verification_delivery_outcome,
 )
+from app.core.admission import admission_open, require_admission_open
 from app.core.config import settings
 from app.database import crud
 from app.database.database import get_db
@@ -62,17 +64,20 @@ _FORGOT_PASSWORD_MESSAGE = "If an account exists for that email, we've sent a re
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def signup(data: SignupRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     validate_browser_session_request(request)
+    require_admission_open()
     try:
         tenant, user = auth_service.signup(db, data)
     except EmailAlreadyRegisteredError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
-    email_verification_service.send_verification_email(db, user)
+    delivery = email_verification_service.send_verification_email(db, user)
+    delivery_status, _ = verification_delivery_outcome(delivery)
     activity_service.log(
         ActivityEventCreate(
             type=ActivityType.EMAIL_VERIFICATION_REQUESTED,
-            title="Verification email sent",
+            title=("Verification email accepted" if delivery_status == "sent"
+                   else "Verification email delivery " + delivery_status),
             description=user.email,
         ),
         tenant_id=tenant.id,
@@ -102,16 +107,20 @@ def resend_verification_email(
         str(current_user.id),
         cooldown_seconds=settings.email_verification_resend_cooldown_seconds,
     )
-    email_verification_service.send_verification_email(db, current_user)
+    delivery = email_verification_service.send_verification_email(db, current_user)
+    delivery_status, message = verification_delivery_outcome(delivery)
     activity_service.log(
         ActivityEventCreate(
             type=ActivityType.EMAIL_VERIFICATION_REQUESTED,
-            title="Verification email re-sent",
+            title=("Verification email accepted" if delivery_status == "sent"
+                   else "Verification email delivery " + delivery_status),
             description=current_user.email,
         ),
         tenant_id=current_user.tenant_id,
     )
-    return VerificationResendResponse(message="Verification email sent.", already_verified=False)
+    return VerificationResendResponse(
+        message=message, already_verified=False, delivery_status=delivery_status
+    )
 
 
 @router.post("/email/verify/confirm", response_model=MessageResponse)
@@ -154,6 +163,13 @@ def login(credentials: LoginRequest, request: Request, response: Response, db: S
         subject=str(user.id), tenant_id=str(user.tenant_id), token_version=user.token_version
     )
     return session_token_response(request, response, token, auth_service.build_user_out(db, user))
+
+
+@router.get("/admission")
+def admission_status():
+    """Public, data-free: lets the sign-up page show waitlist wording
+    instead of a form the server would refuse."""
+    return {"signups_open": admission_open()}
 
 
 @router.get("/me", response_model=UserOut)

@@ -7,16 +7,11 @@ from types import SimpleNamespace
 from app.quotes.pdf import PDFGenerator, build_line_items
 
 
-def pdf_text(pdf):
-    streams = []
-    for match in re.finditer(rb"stream(.*?)endstream", pdf, re.S):
-        raw = match.group(1).strip()
-        try:
-            raw = base64.a85decode(raw, adobe=True)
-        except ValueError:
-            raw = base64.a85decode(raw.removesuffix(b"~>"))
-        streams.append(zlib.decompress(raw).decode("latin-1"))
-    return "\n".join(streams)
+def pdf_text(pdf: bytes) -> str:
+    """Parse real PDF objects, including embedded font and content streams."""
+    from io import BytesIO
+    from pypdf import PdfReader
+    return "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
 
 
 def test_contractual_sections_and_site_are_present_in_rendered_pdf():

@@ -26,6 +26,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import delete as sa_delete, func, or_ as sa_or, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database.models import (
@@ -497,6 +498,7 @@ def create_project(
     # and both do so.
     workflow_template_id: uuid.UUID,
     workflow_stage_id: uuid.UUID,
+    commit: bool = True,
 ) -> Project:
     row = Project(
         id=id,
@@ -520,7 +522,10 @@ def create_project(
         workflow_stage_id=workflow_stage_id,
     )
     db.add(row)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 
@@ -704,6 +709,7 @@ def create_general_quote(
     customer_id: uuid.UUID | None,
     currency: str,
     fields: dict,
+    commit: bool = True,
 ) -> Quote:
     """Sprint 036 (Workstream E) — the general construction quote's own
     INSERT, separate from create_quote() above rather than adding a dozen
@@ -739,7 +745,10 @@ def create_general_quote(
         **{key: value for key, value in fields.items() if key in _GENERAL_QUOTE_COLUMNS},
     )
     db.add(row)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 
@@ -791,7 +800,7 @@ def update_general_quote(
     return row
 
 
-def replace_quote_items(db: Session, quote: Quote, items: list[dict]) -> None:
+def replace_quote_items(db: Session, quote: Quote, items: list[dict], *, commit: bool = True) -> None:
     """Sprint 036 — wholesale replacement of a quote's line items.
 
     Uses the existing `Quote.items` relationship with its
@@ -805,7 +814,10 @@ def replace_quote_items(db: Session, quote: Quote, items: list[dict]) -> None:
     db.flush()
     for index, item in enumerate(items):
         quote.items.append(QuoteItem(id=uuid.uuid4(), position=index, **item))
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(quote)
 
 
@@ -921,6 +933,8 @@ def create_quote(
     # test that predates this sprint keeps working with the old signature.
     currency: str = "GBP",
     subtotal: float | None = None,
+    discount_amount: float | None = None,
+    vat_rate: float = 0.20,
     site_address_line1: str | None = None,
     site_postcode: str | None = None,
     replace_pending: Quote | None = None,
@@ -942,6 +956,8 @@ def create_quote(
         trade="stone",
         currency=currency,
         subtotal=subtotal,
+        discount_amount=discount_amount,
+        vat_rate=vat_rate,
         material=material,
         thickness=thickness,
         kitchen_length=kitchen_length,
@@ -1532,11 +1548,21 @@ def upsert_subscription(
 def mark_stripe_event_processed(db: Session, event_id: str, event_type: str) -> bool:
     """Returns True if this call recorded the event (first delivery),
     False if it was already processed (a retried webhook delivery) — the
-    caller must skip re-applying side effects in the False case."""
+    caller must skip re-applying side effects in the False case.
+
+    The marker is only flushed, not committed: the caller commits it in the
+    same transaction as the event's effect, so a handler failure rolls the
+    marker back too and Stripe's retry can still apply the event. A
+    concurrent duplicate delivery hits the primary key and is reported as
+    already processed."""
     if db.get(ProcessedStripeEvent, event_id) is not None:
         return False
     db.add(ProcessedStripeEvent(id=event_id, event_type=event_type))
-    db.commit()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        return False
     return True
 
 
@@ -2445,18 +2471,22 @@ def list_project_cost_entries(
     return list(db.scalars(stmt).all())
 
 
-def update_project_cost_entry(db: Session, entry: ProjectCostEntry, fields: dict) -> ProjectCostEntry:
+def update_project_cost_entry(
+    db: Session, entry: ProjectCostEntry, fields: dict, *, commit: bool = True
+) -> ProjectCostEntry:
     for key, value in fields.items():
         setattr(entry, key, value)
     db.add(entry)
-    db.commit()
-    db.refresh(entry)
+    _commit_or_flush(db, entry, commit)
     return entry
 
 
-def delete_project_cost_entry(db: Session, entry: ProjectCostEntry) -> None:
+def delete_project_cost_entry(db: Session, entry: ProjectCostEntry, *, commit: bool = True) -> None:
     db.delete(entry)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
 
 def sum_cost_by_state(db: Session, project_id: uuid.UUID, tenant_id: uuid.UUID) -> dict[str, float]:
@@ -2662,13 +2692,12 @@ def list_material_requirements_by_project(
 
 
 def update_material_requirement(
-    db: Session, requirement: ProjectMaterialRequirement, fields: dict
+    db: Session, requirement: ProjectMaterialRequirement, fields: dict, *, commit: bool = True
 ) -> ProjectMaterialRequirement:
     for key, value in fields.items():
         setattr(requirement, key, value)
     db.add(requirement)
-    db.commit()
-    db.refresh(requirement)
+    _commit_or_flush(db, requirement, commit)
     return requirement
 
 
@@ -2725,6 +2754,37 @@ def get_purchase_order_by_id(db: Session, purchase_order_id: uuid.UUID, tenant_i
     return db.scalars(stmt).first()
 
 
+def lock_purchase_order(db: Session, purchase_order_id: uuid.UUID, tenant_id: uuid.UUID) -> PurchaseOrder | None:
+    """Row-locks a PO until the next commit, so two concurrent deliveries
+    cannot both pass the over-receipt check."""
+    stmt = (
+        select(PurchaseOrder)
+        .where(PurchaseOrder.id == purchase_order_id, PurchaseOrder.tenant_id == tenant_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return db.scalars(stmt).first()
+
+
+def get_purchase_receipt_by_idempotency_key(db: Session, tenant_id: uuid.UUID, key: str) -> PurchaseReceipt | None:
+    stmt = select(PurchaseReceipt).where(
+        PurchaseReceipt.tenant_id == tenant_id, PurchaseReceipt.idempotency_key == key
+    )
+    return db.scalars(stmt).first()
+
+
+def list_requirement_po_lines(
+    db: Session, requirement_id: uuid.UUID, tenant_id: uuid.UUID
+) -> list[tuple[PurchaseOrderItem, str]]:
+    """Every PO line linked to a requirement, with its PO's status."""
+    stmt = (
+        select(PurchaseOrderItem, PurchaseOrder.status)
+        .join(PurchaseOrder, PurchaseOrderItem.purchase_order_id == PurchaseOrder.id)
+        .where(PurchaseOrderItem.material_requirement_id == requirement_id, PurchaseOrder.tenant_id == tenant_id)
+    )
+    return [(item, po_status) for item, po_status in db.execute(stmt).all()]
+
+
 def list_purchase_orders(
     db: Session,
     tenant_id: uuid.UUID,
@@ -2755,12 +2815,13 @@ def list_purchase_orders(
     return rows
 
 
-def update_purchase_order(db: Session, purchase_order: PurchaseOrder, fields: dict) -> PurchaseOrder:
+def update_purchase_order(
+    db: Session, purchase_order: PurchaseOrder, fields: dict, *, commit: bool = True
+) -> PurchaseOrder:
     for key, value in fields.items():
         setattr(purchase_order, key, value)
     db.add(purchase_order)
-    db.commit()
-    db.refresh(purchase_order)
+    _commit_or_flush(db, purchase_order, commit)
     return purchase_order
 
 
@@ -2801,7 +2862,7 @@ def sum_received_quantity_for_item(db: Session, purchase_order_item_id: uuid.UUI
     return float(total) if total is not None else 0.0
 
 
-def create_purchase_receipt(db: Session, *, items: list[dict], **fields) -> PurchaseReceipt:
+def create_purchase_receipt(db: Session, *, items: list[dict], commit: bool = True, **fields) -> PurchaseReceipt:
     receipt = PurchaseReceipt(id=fields.pop("id", uuid.uuid4()), **fields)
     db.add(receipt)
     db.flush()
@@ -2809,9 +2870,19 @@ def create_purchase_receipt(db: Session, *, items: list[dict], **fields) -> Purc
         PurchaseReceiptItem(id=uuid.uuid4(), purchase_receipt_id=receipt.id, **item) for item in items
     ]
     db.add_all(rows)
-    db.commit()
-    db.refresh(receipt)
+    _commit_or_flush(db, receipt, commit)
     return receipt
+
+
+def _commit_or_flush(db: Session, row, commit: bool) -> None:
+    """commit=False lets a service fold several writes into one transaction
+    (the session has autoflush off, so later reads in that transaction need
+    the explicit flush to see these rows)."""
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
 
 
 def list_purchase_receipts(db: Session, purchase_order_id: uuid.UUID) -> list[PurchaseReceipt]:

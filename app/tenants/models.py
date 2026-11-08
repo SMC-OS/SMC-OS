@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.trades.catalogue import TRADE_KEYS
 
@@ -61,6 +61,8 @@ class TenantProfileUpdate(TenantIdentityFields):
     # The workspace name staff see in-product. Editable here too so an
     # owner who signed up as "Default Workspace" can correct it.
     name: str | None = None
+    invoice_prefix: str = Field(default="Invoice", pattern=r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$")
+    invoice_next_number: int = Field(default=1, ge=1, le=2000000000)
 
     # Sprint 036 — workspace configuration. `currency` is validated
     # against a short supported list rather than accepting any three
@@ -91,6 +93,8 @@ class TenantProfileOut(TenantIdentityFields):
     created_at: datetime
 
     # Sprint 036
+    invoice_prefix: str = "Invoice"
+    invoice_next_number: int = 1
     currency: str
     # A comma-separated key list on the row; exposed to clients as a real
     # list so no consumer has to know the storage format.
