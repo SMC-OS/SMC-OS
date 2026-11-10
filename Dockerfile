@@ -13,7 +13,7 @@ COPY --chown=simo:simo app ./app
 COPY --chown=simo:simo alembic ./alembic
 COPY --chown=simo:simo alembic.ini ./
 
-USER simo
+USER root
 
 EXPOSE 8000
 
@@ -30,4 +30,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # migration (the previous "invoke the image as a release job" pattern),
 # run `python -m app.core.migrate_gate` directly instead of this image's
 # default command.
-CMD ["sh", "-c", "python -m app.core.migrate_gate && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log"]
+CMD ["sh","-c","chown 10001:10001 /var/lib/simo-os/uploads && chmod 0750 /var/lib/simo-os/uploads && echo GEOCORE_QA_VOLUME_INITIALIZED && sleep 30"]
