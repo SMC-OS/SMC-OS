@@ -34,7 +34,12 @@ export function checkedOrigin(name: string): string {
   if (PRODUCTION_HINTS.some((hint) => hint.test(url.hostname))) {
     throw new Error(`${name} (${url.hostname}) looks like production; refusing`);
   }
-  if (!/staging/i.test(url.hostname)) throw new Error(`${name} (${url.hostname}) is not a staging host`);
+  // Permit the dedicated, synthetic-data-only Railway QA acceptance deployment, too.
+  // Never broaden this to arbitrary *qa* hostnames or production domains.
+  const ISOLATED_QA_ACCEPTANCE = /^geocore-(?:api|web)-qa-acceptance\.up\.railway\.app$/i;
+  if (!/staging/i.test(url.hostname) && !ISOLATED_QA_ACCEPTANCE.test(url.hostname)) {
+    throw new Error(`${name} (${url.hostname}) is not an approved staging/QA host`);
+  }
   return url.origin;
 }
 
