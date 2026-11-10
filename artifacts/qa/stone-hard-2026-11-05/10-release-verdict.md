@@ -2,6 +2,10 @@
 
 ## Verdict: **NO-GO**
 
+> **Update 8 November 2026 (later):** still unchanged; document 14 adds barrier v2, an owner-approval gate and an operator preflight, all local-only so far.
+>
+> **Earlier update 8 November 2026:** unchanged. A1 and A2 remain blocked; no staging evidence exists. See [13](./13-A1-resume-execution-packet.md) for the rehearsed writer barrier, the Railway-quota-free capture method and the exact prerequisites still owed by the owner and operator. No ledger cell changed.
+
 The owner's HARD NO-GO stands: no new paying customer, no invited pilot relying on unfinished controls, and no production API/web deploy or live billing change.
 
 - Not one of the 110 cells, 18 journeys or 12 gates is Verified.

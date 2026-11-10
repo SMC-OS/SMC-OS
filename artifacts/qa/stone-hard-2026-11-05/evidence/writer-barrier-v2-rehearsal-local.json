@@ -1,0 +1,746 @@
+{
+ "title": "A1 writer barrier v2 + capture + operator preflight: disposable LOCAL rehearsal evidence",
+ "NOT_STAGING_EVIDENCE": true,
+ "run_utc": "2026-11-08T14:27:52Z",
+ "environment": {
+  "postgres": "16.15 local throwaway cluster (staging reports 18.6: NOT rehearsed)",
+  "app": "real API, APP_ENV=production, UID 10001",
+  "app_roles_tested": [
+   "superuser (worst case)",
+   "non-superuser"
+  ],
+  "alembic_head": "a5f6b7c8d9e0",
+  "data": "synthetic only",
+  "pg18_client": "unavailable in this environment (PGDG blocked); the version rule was exercised with the real PG16 client"
+ },
+ "totals": {
+  "checks": 117,
+  "failed": 0
+ },
+ "checks": [
+  {
+   "check": "control: API mutation succeeds before the barrier",
+   "passed": true,
+   "status": 201
+  },
+  {
+   "check": "control: upload succeeds and writes files before the barrier",
+   "passed": true,
+   "files": 3
+  },
+  {
+   "check": "control: direct DB write succeeds as simo_super before the barrier",
+   "passed": true
+  },
+  {
+   "check": "control: direct DB write succeeds as simo_limited before the barrier",
+   "passed": true
+  },
+  {
+   "check": "control: automation job entrypoint runs before the barrier",
+   "passed": true,
+   "exit": 0
+  },
+  {
+   "check": "negative: wrong cluster system identifier is refused",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "negative: --confirm-environment production is refused",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "negative: record file inside the repository is refused",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "negative: refused engage left the database untouched",
+   "passed": true,
+   "state": {
+    "setting": null,
+    "engaged": false,
+    "lock_timeout": null
+   }
+  },
+  {
+   "check": "concurrency: engage waited for the in-flight transaction (never killed it) and then took the write fence",
+   "passed": true,
+   "drain": {
+    "cutoff": "2026-11-08T14:24:28.818574+00:00",
+    "database": "rehearsal",
+    "inflight_waited_for": 2,
+    "locked_tables": 54,
+    "terminated_idle": 4
+   },
+   "seconds": 2.91
+  },
+  {
+   "check": "concurrency: the in-flight transaction committed intact",
+   "passed": true
+  },
+  {
+   "check": "concurrency: every acknowledged write is present (no loss)",
+   "passed": true,
+   "acknowledged": 102,
+   "present": 104
+  },
+  {
+   "check": "concurrency: no request STARTED after the barrier left a row",
+   "passed": true,
+   "leaked_after": 0
+  },
+  {
+   "check": "FINDING: a request straddling the cutoff can be half-applied (row saved, follow-up write refused, client sees an error)",
+   "passed": true,
+   "straddling_requests_with_error_but_saved_row": 2,
+   "of_which_missing_their_activity_log_row": 2,
+   "note": "database stays internally consistent; engage when staging is idle and take T0 only after the drain"
+  },
+  {
+   "check": "concurrency: no write started after the barrier succeeded",
+   "passed": true,
+   "attempts_after_barrier": 6,
+   "statuses": [
+    500
+   ],
+   "slowest": [
+    [
+     1.1,
+     500
+    ],
+    [
+     1.1,
+     500
+    ],
+    [
+     1.1,
+     500
+    ],
+    [
+     1.1,
+     500
+    ]
+   ],
+   "engage_seconds": 2.9
+  },
+  {
+   "check": "concurrency: the load was real (writes succeeded before the barrier)",
+   "passed": true,
+   "acknowledged_before": 102,
+   "unknown": 0
+  },
+  {
+   "check": "barrier: direct DB write rejected for simo_super (no-op and real INSERT), reads work",
+   "passed": true,
+   "result": {
+    "session_read_only": true,
+    "noop_write_rejected": true,
+    "noop_rejected_by": "LockNotAvailable",
+    "read_works": true,
+    "real_write_rejected": true,
+    "ok": true
+   }
+  },
+  {
+   "check": "barrier: direct DB write rejected for simo_limited (no-op and real INSERT), reads work",
+   "passed": true,
+   "result": {
+    "session_read_only": true,
+    "noop_write_rejected": true,
+    "noop_rejected_by": "LockNotAvailable",
+    "read_works": true,
+    "real_write_rejected": true,
+    "ok": true
+   }
+  },
+  {
+   "check": "barrier: API mutation rejected",
+   "passed": true,
+   "status": 500
+  },
+  {
+   "check": "reads: GET /api/v1/customers still 200",
+   "passed": true,
+   "status": 200
+  },
+  {
+   "check": "reads: GET /api/v1/documents still 200",
+   "passed": true,
+   "status": 200
+  },
+  {
+   "check": "reads: GET /api/v1/auth/me still 200",
+   "passed": true,
+   "status": 200
+  },
+  {
+   "check": "reads: /health still 200",
+   "passed": true
+  },
+  {
+   "check": "reads: /ready still 200",
+   "passed": true
+  },
+  {
+   "check": "informational: fresh login during the barrier",
+   "passed": true,
+   "status": 200,
+   "note": "log in BEFORE the window; tokens already issued keep working for reads"
+  },
+  {
+   "check": "barrier: denied attempts left the database byte-identical",
+   "passed": true,
+   "differences": []
+  },
+  {
+   "check": "FINDING: with the DB barrier alone, a rejected upload still leaves an orphan FILE (uploads layer is mandatory)",
+   "passed": true,
+   "status": 500,
+   "orphan_files": 1
+  },
+  {
+   "check": "negative: uploads probe refuses to run as root (root would bypass permissions)",
+   "passed": true
+  },
+  {
+   "check": "control: before freezing, the uploads probe correctly FAILS (writes still possible)",
+   "passed": true,
+   "exit": 5
+  },
+  {
+   "check": "barrier: actual new-file write and existing-file write-open rejected, reads work",
+   "passed": true,
+   "result": {
+    "euid": 10001,
+    "existing_file_unchanged": true,
+    "existing_file_write_rejected": true,
+    "new_file_rejected": true,
+    "ok": true,
+    "read_works": true
+   }
+  },
+  {
+   "check": "barrier: API upload rejected and NO file left behind",
+   "passed": true,
+   "status": 500,
+   "differences": []
+  },
+  {
+   "check": "reads: existing document still downloads with identical bytes while frozen",
+   "passed": true,
+   "status": 200
+  },
+  {
+   "check": "barrier: a job-style writer using the app's own SessionLocal is rejected",
+   "passed": true,
+   "exit": 1
+  },
+  {
+   "check": "informational: app.jobs.automations during the barrier",
+   "passed": true,
+   "exit": 0,
+   "note": "exit code only; the content fingerprint below proves nothing changed"
+  },
+  {
+   "check": "informational: app.jobs.follow_up during the barrier",
+   "passed": true,
+   "exit": 0,
+   "note": "exit code only; the content fingerprint below proves nothing changed"
+  },
+  {
+   "check": "informational: app.jobs.trial_reminders during the barrier",
+   "passed": true,
+   "exit": 0,
+   "note": "exit code only; the content fingerprint below proves nothing changed"
+  },
+  {
+   "check": "barrier: jobs changed nothing (content fingerprint identical)",
+   "passed": true,
+   "differences": []
+  },
+  {
+   "check": "monitor: continuous watch over an idle barrier reports clean",
+   "passed": true,
+   "out": "{\n  \"samples\": 4,\n  \"watch\": \"clean\"\n}"
+  },
+  {
+   "check": "HAZARD: an API restart during the freeze crash-loops on the production upload probe",
+   "passed": true,
+   "exit": 3
+  },
+  {
+   "check": "reversal: uploads thaw restores recorded modes with NO content/metadata drift",
+   "passed": true,
+   "result": {
+    "drift": [],
+    "no_drift": true,
+    "restored_entries": 4
+   }
+  },
+  {
+   "check": "reversal: database setting removed",
+   "passed": true,
+   "release": {
+    "database": "rehearsal",
+    "evicted_read_only_sessions": 5,
+    "released": true
+   }
+  },
+  {
+   "check": "reversal: database is byte-identical to its state at barrier time (nothing lost or altered)",
+   "passed": true,
+   "differences": []
+  },
+  {
+   "check": "reversal: uploads are byte-identical to their pre-barrier state",
+   "passed": true
+  },
+  {
+   "check": "reversal: API mutation works again with no restart",
+   "passed": true,
+   "status": 201
+  },
+  {
+   "check": "reversal: uploads work again",
+   "passed": true,
+   "status": 201
+  },
+  {
+   "check": "reversal: a second release is a safe no-op",
+   "passed": true
+  },
+  {
+   "check": "refusal: default engage refuses while a transaction is open (exit 6) and changes nothing",
+   "passed": true,
+   "exit": 6,
+   "stderr": "{\"refused\": \"NOT_QUIET: active or in-transaction sessions are present; not engaging\", \"detail\": [{\"pid\": 2892, \"state\": \"idle in transaction\", \"application\": \"p"
+  },
+  {
+   "check": "negative: an undrainable in-flight transaction => DRAIN_TIMEOUT (exit 3)",
+   "passed": true,
+   "exit": 3
+  },
+  {
+   "check": "negative: the in-flight transaction was not terminated and committed intact",
+   "passed": true
+  },
+  {
+   "check": "negative: after the timeout the barrier is still engaged (fail closed)",
+   "passed": true
+  },
+  {
+   "check": "negative: engaging an already-engaged database is refused",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "recovery: an undrained barrier is releasable",
+   "passed": true
+  },
+  {
+   "check": "FENCED: a superuser that overrides read-only cannot INSERT, UPDATE, DELETE, TRUNCATE, ALTER or DROP",
+   "passed": true,
+   "attempts": {
+    "INSERT INTO barrier_probe(note) VALUES ('rogue')": "LockNotAvailable",
+    "UPDATE barrier_probe SET note = 'x'": "LockNotAvailable",
+    "DELETE FROM barrier_probe": "LockNotAvailable",
+    "TRUNCATE barrier_probe": "LockNotAvailable",
+    "ALTER TABLE barrier_probe ADD COLUMN z int": "LockNotAvailable",
+    "DROP TABLE barrier_probe": "LockNotAvailable",
+    "INSERT with lock_timeout=0 (would wait forever)": "QueryCanceled"
+   },
+   "locked_tables": 2
+  },
+  {
+   "check": "FENCED: content fingerprint identical after the override attempts",
+   "passed": true
+  },
+  {
+   "check": "monitoring: the non-mutating override probe proves the fence (exit 0)",
+   "passed": true,
+   "out": {
+    "noop_rejected_by": "LockNotAvailable",
+    "noop_write_rejected": true,
+    "ok": true,
+    "override": {
+     "ok": true,
+     "override_write_fenced": true
+    },
+    "read_works": true,
+    "session_read_only": true
+   }
+  },
+  {
+   "check": "monitoring: fenced state is clean (locks held, no counters moved)",
+   "passed": true,
+   "sample": {
+    "holder_locks": 2,
+    "table_count": 2
+   }
+  },
+  {
+   "check": "RESIDUAL: an override session can still create a NEW table",
+   "passed": true
+  },
+  {
+   "check": "detection: monitor and fingerprint both flag the new table",
+   "passed": true,
+   "problems": [
+    "a new table appeared (created through the read-only default)"
+   ],
+   "differences": [
+    "table public.sneaky differs"
+   ]
+  },
+  {
+   "check": "detection: losing the lock holder is reported within one sample",
+   "passed": true,
+   "problems": [
+    "write-fence lock holder is missing or incomplete",
+    "a new table appeared (created through the read-only default)"
+   ]
+  },
+  {
+   "check": "negative: release refuses a record that belongs to another database",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "emergency: release works with the record destroyed, restores writes and leaves no holder",
+   "passed": true
+  },
+  {
+   "check": "negative: a pre-existing lock_timeout of unknown origin is not adopted",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "negative: --allow-busy is refused for staging",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "emergency: freeze blocks writes; emergency thaw restores them without a state file",
+   "passed": true,
+   "result": {
+    "write_while_frozen": false,
+    "write_after_emergency_thaw": true
+   }
+  },
+  {
+   "check": "monitor: violation detector flags lifted barrier, stale RW session and write counters",
+   "passed": true
+  },
+  {
+   "check": "STOP: uploads still writable (database barrier alone is not enough)",
+   "passed": true,
+   "reason": "preflight: uploads are not frozen: 5 entries still writable",
+   "quarantined": true
+  },
+  {
+   "check": "REFUSED: window longer than 30 minutes",
+   "passed": true,
+   "reason": "window must be positive and at most 30 minutes"
+  },
+  {
+   "check": "STOP: window already expired",
+   "passed": true,
+   "reason": "preflight: the approved window has expired",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: window not yet open",
+   "passed": true,
+   "reason": "preflight: the approved window has not opened yet",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: fewer than 2 minutes remain",
+   "passed": true,
+   "reason": "preflight: less than 2 minutes of the window remain; do not start",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: wrong cluster",
+   "passed": true,
+   "reason": "preflight: cluster identity does not match the approved target",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: barrier not recorded as engaged",
+   "passed": true,
+   "reason": "preflight: the writer barrier is not recorded as engaged and drained for this database",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: insufficient free disk",
+   "passed": true,
+   "reason": "preflight: insufficient free disk: 30687580160 bytes free, 11402539000000000 required",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: pg_dump older than the server",
+   "passed": true,
+   "reason": "preflight: pg_dump is older than the server; use a client of the same major version",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: pg_dump missing",
+   "passed": true,
+   "reason": "preflight: pg_dump is not usable",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: stray idle-in-transaction session",
+   "passed": true,
+   "reason": "preflight: 1 unexpected active or in-transaction session(s)",
+   "quarantined": true
+  },
+  {
+   "check": "REFUSED: world-readable output directory",
+   "passed": true
+  },
+  {
+   "check": "REFUSED: non-empty output directory",
+   "passed": true
+  },
+  {
+   "check": "REFUSED: output directory inside the repository",
+   "passed": true
+  },
+  {
+   "check": "A1: capture verified, T0 equals T1, four distinct independently computed hashes",
+   "passed": true,
+   "seconds": 3.2,
+   "files": [
+    "RESULT.json",
+    "correlation.json",
+    "dump.pgdump",
+    "uploads.manifest.json",
+    "uploads.tar"
+   ]
+  },
+  {
+   "check": "A1: out-of-band hash record matches a fresh sha256sum of every artifact",
+   "passed": true
+  },
+  {
+   "check": "A1: artifacts are owner-read-only and the working copy of customer files was removed",
+   "passed": true
+  },
+  {
+   "check": "A1: correlation record binds both digests, window, barrier cutoff and scope limits",
+   "passed": true,
+   "alembic": "a5f6b7c8d9e0",
+   "uploads": {
+    "bytes": 276,
+    "files": 4
+   },
+   "rows": 1485
+  },
+  {
+   "check": "A1: dump restores into a scratch database with an identical content fingerprint (local rehearsal only)",
+   "passed": true,
+   "differences": [],
+   "stderr": ""
+  },
+  {
+   "check": "A1: uploads archive extracts to a tree identical to the live manifest",
+   "passed": true
+  },
+  {
+   "check": "A1: capture changed neither database nor uploads",
+   "passed": true
+  },
+  {
+   "check": "STOP: an upload appears mid-capture",
+   "passed": true,
+   "reason": "uploads: the copied uploads do not match the live manifest (transfer or source change)",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: the partial dump was quarantined, not deleted",
+   "passed": true
+  },
+  {
+   "check": "STOP: archive corrupted after creation",
+   "passed": true,
+   "reason": "verify: archive contents do not match the manifest (missing, extra or altered file)",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: SIGTERM mid-capture",
+   "passed": true,
+   "reason": "interrupted: received SIGTERM",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: the write-fence holder is killed mid-capture",
+   "passed": true,
+   "reason": "uploads: barrier violated: write-fence lock holder is missing or incomplete",
+   "quarantined": true
+  },
+  {
+   "check": "reversal after A1: thaw detects the simulated intruder's directory change and no content drift",
+   "passed": true,
+   "result": {
+    "drift": [
+     ".: directory changed"
+    ],
+    "no_drift": false,
+    "restored_entries": 5
+   }
+  },
+  {
+   "check": "reversal after A1: database barrier removed",
+   "passed": true
+  },
+  {
+   "check": "reversal after A1: normal writes work again",
+   "passed": true
+  },
+  {
+   "check": "helper: pg_restore listing parser finds TABLE DATA entries",
+   "passed": true
+  },
+  {
+   "check": "helper: version parser",
+   "passed": true
+  },
+  {
+   "check": "helper: tar extraction refuses a path-traversal member",
+   "passed": true
+  },
+  {
+   "check": "operator path: freeze, probe, read-only manifest and thaw all work when piped to `python3 -` as the app user",
+   "passed": true,
+   "exits": [
+    0,
+    0,
+    0
+   ],
+   "stderr": ""
+  },
+  {
+   "check": "refusal: engage under live write load exits 6 (NOT_QUIET), touches nothing, and users are not disturbed",
+   "passed": true,
+   "exit": 6,
+   "writes_after_refusal": 102,
+   "statuses": [
+    201
+   ]
+  },
+  {
+   "check": "dirty engage: a write landing between the quiet check and the cutoff is detected (exit 7, status engaged-dirty)",
+   "passed": true,
+   "status": "engaged-dirty"
+  },
+  {
+   "check": "dirty engage: A1 capture refuses a barrier that is not cleanly engaged",
+   "passed": true
+  },
+  {
+   "check": "recovery: a dirty barrier releases cleanly (settings gone, no holder)",
+   "passed": true
+  },
+  {
+   "check": "recovery: after a clean quiet period the retry engages with a verified quiet period and releases again",
+   "passed": true
+  },
+  {
+   "check": "STOP: barrier engaged without a verified quiet period",
+   "passed": true,
+   "reason": "preflight: the barrier was engaged without a verified quiet period",
+   "quarantined": true
+  },
+  {
+   "check": "approval gate: every incomplete or wrong approval is refused (exit 2) and nothing is changed",
+   "passed": true,
+   "outcomes": {
+    "no approval file": 2,
+    "template (all null)": 2,
+    "users notified only 2 hours before": 2,
+    "window not open yet": 2,
+    "window longer than 30 minutes": 2,
+    "private storage not approved": 2,
+    "barrier procedure not approved": 2,
+    "different operator": 2
+   }
+  },
+  {
+   "check": "approval gate: A1 capture on staging is refused without approval",
+   "passed": true
+  },
+  {
+   "check": "approval gate: a complete, in-window, correctly-noticed approval lets the (local rehearsal) engage proceed, and it releases",
+   "passed": true,
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "check": "preflight: runs read-only end to end and reports BLOCKED (exit 8) because approval and WAL archiving are absent",
+   "passed": true,
+   "fails": [
+    "WAL archiver state",
+    "owner approval file"
+   ],
+   "unverified": [
+    "pgBackRest base backup + archive continuity"
+   ],
+   "warn": [
+    "railway CLI present"
+   ]
+  },
+  {
+   "check": "preflight: container checks ran as the non-root app user and measured the transfer",
+   "passed": true,
+   "transfer": {
+    "bytes_per_second": 3791268,
+    "estimated_seconds_for_all": 0.0,
+    "budget_seconds": 480.0,
+    "sampled_bytes": 10240,
+    "sampled_seconds": 0.0,
+    "whole_tree_read": true
+   },
+   "container_user": "uid 10001"
+  },
+  {
+   "check": "preflight: database identity is reported for the approval and PITR stays UNVERIFIED without pgBackRest evidence",
+   "passed": true
+  },
+  {
+   "check": "preflight: it changed nothing (no barrier setting, no holder, uploads still writable)",
+   "passed": true
+  },
+  {
+   "check": "preflight: database untouched afterwards",
+   "passed": true
+  },
+  {
+   "check": "PG18 rule on the real code path: a PG16 pg_dump/pg_restore against a PG18 server is FAIL (exit 8)",
+   "passed": true,
+   "detail": "server 18, pg_dump 16, pg_restore 16: pg_dump refuses to dump a newer server; install the matching client in WSL2",
+   "note": "rule exercised with a real PG16 client; no real PG18 client or server was available here"
+  },
+  {
+   "check": "same code path with a matching major version passes",
+   "passed": true
+  },
+  {
+   "check": "preflight: a valid approval file turns the approval check to PASS",
+   "passed": true
+  },
+  {
+   "check": "preflight: an output directory inside a cloud-synced folder is FAIL",
+   "passed": true,
+   "exit": 8
+  },
+  {
+   "check": "preflight: storage encryption is never assumed (FAIL until attested)",
+   "passed": true
+  }
+ ]
+}
