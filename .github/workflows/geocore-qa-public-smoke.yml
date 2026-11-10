@@ -1,0 +1,50 @@
+name: GeoCore isolated QA public smoke
+
+on:
+  push:
+    branches:
+      - qa/geocore-closure-20261105
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-public-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Verify isolated QA public endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://geocore-api-qa-acceptance.up.railway.app"
+          WEB="https://geocore-web-qa-acceptance.up.railway.app"
+          # Only this isolated synthetic-data acceptance environment is authorised.
+          [[ "$API" == "https://geocore-api-qa-acceptance.up.railway.app" ]]
+          [[ "$WEB" == "https://geocore-web-qa-acceptance.up.railway.app" ]]
+          mkdir -p qa-public-smoke
+          : > qa-public-smoke/results.txt
+          check() {
+            local label="$1" url="$2"
+            local code
+            code="$(curl --silent --show-error --location --max-time 30 --retry 3 --retry-delay 2 --output /dev/null --write-out '%{http_code}' "$url")"
+            printf '%s status=%s\n' "$label" "$code" | tee -a qa-public-smoke/results.txt
+            if [[ "$code" != "200" ]]; then
+              echo "STOP: $label did not return HTTP 200"
+              exit 1
+            fi
+          }
+          check api_health "$API/health"
+          check api_ready "$API/ready"
+          check frontend_home "$WEB/"
+          check frontend_login "$WEB/login"
+
+      - name: Retain redacted HTTP status evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geocore-isolated-qa-public-smoke
+          path: qa-public-smoke/results.txt
+          retention-days: 7
+          if-no-files-found: warn
