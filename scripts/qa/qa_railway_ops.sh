@@ -57,9 +57,11 @@ wait_for_new_deployment() {  # wait_for_new_deployment <previous-id> [timeout-se
 provision_script_sh() {  # the script run by the pre-deploy step; reads its inputs from service variables
   cat <<'SH'
 set -e
+# A value stored through the CLI may carry a trailing newline; it must never become part of a password.
+clean() { printf '%s' "$1" | tr -d '\r\n'; }
 echo "$QA_PROVISION_PY_B64" | base64 -d > /tmp/qa_provision.py
-SYNTHETIC_OWNER_PASSWORD="$QA_OWNER_A_PW" python - --email "$QA_OWNER_A_EMAIL" --company "$QA_OWNER_A_COMPANY" --confirm-environment acceptance --idempotent < /tmp/qa_provision.py
-SYNTHETIC_OWNER_PASSWORD="$QA_OWNER_B_PW" python - --email "$QA_OWNER_B_EMAIL" --company "$QA_OWNER_B_COMPANY" --confirm-environment acceptance --idempotent < /tmp/qa_provision.py
+SYNTHETIC_OWNER_PASSWORD="$(clean "$QA_OWNER_A_PW")" python - --email "$(clean "$QA_OWNER_A_EMAIL")" --company "$(clean "$QA_OWNER_A_COMPANY")" --confirm-environment acceptance --idempotent --verify-login < /tmp/qa_provision.py
+SYNTHETIC_OWNER_PASSWORD="$(clean "$QA_OWNER_B_PW")" python - --email "$(clean "$QA_OWNER_B_EMAIL")" --company "$(clean "$QA_OWNER_B_COMPANY")" --confirm-environment acceptance --idempotent --verify-login < /tmp/qa_provision.py
 rm -f /tmp/qa_provision.py
 SH
 }

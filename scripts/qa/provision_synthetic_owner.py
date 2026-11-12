@@ -65,6 +65,8 @@ def main(argv=None) -> int:
     parser.add_argument("--company", required=True)
     parser.add_argument("--name", default="Synthetic Acceptance Owner")
     parser.add_argument("--confirm-environment", required=True, choices=["staging", "acceptance", "local"])
+    parser.add_argument("--verify-login", action="store_true",
+                        help="after provisioning, authenticate with the same credentials and exit 3 if that fails")
     parser.add_argument("--idempotent", action="store_true",
                         help="succeed without changes when this e-mail already exists (a pre-deploy step must never fail a later redeploy)")
     args = parser.parse_args(argv)
@@ -97,17 +99,29 @@ def main(argv=None) -> int:
             tenant, user = auth_service.signup(
                 db, SignupRequest(company_name=args.company, name=args.name, email=args.email, password=password)
             )
+            created = True
         except EmailAlreadyRegisteredError:
-            if args.idempotent:
-                db.rollback()
-                print(f"already provisioned in {env}; nothing changed")
-                return 0
-            raise
-        user.email_verified_at = datetime.now(timezone.utc)
-        db.commit()
-        print(f"provisioned tenant {tenant.id} in {env}")
+            if not args.idempotent:
+                raise
+            db.rollback()
+            created = False
+            print(f"already provisioned in {env}; nothing changed")
+        if created:
+            user.email_verified_at = datetime.now(timezone.utc)
+            db.commit()
+            print(f"provisioned tenant {tenant.id} in {env}")
     finally:
         db.close()
+    if args.verify_login:
+        db = SessionLocal()
+        try:
+            who = auth_service.authenticate(db, args.email, password)
+            if who is None or who.email_verified_at is None:
+                print("VERIFY FAILED: these credentials do not authenticate a verified user", file=sys.stderr)
+                return 3
+            print("verified: credentials authenticate a verified owner")
+        finally:
+            db.close()
     return 0
 
 
