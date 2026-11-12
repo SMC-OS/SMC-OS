@@ -10,6 +10,8 @@ QA_GQL="https://backboard.railway.com/graphql/v2"
 QA_API_SVC="40d0cad3-0c01-467a-910e-6c9f818fd2bf"
 QA_ENV="f948241d-446f-43ed-bff0-5d12decffd50"
 QA_ORIG_PREDEPLOY='python -m app.core.runtime_check && alembic upgrade head && alembic current'
+# Appended for provisioning only. The markers print variable LENGTHS (never values) so a silent no-op is visible.
+QA_PROVISION_SUFFIX=' && echo "QA_PROVISION start sh_len=${#QA_PROVISION_SH_B64} py_len=${#QA_PROVISION_PY_B64} pw_a_len=${#QA_OWNER_A_PW}" && echo "$QA_PROVISION_SH_B64" | base64 -d | sh && echo "QA_PROVISION done"'
 
 gql() {  # gql '<query>' '<variables-json>'
   local body
@@ -113,7 +115,7 @@ deployment_log_summary() {  # deployment_log_summary <deployment-id>: only lines
   for flag in --build --deployment; do
     echo "--- logs $flag"
     railway logs "$id" "$flag" --service geocore-api-qa --environment "$QA_ENV" --lines 400 2>&1 \
-      | grep -E "provision|already provisioned|REFUSED|Running upgrade|alembic|runtime_check|Traceback|Error|error|Uvicorn|startup|\(head\)" | cut -c1-220 | head -25 || true
+      | grep -E "QA_PROVISION|provision|already provisioned|REFUSED|Running upgrade|alembic|runtime_check|Traceback|Error|error|Uvicorn|startup|\(head\)" | cut -c1-220 | head -25 || true
   done
 }
 

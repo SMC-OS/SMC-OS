@@ -122,8 +122,8 @@ jobs:
           printf '%s' "$PW_A" | set_qa_var QA_OWNER_A_PW
           printf '%s' "stone-gate-other-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_B_EMAIL
           printf '%s' "QA acceptance B $RUN" | set_qa_var QA_OWNER_B_COMPANY
-          predeploy_set "$QA_ORIG_PREDEPLOY"' && echo "$QA_PROVISION_SH_B64" | base64 -d | sh'
-          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY"' && echo "$QA_PROVISION_SH_B64" | base64 -d | sh' ]]
+          predeploy_set "$QA_ORIG_PREDEPLOY$QA_PROVISION_SUFFIX"
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY$QA_PROVISION_SUFFIX" ]]
           read -r PREV _ _ < <(latest_deployment)
           # `railway deployment redeploy` replays the existing deployment's snapshot and would NOT run the new
           # pre-deploy step. A variable change creates a NEW deployment from the current configuration.
