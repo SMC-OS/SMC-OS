@@ -68,10 +68,51 @@ set_qa_var() {  # set_qa_var KEY  (value on stdin; never on a command line)
 }
 
 remove_temp_vars() {
+  # `railway variable delete` has no --skip-deploys flag: each delete starts a deployment, so callers must
+  # wait_for_stable_success afterwards. Errors are reported, never swallowed.
   local k rc=0
   for k in "${QA_TEMP_VARS[@]}"; do
-    railway variable delete "$k" --service geocore-api-qa --environment "$QA_ENV" --skip-deploys >/dev/null 2>&1 || true
+    railway variable delete "$k" --service geocore-api-qa --environment "$QA_ENV" >/dev/null 2>&1 || echo "delete $k: not present or failed"
   done
   railway variable list --service geocore-api-qa --environment "$QA_ENV" --json 2>/dev/null | jq -e 'keys | map(select(startswith("QA_"))) | length == 0' >/dev/null || rc=1
   return $rc
+}
+
+wait_for_stable_success() {  # latest deployment SUCCESS and unchanged for 60s; wait_for_stable_success [timeout-seconds]
+  local deadline=$(( $(date +%s) + ${1:-900} )) last="" since=0 id status commit
+  while (( $(date +%s) < deadline )); do
+    read -r id status commit < <(latest_deployment)
+    if [[ "$status" == "SUCCESS" ]]; then
+      if [[ "$id" == "$last" ]]; then
+        (( $(date +%s) - since >= 60 )) && { echo "stable deployment $id SUCCESS commit=$commit"; return 0; }
+      else
+        last="$id"; since=$(date +%s)
+      fi
+    else
+      last=""
+      [[ "$status" == "FAILED" || "$status" == "CRASHED" ]] && { echo "latest deployment $id is $status"; return 1; }
+    fi
+    sleep 10
+  done
+  echo "timed out waiting for a stable successful deployment"; return 1
+}
+
+wait_for_ready() {  # wait_for_ready <base-url> [timeout-seconds]; prints the status codes seen
+  local deadline=$(( $(date +%s) + ${2:-240} )) code seen=""
+  while (( $(date +%s) < deadline )); do
+    code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' "$1/ready" 2>/dev/null || echo 000)"
+    seen="$seen $code"
+    [[ "$code" == "200" ]] && { echo "ready after:$seen"; return 0; }
+    sleep 6
+  done
+  echo "not ready; saw:$seen"; return 1
+}
+
+deployment_log_summary() {  # deployment_log_summary <deployment-id>: only lines that cannot contain secrets
+  local id="$1"
+  for flag in --build --deployment; do
+    echo "--- logs $flag"
+    railway logs "$id" "$flag" --service geocore-api-qa --environment "$QA_ENV" --lines 400 2>&1 \
+      | grep -E "provision|already provisioned|REFUSED|Running upgrade|alembic|runtime_check|Traceback|Error|error|Uvicorn|startup|\(head\)" | cut -c1-220 | head -25
+  done
 }
