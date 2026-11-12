@@ -138,7 +138,7 @@ def header(h, key):
 
 
 def pdf_reference(h):
-    m = re.search(r'filename="([^"]+)\\.pdf"', header(h, "Content-Disposition"))
+    m = re.search(r'filename="([^"]+)\.pdf"', header(h, "Content-Disposition"))
     return m.group(1) if m else None
 
 
