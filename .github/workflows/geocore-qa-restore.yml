@@ -26,7 +26,7 @@ jobs:
     env:
       RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
-      INSPECT_DEPLOYMENT: 4091b064-609e-40dd-b78d-1df687b4c9c9
+      INSPECT_DEPLOYMENT: 3d7dbc4a-c834-4d75-9d62-fffc87915b20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,6 +38,16 @@ jobs:
           set -uo pipefail
           source scripts/qa/qa_railway_ops.sh
           deployment_log_summary "$INSPECT_DEPLOYMENT"
+      - name: Pre-deploy configuration the inspected deployment actually used, and raw log head
+        shell: bash
+        run: |
+          set -uo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          echo "== deployment meta: paths mentioning pre-deploy / start command (values are commands, not secrets)"
+          gql 'query($id:String!){ deployment(id:$id){ id status meta } }' "$(jq -nc --arg id "$INSPECT_DEPLOYMENT" '{id:$id}')" \
+            | jq -r '.data.deployment.meta as $m | ($m // {}) | [paths(scalars) as $p | select(($p|map(tostring)|join(".")) | test("preDeploy|startCommand";"i")) | "\($p|map(tostring)|join(".")) = \(getpath($p))"] | .[]' 2>&1 | cut -c1-300 | head -12
+          echo "== raw deployment log head (provisioning prints no secrets)"
+          railway logs "$INSPECT_DEPLOYMENT" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 120 2>&1 | cut -c1-200 | head -45 || true
       - name: Restore configuration and remove temporary variables
         shell: bash
         run: |
