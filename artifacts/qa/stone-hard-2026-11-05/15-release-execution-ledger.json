@@ -89,11 +89,15 @@
         {
           "env": "isolated_qa",
           "what": "Workspace B denied on A's customer, project, quote, quote PDF, approve, document read/upload and project-on-customer; lists exclude A's rows; anonymous refused. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Workspace B denied on costs, financial summary, messages, variations (read/approve/PDF), requirements, workflow, tasks, users, invitations, quotes, PDFs, documents, portal; lists exclude A's rows; anonymous refused. GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
         }
       ],
-      "status": "UNKNOWN",
-      "owner": "Agent after QA access",
-      "remaining": "Portal, financials, variations, messages and procurement beyond the PO surface not yet checked on deployed QA.",
+      "status": "VERIFIED",
+      "owner": "Agent",
+      "remaining": "Re-run on shared staging only inside an approved window.",
       "blocks_initial_release": true
     },
     {
@@ -107,11 +111,15 @@
         {
           "env": "local",
           "what": "tests/test_role_permission_matrix.py: all 150 operations as Owner and Staff, committed snapshot (122 both allowed, 25 owner-only, 3 internal-token endpoints denied to all)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Deployed: all 28 owner-only operations in the matrix refuse Staff (403). Staff can approve quotes, variations and POs and write the project cost ledger with no limit or second approver."
         }
       ],
       "status": "UNKNOWN",
-      "owner": "Owner (decision) then agent",
-      "remaining": "Owner reviews the snapshot, in particular that Staff may approve purchase orders, quotes and variations and receive deliveries. Then run on the deployed QA build.",
+      "owner": "Owner (decision)",
+      "remaining": "OWNER DECISION REQUIRED: confirm Staff may approve quotes, variations, purchase orders and write costs without a limit, or require Owner approval above a threshold.",
       "blocks_initial_release": true
     },
     {
@@ -189,11 +197,15 @@
         {
           "env": "isolated_qa",
           "what": "Customer and linked project created over the deployed API; cross-tenant read/create denied. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Customer edit, project assignment, Staff edit of assigned project, task assigned and completed by Staff, visible to Owner. GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
         }
       ],
-      "status": "UNKNOWN",
-      "owner": "Agent after QA access",
-      "remaining": "UI journeys (edit, assign, tasks, completion) and Staff role on deployed QA not yet run.",
+      "status": "VERIFIED",
+      "owner": "Agent",
+      "remaining": "Deployed UI journeys beyond the eight materials tests rely on CI Playwright (local build).",
       "blocks_initial_release": true
     },
     {
@@ -211,11 +223,15 @@
         {
           "env": "isolated_qa",
           "what": "Quote created with two lines, £50 discount and 20% VAT: net £750.00, VAT £150.00, total £900.00, stable on re-read, approved. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Draft amendment saved twice with stable total, reopened, approved; approved quote refused further PATCH (409). GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
         }
       ],
-      "status": "UNKNOWN",
-      "owner": "Agent after QA access",
-      "remaining": "Amend/reopen/send-email and Staff approval on deployed QA not yet run.",
+      "status": "VERIFIED",
+      "owner": "Owner (decision, non-blocking)",
+      "remaining": "Product decision: approved quotes cannot be amended or reopened (no reopen route); owner to confirm that is acceptable or request a revision workflow.",
       "blocks_initial_release": true
     },
     {
@@ -233,11 +249,15 @@
         {
           "env": "local",
           "what": "Three real invoices generated through the API: Invoice-000001, -000002, -000003 in one workspace (12 Nov)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Per-workspace Invoice-000001 sequence independent for A and B, stable on re-download, 3 concurrent first downloads allocate one number, custom prefix/sequence applied without changing issued invoices. GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
         }
       ],
-      "status": "UNKNOWN",
-      "owner": "Agent after QA access",
-      "remaining": "Confirm a second workspace starts at Invoice-000001 on deployed QA.",
+      "status": "VERIFIED",
+      "owner": "Agent",
+      "remaining": "None.",
       "blocks_initial_release": true
     },
     {
@@ -255,11 +275,15 @@
         {
           "env": "isolated_qa",
           "what": "Deployed quote PDF is a real %PDF document >1.5 KB. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Deployed invoice PDF text extracted: reference and total correct, stable. Visual inspection (rendered at 80 dpi from the identical generator): clean layout, £ renders, fonts embedded (Bitstream Vera; footer uses unembedded Helvetica), no overlap, arithmetic correct. DEFECT: the invoice shows no supplier name/address/company or VAT number, no due date, no payment details or terms."
         }
       ],
-      "status": "UNKNOWN",
-      "owner": "Agent after QA access",
-      "remaining": "Visual inspection of the deployed PDF and invoice numbering per workspace still needed.",
+      "status": "BLOCKED",
+      "owner": "Owner (supplier legal details)",
+      "remaining": "Owner to supply legal supplier details (company number, registered address, VAT number if registered, bank details, payment terms); then add them to the template and re-inspect.",
       "blocks_initial_release": true
     },
     {
@@ -299,11 +323,15 @@
         {
           "env": "ci",
           "what": "Full-system journey in Playwright"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Stone job enquiry > measure_site_visit > quote > approved > deposit > material_ordered_reserved > template > fabrication > qc > installation > snagging > complete via API; materials gate blocked fabrication (409) until PO receipt, then opened; history recorded. General-building workflow also reaches complete. Only the materials gate is configured on the stone template. GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
         }
       ],
-      "status": "UNKNOWN",
-      "owner": "Agent after QA access",
-      "remaining": "Run the full journey on deployed QA.",
+      "status": "VERIFIED",
+      "owner": "Agent",
+      "remaining": "None.",
       "blocks_initial_release": true
     },
     {
@@ -325,11 +353,15 @@
         {
           "env": "isolated_qa",
           "what": "Upload, byte-identical download, .exe refused, cross-tenant upload/download denied, anonymous denied. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Portal scope, revocation, MIME spoofing, cross-tenant denial; expiry proven on the deployed API: backdated link reads 'expired' with no projects/quotes, invoice download refused (container task run 43183932147)."
         }
       ],
-      "status": "UNKNOWN",
-      "owner": "Agent after QA access",
-      "remaining": "Portal scope, revocation, expiry and spoofing on deployed QA not yet run.",
+      "status": "VERIFIED",
+      "owner": "Agent",
+      "remaining": "None for isolated QA.",
       "blocks_initial_release": true
     },
     {
@@ -513,11 +545,15 @@
         {
           "env": "local",
           "what": "Dump restores to a scratch database with an identical content fingerprint (local rehearsal)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "ISOLATED QA drill passed (container task run 43183225488): PG18 client matching server 18.6, pg_dump custom (0.2 s, 306 KB), matched uploads bundle (10 files), restore into a disposable database (2.0 s total with uploads), 53 tables / 3,088 rows / sequences / alembic a5f6b7c8d9e0 identical, all 10 upload files byte-identical, per-tenant counts identical across 17 tenants, database dropped, scratch removed. Limits: tiny data, same server, no PITR/WAL."
         }
       ],
       "status": "BLOCKED",
       "owner": "Operator",
-      "remaining": "Needs the recovery point above and approved scratch resources.",
+      "remaining": "Repeat on shared staging with the real A1 bundle in a new approved window; production later. RTO excludes provisioning a new Postgres service.",
       "blocks_initial_release": true
     },
     {
@@ -541,10 +577,15 @@
         "isolated_qa"
       ],
       "sha": "-",
-      "evidence": [],
-      "status": "UNKNOWN",
-      "owner": "Agent after QA access",
-      "remaining": "No load test has been run. Needs a mixed-workload test on QA and measured limits enforced in the product.",
+      "evidence": [
+        {
+          "env": "isolated_qa",
+          "what": "Bounded test (isolated QA, 30 virtual users max, ~1,500 requests per top step): 5/15/30 VUs, error rate 0, p95 0.27/0.29/0.40 s, p99 up to 2.9 s at 15 VUs (intermittent spike seen in two runs), ~37 rps. Dataset tiny (~3,000 rows, 12 MB)."
+        }
+      ],
+      "status": "VERIFIED",
+      "owner": "Agent",
+      "remaining": "Supported claim limited to <=10 workspaces / <=30 concurrent users on this instance size and small data; larger scale or large datasets not measured; p99 spikes worth monitoring.",
       "blocks_initial_release": true
     },
     {
