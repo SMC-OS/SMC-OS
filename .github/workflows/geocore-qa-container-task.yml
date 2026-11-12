@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: "inspect | drill"
+        description: "inspect | drill | portal_expiry"
         type: choice
-        options: [inspect, drill]
+        options: [inspect, drill, portal_expiry]
         default: inspect
   push:
     branches: [ccr-12966459-skf9q0]
