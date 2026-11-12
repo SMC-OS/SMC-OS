@@ -30,17 +30,17 @@ jobs:
         with:
           persist-credentials: false
       - run: npm install --global @railway/cli@4
-      - name: Probe A - appended '&& false' must FAIL the deployment if the suffix is executed
+      - name: Probe B - 'redeploy --from-source' with an appended '&& false' must FAIL the deployment if the suffix is executed
         shell: bash
         run: |
           set -uo pipefail
           source scripts/qa/qa_railway_ops.sh
           [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || { echo "unexpected starting pre-deploy"; exit 1; }
           echo "PROBE_STARTED=1" >> "$GITHUB_ENV"
-          predeploy_set "$QA_ORIG_PREDEPLOY && echo QA_PROBE_A && false" || exit 1
+          predeploy_set "$QA_ORIG_PREDEPLOY && echo QA_PROBE_B && false" || exit 1
           read -r PREV _ _ < <(latest_deployment)
-          echo "$GITHUB_RUN_ID" | railway variable set QA_PROBE --stdin --service geocore-api-qa --environment "$QA_ENV" >/dev/null
-          result="$(wait_for_new_deployment "$PREV" 900)"; echo "PROBE A result: $result"
+          railway deployment redeploy --service geocore-api-qa --environment "$QA_ENV" --from-source --yes >/dev/null
+          result="$(wait_for_new_deployment "$PREV" 900)"; echo "PROBE B result: $result"
           case "$result" in
             *FAILED*|*CRASHED*) echo "CONCLUSION: the appended step IS executed (a failing suffix failed the deployment)";;
             *SUCCESS*) echo "CONCLUSION: the appended step is NOT executed (a failing suffix still gave SUCCESS)";;
