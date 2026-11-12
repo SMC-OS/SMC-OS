@@ -51,10 +51,11 @@ jobs:
             exit 1
           fi
 
-      - name: Operations scripts from this workflow's own commit
+      - name: Operations scripts from this workflow's own commit (full history, to compare deployed commits)
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Acceptance tests from the deployed candidate commit
         uses: actions/checkout@v4
@@ -90,9 +91,11 @@ jobs:
           grep -Fxq "project: geocore-qa-20261110" qa-identity.txt
           grep -Fxq "environment: acceptance ($QA_ENVIRONMENT_ID)" qa-identity.txt
           for svc in geocore-api-qa geocore-web-qa; do
-            line="$(railway deployment list --service "$svc" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.status) commit=\(.meta.commitHash)"')"
-            echo "$svc: $line" | tee -a qa-identity.txt
-            [[ "$line" == "SUCCESS commit=$EXPECTED_SHA" ]]
+            line="$(railway deployment list --service "$svc" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.status) \(.meta.commitHash)"')"
+            read -r dstatus dcommit <<<"$line"
+            how="$(commit_matches_candidate "$dcommit" "$EXPECTED_SHA")"
+            echo "$svc: $dstatus commit=$dcommit candidate=$EXPECTED_SHA match=$how" | tee -a qa-identity.txt
+            [[ "$dstatus" == "SUCCESS" ]]
           done
           curl -fsS --max-time 30 --retry 3 "$QA_API/health" >/dev/null
           curl -fsS --max-time 30 --retry 3 "$QA_API/ready" >/dev/null

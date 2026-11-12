@@ -113,6 +113,18 @@ deployment_log_summary() {  # deployment_log_summary <deployment-id>: only lines
   for flag in --build --deployment; do
     echo "--- logs $flag"
     railway logs "$id" "$flag" --service geocore-api-qa --environment "$QA_ENV" --lines 400 2>&1 \
-      | grep -E "provision|already provisioned|REFUSED|Running upgrade|alembic|runtime_check|Traceback|Error|error|Uvicorn|startup|\(head\)" | cut -c1-220 | head -25
+      | grep -E "provision|already provisioned|REFUSED|Running upgrade|alembic|runtime_check|Traceback|Error|error|Uvicorn|startup|\(head\)" | cut -c1-220 | head -25 || true
   done
+}
+
+# The QA services track the branch that carries this workflow, so a deployment created by a configuration
+# change builds the branch HEAD, which can be newer than the pinned candidate. That is acceptable only when
+# nothing the API image or web build consumes differs from the candidate; this proves it instead of assuming.
+QA_RUNTIME_PATHS=(app alembic alembic.ini requirements.txt Dockerfile apps packages package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json deploy)
+
+commit_matches_candidate() {  # commit_matches_candidate <deployed-commit> <candidate-commit> (run inside a full clone)
+  [[ "$1" == "$2" ]] && { echo "exact"; return 0; }
+  git cat-file -e "$1^{commit}" 2>/dev/null || return 1
+  git diff --quiet "$2" "$1" -- "${QA_RUNTIME_PATHS[@]}" && { echo "identical-runtime-tree"; return 0; }
+  return 1
 }
