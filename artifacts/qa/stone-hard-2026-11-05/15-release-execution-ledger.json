@@ -85,11 +85,15 @@
         {
           "env": "isolated_qa",
           "what": "Test d8 passed: a second workspace cannot read, receive or link on the first workspace's PO. GitHub Actions run 43172161693 (12 Nov), isolated QA project geocore-qa-20261110 / acceptance"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Workspace B denied on A's customer, project, quote, quote PDF, approve, document read/upload and project-on-customer; lists exclude A's rows; anonymous refused. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
         }
       ],
       "status": "UNKNOWN",
       "owner": "Agent after QA access",
-      "remaining": "Only the PO/receipt surface is proven on isolated QA. Still needed: authenticated cross-tenant reads for customers, projects, quotes, invoices, documents and the portal.",
+      "remaining": "Portal, financials, variations, messages and procurement beyond the PO surface not yet checked on deployed QA.",
       "blocks_initial_release": true
     },
     {
@@ -181,11 +185,15 @@
         {
           "env": "local",
           "what": "QA-PARTIAL-COMMIT: customer creation and its activity record are now one transaction (7 regression tests, 3 fail on the old code)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Customer and linked project created over the deployed API; cross-tenant read/create denied. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
         }
       ],
       "status": "UNKNOWN",
       "owner": "Agent after QA access",
-      "remaining": "Run the journey on the deployed isolated QA build.",
+      "remaining": "UI journeys (edit, assign, tasks, completion) and Staff role on deployed QA not yet run.",
       "blocks_initial_release": true
     },
     {
@@ -199,11 +207,15 @@
         {
           "env": "ci",
           "what": "Backend and Playwright journeys; manual pricing; no auto-generated selling price tests"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Quote created with two lines, £50 discount and 20% VAT: net £750.00, VAT £150.00, total £900.00, stable on re-read, approved. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
         }
       ],
       "status": "UNKNOWN",
       "owner": "Agent after QA access",
-      "remaining": "Run on deployed QA.",
+      "remaining": "Amend/reopen/send-email and Staff approval on deployed QA not yet run.",
       "blocks_initial_release": true
     },
     {
@@ -239,11 +251,15 @@
         {
           "env": "local",
           "what": "Generated and inspected three invoices (A4): totals recomputed independently and equal to the penny (discount £233.75 -> £2,524.50; zero-rated £333.33; VAT rounding £999.99 -> £1,199.99); accents, £, em dash and curly quotes render in an embedded font; long text wraps clear of the amount column; repeat download has identical text; cosmetic: a stray ' ,' after a description ending in a full stop"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Deployed quote PDF is a real %PDF document >1.5 KB. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
         }
       ],
       "status": "UNKNOWN",
       "owner": "Agent after QA access",
-      "remaining": "Repeat on the deployed QA build with the real fonts of that image; quote PDFs from the portal are not yet inspected.",
+      "remaining": "Visual inspection of the deployed PDF and invoice numbering per workspace still needed.",
       "blocks_initial_release": true
     },
     {
@@ -305,11 +321,15 @@
         {
           "env": "local",
           "what": "QA-UPLOAD-ORPHAN fixed: a failed database insert no longer leaves a file, and a file is never removed when the row may exist (3 regression tests)"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Upload, byte-identical download, .exe refused, cross-tenant upload/download denied, anonymous denied. GitHub Actions run 43173096347 (12 Nov), isolated QA, 28/28 API checks (scripts/qa/qa_lifecycle_check.py)"
         }
       ],
       "status": "UNKNOWN",
       "owner": "Agent after QA access",
-      "remaining": "Run on deployed QA; run scripts/qa/uploads_integrity_check.py (read-only: orphan files, missing files, size mismatches) against the real uploads volume during the recovery drill.",
+      "remaining": "Portal scope, revocation, expiry and spoofing on deployed QA not yet run.",
       "blocks_initial_release": true
     },
     {
