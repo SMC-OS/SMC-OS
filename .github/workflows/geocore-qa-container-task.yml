@@ -43,7 +43,7 @@ jobs:
           [[ "$(start_get)" == "$QA_ORIG_START" ]] || { echo "start command is not the original; run the restore workflow first"; exit 1; }
           bundle=""
           if [[ "$TASK" == "drill" ]]; then
-            tar -czf /tmp/drill-bundle.tgz scripts/recovery scripts/qa/qa_recovery_drill.py && bundle=/tmp/drill-bundle.tgz
+            tar --exclude='__pycache__' -czf /tmp/drill-bundle.tgz scripts/recovery scripts/qa/qa_recovery_drill.py && bundle=/tmp/drill-bundle.tgz
           fi
           run_container_task "scripts/qa/container_tasks/$TASK.sh" "$bundle"; task_rc=$?
           restore_qa_config; restore_rc=$?
