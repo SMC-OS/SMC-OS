@@ -88,6 +88,40 @@ def fetch_pg_client(major):
         subprocess.run(["dpkg-deb", "-x", str(deb), str(root / "x")], check=True)
         say(f"client package {pkg} {item['Version']} checksum verified")
     bindir = root / "x" / "usr" / "lib" / "postgresql" / str(major) / "bin"
+    # libpq links Kerberos and LDAP, which the slim runtime image does not ship: resolve just those from Debian main
+    # (HTTPS, SHA-256 from the index), skipping anything already installed, and unpack without root.
+    import lzma
+    deb_base = "https://deb.debian.org/debian"
+    codename = release.split("-")[0]
+    dindex = lzma.decompress(urllib.request.urlopen(f"{deb_base}/dists/{codename}/main/binary-{arch}/Packages.xz", timeout=120).read()).decode()
+    pkgs = {}
+    for block in dindex.split("\n\n"):
+        f = dict(re.findall(r"^([A-Za-z0-9-]+): (.*)$", block, re.M))
+        if "Package" in f:
+            pkgs[f["Package"]] = f
+    def installed(name):
+        out = subprocess.run(["dpkg-query", "-W", "-f=${Status}", name], capture_output=True, text=True).stdout
+        return "install ok installed" in out
+    todo, seen, fetch = ["libgssapi-krb5-2", "libldap2"], set(), []
+    while todo:
+        name = todo.pop()
+        if name in seen or name not in pkgs or installed(name):
+            seen.add(name)
+            continue
+        seen.add(name)
+        fetch.append(pkgs[name])
+        for dep in pkgs[name].get("Depends", "").split(","):
+            first = dep.split("|")[0].strip().split(" ")[0].split(":")[0]
+            if first:
+                todo.append(first)
+    for item in fetch:
+        data = urllib.request.urlopen(f"{deb_base}/{item['Filename']}", timeout=180).read()
+        if hashlib.sha256(data).hexdigest() != item["SHA256"]:
+            raise RuntimeError(f"{item['Package']} checksum mismatch")
+        deb = root / "dep.deb"
+        deb.write_bytes(data)
+        subprocess.run(["dpkg-deb", "-x", str(deb), str(root / "x")], check=True)
+    say(f"runtime libraries unpacked: {sorted(i['Package'] for i in fetch)}")
     libpq_dirs = sorted({str(p.parent) for p in (root / "x").rglob("libpq.so*")})
     # The slim image lacks libpq's own dependencies (Kerberos, LDAP...); the psycopg binary wheel bundles them.
     extra = []
@@ -98,7 +132,8 @@ def fetch_pg_client(major):
             extra.append(str(wheel_libs))
     except ImportError:
         pass
-    return bindir, {"LD_LIBRARY_PATH": ":".join(libpq_dirs + extra)}
+    all_dirs = sorted({str(p.parent) for p in (root / "x").rglob("*.so*")})
+    return bindir, {"LD_LIBRARY_PATH": ":".join(libpq_dirs + all_dirs + extra)}
 
 
 def run(cmd, env_extra=None, **kw):
