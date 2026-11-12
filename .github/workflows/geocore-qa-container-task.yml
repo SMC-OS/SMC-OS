@@ -1,0 +1,51 @@
+name: GeoCore isolated QA container task
+
+# Runs ONE reviewed task inside the isolated QA API container (project geocore-qa-20261110 / acceptance), through the
+# same restorable start-command mechanism as the acceptance workflow. Tasks: inspect (read-only), drill (matched
+# backup/restore rehearsal on disposable resources). The original start command is always restored.
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "inspect | drill"
+        type: choice
+        options: [inspect, drill]
+        default: inspect
+  push:
+    branches: [ccr-12966459-skf9q0]
+    paths: ['.github/workflows/geocore-qa-container-task.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geocore-qa-acceptance
+  cancel-in-progress: false
+
+jobs:
+  task:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      QA_API: https://geocore-api-qa-acceptance.up.railway.app
+      QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+      TASK: ${{ inputs.task || 'inspect' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: npm install --global @railway/cli@4
+      - name: Run the task and always restore QA configuration
+        shell: bash
+        run: |
+          set -uo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] || { echo "start command is not the original; run the restore workflow first"; exit 1; }
+          bundle=""
+          if [[ "$TASK" == "drill" ]]; then
+            tar -czf /tmp/drill-bundle.tgz scripts/recovery scripts/qa/qa_recovery_drill.py && bundle=/tmp/drill-bundle.tgz
+          fi
+          run_container_task "scripts/qa/container_tasks/$TASK.sh" "$bundle"; task_rc=$?
+          restore_qa_config; restore_rc=$?
+          echo "task_rc=$task_rc restore_rc=$restore_rc"
+          exit $(( task_rc != 0 || restore_rc != 0 ))

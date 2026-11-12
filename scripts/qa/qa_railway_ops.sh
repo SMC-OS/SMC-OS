@@ -75,7 +75,11 @@ rm -f /tmp/qa_provision.py
 SH
 }
 
-QA_TEMP_VARS=(QA_PROVISION_PY_B64 QA_PROVISION_SH_B64 QA_OWNER_A_EMAIL QA_OWNER_A_COMPANY QA_OWNER_A_PW QA_OWNER_B_EMAIL QA_OWNER_B_COMPANY QA_OWNER_B_PW)
+# A one-off container task runs in the BACKGROUND after the migration gate, so the API keeps serving while it works.
+# Output lines start with "DRILL|"; scripts must never print credentials.
+QA_TASK_START='sh -c '"'"'python -m app.core.migrate_gate || exit 1; if [ -n "$QA_TASK_SH_B64" ]; then (echo "$QA_TASK_SH_B64" | base64 -d | sh) & fi; exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log'"'"''
+
+QA_TEMP_VARS=(QA_TASK_SH_B64 QA_TASK_TGZ_B64 QA_PROVISION_PY_B64 QA_PROVISION_SH_B64 QA_OWNER_A_EMAIL QA_OWNER_A_COMPANY QA_OWNER_A_PW QA_OWNER_B_EMAIL QA_OWNER_B_COMPANY QA_OWNER_B_PW)
 
 set_qa_var() {  # set_qa_var KEY  (value on stdin; never on a command line)
   railway variable set "$1" --stdin --service geocore-api-qa --environment "$QA_ENV" --skip-deploys >/dev/null
@@ -141,4 +145,33 @@ commit_matches_candidate() {  # commit_matches_candidate <deployed-commit> <cand
   git cat-file -e "$1^{commit}" 2>/dev/null || return 1
   git diff --quiet "$2" "$1" -- "${QA_RUNTIME_PATHS[@]}" && { echo "identical-runtime-tree"; return 0; }
   return 1
+}
+
+run_container_task() {  # run_container_task <script.sh> [tar.gz bundle]; prints the DRILL| lines; returns 0 when the task prints DRILL|DONE
+  local script="$1" bundle="${2:-}" prev id deadline out rc=1
+  read -r prev _ _ < <(latest_deployment)
+  [[ -n "$bundle" ]] && base64 -w0 "$bundle" | set_qa_var QA_TASK_TGZ_B64
+  start_set "$QA_TASK_START" && [[ "$(start_get)" == "$QA_TASK_START" ]] || { echo "could not set task start command"; return 1; }
+  base64 -w0 "$script" | railway variable set QA_TASK_SH_B64 --stdin --service geocore-api-qa --environment "$QA_ENV" >/dev/null
+  wait_for_new_deployment "$prev" 900 || return 1
+  read -r id _ _ < <(latest_deployment)
+  deadline=$(( $(date +%s) + ${QA_TASK_TIMEOUT:-900} ))
+  while (( $(date +%s) < deadline )); do
+    out="$(railway logs "$id" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 2000 2>&1 | grep -a '^DRILL|' || true)"
+    grep -q '^DRILL|DONE' <<<"$out" && { rc=0; break; }
+    grep -q '^DRILL|FAILED' <<<"$out" && break
+    sleep 15
+  done
+  printf '%s\n' "$out" | cut -c1-240
+  return $rc
+}
+
+restore_qa_config() {  # restore the original start command, remove temporary variables, wait for a stable deployment
+  local rc=0
+  start_set "$QA_ORIG_START" || rc=1
+  [[ "$(start_get)" == "$QA_ORIG_START" ]] || { echo "RESTORE FAILED: start command"; rc=1; }
+  remove_temp_vars || { echo "RESTORE FAILED: temporary variables remain"; rc=1; }
+  wait_for_stable_success 1200 || rc=1
+  wait_for_ready "$QA_API" 240 || rc=1
+  return $rc
 }
