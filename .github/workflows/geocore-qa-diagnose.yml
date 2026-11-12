@@ -5,6 +5,11 @@ name: GeoCore isolated QA token diagnostics (read-only)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ccr-12966459-skf9q0
+    paths:
+      - '.github/workflows/geocore-qa-diagnose.yml'
 
 permissions:
   contents: read
