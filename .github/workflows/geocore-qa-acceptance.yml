@@ -46,9 +46,10 @@ jobs:
       EXPECTED_MIGRATION: a5f6b7c8d9e0
       QA_PROJECT_ID: a16eaf0a-b5a5-4e8e-b79e-4d191457638e
       QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
-      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
     steps:
       - name: Stop unless the owner has provided the QA project token
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         shell: bash
         run: |
           if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
@@ -84,8 +85,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter web exec playwright install --with-deps chromium
           npm install --global @railway/cli@4
+          if ! command -v pdftotext >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y poppler-utils
+          fi
 
       - name: Verify project, environment and deployed SHAs (no SSH)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -110,6 +117,8 @@ jobs:
           [[ "$(start_get)" == "$QA_ORIG_START" ]]
 
       - name: Provision two synthetic owners (one-off start-command step; configuration restored in the final step)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -153,6 +162,8 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Browser-session path probe (diagnostic; values redacted)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         continue-on-error: true
         shell: bash
         run: |
@@ -179,7 +190,7 @@ jobs:
           if [[ "${DIAGNOSE:-false}" == "true" ]]; then args="--max-failures=1 --timeout=90000"; fi
           pnpm exec playwright test -c playwright.staging.config.ts --trace off $args
 
-      - name: Deployed lifecycle and cross-tenant API checks (customers, projects, quotes, PDF, documents, isolation)
+      - name: Deployed lifecycle, invoice numbering, quote amendments, PDF text and portal scope
         if: ${{ !cancelled() && env.STAGING_OWNER_EMAIL != '' }}
         shell: bash
         run: python3 scripts/qa/qa_lifecycle_check.py
@@ -197,6 +208,8 @@ jobs:
           done 2>/dev/null | cut -c1-220 | head -260
 
       - name: Restore the original QA configuration and remove temporary variables
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         if: always()
         shell: bash
         run: |
@@ -220,6 +233,7 @@ jobs:
           path: |
             qa-identity.txt
             qa-lifecycle-results.json
+            qa-pdf-evidence/invoice-a.pdf
             candidate/apps/web/staging-acceptance-results/results.json
             candidate/apps/web/staging-acceptance-results/artifacts/**/*.png
           retention-days: 14
