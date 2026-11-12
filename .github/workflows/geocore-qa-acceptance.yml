@@ -2,7 +2,7 @@ name: GeoCore isolated QA authenticated acceptance
 
 # Runs the eight STONE-GATE / DEF-003 browser acceptance tests against the ISOLATED, synthetic-data
 # Railway QA environment (project geocore-qa-20261110, environment acceptance) from a GitHub-hosted
-# runner. Manual only. Never targets shared staging or production: the hosts are fixed below and the
+# runner. Manual dispatch or trusted review-branch workflow changes only. Never targets shared staging or production: the hosts are fixed below and the
 # Playwright config independently refuses anything else.
 #
 # It needs ONE secret that only the owner can create:
@@ -15,11 +15,12 @@ name: GeoCore isolated QA authenticated acceptance
 
 on:
   workflow_dispatch:
-    inputs:
-      ref:
-        description: "Git ref (branch or full SHA) whose acceptance tests to run. The deployed QA build is staging/stone-gate-acceptance-740b6b4."
-        required: true
-        default: "staging/stone-gate-acceptance-740b6b4"
+  push:
+    branches:
+      - ccr-12966459-skf9q0
+      - qa/geocore-closure-20261105
+    paths:
+      - '.github/workflows/geocore-qa-acceptance.yml'
 
 permissions:
   contents: read
@@ -31,9 +32,14 @@ jobs:
     env:
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
       QA_WEB: https://geocore-web-qa-acceptance.up.railway.app
-      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+      EXPECTED_SHA: 7644a222127059991eb8a88e93399ccf02495af9
+      EXPECTED_MIGRATION: a5f6b7c8d9e0
+      QA_PROJECT_ID: a16eaf0a-b5a5-4e8e-b79e-4d191457638e
+      QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
     steps:
       - name: Stop unless the owner has provided the QA project token
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         shell: bash
         run: |
           if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
@@ -43,7 +49,8 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
         with:
@@ -60,6 +67,8 @@ jobs:
           npm install --global @railway/cli@4
 
       - name: Verify the target is the isolated QA environment
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -68,21 +77,26 @@ jobs:
           curl -fsS --max-time 30 --retry 3 "$QA_API/health" >/dev/null
           curl -fsS --max-time 30 --retry 3 "$QA_API/ready" >/dev/null
           # Record, without printing secrets, what is deployed and migrated.
-          railway ssh --service geocore-api-qa --environment acceptance -- sh -c 'printf "railway_env=%s project=%s\n" "$RAILWAY_ENVIRONMENT_NAME" "$RAILWAY_PROJECT_NAME"; printf "git_sha=%s\n" "${RAILWAY_GIT_COMMIT_SHA:-unknown}"; alembic current 2>/dev/null | tail -1' | tee qa-identity.txt
+          railway ssh --project "$QA_PROJECT_ID" --environment "$QA_ENVIRONMENT_ID" --service geocore-api-qa -- sh -c 'printf "railway_env=%s project=%s\n" "$RAILWAY_ENVIRONMENT_NAME" "$RAILWAY_PROJECT_NAME"; printf "git_sha=%s\n" "${RAILWAY_GIT_COMMIT_SHA:-unknown}"; alembic current 2>/dev/null | tail -1' | tee qa-identity.txt
           grep -q "railway_env=acceptance" qa-identity.txt
           grep -q "project=geocore-qa-20261110" qa-identity.txt
+          grep -Fxq "git_sha=$EXPECTED_SHA" qa-identity.txt
+          grep -Eq "^$EXPECTED_MIGRATION[[:space:]]+\\(head\\)$" qa-identity.txt
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
 
       - name: Provision two synthetic owners in separate workspaces
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          RUN="$(date -u +%Y%m%d%H%M%S)"
-          PW_A="$(openssl rand -base64 24 | tr -d '/+=' | head -c 20)Aa1!"
-          PW_B="$(openssl rand -base64 24 | tr -d '/+=' | head -c 20)Bb2!"
+          RUN="$(date -u +%Y%m%d%H%M%S)-${GITHUB_RUN_ATTEMPT}"
+          PW_A="$(openssl rand -hex 16)Aa1!"
+          PW_B="$(openssl rand -hex 16)Bb2!"
           echo "::add-mask::$PW_A"
           echo "::add-mask::$PW_B"
           provision() {  # the image has no scripts/ directory, so the script is piped over stdin
-            railway ssh --service geocore-api-qa --environment acceptance -- \
+            railway ssh --project "$QA_PROJECT_ID" --environment "$QA_ENVIRONMENT_ID" --service geocore-api-qa -- \
               env SYNTHETIC_OWNER_PASSWORD="$2" python - \
               --email "$1" --company "$3" --confirm-environment acceptance < scripts/qa/provision_synthetic_owner.py
           }
