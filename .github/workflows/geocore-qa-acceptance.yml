@@ -179,6 +179,13 @@ jobs:
           if [[ "${DIAGNOSE:-false}" == "true" ]]; then args="--max-failures=1 --timeout=90000"; fi
           pnpm exec playwright test -c playwright.staging.config.ts --trace off $args
 
+      - name: Deployed lifecycle and cross-tenant API checks (customers, projects, quotes, PDF, documents, isolation)
+        if: ${{ !cancelled() && env.STAGING_OWNER_EMAIL != '' }}
+        shell: bash
+        run: python3 scripts/qa/qa_lifecycle_check.py
+        env:
+          QA_API: ${{ env.QA_API }}
+
       - name: On failure, print the page snapshots Playwright captured (text only)
         if: failure()
         shell: bash
@@ -212,6 +219,7 @@ jobs:
           name: geocore-isolated-qa-acceptance
           path: |
             qa-identity.txt
+            qa-lifecycle-results.json
             candidate/apps/web/staging-acceptance-results/results.json
             candidate/apps/web/staging-acceptance-results/artifacts/**/*.png
           retention-days: 14
