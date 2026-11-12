@@ -38,12 +38,13 @@ jobs:
       - name: Run the task and always restore QA configuration
         shell: bash
         run: |
-          set -uo pipefail
+          set -u -o pipefail; set +e
           source scripts/qa/qa_railway_ops.sh
           [[ "$(start_get)" == "$QA_ORIG_START" ]] || { echo "start command is not the original; run the restore workflow first"; exit 1; }
           bundle=""
           if [[ "$TASK" == "drill" ]]; then
-            tar --exclude='__pycache__' -czf /tmp/drill-bundle.tgz scripts/recovery scripts/qa/qa_recovery_drill.py && bundle=/tmp/drill-bundle.tgz
+            tar -czf /tmp/drill-bundle.tgz scripts/recovery/content_fingerprint.py scripts/recovery/matched_bundle.py scripts/recovery/restore_upload_bundle.py scripts/recovery/recovery_safety.py scripts/qa/qa_recovery_drill.py && bundle=/tmp/drill-bundle.tgz
+            echo "bundle base64 bytes: $(base64 -w0 "$bundle" | wc -c) (Railway variable limit 32768)"
           fi
           run_container_task "scripts/qa/container_tasks/$TASK.sh" "$bundle"; task_rc=$?
           restore_qa_config; restore_rc=$?
