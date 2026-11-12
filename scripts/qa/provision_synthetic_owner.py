@@ -65,6 +65,8 @@ def main(argv=None) -> int:
     parser.add_argument("--company", required=True)
     parser.add_argument("--name", default="Synthetic Acceptance Owner")
     parser.add_argument("--confirm-environment", required=True, choices=["staging", "acceptance", "local"])
+    parser.add_argument("--idempotent", action="store_true",
+                        help="succeed without changes when this e-mail already exists (a pre-deploy step must never fail a later redeploy)")
     args = parser.parse_args(argv)
 
     # Run piped over `railway ssh ... python -` (the image has no scripts/ directory) there is no
@@ -86,14 +88,21 @@ def main(argv=None) -> int:
         return 2
 
     from app.auth.models import SignupRequest
-    from app.auth.service import auth_service
+    from app.auth.service import EmailAlreadyRegisteredError, auth_service
     from app.database.database import SessionLocal
 
     db = SessionLocal()
     try:
-        tenant, user = auth_service.signup(
-            db, SignupRequest(company_name=args.company, name=args.name, email=args.email, password=password)
-        )
+        try:
+            tenant, user = auth_service.signup(
+                db, SignupRequest(company_name=args.company, name=args.name, email=args.email, password=password)
+            )
+        except EmailAlreadyRegisteredError:
+            if args.idempotent:
+                db.rollback()
+                print(f"already provisioned in {env}; nothing changed")
+                return 0
+            raise
         user.email_verified_at = datetime.now(timezone.utc)
         db.commit()
         print(f"provisioned tenant {tenant.id} in {env}")

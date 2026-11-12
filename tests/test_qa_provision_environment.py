@@ -44,3 +44,8 @@ def test_off_railway_behaviour_is_unchanged():
 def test_acceptance_is_a_selectable_confirmation_and_production_is_not():
     source = (Path(provision.__file__)).read_text()
     assert 'choices=["staging", "acceptance", "local"]' in source
+
+
+def test_idempotent_flag_is_supported_and_exists_in_the_cli():
+    source = Path(provision.__file__).read_text()
+    assert '"--idempotent"' in source and "EmailAlreadyRegisteredError" in source

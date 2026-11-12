@@ -2,16 +2,17 @@ name: GeoCore isolated QA authenticated acceptance
 
 # Runs the eight STONE-GATE / DEF-003 browser acceptance tests against the ISOLATED, synthetic-data
 # Railway QA environment (project geocore-qa-20261110, environment acceptance) from a GitHub-hosted
-# runner. Manual dispatch or trusted review-branch workflow changes only. Never targets shared staging or production: the hosts are fixed below and the
-# Playwright config independently refuses anything else.
+# runner. Manual dispatch or a push that changes this file. Never targets shared staging or production:
+# the hosts and IDs are fixed below and the Playwright config independently refuses anything else.
 #
-# It needs ONE secret that only the owner can create:
-#   GEOCORE_QA_RAILWAY_TOKEN  a Railway PROJECT token for geocore-qa-20261110 / acceptance only.
-# Without it the job fails at the first step with "BLOCKED". It never reports a pass it did not earn.
+# Secret: GEOCORE_QA_RAILWAY_TOKEN, a Railway PROJECT token for geocore-qa-20261110 / acceptance.
 #
-# What it does: provisions two synthetic, e-mail-verified owners (distinct workspaces) inside the QA
-# API container, runs the acceptance suite, uploads the results summary and screenshots.
-# Traces are NOT uploaded: they contain session tokens. Passwords are generated per run and masked.
+# `railway ssh` cannot be used with a project token (it needs an SSH key registered to a user or
+# workspace). Synthetic owners are therefore provisioned as a one-off step of the QA API's own pre-deploy
+# command, inside Railway's private network. That changes QA service configuration for the duration of
+# the run; the original command and all temporary variables are restored/removed in the final step, which
+# runs even when tests fail and fails the job loudly if restoration cannot be proven.
+# Traces are NOT uploaded (they contain session tokens). Passwords are generated per run and masked.
 
 on:
   workflow_dispatch:
@@ -25,10 +26,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: geocore-qa-acceptance
+  cancel-in-progress: false
+
 jobs:
   qa-acceptance:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
       QA_WEB: https://geocore-web-qa-acceptance.up.railway.app
@@ -36,10 +41,9 @@ jobs:
       EXPECTED_MIGRATION: a5f6b7c8d9e0
       QA_PROJECT_ID: a16eaf0a-b5a5-4e8e-b79e-4d191457638e
       QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
     steps:
       - name: Stop unless the owner has provided the QA project token
-        env:
-          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
         shell: bash
         run: |
           if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
@@ -47,9 +51,16 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - name: Operations scripts from this workflow's own commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Acceptance tests from the deployed candidate commit
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.EXPECTED_SHA }}
+          path: candidate
           persist-credentials: false
 
       - uses: pnpm/action-setup@v4
@@ -59,53 +70,69 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: candidate/pnpm-lock.yaml
 
       - name: Install dependencies and browser
+        working-directory: candidate
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter web exec playwright install --with-deps chromium
           npm install --global @railway/cli@4
 
-      - name: Verify the target is the isolated QA environment
-        env:
-          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+      - name: Verify project, environment and deployed SHAs (no SSH)
         shell: bash
         run: |
           set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
           [[ "$QA_API" == "https://geocore-api-qa-acceptance.up.railway.app" ]]
           [[ "$QA_WEB" == "https://geocore-web-qa-acceptance.up.railway.app" ]]
+          railway status --json | jq -r '"project: \(.name)", (.environments.edges[]?.node | "environment: \(.name) (\(.id))")' | tee qa-identity.txt
+          grep -Fxq "project: geocore-qa-20261110" qa-identity.txt
+          grep -Fxq "environment: acceptance ($QA_ENVIRONMENT_ID)" qa-identity.txt
+          for svc in geocore-api-qa geocore-web-qa; do
+            line="$(railway deployment list --service "$svc" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.status) commit=\(.meta.commitHash)"')"
+            echo "$svc: $line" | tee -a qa-identity.txt
+            [[ "$line" == "SUCCESS commit=$EXPECTED_SHA" ]]
+          done
           curl -fsS --max-time 30 --retry 3 "$QA_API/health" >/dev/null
           curl -fsS --max-time 30 --retry 3 "$QA_API/ready" >/dev/null
-          # Record, without printing secrets, what is deployed and migrated.
-          railway ssh --project "$QA_PROJECT_ID" --environment "$QA_ENVIRONMENT_ID" --service geocore-api-qa -- sh -c 'printf "railway_env=%s project=%s\n" "$RAILWAY_ENVIRONMENT_NAME" "$RAILWAY_PROJECT_NAME"; printf "git_sha=%s\n" "${RAILWAY_GIT_COMMIT_SHA:-unknown}"; alembic current 2>/dev/null | tail -1' | tee qa-identity.txt
-          grep -q "railway_env=acceptance" qa-identity.txt
-          grep -q "project=geocore-qa-20261110" qa-identity.txt
-          grep -Fxq "git_sha=$EXPECTED_SHA" qa-identity.txt
-          grep -Eq "^$EXPECTED_MIGRATION[[:space:]]+\\(head\\)$" qa-identity.txt
-          railway ssh --project "$QA_PROJECT_ID" --environment "$QA_ENVIRONMENT_ID" --service geocore-web-qa -- sh -c 'printf "railway_env=%s project=%s\n" "$RAILWAY_ENVIRONMENT_NAME" "$RAILWAY_PROJECT_NAME"; printf "git_sha=%s\n" "${RAILWAY_GIT_COMMIT_SHA:-unknown}"' | tee qa-web-identity.txt
-          grep -Fxq "railway_env=acceptance project=geocore-qa-20261110" qa-web-identity.txt
-          grep -Fxq "git_sha=$EXPECTED_SHA" qa-web-identity.txt
           curl -fsS --max-time 30 --retry 3 "$QA_WEB/login" >/dev/null
-          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          [[ "$(git -C candidate rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          echo "original pre-deploy: $(predeploy_get)" | tee -a qa-identity.txt
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]]
 
-      - name: Provision two synthetic owners in separate workspaces
-        env:
-          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+      - name: Provision two synthetic owners (one-off pre-deploy step; configuration restored in the final step)
         shell: bash
         run: |
           set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          echo "PROVISION_STARTED=1" >> "$GITHUB_ENV"
           RUN="$(date -u +%Y%m%d%H%M%S)-${GITHUB_RUN_ATTEMPT}"
           PW_A="$(openssl rand -hex 16)Aa1!"
           PW_B="$(openssl rand -hex 16)Bb2!"
           echo "::add-mask::$PW_A"
           echo "::add-mask::$PW_B"
-          provision() {  # the image has no scripts/ directory, so the script is piped over stdin
-            railway ssh --project "$QA_PROJECT_ID" --environment "$QA_ENVIRONMENT_ID" --service geocore-api-qa -- \
-              env SYNTHETIC_OWNER_PASSWORD="$2" python - \
-              --email "$1" --company "$3" --confirm-environment acceptance < scripts/qa/provision_synthetic_owner.py
-          }
-          provision "stone-gate-$RUN@acceptance.invalid" "$PW_A" "QA acceptance A $RUN"
-          provision "stone-gate-other-$RUN@acceptance.invalid" "$PW_B" "QA acceptance B $RUN"
+          base64 -w0 scripts/qa/provision_synthetic_owner.py | set_qa_var QA_PROVISION_PY_B64
+          provision_script_sh | base64 -w0 | set_qa_var QA_PROVISION_SH_B64
+          printf '%s' "stone-gate-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_A_EMAIL
+          printf '%s' "QA acceptance A $RUN" | set_qa_var QA_OWNER_A_COMPANY
+          printf '%s' "$PW_A" | set_qa_var QA_OWNER_A_PW
+          printf '%s' "stone-gate-other-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_B_EMAIL
+          printf '%s' "QA acceptance B $RUN" | set_qa_var QA_OWNER_B_COMPANY
+          printf '%s' "$PW_B" | set_qa_var QA_OWNER_B_PW
+          predeploy_set "$QA_ORIG_PREDEPLOY"' && echo "$QA_PROVISION_SH_B64" | base64 -d | sh'
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY"' && echo "$QA_PROVISION_SH_B64" | base64 -d | sh' ]]
+          read -r PREV _ _ < <(latest_deployment)
+          railway deployment redeploy --service geocore-api-qa --environment "$QA_ENV" --yes >/dev/null
+          wait_for_new_deployment "$PREV" 900 | tee -a qa-identity.txt
+          curl -fsS --max-time 30 --retry 5 --retry-delay 5 "$QA_API/ready" >/dev/null
+          for who in A B; do
+            email="stone-gate$([[ $who == B ]] && echo -other)-$RUN@acceptance.invalid"; pw="$([[ $who == A ]] && echo "$PW_A" || echo "$PW_B")"
+            code="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' -X POST "$QA_API/api/v1/auth/login" -H 'Content-Type: application/json' \
+                    -d "$(jq -nc --arg e "$email" --arg p "$pw" '{email:$e,password:$p}')")"
+            echo "owner $who login status=$code" | tee -a qa-identity.txt
+            [[ "$code" == "200" ]]
+          done
           {
             echo "STAGING_OWNER_EMAIL=stone-gate-$RUN@acceptance.invalid"
             echo "STAGING_OWNER_PASSWORD=$PW_A"
@@ -114,11 +141,27 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Run the eight acceptance tests in fresh browser contexts
-        working-directory: apps/web
+        working-directory: candidate/apps/web
         env:
           STAGING_WEB_URL: ${{ env.QA_WEB }}
           STAGING_API_URL: ${{ env.QA_API }}
         run: pnpm exec playwright test -c playwright.staging.config.ts --trace off
+
+      - name: Restore the original QA configuration and remove temporary variables
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          [[ "${PROVISION_STARTED:-}" == "1" ]] || { echo "nothing to restore: provisioning never started"; exit 0; }
+          rc=0
+          predeploy_set "$QA_ORIG_PREDEPLOY" || rc=1
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] && echo "pre-deploy command restored" | tee -a qa-identity.txt || { echo "RESTORE FAILED: pre-deploy command"; rc=1; }
+          remove_temp_vars && echo "temporary variables removed" | tee -a qa-identity.txt || { echo "RESTORE FAILED: temporary variables remain"; rc=1; }
+          read -r PREV _ _ < <(latest_deployment)
+          railway deployment redeploy --service geocore-api-qa --environment "$QA_ENV" --yes >/dev/null || rc=1
+          wait_for_new_deployment "$PREV" 900 | tee -a qa-identity.txt || rc=1
+          exit $rc
 
       - name: Retain results summary and screenshots (no traces, no credentials)
         if: always()
@@ -127,8 +170,7 @@ jobs:
           name: geocore-isolated-qa-acceptance
           path: |
             qa-identity.txt
-            qa-web-identity.txt
-            apps/web/staging-acceptance-results/results.json
-            apps/web/staging-acceptance-results/artifacts/**/*.png
+            candidate/apps/web/staging-acceptance-results/results.json
+            candidate/apps/web/staging-acceptance-results/artifacts/**/*.png
           retention-days: 14
           if-no-files-found: warn
