@@ -1,0 +1,602 @@
+{
+ "DELETE /api/v1/automations/{automation_id}": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "DELETE /api/v1/documents/{document_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "DELETE /api/v1/invitations/{invitation_id}": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "DELETE /api/v1/portal-links/{portal_link_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "DELETE /api/v1/projects/{project_id}/costs/{cost_entry_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "DELETE /api/v1/tenants/me/logo": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "GET /api/v1/activity": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/ai/capabilities": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/automations": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/automations/meta": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/automations/runs": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/automations/templates": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/automations/{automation_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/billing/plans": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/billing/subscription": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/calendar": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/catalogue/meta/companies": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/catalogue/meta/material-families": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/catalogue/meta/status": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/catalogue/suppliers": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/catalogue/surfaces": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/catalogue/surfaces/{surface_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/communications": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/compliance/internal/copyright-reports": {
+  "owner": "forbidden",
+  "staff": "forbidden"
+ },
+ "GET /api/v1/customers": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/customers/{customer_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/customers/{customer_id}/context": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/dashboard": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/dashboard/command-centre": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/documents": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/documents/{document_id}/download": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/invitations": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "GET /api/v1/invitations/token/{token}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/messages": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/notifications": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/notifications/unread-count": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/portal-links": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/portal-links/token/{token}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/portal-links/token/{token}/documents": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/portal-links/token/{token}/documents/{document_id}/download": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/portal-links/token/{token}/invoice/{quote_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/portal-links/token/{token}/messages": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/privacy/exports/{export_id}/download": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "GET /api/v1/privacy/marketing-preference": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/privacy/workspace-deletion": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "GET /api/v1/procurement/supplier-accounts": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects/{project_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects/{project_id}/allocations": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects/{project_id}/appointments": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects/{project_id}/costs": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects/{project_id}/financials/summary": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects/{project_id}/requirements": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects/{project_id}/variations": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects/{project_id}/workflow": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/projects/{project_id}/workflow/history": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/purchase-orders": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/purchase-orders/{purchase_order_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/purchase-orders/{purchase_order_id}/pdf": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/purchase-orders/{purchase_order_id}/receipts": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/quotes": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/quotes/meta/trades": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/quotes/meta/units": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/quotes/{quote_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/quotes/{quote_id}/invoice": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/tasks": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/tenants": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/tenants/me/logo": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/tenants/me/onboarding": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/tenants/me/profile": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/tenants/{tenant_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/users": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "GET /api/v1/variations/{variation_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "GET /api/v1/variations/{variation_id}/pdf": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/appointments/{appointment_id}/status": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/automations/{automation_id}": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "PATCH /api/v1/compliance/internal/copyright-reports/{case_id}": {
+  "owner": "forbidden",
+  "staff": "forbidden"
+ },
+ "PATCH /api/v1/customers/{customer_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/notifications/{notification_id}/read": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/projects/{project_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/projects/{project_id}/assign": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "PATCH /api/v1/projects/{project_id}/costs/{cost_entry_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/projects/{project_id}/status": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/purchase-orders/{purchase_order_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/quotes/{quote_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/requirements/{requirement_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/tasks/{task_id}/status": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PATCH /api/v1/tenants/me/onboarding": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "PATCH /api/v1/tenants/me/profile": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "PATCH /api/v1/variations/{variation_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/activity": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/ai/chat": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/automations": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/automations/templates": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/billing/cancel": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/billing/checkout": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/billing/portal": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/billing/resume": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/billing/trial": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/catalogue/custom-materials": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/compliance/copyright-reports": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/customers": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/demo-requests": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/documents": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/estimate": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/invitations": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/invitations/token/{token}/accept": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/messages": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/notifications": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/portal-links": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/portal-links/token/{token}/messages": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/privacy/exports": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/privacy/internal/workspace-deletions/{tenant_id}/purge": {
+  "owner": "forbidden",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/privacy/marketing-unsubscribe/{token}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/privacy/workspace-deletion": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/privacy/workspace-deletion/cancel": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/process": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/projects": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/projects/{project_id}/allocations": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/projects/{project_id}/appointments": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/projects/{project_id}/convert-to-customer": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/projects/{project_id}/costs": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/projects/{project_id}/requirements": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/projects/{project_id}/variations": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/projects/{project_id}/workflow/transition": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/purchase-orders": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/purchase-orders/{purchase_order_id}/approve": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/purchase-orders/{purchase_order_id}/cancel": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/purchase-orders/{purchase_order_id}/items/{item_id}/link-requirement": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/purchase-orders/{purchase_order_id}/order": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/purchase-orders/{purchase_order_id}/receipts": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/quote": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/quotes": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/quotes/ai-draft": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/quotes/{quote_id}/approve": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/quotes/{quote_id}/handoff": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/quotes/{quote_id}/send": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/quotes/{quote_id}/send-email": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/requirements/{requirement_id}/cancel": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/tasks": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/tenants": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/tenants/me/logo": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/users/{user_id}/deactivate": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "POST /api/v1/variations/{variation_id}/approve": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/variations/{variation_id}/reject": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/variations/{variation_id}/send": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/variations/{variation_id}/void": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PUT /api/v1/catalogue/surfaces/{surface_id}/override": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "PUT /api/v1/privacy/marketing-preference": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "PUT /api/v1/procurement/supplier-accounts/{supplier_id}": {
+  "owner": "allowed",
+  "staff": "allowed"
+ }
+}

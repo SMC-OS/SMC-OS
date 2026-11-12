@@ -1,0 +1,582 @@
+{
+ "title": "GeoCore release execution ledger",
+ "as_of": "2026-11-12",
+ "verdict": "HARD NO-GO",
+ "rules": "Evidence is tagged by environment and never counted for another. A gate is VERIFIED only in the environments listed in verified_in.",
+ "gates": [
+  {
+   "id": "CI-RC",
+   "purpose": "Full CI green on the exact final integrated release SHA",
+   "verified_in": [
+    "ci"
+   ],
+   "sha": "new release candidate (not yet selected)",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Baseline 740b6b4: backend 1807, frontend 424, Playwright 77, audit passed (runs 42138695942, 42138702465)"
+    },
+    {
+     "env": "ci",
+     "what": "8a1e27f: backend, frontend, e2e, dependency-audit all success (run 42855794149, jobs re-read 12 Nov)"
+    },
+    {
+     "env": "local",
+     "what": "Full backend suite on the working tree with the integrity fixes: 1831 passed, 3 skipped, 0 failed (12 Nov)"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Release lead",
+   "remaining": "Push the release candidate commit and read its CI run; the SHA is fixed only once that run is green.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "MIGRATION",
+   "purpose": "Alembic chain applies cleanly and the target database ends at the expected head",
+   "verified_in": [
+    "isolated_qa",
+    "production"
+   ],
+   "sha": "head a5f6b7c8d9e0",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "Fresh PostgreSQL 16: upgrade to head a5f6b7c8d9e0 (12 Nov)"
+    },
+    {
+     "env": "ci",
+     "what": "CI step 'Apply database migrations' success on 8a1e27f"
+    },
+    {
+     "env": "shared_staging",
+     "what": "Last known revision 94e5f6a7b8c9 (6 Nov, read-only); current state unverified"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Operator (Railway access)",
+   "remaining": "Read `alembic current` on isolated QA; later on shared staging and, with a matched recovery point, production.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "TENANT-ISO",
+   "purpose": "A workspace can never read or change another workspace's data",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Every API module has tenant-B-against-tenant-A tests; all 163 operations deny anonymous callers (CI)"
+    },
+    {
+     "env": "local",
+     "what": "Role matrix: owner and staff of one workspace, 150 operations (12 Nov); cross-tenant not part of that matrix"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Agent after QA access",
+   "remaining": "Run acceptance test d8 and the authenticated cross-tenant checks on the deployed isolated QA build.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "ROLE-PERMS",
+   "purpose": "Owner and Staff permissions are the intended ones on every operation",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "working tree",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "tests/test_role_permission_matrix.py: all 150 operations as Owner and Staff, committed snapshot (122 both allowed, 25 owner-only, 3 internal-token endpoints denied to all)"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Owner (decision) then agent",
+   "remaining": "Owner reviews the snapshot, in particular that Staff may approve purchase orders, quotes and variations and receive deliveries. Then run on the deployed QA build.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "ROLE-MANAGER",
+   "purpose": "A distinct Manager role",
+   "verified_in": [
+    "ci"
+   ],
+   "sha": "app/auth/models.py",
+   "evidence": [],
+   "status": "NOT_APPLICABLE",
+   "owner": "-",
+   "remaining": "-",
+   "blocks_initial_release": false,
+   "justification": "The product defines only two roles, Owner and Staff (UserRole). There is no Manager role to test; adding one is a product decision, not a release task."
+  },
+  {
+   "id": "REGISTRATION-EMAIL",
+   "purpose": "New account registration with real e-mail verification delivery, resend, invalid and expired links",
+   "verified_in": [
+    "isolated_qa",
+    "production"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Verification logic and enforcement covered by backend and e2e tests"
+    },
+    {
+     "env": "local",
+     "what": "Synthetic manual verification exists for QA only and is not delivery evidence"
+    }
+   ],
+   "status": "BLOCKED",
+   "owner": "Owner (mail provider and a monitored test mailbox)",
+   "remaining": "Confirm the mail provider is configured on QA, then send and receive a real verification message.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "PASSWORD-RESET",
+   "purpose": "Password recovery and reset with real e-mail delivery",
+   "verified_in": [
+    "isolated_qa",
+    "production"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Reset flow, expiry and reuse covered by backend and e2e tests"
+    }
+   ],
+   "status": "BLOCKED",
+   "owner": "Owner (same mailbox)",
+   "remaining": "As above.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "CUSTOMER-PROJECT",
+   "purpose": "Customer and project creation, editing, assignment, tasks, completion",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Backend and Playwright journeys"
+    },
+    {
+     "env": "local",
+     "what": "QA-PARTIAL-COMMIT: customer creation and its activity record are now one transaction (7 regression tests, 3 fail on the old code)"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Agent after QA access",
+   "remaining": "Run the journey on the deployed isolated QA build.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "QUOTE",
+   "purpose": "Quote lifecycle: create, review, repeated save, reopen, amend, approve",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Backend and Playwright journeys; manual pricing; no auto-generated selling price tests"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Agent after QA access",
+   "remaining": "Run on deployed QA.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "INVOICE",
+   "purpose": "Invoice creation with workspace-specific numbering, settings, concurrent generation",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Per-workspace Invoice-000001 sequence, prefix and next-number, concurrent downloads"
+    },
+    {
+     "env": "local",
+     "what": "Three real invoices generated through the API: Invoice-000001, -000002, -000003 in one workspace (12 Nov)"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Agent after QA access",
+   "remaining": "Confirm a second workspace starts at Invoice-000001 on deployed QA.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "PDF-QUALITY",
+   "purpose": "Generated PDFs are correct, legible and stable",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "working tree",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "Generated and inspected three invoices (A4): totals recomputed independently and equal to the penny (discount \u00a3233.75 -> \u00a32,524.50; zero-rated \u00a3333.33; VAT rounding \u00a3999.99 -> \u00a31,199.99); accents, \u00a3, em dash and curly quotes render in an embedded font; long text wraps clear of the amount column; repeat download has identical text; cosmetic: a stray ' ,' after a description ending in a full stop"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Agent after QA access",
+   "remaining": "Repeat on the deployed QA build with the real fonts of that image; quote PDFs from the portal are not yet inspected.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "MATERIALS-PROCUREMENT",
+   "purpose": "STONE-GATE g1-g5 and DEF-003 d1-d9: material requirements, purchase orders, receipts, fabrication unlock",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Backend tests and Playwright journeys G, H, I (local build)"
+    },
+    {
+     "env": "local",
+     "what": "Eight-test staging suite passed as a dry run against a local production build (6 Nov); not deployed evidence"
+    }
+   ],
+   "status": "BLOCKED",
+   "owner": "Owner (one repository secret)",
+   "remaining": "Add GEOCORE_QA_RAILWAY_TOKEN, then run workflow 'GeoCore isolated QA authenticated acceptance'. g5 is the real-world retest, i.e. that run.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "WORKFLOW-COMPLETION",
+   "purpose": "Customer to Completion through Measurement, Quote, Approval, Materials, Template, Fabrication, QC, Installation, Snagging",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Full-system journey in Playwright"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Agent after QA access",
+   "remaining": "Run the full journey on deployed QA.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "DOCUMENTS-PORTAL",
+   "purpose": "Uploads, downloads, portal scope, revocation, expiry, spoofing and cross-tenant file denial",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Document and portal backend tests"
+    },
+    {
+     "env": "local",
+     "what": "QA-UPLOAD-ORPHAN fixed: a failed database insert no longer leaves a file, and a file is never removed when the row may exist (3 regression tests)"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Agent after QA access",
+   "remaining": "Run on deployed QA; run the orphan check against the real uploads volume during the recovery drill.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "STRIPE-CHECKOUT",
+   "purpose": "Subscription checkout, trial, entitlement, upgrade and downgrade in Stripe test mode",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "Plan catalogue matches the approved pricing exactly: Starter \u00a329/\u00a3290, Team \u00a359/\u00a3590, Pro \u00a399/\u00a3990, Business \u00a3199/\u00a31,990, Enterprise no self-service checkout; 14-day Pro trial without a card (code against sprint 039/041 and API_SPEC)"
+    },
+    {
+     "env": "ci",
+     "what": "Webhook handling including the invoice.parent.subscription_details shape and atomic event recording"
+    }
+   ],
+   "status": "BLOCKED",
+   "owner": "Owner (Stripe test-mode access)",
+   "remaining": "Provide a restricted test-mode key and a dedicated QA webhook endpoint secret; verify the eight Price objects in test mode; run the lifecycle.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "STRIPE-FAILURE",
+   "purpose": "Failed payment, grace period, recovery",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Webhook unit tests for payment_failed and paid"
+    }
+   ],
+   "status": "BLOCKED",
+   "owner": "Owner (Stripe test-mode access)",
+   "remaining": "Run with Stripe test clocks / failing test card.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "STRIPE-CANCEL-PORTAL",
+   "purpose": "Cancellation, cancel at period end, resume, billing portal, invoices",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Backend tests"
+    }
+   ],
+   "status": "BLOCKED",
+   "owner": "Owner (Stripe test-mode access)",
+   "remaining": "Run in test mode.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "SECURITY",
+   "purpose": "Authentication, authorisation, uploads, headers, CORS, rate limits, error sanitisation verified on the deployed candidate",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "Anonymous sweep of all 163 operations; dependency audit; security-header tests"
+    },
+    {
+     "env": "local",
+     "what": "Fresh pip-audit and pnpm audit: no known vulnerabilities (12 Nov)"
+    },
+    {
+     "env": "isolated_qa_public",
+     "what": "API and web home/login/health/ready return HTTP 200 (run 42855457897); public smoke only"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Agent after QA access",
+   "remaining": "Run the authenticated role and tenant checks against deployed QA; review medium and low findings.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "SECRET-SCANNING",
+   "purpose": "No credentials in the repository or its history, enforced in CI",
+   "verified_in": [
+    "ci"
+   ],
+   "sha": "working tree",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "scripts/qa/scan_secrets.py: 0 findings across the tree and all 468 commits on all refs; canaries detected, lookalikes ignored (4 tests)"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Release lead",
+   "remaining": "CI had no secret-scanning job. One is added (secret-scan); VERIFIED once its first CI run is green.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "DATA-INTEGRITY",
+   "purpose": "QA-UPLOAD-ORPHAN and QA-PARTIAL-COMMIT resolved with regression tests",
+   "verified_in": [
+    "ci"
+   ],
+   "sha": "working tree",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "7 regression tests; the 3 defect tests fail on the old code and pass on the fix; full backend suite 1831 passed"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Release lead",
+   "remaining": "Becomes VERIFIED when CI is green on the commit containing the fixes.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "QA-TOOLING",
+   "purpose": "Synthetic-owner provisioning works on staging and isolated QA",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "working tree",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "Defect found and fixed: the script treated APP_ENV=production (which staging and QA use) as production and would have refused to run; now keyed on Railway environment identity, QA accepted only for project geocore-qa-20261110 (7 tests)"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Agent after secret",
+   "remaining": "Prove it in the first acceptance run.",
+   "blocks_initial_release": false
+  },
+  {
+   "id": "RECOVERY-POINT",
+   "purpose": "A verified matched database-and-uploads recovery point (shared staging first, production before any production migration)",
+   "verified_in": [
+    "shared_staging",
+    "production"
+   ],
+   "sha": "-",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "Capture tool, barrier v2, preflight rehearsed: 117 checks, 0 failed (PostgreSQL 16, synthetic)"
+    }
+   ],
+   "status": "BLOCKED",
+   "owner": "Owner and operator",
+   "remaining": "The 10 Nov window expired and is not reusable. Needs a new exact window, named operator, private encrypted storage, user notice 24h ahead, and a PG18 client. Rehearse on isolated QA first.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "SCRATCH-RESTORE",
+   "purpose": "Restore to scratch resources with record, file-byte, tenant and timing checks",
+   "verified_in": [
+    "isolated_qa",
+    "shared_staging"
+   ],
+   "sha": "-",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "Dump restores to a scratch database with an identical content fingerprint (local rehearsal)"
+    }
+   ],
+   "status": "BLOCKED",
+   "owner": "Operator",
+   "remaining": "Needs the recovery point above and approved scratch resources.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "PITR-WAL",
+   "purpose": "WAL archiving and base backup chain proven recoverable; two historic archive failures explained",
+   "verified_in": [
+    "shared_staging",
+    "production"
+   ],
+   "sha": "-",
+   "evidence": [],
+   "status": "UNKNOWN",
+   "owner": "Operator",
+   "remaining": "Run pitr_diagnostics.sql, `pgbackrest info/check`, read the archive-push log around 4 Nov 10:40 UTC.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "CAPACITY",
+   "purpose": "Supported initial customer capacity measured, not claimed",
+   "verified_in": [
+    "isolated_qa"
+   ],
+   "sha": "-",
+   "evidence": [],
+   "status": "UNKNOWN",
+   "owner": "Agent after QA access",
+   "remaining": "No load test has been run. Needs a mixed-workload test on QA and measured limits enforced in the product.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "MONITORING",
+   "purpose": "Monitoring and alert thresholds defined and active",
+   "verified_in": [
+    "production"
+   ],
+   "sha": "-",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "staging-monitor.yml performs GET-only health checks"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Owner and agent",
+   "remaining": "Define thresholds and alert recipients; confirm production monitoring.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "SUPPORT",
+   "purpose": "Monitored support mailbox, response targets, incident and security escalation",
+   "verified_in": [
+    "production"
+   ],
+   "sha": "-",
+   "evidence": [],
+   "status": "BLOCKED",
+   "owner": "Owner",
+   "remaining": "Name the mailbox and targets; send a real test enquiry.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "LEGAL-COMMERCIAL",
+   "purpose": "Operator identity, terms, privacy, DPA, subprocessors, refunds, VAT, ICO position accepted",
+   "verified_in": [
+    "production"
+   ],
+   "sha": "-",
+   "evidence": [
+    {
+     "env": "local",
+     "what": "Review checklist and drafts exist (docs/LEGAL_REVIEW_CHECKLIST.md, artifact 08)"
+    }
+   ],
+   "status": "BLOCKED",
+   "owner": "Owner and UK solicitor",
+   "remaining": "One consolidated approval packet; no company details are invented.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "PROD-CONFIG",
+   "purpose": "Production deployment configuration reviewed, including the catalogue-writing pre-deploy and rollback",
+   "verified_in": [
+    "production"
+   ],
+   "sha": "-",
+   "evidence": [],
+   "status": "UNKNOWN",
+   "owner": "Operator (read-only Railway)",
+   "remaining": "Read production service configuration and previous deployments; review the catalogue import impact.",
+   "blocks_initial_release": true
+  },
+  {
+   "id": "ADMISSION",
+   "purpose": "Server-side admission control closed until acceptance",
+   "verified_in": [
+    "production"
+   ],
+   "sha": "740b6b4",
+   "evidence": [
+    {
+     "env": "ci",
+     "what": "NEW_ACCOUNT_ADMISSION gate tests"
+    }
+   ],
+   "status": "UNKNOWN",
+   "owner": "Owner",
+   "remaining": "Confirm the production setting is closed before any deploy.",
+   "blocks_initial_release": true
+  }
+ ]
+}

@@ -19,6 +19,7 @@ Usage (staging, inside the API container, after approval):
   SYNTHETIC_OWNER_PASSWORD=... python scripts/qa/provision_synthetic_owner.py \
       --email stone-gate-<run>@acceptance.invalid --company "Stone-gate acceptance <run>" \
       --confirm-environment staging
+Isolated QA (project geocore-qa-20261110, environment acceptance): --confirm-environment acceptance.
 Local dry run: same, with --confirm-environment local.
 """
 
@@ -29,12 +30,29 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 
+ISOLATED_QA_PROJECT = "geocore-qa-20261110"
+
+
 def detected_environment(database_url: str, app_env: str) -> str:
+    """Classify where this process runs. Railway's identity wins over APP_ENV.
+
+    APP_ENV is "production" on staging and on the isolated QA environment as well (the
+    runbook requires it there), so it cannot distinguish them from production. When Railway
+    tells us the environment name we trust that; APP_ENV and the database host are only
+    consulted when the process is not on Railway at all.
+    """
     railway_env = (os.environ.get("RAILWAY_ENVIRONMENT_NAME") or "").strip().lower()
-    if app_env == "production" or railway_env == "production":
+    project = (os.environ.get("RAILWAY_PROJECT_NAME") or "").strip().lower()
+    if railway_env:
+        if railway_env == "production":
+            return "production"
+        if railway_env == "staging":
+            return "staging"
+        if railway_env == "acceptance" and project == ISOLATED_QA_PROJECT:
+            return "acceptance"
+        return "unknown"
+    if app_env == "production":
         return "production"
-    if railway_env == "staging":
-        return "staging"
     host = (urlparse(database_url.replace("+psycopg", "")).hostname or "").lower()
     if host in {"127.0.0.1", "localhost"}:
         return "local"
@@ -46,10 +64,13 @@ def main(argv=None) -> int:
     parser.add_argument("--email", required=True)
     parser.add_argument("--company", required=True)
     parser.add_argument("--name", default="Synthetic Acceptance Owner")
-    parser.add_argument("--confirm-environment", required=True, choices=["staging", "local"])
+    parser.add_argument("--confirm-environment", required=True, choices=["staging", "acceptance", "local"])
     args = parser.parse_args(argv)
 
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+    # Run piped over `railway ssh ... python -` (the image has no scripts/ directory) there is no
+    # __file__; the working directory of the API container is the application root.
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..") if "__file__" in globals() else os.getcwd()
+    sys.path.insert(0, os.path.abspath(root))
     from app.core.config import settings
 
     env = detected_environment(settings.database_url, settings.app_env.value)
