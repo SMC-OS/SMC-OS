@@ -1,0 +1,59 @@
+name: GeoCore isolated QA token diagnostics (read-only)
+
+# Read-only. Reports what the scoped GEOCORE_QA_RAILWAY_TOKEN can see in project geocore-qa-20261110 /
+# environment acceptance. Prints service and variable NAMES only, never values. Changes nothing.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      QA_PROJECT_ID: a16eaf0a-b5a5-4e8e-b79e-4d191457638e
+      QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+    steps:
+      - name: Install the Railway CLI
+        run: npm install --global @railway/cli@4 && railway --version
+
+      - name: Project, environment and services visible to the token
+        shell: bash
+        run: |
+          set +x
+          [[ -n "${RAILWAY_TOKEN:-}" ]] || { echo "BLOCKED: secret missing"; exit 1; }
+          echo "== status"; railway status --json 2>&1 | jq -r '
+            "project: \(.name // "?")",
+            (.environments.edges[]?.node | "environment: \(.name) (\(.id))"),
+            (.services.edges[]?.node | "service: \(.name) (\(.id))")' 2>&1 | head -20 || railway status 2>&1 | head -20
+
+      - name: Variable NAMES per service (values are never printed)
+        shell: bash
+        run: |
+          set +x
+          for svc in geocore-api-qa geocore-web-qa Postgres; do
+            echo "== $svc"
+            railway variables --service "$svc" --environment "$QA_ENVIRONMENT_ID" --kv 2>&1 | cut -d= -f1 | grep -E '^[A-Z0-9_]+$' | sort | tr '\n' ' ' | fold -w 150
+            echo
+          done
+
+      - name: Deployment metadata (commit, status) of the API and web services
+        shell: bash
+        run: |
+          set +x
+          for svc in geocore-api-qa geocore-web-qa; do
+            echo "== $svc"
+            railway deployment list --service "$svc" --environment "$QA_ENVIRONMENT_ID" --json 2>&1 \
+              | jq -r '.[0:3][]? | "\(.status // "?") \(.createdAt // "?") commit=\(.meta.commitHash // .meta.gitCommit // "n/a")"' 2>&1 | head -5
+          done
+
+      - name: Exact SSH capability of this token
+        shell: bash
+        run: |
+          set +x
+          echo "== railway ssh keys list"; railway ssh keys list 2>&1 | head -5 || true
+          echo "== railway ssh (no key)"; railway ssh --project "$QA_PROJECT_ID" --environment "$QA_ENVIRONMENT_ID" --service geocore-api-qa -- true 2>&1 | head -5 || true
