@@ -152,6 +152,22 @@ jobs:
             echo "STAGING_OTHER_OWNER_PASSWORD=$PW_B"
           } >> "$GITHUB_ENV"
 
+      - name: Browser-session path probe (diagnostic; values redacted)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +x
+          echo "== web service URL settings (non-secret)"
+          railway variable list --service geocore-web-qa --environment "$QA_ENVIRONMENT_ID" --kv 2>/dev/null | grep -E '^(NEXT_PUBLIC_API_URL|API_PROXY_URL|APP_ENV)=' | sort
+          probe() {
+            echo "== $1"
+            curl -sS -D - -o /dev/null --max-time 30 -X POST "$2/api/v1/auth/login" -H "Origin: $QA_WEB" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg e "$STAGING_OWNER_EMAIL" --arg p "$STAGING_OWNER_PASSWORD" '{email:$e,password:$p}')" \
+              | tr -d '\r' | grep -iE '^(HTTP/|set-cookie|access-control-allow|vary)' | sed -E 's/^(set-cookie: [^=]+)=[^;]*/\1=<redacted>/I'
+          }
+          probe "login through the WEB origin (same-origin proxy path)" "$QA_WEB"
+          probe "login against the API origin directly (cross-site when called from the web page)" "$QA_API"
+
       - name: Run the eight acceptance tests in fresh browser contexts
         working-directory: candidate/apps/web
         env:
