@@ -132,10 +132,12 @@ jobs:
           read -r PROV_ID _ _ < <(latest_deployment)
           deployment_log_summary "$PROV_ID" | tee -a qa-identity.txt
           wait_for_ready "$QA_API" 300 | tee -a qa-identity.txt
-          for who in A B; do
-            email="stone-gate$([[ $who == B ]] && echo -other)-$RUN@acceptance.invalid"; pw="$([[ $who == A ]] && echo "$PW_A" || echo "$PW_B")"
+          EMAIL_A="stone-gate-$RUN@acceptance.invalid"
+          EMAIL_B="stone-gate-other-$RUN@acceptance.invalid"
+          for pair in "A|$EMAIL_A|$PW_A" "B|$EMAIL_B|$PW_B"; do
+            IFS='|' read -r who email pw <<<"$pair"
             code="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' -X POST "$QA_API/api/v1/auth/login" -H 'Content-Type: application/json' \
-                    -d "$(jq -nc --arg e "$email" --arg p "$pw" '{email:$e,password:$p}')")"
+                    -d "$(jq -nc --arg e "$email" --arg p "$pw" '{email:$e,password:$p}')" || true)"
             echo "owner $who login status=$code" | tee -a qa-identity.txt
             [[ "$code" == "200" ]]
           done
