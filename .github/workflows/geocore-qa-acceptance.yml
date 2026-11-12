@@ -197,6 +197,20 @@ jobs:
         env:
           QA_API: ${{ env.QA_API }}
 
+      - name: Deployed Owner/Staff roles, remaining tenant isolation, editing, tasks and full workflow
+        if: ${{ !cancelled() && env.STAGING_OWNER_EMAIL != '' }}
+        shell: bash
+        run: python3 scripts/qa/qa_roles_isolation_check.py
+        env:
+          QA_API: ${{ env.QA_API }}
+
+      - name: Bounded capacity test (30 virtual users maximum, 4,000 requests, isolated QA only)
+        if: ${{ !cancelled() && env.STAGING_OWNER_EMAIL != '' }}
+        shell: bash
+        run: python3 scripts/qa/qa_capacity_check.py
+        env:
+          QA_API: ${{ env.QA_API }}
+
       - name: On failure, print the page snapshots Playwright captured (text only)
         if: failure()
         shell: bash
@@ -233,6 +247,9 @@ jobs:
           path: |
             qa-identity.txt
             qa-lifecycle-results.json
+            qa-roles-results.json
+            qa-owner-decisions.json
+            qa-capacity-results.json
             qa-pdf-evidence/invoice-a.pdf
             candidate/apps/web/staging-acceptance-results/results.json
             candidate/apps/web/staging-acceptance-results/artifacts/**/*.png
