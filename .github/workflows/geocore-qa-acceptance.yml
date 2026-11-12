@@ -82,6 +82,10 @@ jobs:
           grep -q "project=geocore-qa-20261110" qa-identity.txt
           grep -Fxq "git_sha=$EXPECTED_SHA" qa-identity.txt
           grep -Eq "^$EXPECTED_MIGRATION[[:space:]]+\\(head\\)$" qa-identity.txt
+          railway ssh --project "$QA_PROJECT_ID" --environment "$QA_ENVIRONMENT_ID" --service geocore-web-qa -- sh -c 'printf "railway_env=%s project=%s\n" "$RAILWAY_ENVIRONMENT_NAME" "$RAILWAY_PROJECT_NAME"; printf "git_sha=%s\n" "${RAILWAY_GIT_COMMIT_SHA:-unknown}"' | tee qa-web-identity.txt
+          grep -Fxq "railway_env=acceptance project=geocore-qa-20261110" qa-web-identity.txt
+          grep -Fxq "git_sha=$EXPECTED_SHA" qa-web-identity.txt
+          curl -fsS --max-time 30 --retry 3 "$QA_WEB/login" >/dev/null
           [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
 
       - name: Provision two synthetic owners in separate workspaces
@@ -123,6 +127,7 @@ jobs:
           name: geocore-isolated-qa-acceptance
           path: |
             qa-identity.txt
+            qa-web-identity.txt
             apps/web/staging-acceptance-results/results.json
             apps/web/staging-acceptance-results/artifacts/**/*.png
           retention-days: 14
