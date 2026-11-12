@@ -88,9 +88,17 @@ def fetch_pg_client(major):
         subprocess.run(["dpkg-deb", "-x", str(deb), str(root / "x")], check=True)
         say(f"client package {pkg} {item['Version']} checksum verified")
     bindir = root / "x" / "usr" / "lib" / "postgresql" / str(major) / "bin"
-    libdirs = [str(p) for p in (root / "x").rglob("libpq.so*")]
-    libdir = str(Path(libdirs[0]).parent) if libdirs else ""
-    return bindir, {"LD_LIBRARY_PATH": libdir}
+    libpq_dirs = sorted({str(p.parent) for p in (root / "x").rglob("libpq.so*")})
+    # The slim image lacks libpq's own dependencies (Kerberos, LDAP...); the psycopg binary wheel bundles them.
+    extra = []
+    try:
+        import psycopg_binary
+        wheel_libs = Path(psycopg_binary.__file__).resolve().parent.parent / "psycopg_binary.libs"
+        if wheel_libs.is_dir():
+            extra.append(str(wheel_libs))
+    except ImportError:
+        pass
+    return bindir, {"LD_LIBRARY_PATH": ":".join(libpq_dirs + extra)}
 
 
 def run(cmd, env_extra=None, **kw):
@@ -119,7 +127,13 @@ def main():
     say(f"server major version {major}")
     bindir, env_extra = fetch_pg_client(major)
     pg_dump, pg_restore = str(bindir / "pg_dump"), str(bindir / "pg_restore")
-    ver = run([pg_dump, "--version"], env_extra).stdout.strip()
+    probe = run([pg_dump, "--version"], env_extra)
+    ver = probe.stdout.strip()
+    if not ver:
+        say(f"pg_dump did not start: {probe.stderr.strip()[:200]}")
+        missing = [l.split()[0] for l in run(["ldd", pg_dump], env_extra).stdout.splitlines() if "not found" in l]
+        say(f"missing shared libraries: {missing}")
+        raise RuntimeError("PG client unusable")
     check("pg_dump client major version equals server major", ver.split()[-1].split(".")[0] == str(major), ver)
 
     # ---- T0 + capture
