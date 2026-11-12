@@ -10,9 +10,12 @@ QA_GQL="https://backboard.railway.com/graphql/v2"
 QA_API_SVC="40d0cad3-0c01-467a-910e-6c9f818fd2bf"
 QA_ENV="f948241d-446f-43ed-bff0-5d12decffd50"
 QA_ORIG_PREDEPLOY='python -m app.core.runtime_check && alembic upgrade head && alembic current'
-# Appended for provisioning only. Fails the deployment (observable status, previous deployment keeps serving) if
-# the variables are missing or provisioning fails, instead of silently doing nothing.
-QA_PROVISION_SUFFIX=' && [ -n "$QA_PROVISION_SH_B64" ] && [ -n "$QA_PROVISION_PY_B64" ] && [ -n "$QA_OWNER_A_PW" ] && echo "$QA_PROVISION_SH_B64" | base64 -d | sh'
+# Evidence (probes A and B, 12 Nov): a failing step appended to the PRE-DEPLOY command still gave a SUCCESS
+# deployment, so pre-deploy cannot be used or verified here. The START command runs for certain, with the service
+# variables; if provisioning fails or the variables are missing the new container exits and the deployment FAILS
+# (observable), while the previous deployment keeps serving.
+QA_ORIG_START='sh -c '"'"'python -m app.core.migrate_gate && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log'"'"''
+QA_PROVISION_START='sh -c '"'"'python -m app.core.migrate_gate && [ -n "$QA_PROVISION_SH_B64" ] && [ -n "$QA_PROVISION_PY_B64" ] && [ -n "$QA_OWNER_A_PW" ] && echo "$QA_PROVISION_SH_B64" | base64 -d | sh && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log'"'"''
 
 gql() {  # gql '<query>' '<variables-json>'
   local body
@@ -20,19 +23,25 @@ gql() {  # gql '<query>' '<variables-json>'
   curl -sS --max-time 40 "$QA_GQL" -H "Project-Access-Token: $RAILWAY_TOKEN" -H 'Content-Type: application/json' -d "$body"
 }
 
-predeploy_get() {
-  gql 'query($s:String!,$e:String!){ serviceInstance(serviceId:$s, environmentId:$e){ preDeployCommand } }' \
-    "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" '{s:$s,e:$e}')" | jq -r '.data.serviceInstance.preDeployCommand[0] // empty'
+svc_cmd_get() {  # svc_cmd_get preDeployCommand|startCommand
+  gql 'query($s:String!,$e:String!){ serviceInstance(serviceId:$s, environmentId:$e){ startCommand preDeployCommand } }' \
+    "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" '{s:$s,e:$e}')" | jq -r --arg f "$1" '.data.serviceInstance[$f] | if type=="array" then .[0] else . end // empty'
 }
 
-predeploy_set() {  # predeploy_set '<command>'
-  local out
-  out="$(gql 'mutation($s:String!,$e:String!,$c:[String!]){ serviceInstanceUpdate(serviceId:$s, environmentId:$e, input:{preDeployCommand:$c}) }' \
-    "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --arg c "$1" '{s:$s,e:$e,c:[$c]}')")"
+svc_cmd_set() {  # svc_cmd_set startCommand '<command>'   (preDeployCommand takes a one-element list)
+  local field="$1" out input
+  if [[ "$field" == "preDeployCommand" ]]; then input="$(jq -nc --arg c "$2" '{preDeployCommand:[$c]}')"; else input="$(jq -nc --arg c "$2" '{startCommand:$c}')"; fi
+  out="$(gql 'mutation($s:String!,$e:String!,$i:ServiceInstanceUpdateInput!){ serviceInstanceUpdate(serviceId:$s, environmentId:$e, input:$i) }' \
+    "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --argjson i "$input" '{s:$s,e:$e,i:$i}')")"
   if [[ "$(jq -r '.errors // empty' <<<"$out")" != "" ]]; then
-    echo "pre-deploy update refused: $(jq -c '[.errors[].message]' <<<"$out")"; return 1
+    echo "$field update refused: $(jq -c '[.errors[].message]' <<<"$out")"; return 1
   fi
 }
+
+predeploy_get() { svc_cmd_get preDeployCommand; }
+predeploy_set() { svc_cmd_set preDeployCommand "$1"; }
+start_get() { svc_cmd_get startCommand; }
+start_set() { svc_cmd_set startCommand "$1"; }
 
 latest_deployment() {  # prints: <id> <status> <commit>
   railway deployment list --service geocore-api-qa --environment "$QA_ENV" --json --limit 5 \

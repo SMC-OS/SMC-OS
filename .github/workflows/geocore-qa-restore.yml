@@ -54,7 +54,9 @@ jobs:
           set -uo pipefail
           source scripts/qa/qa_railway_ops.sh
           rc=0
-          echo "pre-deploy before: $(predeploy_get)"
+          echo "start before: $(start_get)"
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] || start_set "$QA_ORIG_START" || rc=1
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] && echo "start command is the original" || { echo "RESTORE FAILED: start command"; rc=1; }
           [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || predeploy_set "$QA_ORIG_PREDEPLOY" || rc=1
           [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] && echo "pre-deploy command is the original" || { echo "RESTORE FAILED: pre-deploy"; rc=1; }
           remove_temp_vars && echo "no temporary QA_* variables remain" || { echo "RESTORE FAILED: temporary variables remain"; rc=1; }

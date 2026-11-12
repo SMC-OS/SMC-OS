@@ -8,7 +8,7 @@ name: GeoCore isolated QA authenticated acceptance
 # Secret: GEOCORE_QA_RAILWAY_TOKEN, a Railway PROJECT token for geocore-qa-20261110 / acceptance.
 #
 # `railway ssh` cannot be used with a project token (it needs an SSH key registered to a user or
-# workspace). Synthetic owners are therefore provisioned as a one-off step of the QA API's own pre-deploy
+# workspace). Synthetic owners are therefore provisioned as a one-off step of the QA API's own start
 # command, inside Railway's private network. That changes QA service configuration for the duration of
 # the run; the original command and all temporary variables are restored/removed in the final step, which
 # runs even when tests fail and fails the job loudly if restoration cannot be proven.
@@ -101,10 +101,10 @@ jobs:
           curl -fsS --max-time 30 --retry 3 "$QA_API/ready" >/dev/null
           curl -fsS --max-time 30 --retry 3 "$QA_WEB/login" >/dev/null
           [[ "$(git -C candidate rev-parse HEAD)" == "$EXPECTED_SHA" ]]
-          echo "original pre-deploy: $(predeploy_get)" | tee -a qa-identity.txt
-          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]]
+          echo "original start command: $(start_get)" | tee -a qa-identity.txt
+          [[ "$(start_get)" == "$QA_ORIG_START" ]]
 
-      - name: Provision two synthetic owners (one-off pre-deploy step; configuration restored in the final step)
+      - name: Provision two synthetic owners (one-off start-command step; configuration restored in the final step)
         shell: bash
         run: |
           set -euo pipefail
@@ -122,11 +122,10 @@ jobs:
           printf '%s' "$PW_A" | set_qa_var QA_OWNER_A_PW
           printf '%s' "stone-gate-other-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_B_EMAIL
           printf '%s' "QA acceptance B $RUN" | set_qa_var QA_OWNER_B_COMPANY
-          predeploy_set "$QA_ORIG_PREDEPLOY$QA_PROVISION_SUFFIX"
-          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY$QA_PROVISION_SUFFIX" ]]
+          start_set "$QA_PROVISION_START"
+          [[ "$(start_get)" == "$QA_PROVISION_START" ]]
           read -r PREV _ _ < <(latest_deployment)
-          # `railway deployment redeploy` replays the existing deployment's snapshot and would NOT run the new
-          # pre-deploy step. A variable change creates a NEW deployment from the current configuration.
+          # A variable change creates a NEW deployment from the current configuration (verified in earlier runs).
           printf '%s' "$PW_B" | railway variable set QA_OWNER_B_PW --stdin --service geocore-api-qa --environment "$QA_ENV" >/dev/null
           wait_for_new_deployment "$PREV" 900 | tee -a qa-identity.txt
           read -r PROV_ID _ _ < <(latest_deployment)
@@ -163,8 +162,9 @@ jobs:
           source scripts/qa/qa_railway_ops.sh
           [[ "${PROVISION_STARTED:-}" == "1" ]] || { echo "nothing to restore: provisioning never started"; exit 0; }
           rc=0
-          predeploy_set "$QA_ORIG_PREDEPLOY" || rc=1
-          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] && echo "pre-deploy command restored" | tee -a qa-identity.txt || { echo "RESTORE FAILED: pre-deploy command"; rc=1; }
+          start_set "$QA_ORIG_START" || rc=1
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] && echo "start command restored" | tee -a qa-identity.txt || { echo "RESTORE FAILED: start command"; rc=1; }
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || predeploy_set "$QA_ORIG_PREDEPLOY" || rc=1
           remove_temp_vars && echo "temporary variables removed" | tee -a qa-identity.txt || { echo "RESTORE FAILED: temporary variables remain"; rc=1; }
           wait_for_stable_success 1200 | tee -a qa-identity.txt || rc=1
           wait_for_ready "$QA_API" 240 | tee -a qa-identity.txt || rc=1
