@@ -16,6 +16,11 @@ name: GeoCore isolated QA authenticated acceptance
 
 on:
   workflow_dispatch:
+    inputs:
+      diagnose:
+        description: "Stop at the first failure with a 90 s per-test timeout (fast iteration). Default runs all eight with full timeouts."
+        type: boolean
+        default: false
   push:
     branches:
       - ccr-12966459-skf9q0
@@ -152,7 +157,21 @@ jobs:
         env:
           STAGING_WEB_URL: ${{ env.QA_WEB }}
           STAGING_API_URL: ${{ env.QA_API }}
-        run: pnpm exec playwright test -c playwright.staging.config.ts --trace off
+          DIAGNOSE: ${{ inputs.diagnose }}
+        run: |
+          args=""
+          if [[ "${DIAGNOSE:-false}" == "true" ]]; then args="--max-failures=1 --timeout=90000"; fi
+          pnpm exec playwright test -c playwright.staging.config.ts --trace off $args
+
+      - name: On failure, print the page snapshots Playwright captured (text only)
+        if: failure()
+        shell: bash
+        run: |
+          cd candidate/apps/web/staging-acceptance-results/artifacts 2>/dev/null || { echo "no artifacts directory"; exit 0; }
+          for f in */error-context.md; do
+            echo "================ $f"
+            head -70 "$f"
+          done 2>/dev/null | cut -c1-220 | head -260
 
       - name: Restore the original QA configuration and remove temporary variables
         if: always()
