@@ -10,8 +10,9 @@ QA_GQL="https://backboard.railway.com/graphql/v2"
 QA_API_SVC="40d0cad3-0c01-467a-910e-6c9f818fd2bf"
 QA_ENV="f948241d-446f-43ed-bff0-5d12decffd50"
 QA_ORIG_PREDEPLOY='python -m app.core.runtime_check && alembic upgrade head && alembic current'
-# Appended for provisioning only. The markers print variable LENGTHS (never values) so a silent no-op is visible.
-QA_PROVISION_SUFFIX=' && echo "QA_PROVISION start sh_len=${#QA_PROVISION_SH_B64} py_len=${#QA_PROVISION_PY_B64} pw_a_len=${#QA_OWNER_A_PW}" && echo "$QA_PROVISION_SH_B64" | base64 -d | sh && echo "QA_PROVISION done"'
+# Appended for provisioning only. Fails the deployment (observable status, previous deployment keeps serving) if
+# the variables are missing or provisioning fails, instead of silently doing nothing.
+QA_PROVISION_SUFFIX=' && [ -n "$QA_PROVISION_SH_B64" ] && [ -n "$QA_PROVISION_PY_B64" ] && [ -n "$QA_OWNER_A_PW" ] && echo "$QA_PROVISION_SH_B64" | base64 -d | sh'
 
 gql() {  # gql '<query>' '<variables-json>'
   local body
