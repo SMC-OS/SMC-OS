@@ -1,6 +1,6 @@
 # 16 — Consolidated owner actions and blockers (12 November 2026)
 
-**Verdict: HARD NO-GO.** 0 of 28 launch-blocking gates are VERIFIED (see [15](./15-release-execution-ledger.md)). Nothing in this document approves a production change.
+**Verdict: HARD NO-GO.** 2 of 28 launch-blocking gates are VERIFIED, both CI-level (secret scanning, data integrity); the other 26 are not (see [15](./15-release-execution-ledger.md)). Nothing in this document approves a production change.
 
 ## Why work stopped where it did
 
@@ -22,10 +22,10 @@ After step 1 the agent can, without further input: run the eight tests, fix what
 
 ## What genuinely passed today (local or CI only, never upgraded to another environment)
 
-- CI on `8a1e27f`: all four jobs green (run 42855794149, re-read). Full backend suite on the working tree: **1831 passed, 0 failed**.
+- CI on `8a1e27f`: all four jobs green (run 42855794149, re-read). **CI on the new candidate `7644a22`: all five jobs green** (run 43157775353). Full backend suite locally: **1831 passed, 0 failed**.
 - **Two data-integrity defects fixed** with regression tests that fail on the old code: orphan upload files, and a saved customer reported as an error.
 - **A latent defect found and fixed** before it could block A2: the synthetic-owner script refused to run on staging and QA because it read `APP_ENV=production` as production.
-- **Secret scanning gate created** and clean across the tree and all 468 commits (CI previously had none).
+- **Secret scanning gate created** (CI previously had none), clean across the tree and all 468 commits, and **passing on a real CI runner**.
 - **Role matrix** for all 150 authenticated operations, committed as a reviewable snapshot.
 - **Invoice PDFs** generated and inspected: totals independently recomputed and exact, fonts and wrapping correct.
 - **Billing plans** in code match the approved pricing exactly (Stripe-side objects unverified).

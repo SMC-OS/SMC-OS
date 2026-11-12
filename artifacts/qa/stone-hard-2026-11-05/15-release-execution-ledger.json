@@ -1,4 +1,5 @@
 {
+ "relation_to_existing_ledger": "This ledger is the gate-level release view. The detailed 110-cell / 18-journey / 12-gate Stone-Hard ledger (04-ledger-reconciled.json, 01-requirements-matrix.csv) is unchanged and not reset: its unknown cells stay unknown until each has evidence in the environment it names. Nothing here closes any of them.",
  "title": "GeoCore release execution ledger",
  "as_of": "2026-11-12",
  "verdict": "HARD NO-GO",
@@ -14,6 +15,10 @@
    "evidence": [
     {
      "env": "ci",
+     "what": "Candidate 7644a22 (not yet declared final): run 43157775353 on 7644a22: backend, frontend, e2e, dependency-audit, secret-scan all success"
+    },
+    {
+     "env": "ci",
      "what": "Baseline 740b6b4: backend 1807, frontend 424, Playwright 77, audit passed (runs 42138695942, 42138702465)"
     },
     {
@@ -27,7 +32,7 @@
    ],
    "status": "UNKNOWN",
    "owner": "Release lead",
-   "remaining": "Push the release candidate commit and read its CI run; the SHA is fixed only once that run is green.",
+   "remaining": "7644a22 is a green candidate, not the final SHA: acceptance on QA may require further fixes. Declare the final SHA and re-run CI on exactly it.",
    "blocks_initial_release": true
   },
   {
@@ -292,7 +297,7 @@
    ],
    "status": "UNKNOWN",
    "owner": "Agent after QA access",
-   "remaining": "Run on deployed QA; run the orphan check against the real uploads volume during the recovery drill.",
+   "remaining": "Run on deployed QA; run scripts/qa/uploads_integrity_check.py (read-only: orphan files, missing files, size mismatches) against the real uploads volume during the recovery drill.",
    "blocks_initial_release": true
   },
   {
@@ -390,11 +395,15 @@
     {
      "env": "local",
      "what": "scripts/qa/scan_secrets.py: 0 findings across the tree and all 468 commits on all refs; canaries detected, lookalikes ignored (4 tests)"
+    },
+    {
+     "env": "ci",
+     "what": "New secret-scan job (full-history clone) success on 7644a22, run 43157775353"
     }
    ],
-   "status": "UNKNOWN",
+   "status": "VERIFIED",
    "owner": "Release lead",
-   "remaining": "CI had no secret-scanning job. One is added (secret-scan); VERIFIED once its first CI run is green.",
+   "remaining": "Re-run on the final release SHA (it runs on every push). Credential formats only; it does not claim to find every possible secret.",
    "blocks_initial_release": true
   },
   {
@@ -408,11 +417,15 @@
     {
      "env": "local",
      "what": "7 regression tests; the 3 defect tests fail on the old code and pass on the fix; full backend suite 1831 passed"
+    },
+    {
+     "env": "ci",
+     "what": "Backend, frontend and e2e success on 7644a22 which contains the fixes, run 43157775353"
     }
    ],
-   "status": "UNKNOWN",
+   "status": "VERIFIED",
    "owner": "Release lead",
-   "remaining": "Becomes VERIFIED when CI is green on the commit containing the fixes.",
+   "remaining": "Orphan check on the real volume is part of the recovery drill; the other ~34 activity-log call sites keep the best-effort form (owner design choice, see defect register).",
    "blocks_initial_release": true
   },
   {

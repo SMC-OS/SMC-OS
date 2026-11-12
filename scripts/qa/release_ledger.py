@@ -52,6 +52,7 @@ def render(doc: dict) -> str:
     blocking = [g for g in gates if g["blocks_initial_release"] and g["status"] not in ("VERIFIED", "NOT_APPLICABLE")]
     lines = [f"# {doc['title']}", "", f"_As of {doc['as_of']}. Verdict: **{doc['verdict']}**._", "",
              "Status counts: " + ", ".join(f"{s} {n}" for s, n in counts.items()) + f". Launch-blocking gates not yet VERIFIED: **{len(blocking)}** of {sum(1 for g in gates if g['blocks_initial_release'])}.", "",
+             doc.get("relation_to_existing_ledger", ""), "",
              "| Gate | Status | Must be proven in | Evidence so far (environment: what) | Owner | Remaining |", "|---|---|---|---|---|---|"]
     for g in gates:
         ev = "<br>".join(f"**{e['env']}**: {e['what']}" for e in g["evidence"]) or "none"
