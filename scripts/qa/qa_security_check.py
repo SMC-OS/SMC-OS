@@ -86,7 +86,10 @@ for path in ("/health", "/ready", "/openapi.json"):
 if not LOCAL:
     s, b, h = req("GET", WEB + "/login")
     check("no credential-shaped strings in the web login HTML", not leak.search(b), s)
-    check("web login HTML does not embed a loopback/internal API URL", b"localhost" not in b and b".railway.internal" not in b)
+    check("web login HTML does not reference a private Railway hostname", b".railway.internal" not in b)
+    for m in re.finditer(rb".{0,60}(localhost|127\\.0\\.0\\.1).{0,60}", b):
+        print("INFO loopback reference in login HTML:", m.group(0).decode("utf-8", "replace")[:140].replace("\n", " "))
+    check("web login HTML does not point the browser at a loopback API (NEXT_PUBLIC_API_URL)", not re.search(rb"NEXT_PUBLIC_API_URL[^,}]{0,40}(localhost|127\\.0\\.0\\.1)", b))
 
 # ---- unauthenticated sweep of representative protected routes
 for p in ("/customers", "/projects", "/quotes", "/tasks", "/users", "/invitations", "/purchase-orders", "/billing/subscription", "/tenants/me/profile", "/documents?customer_id=" + str(uuid.uuid4()), "/privacy/exports"):

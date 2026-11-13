@@ -12,6 +12,8 @@ const apiProxyTarget = resolveApiProxyTarget();
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Do not advertise the framework in every response.
+  poweredByHeader: false,
   async rewrites() {
     return apiProxyTarget
       ? [{ source: "/api/v1/:path*", destination: `${apiProxyTarget}/api/v1/:path*` }]
