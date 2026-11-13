@@ -131,11 +131,28 @@ def main():
         check("real sandbox trial subscription", sub.get("livemode") is False and sub.get("customer") == customer_id and sub.get("status") == "trialing" and sub.get("trial_end") == trial_end)
         poll(token, "actual Stripe subscription-created webhook applied", lambda x: x.get("plan") == "starter" and x.get("status") == "trialing" and x.get("trial_state") is None)
         sub = stripe("POST", "/subscriptions/" + sub_id, {"trial_end": "now", "proration_behavior": "none"})
-        poll(token, "trial-to-active after real Stripe event", lambda x: x.get("plan") == "starter" and x.get("status") == "active", 240)
-        # Retrieve the invoice to distinguish a payment from status-only activation.
-        sub = stripe("GET", "/subscriptions/" + sub_id)
-        invoice_id = sub.get("latest_invoice")
-        check("subscription has invoice", isinstance(invoice_id, str) and invoice_id.startswith("in_"))
+        # Trial-ending invoices may remain draft pending Stripe's asynchronous finalization.
+        # Identify the non-zero renewal invoice, then finalize/pay in the sandbox if needed.
+        end = time.monotonic() + 240
+        invoice_id = None
+        invoice = {}
+        while time.monotonic() < end:
+            sub = stripe("GET", "/subscriptions/" + sub_id)
+            iid = sub.get("latest_invoice")
+            if isinstance(iid, str) and iid.startswith("in_"):
+                code, inv = request("GET", STRIPE, "/invoices/" + iid, KEY)
+                if code == 200 and inv.get("total", 0) > 0:
+                    invoice_id, invoice = iid, inv
+                    break
+            time.sleep(5)
+        check("trial-ending non-zero invoice", invoice_id is not None)
+        if invoice.get("status") == "draft":
+            invoice = stripe("POST", "/invoices/" + invoice_id + "/finalize", {"auto_advance": "false"})
+        if invoice.get("status") == "open":
+            # Stripe serializes payment attempts; refresh before attempting to pay.
+            invoice = stripe("GET", "/invoices/" + invoice_id)
+            if invoice.get("status") == "open":
+                invoice = stripe("POST", "/invoices/" + invoice_id + "/pay", {"payment_method": pm_id})
         end = time.monotonic() + 180
         paid = False
         while time.monotonic() < end:
@@ -145,6 +162,7 @@ def main():
                 break
             time.sleep(5)
         check("real sandbox invoice paid", paid)
+        poll(token, "trial-to-active after real Stripe event", lambda x: x.get("plan") == "starter" and x.get("status") == "active", 240)
         portal = api("POST", "/billing/portal", token)
         check("customer portal created", urllib.parse.urlsplit(portal.get("portal_url", "")).hostname == "billing.stripe.com")
         cancel = api("POST", "/billing/cancel", token)
