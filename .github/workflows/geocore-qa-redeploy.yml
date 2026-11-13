@@ -50,9 +50,11 @@ jobs:
             read -r prev _ _ < <(latest "$svc")
             printf '%s' "$GITHUB_RUN_ID" | railway variable set QA_REDEPLOY_STAMP --stdin --service "$svc" --environment "$QA_ENV" >/dev/null || rc=1
             wait_new "$svc" "$prev" || rc=1
-            read -r prev _ _ < <(latest "$svc")
             railway variable delete QA_REDEPLOY_STAMP --service "$svc" --environment "$QA_ENV" >/dev/null 2>&1 || true
-            wait_new "$svc" "$prev" || rc=1
+            sleep 20
+            read -r id status commit < <(latest "$svc")
+            while [[ "$status" != "SUCCESS" && "$status" != "FAILED" && "$status" != "CRASHED" ]]; do sleep 15; read -r id status commit < <(latest "$svc"); done
+            echo "$svc settled: $id $status commit=$commit"; [[ "$status" == "SUCCESS" ]] || rc=1
           done
           for svc in geocore-api-qa geocore-web-qa; do echo "final: $svc $(latest "$svc")"; done
           for u in https://geocore-api-qa-acceptance.up.railway.app/ready https://geocore-web-qa-acceptance.up.railway.app/login; do
