@@ -60,7 +60,7 @@ jobs:
           admission="$(curl -fsS --max-time 30 "$QA_API/api/v1/auth/admission" | jq -r '.signups_open')" || fail "QA admission probe failed"
           [[ "$admission" == true || "$admission" == false ]] || fail "unexpected admission response"
           echo "QA API signups_open=$admission" | tee -a qa-stripe-identity.txt
-          [[ "$admission" == true ]] || fail "QA admission closed; requires isolated-QA-only checkout setup, not a production admission change"
+          [[ "$admission" == false ]] || fail "QA admission must stay closed for this synthetic existing-subscription test"
       - name: Configure sandbox credentials and provision fresh synthetic owners
         env:
           RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
