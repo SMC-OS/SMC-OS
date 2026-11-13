@@ -59,7 +59,27 @@ const FIELDS: {
     label: "VAT registration number",
     hint: "Leave blank if you are not VAT registered — it is omitted rather than guessed.",
   },
+  {
+    key: "bank_account_name",
+    label: "Bank account name",
+    hint: "Shown on invoices so customers can pay you.",
+  },
+  { key: "bank_sort_code", label: "Sort code", hint: "Six digits, e.g. 12-34-56." },
+  { key: "bank_account_number", label: "Account number", hint: "Eight digits." },
+  {
+    key: "payment_terms_days",
+    label: "Payment terms (days)",
+    hint: "Default 30. The due date is calculated when an invoice is issued and never changes afterwards.",
+  },
+  {
+    key: "payment_instructions",
+    label: "Other payment instructions",
+    hint: "Optional, e.g. payment link or reference wording. Required if you give no bank details.",
+    wide: true,
+  },
 ];
+
+const NUMERIC_KEYS = new Set(["invoice_next_number", "payment_terms_days"]);
 
 // Sprint 036 (Workstream I) — `logo_url` and `document_footer` moved to
 // the Branding section. They are how documents *look*, not who the
@@ -78,7 +98,9 @@ function toForm(profile: TenantProfile): FormState {
             ? "Invoice"
             : key === "invoice_next_number"
               ? 1
-              : ""),
+              : key === "payment_terms_days"
+                ? 30
+                : ""),
       ),
     ]),
   );
@@ -92,6 +114,7 @@ export default function CompanyIdentityCard() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [currency, setCurrency] = useState("GBP");
+  const [vatRegistered, setVatRegistered] = useState(false);
   const { refresh: refreshWorkspace } = useWorkspace();
 
   useEffect(() => {
@@ -101,6 +124,7 @@ export default function CompanyIdentityCard() {
         setProfile(loaded);
         setForm(toForm(loaded));
         setCurrency(loaded.currency ?? "GBP");
+        setVatRegistered(Boolean(loaded.vat_registered));
       })
       .catch(() => setLoadError("Could not load your company details."));
   }, []);
@@ -129,10 +153,20 @@ export default function CompanyIdentityCard() {
             ? "Invoice"
             : key === "invoice_next_number"
               ? 1
-              : ""),
+              : key === "payment_terms_days"
+                ? 30
+                : ""),
       );
       if (next !== previous) {
-        if (key === "invoice_next_number") {
+        if (key === "payment_terms_days") {
+          const days = Number(next);
+          if (!Number.isInteger(days) || days < 0 || days > 365) {
+            setSaveError("Payment terms must be a whole number of days from 0 to 365.");
+            setSaving(false);
+            return;
+          }
+          changed.payment_terms_days = days;
+        } else if (key === "invoice_next_number") {
           const number = Number(next);
           if (!Number.isInteger(number) || number < 1 || number > 2000000000) {
             setSaveError(
@@ -149,6 +183,9 @@ export default function CompanyIdentityCard() {
     if (currency !== (profile.currency ?? "GBP")) {
       changed.currency = currency;
     }
+    if (vatRegistered !== Boolean(profile.vat_registered)) {
+      changed.vat_registered = vatRegistered;
+    }
 
     if (Object.keys(changed).length === 0) {
       setSaving(false);
@@ -161,6 +198,7 @@ export default function CompanyIdentityCard() {
       setProfile(updated);
       setForm(toForm(updated));
       setCurrency(updated.currency ?? "GBP");
+      setVatRegistered(Boolean(updated.vat_registered));
       // The currency drives every money format in the app, so the shared
       // workspace context has to hear about a change here.
       refreshWorkspace();
@@ -206,7 +244,7 @@ export default function CompanyIdentityCard() {
                 >
                   <Input
                     id={`company-${key}`}
-                    type={key === "invoice_next_number" ? "number" : "text"}
+                    type={NUMERIC_KEYS.has(key) ? "number" : "text"}
                     min={key === "invoice_next_number" ? 1 : undefined}
                     max={key === "invoice_next_number" ? 2000000000 : undefined}
                     step={key === "invoice_next_number" ? 1 : undefined}
@@ -226,6 +264,19 @@ export default function CompanyIdentityCard() {
                 </Field>
               ))}
             </div>
+
+            <label className="flex items-center gap-2 text-sm" htmlFor="company-vat-registered">
+              <input
+                id="company-vat-registered"
+                type="checkbox"
+                checked={vatRegistered}
+                onChange={(e) => {
+                  setVatRegistered(e.target.checked);
+                  setSaved(false);
+                }}
+              />
+              We are VAT registered (a VAT number is then required on invoices; if not registered, invoices cannot charge VAT)
+            </label>
 
             {/* Sprint 036 — the workspace currency. A select rather than
                 a text field: the backend accepts only currencies GeoCore

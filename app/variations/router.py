@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_billing_access, require_role
+from app.auth.dependencies import require_financial_approver, require_billing_access, require_role
 from app.auth.models import UserRole
 from app.database import crud
 from app.database.database import get_db
@@ -128,7 +128,7 @@ def send_variation(
 @router.post("/variations/{variation_id}/approve", response_model=VariationOut)
 def approve_variation(
     variation_id: uuid.UUID,
-    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    current_user: User = Depends(require_financial_approver),
     db: Session = Depends(get_db),
 ):
     try:

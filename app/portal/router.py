@@ -39,7 +39,9 @@ from app.portal.service import (
     portal_service,
 )
 from app.quotes.pdf import PDFGenerator, build_line_items, build_document_fields
-from app.quotes.numbering import invoice_reference
+from app.quotes.numbering import issue_invoice
+from app.tenants import invoice_supplier
+from app.tenants.invoice_supplier import InvoiceSupplierIncomplete
 from app.tenants import identity as tenant_identity
 from app.tenants.service import tenant_service
 
@@ -117,7 +119,13 @@ def download_portal_invoice(token: str, quote_id: uuid.UUID, db: Session = Depen
     customer = customer_service.get(db, quote.customer_id, tenant_id=quote.tenant_id)
     customer_name = customer.name if customer is not None else "No customer linked"
 
-    reference = invoice_reference(db, quote)
+    try:
+        reference, snapshot = issue_invoice(db, quote)
+    except InvoiceSupplierIncomplete as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This invoice is not available yet.",
+        )
     pdf_bytes = PDFGenerator().create(
         {
             "id": quote.id,
@@ -127,7 +135,9 @@ def download_portal_invoice(token: str, quote_id: uuid.UUID, db: Session = Depen
             # sees the identity of the tenant that issued the quote, keyed
             # off the quote's own tenant_id rather than any caller context
             # (there is no authenticated user on a portal route).
-            "company": tenant_identity.resolve(tenant_service.get(db, quote.tenant_id)),
+            "company": (invoice_supplier.identity_from_snapshot(snapshot) if snapshot else tenant_identity.resolve(tenant_service.get(db, quote.tenant_id))),
+            "payment": (snapshot or {}).get("payment"),
+            "due_date": quote.invoice_due_date,
             "line_items": build_line_items(quote),
             **build_document_fields(quote),
             "price_before_vat": quote.price_before_vat,

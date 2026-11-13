@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/components/ui/Card";
 import { Field, Input, Textarea } from "@/components/ui/Field";
 import { PlusIcon, TrashIcon } from "@/components/ui/icons";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { ApiError, api } from "@/lib/api";
 import { parseNumberInput } from "@/lib/number";
 import { formatCurrency, formatMoney, formatDateTime } from "@/lib/utils";
@@ -23,6 +24,7 @@ const EMPTY_ITEM: VariationItemIn = { description: "", quantity: 1, unit: "item"
  * sent: approve/reject/void; approved/rejected/void: terminal, PDF only).
  */
 export function ProjectVariationsPanel({ projectId }: { projectId: string }) {
+  const { canApproveFinancials } = useAuth();
   const [variations, setVariations] = useState<Variation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -258,14 +260,16 @@ export function ProjectVariationsPanel({ projectId }: { projectId: string }) {
                             Send
                           </Button>
                         )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busyId === variation.id}
-                          onClick={() => transition(variation.id, "approve")}
-                        >
-                          Approve
-                        </Button>
+                        {canApproveFinancials && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={busyId === variation.id}
+                            onClick={() => transition(variation.id, "approve")}
+                          >
+                            Approve
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"

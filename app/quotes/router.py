@@ -5,12 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.activity.models import ActivityEventCreate, ActivityType
 from app.activity.service import activity_service
-from app.auth.dependencies import require_billing_access, require_role
+from app.auth.dependencies import require_financial_approver, require_billing_access, require_role
 from app.auth.models import UserRole
 from app.quotes.general import GeneralQuoteRequest, GeneralQuoteUpdate
 from app.quotes.service import (
     CustomerNotFoundError,
     QuoteApprovalStateError,
+    QuoteRevisionStateError,
     QuotePricingPendingError,
     QuoteEditStateError,
     QuoteKindError,
@@ -28,7 +29,9 @@ from app.projects.models import ProjectOut
 from app.quotes.ai_draft import AIDraftError, AIDraftUnavailable, ai_draft_service
 from app.quotes.ai_models import AIDraftRequest, AIQuoteDraft
 from app.quotes.pdf import PDFGenerator, build_line_items, build_document_fields
-from app.quotes.numbering import invoice_reference
+from app.quotes.numbering import issue_invoice
+from app.tenants import invoice_supplier
+from app.tenants.invoice_supplier import InvoiceSupplierIncomplete
 from app.tenants import identity as tenant_identity
 from app.tenants.service import tenant_service
 
@@ -73,6 +76,11 @@ def _serialize(quote) -> dict:
     return {
         "id": quote.id,
         "invoice_number": quote.invoice_number,
+        "revision_number": quote.revision_number,
+        "revision_of_quote_id": quote.revision_of_quote_id,
+        "approved_at": quote.approved_at,
+        "approved_by_user_id": quote.approved_by_user_id,
+        "approved_amount": quote.approved_amount,
         "pricing_mode": "manual" if any((i.catalogue_snapshot or {}).get("source") == "manual_job_price" for i in quote.items) else "catalogue",
         "customer_id": quote.customer_id,
         # --- Sprint 036 (Workstream E) — the universal quote envelope. ---
@@ -318,7 +326,7 @@ def send_quote_email(
 @router.post("/{quote_id}/approve")
 def approve_quote(
     quote_id: uuid.UUID,
-    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    current_user: User = Depends(require_financial_approver),
     db: Session = Depends(get_db),
 ):
     try:
@@ -342,6 +350,40 @@ def approve_quote(
         )
 
     return _serialize(quote)
+
+
+@router.post("/{quote_id}/revise", status_code=status.HTTP_201_CREATED)
+def revise_quote(
+    quote_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    db: Session = Depends(get_db),
+):
+    """Derive a new draft revision from an approved quote. The approved original is preserved untouched."""
+    try:
+        revision = quote_service.revise(db, quote_id, current_user.tenant_id, current_user.id)
+    except QuoteNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    except QuoteRevisionStateError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only an approved quote can be revised")
+    return _serialize(revision)
+
+
+@router.get("/{quote_id}/revisions")
+def list_quote_revisions(
+    quote_id: uuid.UUID,
+    current_user: User = Depends(require_billing_access),
+    db: Session = Depends(get_db),
+):
+    try:
+        rows = quote_service.revisions(db, quote_id, current_user.tenant_id)
+    except QuoteNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    return [
+        {"id": q.id, "revision_number": q.revision_number, "status": q.status, "total": q.total,
+         "approved_at": q.approved_at, "approved_by_user_id": q.approved_by_user_id, "approved_amount": q.approved_amount,
+         "invoice_number": q.invoice_number, "created_at": q.created_at}
+        for q in rows
+    ]
 
 
 @router.post("/{quote_id}/handoff", response_model=ProjectOut)
@@ -382,7 +424,13 @@ def download_invoice(
         if customer is not None:
             customer_name = customer.name
 
-    reference = invoice_reference(db, quote)
+    try:
+        reference, snapshot = issue_invoice(db, quote)
+    except InvoiceSupplierIncomplete as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invoice_supplier_incomplete", "message": "Complete the invoice supplier settings before issuing this invoice.", "missing": exc.missing},
+        )
     pdf_bytes = PDFGenerator().create(
         {
             "id": quote.id,
@@ -390,9 +438,11 @@ def download_invoice(
             "customer": customer_name,
             # Sprint 034 — the letterhead is this tenant's own business
             # identity, resolved from its profile, never a global default.
-            "company": tenant_identity.resolve(
+            "company": (invoice_supplier.identity_from_snapshot(snapshot) if snapshot else tenant_identity.resolve(
                 tenant_service.get(db, current_user.tenant_id)
-            ),
+            )),
+            "payment": (snapshot or {}).get("payment"),
+            "due_date": quote.invoice_due_date,
             "line_items": build_line_items(quote),
             **build_document_fields(quote),
             "price_before_vat": quote.price_before_vat,

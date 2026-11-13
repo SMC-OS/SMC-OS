@@ -28,6 +28,9 @@ interface AuthContextValue {
   // Sprint 011 — "Owner" | "Staff" | null, used to gate the invitations UI
   // client-side (the server enforces this for real via require_role()).
   role: string | null;
+  // Release default: whether this user may approve quotes, variations and purchase orders (UI hint only; the
+  // server enforces it on every approval route).
+  canApproveFinancials: boolean;
   // Sprint 015 — the signed-in user's own id, used to hide a "manage this
   // person" action on their own row (e.g. the Team list's Deactivate
   // button) — the server enforces the real rule (CannotDeactivateSelfError)
@@ -96,6 +99,7 @@ const DEMO_AUTH: AuthContextValue = {
   isReady: true,
   tenantName: null,
   role: null,
+  canApproveFinancials: false,
   userId: null,
   name: null,
   email: null,
@@ -113,6 +117,7 @@ function SessionAuthProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [tenantName, setTenantName] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [canApproveFinancials, setCanApproveFinancials] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
@@ -129,6 +134,7 @@ function SessionAuthProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(true);
         setTenantName(me.tenant_name);
         setRole(me.role);
+        setCanApproveFinancials(Boolean(me.can_approve_financials));
         setUserId(me.id);
         setName(me.name);
         setEmail(me.email);
@@ -165,6 +171,7 @@ function SessionAuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(true);
     setTenantName(me.tenant_name);
     setRole(me.role);
+    setCanApproveFinancials(Boolean(me.can_approve_financials));
     setUserId(me.id);
     setName(me.name);
     setEmail(me.email);
@@ -250,6 +257,7 @@ function SessionAuthProvider({ children }: { children: React.ReactNode }) {
         isReady,
         tenantName,
         role,
+        canApproveFinancials,
         userId,
         name,
         email,

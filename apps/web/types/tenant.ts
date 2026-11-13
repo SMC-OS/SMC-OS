@@ -26,6 +26,15 @@ export interface TenantProfile {
   logo_url: string | null;
   document_footer: string | null;
 
+  // --- Invoice supplier settings (release default). Never prefilled. ---
+  vat_registered?: boolean;
+  bank_account_name?: string | null;
+  bank_sort_code?: string | null;
+  bank_account_number?: string | null;
+  /** Default 30 days; drives the due date frozen onto each issued invoice. */
+  payment_terms_days?: number;
+  payment_instructions?: string | null;
+
   // --- Sprint 036 — workspace configuration. ---
   /** Drives every money format in the app and denominates new quotes.
    * GBP is the default, not a hardcoded assumption. */

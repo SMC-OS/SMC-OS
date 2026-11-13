@@ -351,6 +351,22 @@ test("C_manual_job_price_records_edges_and_new_customer_drawing", async ({
   });
   expect(download.status()).toBe(200);
   expect(download.headers()["content-type"]).toContain("application/pdf");
+  // Release default: an invoice is only issued once the workspace's supplier details are complete.
+  const supplier = await api.patch("/api/v1/tenants/me/profile", {
+    headers: authHeaders,
+    data: {
+      legal_name: "Synthetic Pilot Ltd",
+      address_line1: "1 Synthetic Street",
+      postcode: "NW2 7RP",
+      vat_registered: true,
+      vat_number: "GB123456789",
+      bank_account_name: "Synthetic Pilot Ltd",
+      bank_sort_code: "12-34-56",
+      bank_account_number: "12345678",
+      payment_terms_days: 30,
+    },
+  });
+  expect(supplier.status()).toBe(200);
   const invoice = await api.get(`/api/v1/quotes/${created.id}/invoice`, {
     headers: authHeaders,
   });

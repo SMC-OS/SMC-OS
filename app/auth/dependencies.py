@@ -303,3 +303,12 @@ def require_optional_billing_access(
     if current_user is None:
         return None
     return require_billing_access(require_verified_email(current_user), db)
+
+
+def require_financial_approver(current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF))) -> User:
+    """Release default: Owners approve financial commitments (quotes, variations, purchase orders). A Staff user
+    may do so only when an Owner has explicitly delegated that authority. Enforced here, server-side, on every
+    approval route — the UI hiding a button is never the control."""
+    if current_user.role == UserRole.OWNER.value or getattr(current_user, "can_approve_financials", False):
+        return current_user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Financial approval authority required")

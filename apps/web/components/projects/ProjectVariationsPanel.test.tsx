@@ -9,6 +9,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/components/auth/AuthProvider", () => ({ useAuth: () => ({ role: "Owner", canApproveFinancials: true }) }));
+
 import type { Variation } from "@/types/variation";
 
 const getProjectVariationsMock = vi.fn();

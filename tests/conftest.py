@@ -209,3 +209,17 @@ def other_tenant_auth_headers(client):
         db.close()
     yield {"Authorization": f"Bearer {token}"}
     _cleanup_other_tenant()
+
+
+SUPPLIER_SETTINGS = {
+    "legal_name": "Synthetic Supplier Ltd", "address_line1": "1 Synthetic Street", "city": "London", "postcode": "SW1A 1AA",
+    "vat_registered": True, "vat_number": "GB123456789", "bank_account_name": "Synthetic Supplier Ltd",
+    "bank_sort_code": "12-34-56", "bank_account_number": "12345678", "payment_terms_days": 30,
+}
+
+
+def make_supplier_ready(client, headers, **overrides):
+    """Complete the invoice supplier settings the way an owner would (synthetic details only)."""
+    response = client.patch("/api/v1/tenants/me/profile", json={**SUPPLIER_SETTINGS, **overrides}, headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()

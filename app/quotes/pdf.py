@@ -192,6 +192,8 @@ class PDFGenerator:
             story.append(Paragraph(f"Site: {_escape(str(invoice['site_address']))}", styles["Normal"]))
         if invoice.get("valid_until"):
             story.append(Paragraph(f"Valid until: {invoice['valid_until']:%d %B %Y}", styles["Normal"]))
+        if invoice.get("due_date"):
+            story.append(Paragraph(f"Payment due: {invoice['due_date']:%d %B %Y}", styles["Normal"]))
         for key, label in [("scope_of_works", "Scope of works"), ("exclusions", "Exclusions"), ("terms", "Terms")]:
             value = invoice.get(key)
             if value:
@@ -262,6 +264,20 @@ class PDFGenerator:
             )
         )
         story.append(table)
+
+        payment = invoice.get("payment")
+        if payment:
+            story.append(Spacer(1, 14))
+            story.append(Paragraph("Payment details", styles["Heading3"]))
+            if payment.get("terms_days") is not None:
+                story.append(Paragraph(f"Payment terms: {payment['terms_days']} days", styles["Normal"]))
+            for label, key in (("Account name", "account_name"), ("Sort code", "sort_code"), ("Account number", "account_number")):
+                if payment.get(key):
+                    story.append(Paragraph(f"{label}: {_escape(str(payment[key]))}", styles["Normal"]))
+            if payment.get("instructions"):
+                for line in str(payment["instructions"]).splitlines():
+                    story.append(Paragraph(_escape(line) or "<br/>", styles["Normal"]))
+            story.append(Paragraph(f"Please use {_escape(str(invoice.get('invoice_number') or ''))} as the payment reference.", styles["Normal"]))
 
         if company.document_footer:
             story.append(Spacer(1, 16))

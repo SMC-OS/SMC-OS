@@ -304,7 +304,7 @@ class ProcurementService:
 
         if not already_approved:
             purchase_order = crud.update_purchase_order(
-                db, purchase_order, {"approved_at": datetime.now(timezone.utc), "approved_by_user_id": actor_user_id}
+                db, purchase_order, {"approved_at": datetime.now(timezone.utc), "approved_by_user_id": actor_user_id, "approved_amount": purchase_order.total}
             )
             activity_service.log(
                 ActivityEventCreate(

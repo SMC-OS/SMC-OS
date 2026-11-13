@@ -52,6 +52,44 @@ class TenantIdentityFields(BaseModel):
     vat_number: str | None = None
     logo_url: str | None = None
     document_footer: str | None = None
+    # Invoice supplier settings (release default). Never invented: absent means "not supplied".
+    vat_registered: bool | None = None
+    bank_account_name: str | None = None
+    bank_sort_code: str | None = None
+    bank_account_number: str | None = None
+    payment_terms_days: int | None = Field(default=None, ge=0, le=365)
+    payment_instructions: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("bank_sort_code")
+    @classmethod
+    def _sort_code(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return value
+        digits = value.replace("-", "").replace(" ", "")
+        if len(digits) != 6 or not digits.isdigit():
+            raise ValueError("sort code must be six digits, e.g. 12-34-56")
+        return f"{digits[0:2]}-{digits[2:4]}-{digits[4:6]}"
+
+    @field_validator("bank_account_number")
+    @classmethod
+    def _account_number(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return value
+        digits = value.replace(" ", "")
+        if len(digits) != 8 or not digits.isdigit():
+            raise ValueError("UK account number must be eight digits")
+        return digits
+
+    @field_validator("vat_number")
+    @classmethod
+    def _vat_number_shape(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return value
+        cleaned = value.replace(" ", "").upper()
+        digits = cleaned[2:] if cleaned.startswith("GB") else cleaned
+        if not digits.isdigit() or len(digits) not in (9, 12):
+            raise ValueError("VAT number must be 9 or 12 digits, optionally prefixed GB")
+        return cleaned
 
 
 class TenantProfileUpdate(TenantIdentityFields):

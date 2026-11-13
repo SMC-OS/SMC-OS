@@ -259,6 +259,10 @@
   "owner": "allowed",
   "staff": "allowed"
  },
+ "GET /api/v1/quotes/{quote_id}/revisions": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
  "GET /api/v1/tasks": {
   "owner": "allowed",
   "staff": "allowed"
@@ -352,6 +356,10 @@
   "staff": "forbidden"
  },
  "PATCH /api/v1/tenants/me/profile": {
+  "owner": "allowed",
+  "staff": "forbidden"
+ },
+ "PATCH /api/v1/users/{user_id}/approval-authority": {
   "owner": "allowed",
   "staff": "forbidden"
  },
@@ -505,7 +513,7 @@
  },
  "POST /api/v1/purchase-orders/{purchase_order_id}/approve": {
   "owner": "allowed",
-  "staff": "allowed"
+  "staff": "forbidden"
  },
  "POST /api/v1/purchase-orders/{purchase_order_id}/cancel": {
   "owner": "allowed",
@@ -537,9 +545,13 @@
  },
  "POST /api/v1/quotes/{quote_id}/approve": {
   "owner": "allowed",
-  "staff": "allowed"
+  "staff": "forbidden"
  },
  "POST /api/v1/quotes/{quote_id}/handoff": {
+  "owner": "allowed",
+  "staff": "allowed"
+ },
+ "POST /api/v1/quotes/{quote_id}/revise": {
   "owner": "allowed",
   "staff": "allowed"
  },
@@ -573,7 +585,7 @@
  },
  "POST /api/v1/variations/{variation_id}/approve": {
   "owner": "allowed",
-  "staff": "allowed"
+  "staff": "forbidden"
  },
  "POST /api/v1/variations/{variation_id}/reject": {
   "owner": "allowed",

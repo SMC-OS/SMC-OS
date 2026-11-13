@@ -264,6 +264,8 @@ def test_portal_returns_only_that_customers_projects_and_quotes(client, auth_hea
 
 
 def test_download_portal_invoice_success(client, auth_headers, created_portal_link):
+    from tests.conftest import make_supplier_ready
+    make_supplier_ready(client, auth_headers)
     quote = client.get("/api/v1/quotes", headers=auth_headers).json()[0]
 
     r = client.get(f"/api/v1/portal-links/token/{created_portal_link['token']}/invoice/{quote['id']}")
@@ -285,6 +287,9 @@ def test_portal_invoice_carries_the_issuing_tenants_identity(
 
     original = client.get("/api/v1/tenants/me/profile", headers=auth_headers).json()
     try:
+        client.patch("/api/v1/tenants/me/profile", headers=auth_headers, json={
+            "address_line1": "1 Portal Rd", "postcode": "SW1A 1AA", "vat_registered": True, "bank_account_name": "Portal Ltd", "bank_sort_code": "11-22-33",
+            "bank_account_number": "87654321", "payment_terms_days": 14})
         client.patch(
             "/api/v1/tenants/me/profile",
             headers=auth_headers,

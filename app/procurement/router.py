@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_billing_access, require_role
+from app.auth.dependencies import require_financial_approver, require_billing_access, require_role
 from app.auth.models import UserRole
 from app.database import crud
 from app.database.database import get_db
@@ -238,7 +238,7 @@ def update_purchase_order(
 @router.post("/purchase-orders/{purchase_order_id}/approve", response_model=PurchaseOrderOut)
 def approve_purchase_order(
     purchase_order_id: uuid.UUID,
-    current_user: User = Depends(require_role(UserRole.OWNER, UserRole.STAFF)),
+    current_user: User = Depends(require_financial_approver),
     db: Session = Depends(get_db),
 ):
     try:

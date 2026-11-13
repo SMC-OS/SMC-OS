@@ -90,6 +90,15 @@ if q:
 
 s, b, _ = call("POST", f"/quotes/{qid}/approve", A) if qid else (0, b"", {})
 check("A approves quote", s in (200, 201), s)
+# Release default: an invoice cannot be issued until the workspace's supplier details are complete, and nothing is invented.
+s, _, _ = call("GET", f"/quotes/{qid}/invoice", A)
+check("invoice refused (422) until supplier details are complete", s == 422, s)
+SUPPLIER = {"legal_name": "QA Acceptance Supplier Ltd", "address_line1": "1 Synthetic Street", "city": "London", "postcode": "SW1A 1AA",
+            "vat_registered": True, "vat_number": "GB123456789", "bank_account_name": "QA Acceptance Supplier Ltd",
+            "bank_sort_code": "12-34-56", "bank_account_number": "12345678", "payment_terms_days": 30}
+for who, tok in (("A", A), ("B", B)):
+    s, b, _ = call("PATCH", "/tenants/me/profile", tok, SUPPLIER)
+    check(f"{who} completes invoice supplier settings", s == 200 and (js(b) or {}).get("payment_terms_days") == 30, s)
 s, b, h = call("GET", f"/quotes/{qid}/invoice", A) if qid else (0, b"", {})
 check("quote/invoice PDF is a real PDF", s == 200 and b[:5] == b"%PDF-" and len(b) > 1500 and "pdf" in h.get("Content-Type", h.get("content-type", "")).lower(), f"{s} len={len(b)}")
 
@@ -215,6 +224,11 @@ check("A sets own invoice prefix and sequence", s == 200 and (js(b) or {}).get("
 aqid2 = create_quote(A, cid, "QA custom invoice reference")
 s, _, ref_custom = read_pdf(A, aqid2)
 check("A new invoice uses configured reference QAInvoice-000041", s == 200 and ref_custom == "QAInvoice-000041", s)
+s, pdf_frozen, _ = read_pdf(A, qid)
+call("PATCH", "/tenants/me/profile", A, {"legal_name": "Renamed After Issue Ltd", "bank_sort_code": "99-88-77", "payment_terms_days": 60})
+s, pdf_after, _ = read_pdf(A, qid)
+check("issued invoice is frozen: later supplier changes do not alter it (text identical)", s == 200 and pdf_text(pdf_after) == pdf_text(pdf_frozen))
+check("issued invoice shows supplier, payment details and due date", all(t in pdf_text(pdf_after) for t in ("QA ACCEPTANCE SUPPLIER LTD", "12-34-56", "Payment due")))
 s, _, ref_original = read_pdf(A, qid)
 check("prefix change does not alter an already issued invoice", s == 200 and ref_original == ref_a, s)
 s, b, _ = call("GET", "/tenants/me/profile", B)
