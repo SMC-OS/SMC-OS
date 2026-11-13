@@ -40,8 +40,8 @@ jobs:
           grep -Fxq "environment: acceptance ($QA_ENV)" qa-email-identity.txt
           for svc in geocore-api-qa geocore-web-qa; do
             read -r status sha < <(railway deployment list --service "$svc" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.status) \(.meta.commitHash)"')
-            [[ "$status" == SUCCESS ]]
-            match="$(commit_matches_candidate "$sha" "$EXPECTED_SHA")"
+            [[ "$status" == SUCCESS ]] || { echo "BLOCKED: $svc latest deployment status=$status" >&2; exit 1; }
+            match="$(commit_matches_candidate "$sha" "$EXPECTED_SHA")" || { echo "BLOCKED: $svc runtime mismatch ($sha)" >&2; exit 1; }
             echo "$svc $status $sha $match" >> qa-email-identity.txt
           done
           [[ "$(start_get)" == "$QA_ORIG_START" ]]
@@ -71,14 +71,23 @@ jobs:
           )"
           start_set "$EMAIL_START"
           [[ "$(start_get)" == "$EMAIL_START" ]]
+          deploy_current_config() {
+            local out id
+            out="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --arg sha "$EXPECTED_SHA" '{s:$s,e:$e,sha:$sha}')")" || return 1
+            id="$(jq -er 'if (.errors // [])|length > 0 then error("Railway deployment request rejected") else .data.serviceInstanceDeployV2 end | select(type == "string" and length > 0)' <<<"$out")" || return 1
+            echo "New isolated QA deployment requested: $id" >&2
+            printf '%s\n' "$id"
+          }
           read -r CURRENT STATUS _ < <(latest_deployment)
           if [[ "$CURRENT" == "$PREV" ]]; then
-            railway redeploy --service geocore-api-qa --yes
+            TARGET="$(deploy_current_config)"
+          else
+            TARGET="$CURRENT"
           fi
           wait_for_new_deployment "$PREV" 900
           wait_for_ready "$QA_API" 300
           read -r ID STATUS SHA < <(latest_deployment)
-          [[ "$STATUS" == SUCCESS ]]
+          [[ "$ID" == "$TARGET" && "$STATUS" == SUCCESS ]]
           commit_matches_candidate "$SHA" "$EXPECTED_SHA"
           LOG="$(railway logs "$ID" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 300 2>/dev/null | grep -a '^EMAILQA|' || true)"
           printf '%s\n' "$LOG" | tee qa-email-provider.txt
@@ -142,12 +151,21 @@ jobs:
           railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("QA_") or . == "RESEND_API_KEY")) | length == 0' >/dev/null || rc=1
           [[ "$(start_get)" == "$QA_ORIG_START" ]] || rc=1
           [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || rc=1
+          deploy_current_config() {
+            local out id
+            out="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --arg sha "$EXPECTED_SHA" '{s:$s,e:$e,sha:$sha}')")" || return 1
+            id="$(jq -er 'if (.errors // [])|length > 0 then error("Railway deployment request rejected") else .data.serviceInstanceDeployV2 end | select(type == "string" and length > 0)' <<<"$out")" || return 1
+            echo "New isolated QA deployment requested: $id" >&2
+            printf '%s\n' "$id"
+          }
           read -r RESTORE_PREV _ _ < <(latest_deployment)
           if [[ "$RESTORE_PREV" != "${EMAIL_PREVIOUS_DEPLOY:-}" ]]; then
-            wait_for_stable_success 1200 || rc=1
-            read -r RESTORE_PREV _ _ < <(latest_deployment)
-            railway redeploy --service geocore-api-qa --yes || rc=1
+            # Start a fresh deploy from current configuration and the immutable
+            # source, not a redeploy of a temporary-start-command snapshot.
+            TARGET="$(deploy_current_config)" || rc=1
             wait_for_new_deployment "$RESTORE_PREV" 900 || rc=1
+            read -r ID STATUS SHA < <(latest_deployment)
+            [[ "$ID" == "$TARGET" && "$STATUS" == SUCCESS && "$SHA" == "$EXPECTED_SHA" ]] || rc=1
           fi
           wait_for_stable_success 1200 || rc=1
           wait_for_ready "$QA_API" 300 || rc=1
