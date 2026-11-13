@@ -96,10 +96,18 @@ jobs:
           printf '%s' "stripe-qa-other-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_B_EMAIL
           printf '%s' "Stripe QA B $RUN" | set_qa_var QA_OWNER_B_COMPANY
           printf '%s' "$PW_B" | set_qa_var QA_OWNER_B_PW
+          read -r PREV _ _ < <(latest_deployment)
+          echo "BILLING_PREVIOUS_DEPLOY=$PREV" >> "$GITHUB_ENV"
           start_set "$QA_PROVISION_START"
           [[ "$(start_get)" == "$QA_PROVISION_START" ]]
-          read -r PREV _ _ < <(latest_deployment)
-          printf '%s' "$PW_B" | railway variable set QA_OWNER_B_PW --stdin --service geocore-api-qa --environment "$QA_ENV" >/dev/null
+          # A variable change alone did not create a deployment in run 43514983821.
+          # Use the already verified acceptance-scoped project token and explicitly redeploy.
+          read -r CURRENT STATUS _ < <(latest_deployment)
+          if [[ "$CURRENT" == "$PREV" ]]; then
+            railway redeploy --service geocore-api-qa --yes
+          else
+            echo "QA deployment already triggered ($STATUS); not issuing a duplicate"
+          fi
           wait_for_new_deployment "$PREV" 900
           wait_for_ready "$QA_API" 300
           read -r ID STATUS SHA < <(latest_deployment)
@@ -133,8 +141,22 @@ jobs:
           railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("STRIPE_") or startswith("QA_"))) | length == 0' >/dev/null || rc=1
           [[ "$(start_get)" == "$QA_ORIG_START" ]] || rc=1
           [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || rc=1
+          # Restore actual running service, not just the stored configuration. If setup
+          # deployed a new container, require a subsequent clean deployment.
+          if [[ -n "${BILLING_PREVIOUS_DEPLOY:-}" ]]; then
+            read -r RESTORE_PREV _ _ < <(latest_deployment)
+            if [[ "$RESTORE_PREV" != "$BILLING_PREVIOUS_DEPLOY" ]]; then
+              wait_for_stable_success 1200 || rc=1
+              read -r RESTORE_PREV _ _ < <(latest_deployment)
+              railway redeploy --service geocore-api-qa --yes || rc=1
+              wait_for_new_deployment "$RESTORE_PREV" 900 || rc=1
+            fi
+          fi
           wait_for_stable_success 1200 || rc=1
           wait_for_ready "$QA_API" 300 || rc=1
+          # Original unconfigured billing endpoint must return unavailable.
+          code="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' -X POST "$QA_API/api/v1/billing/webhook" -H 'Content-Type: application/json' -d '{}')" || rc=1
+          [[ "$code" == 503 ]] || { echo "RESTORE FAILED: unconfigured webhook expected 503; got $code"; rc=1; }
           echo "QA configuration restoration exit=$rc" >> qa-stripe-identity.txt
           exit "$rc"
       - name: Retain redacted billing evidence
