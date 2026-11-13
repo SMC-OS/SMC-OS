@@ -72,7 +72,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "607a51b",
       "evidence": [
         {
           "env": "ci",
@@ -93,6 +93,10 @@
         {
           "env": "isolated_qa",
           "what": "Workspace B denied on costs, financial summary, messages, variations (read/approve/PDF), requirements, workflow, tasks, users, invitations, quotes, PDFs, documents, portal; lists exclude A's rows; anonymous refused. GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
         }
       ],
       "status": "VERIFIED",
@@ -115,11 +119,15 @@
         {
           "env": "isolated_qa",
           "what": "Deployed: all 28 owner-only operations in the matrix refuse Staff (403). Staff can approve quotes, variations and POs and write the project cost ledger with no limit or second approver."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Role matrix regenerated and reviewed: only the three approval routes changed (Staff now forbidden) plus the new delegation route (Owner only) and revision routes (both roles). 88 deployed checks pass."
         }
       ],
       "status": "UNKNOWN",
       "owner": "Owner (decision)",
-      "remaining": "OWNER DECISION REQUIRED: confirm Staff may approve quotes, variations, purchase orders and write costs without a limit, or require Owner approval above a threshold.",
+      "remaining": "Owner approval of the approval policy (APPROVAL-AUTHORITY) and the remaining Staff powers (cost ledger writes, quote/variation/PO preparation).",
       "blocks_initial_release": true
     },
     {
@@ -184,7 +192,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "607a51b",
       "evidence": [
         {
           "env": "ci",
@@ -201,6 +209,10 @@
         {
           "env": "isolated_qa",
           "what": "Customer edit, project assignment, Staff edit of assigned project, task assigned and completed by Staff, visible to Owner. GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
         }
       ],
       "status": "VERIFIED",
@@ -214,7 +226,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "607a51b",
       "evidence": [
         {
           "env": "ci",
@@ -227,6 +239,10 @@
         {
           "env": "isolated_qa",
           "what": "Draft amendment saved twice with stable total, reopened, approved; approved quote refused further PATCH (409). GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
         }
       ],
       "status": "VERIFIED",
@@ -240,7 +256,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "607a51b",
       "evidence": [
         {
           "env": "ci",
@@ -253,6 +269,10 @@
         {
           "env": "isolated_qa",
           "what": "Per-workspace Invoice-000001 sequence independent for A and B, stable on re-download, 3 concurrent first downloads allocate one number, custom prefix/sequence applied without changing issued invoices. GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
         }
       ],
       "status": "VERIFIED",
@@ -279,11 +299,15 @@
         {
           "env": "isolated_qa",
           "what": "Deployed invoice PDF text extracted: reference and total correct, stable. Visual inspection (rendered at 80 dpi from the identical generator): clean layout, £ renders, fonts embedded (Bitstream Vera; footer uses unembedded Helvetica), no overlap, arithmetic correct. DEFECT: the invoice shows no supplier name/address/company or VAT number, no due date, no payment details or terms."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Rendered inspection of generated PDFs (80-90 dpi, 13 Nov): long registered name wraps cleanly, accents, £/€/½, VAT and payment details, due date, totals correct, no overlap. DEFECT FOUND AND FIXED: Polish/Czech/Hungarian characters (ż, ő, ř) rendered as empty boxes with ReportLab's Vera; DejaVu Sans is now vendored (regression test added); deployed text extraction of invoices passes on the exact SHA. The deployed PDF bytes could not be downloaded here, so the visual check is on the identical generator output."
         }
       ],
-      "status": "BLOCKED",
-      "owner": "Owner (supplier legal details)",
-      "remaining": "Owner to supply legal supplier details (company number, registered address, VAT number if registered, bank details, payment terms); then add them to the template and re-inspect.",
+      "status": "VERIFIED",
+      "owner": "Agent",
+      "remaining": "None.",
       "blocks_initial_release": true
     },
     {
@@ -318,7 +342,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "607a51b",
       "evidence": [
         {
           "env": "ci",
@@ -327,6 +351,10 @@
         {
           "env": "isolated_qa",
           "what": "Stone job enquiry > measure_site_visit > quote > approved > deposit > material_ordered_reserved > template > fabrication > qc > installation > snagging > complete via API; materials gate blocked fabrication (409) until PO receipt, then opened; history recorded. General-building workflow also reaches complete. Only the materials gate is configured on the stone template. GitHub Actions run 43183882421 (12 Nov), isolated QA, 68+73+10 API checks and 8 browser tests, all passed"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
         }
       ],
       "status": "VERIFIED",
@@ -340,7 +368,7 @@
       "verified_in": [
         "isolated_qa"
       ],
-      "sha": "740b6b4",
+      "sha": "607a51b",
       "evidence": [
         {
           "env": "ci",
@@ -357,6 +385,10 @@
         {
           "env": "isolated_qa",
           "what": "Portal scope, revocation, MIME spoofing, cross-tenant denial; expiry proven on the deployed API: backdated link reads 'expired' with no projects/quotes, invoice download refused (container task run 43183932147)."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Re-run unchanged and passing on the release-defaults build: 8/8 browser, 73/73 lifecycle, 88/88 roles/isolation, 10/10 stone workflow. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
         }
       ],
       "status": "VERIFIED",
@@ -441,11 +473,15 @@
         {
           "env": "isolated_qa_public",
           "what": "API and web home/login/health/ready return HTTP 200 (run 42855457897); public smoke only"
+        },
+        {
+          "env": "isolated_qa",
+          "what": "38 deployed checks: nosniff/frame/referrer/CSP on 200/401/404, HSTS on API and web, no x-powered-by, CORS allows only the QA web origin, cookie-session login from a hostile or missing Origin refused with no cookie, errors sanitised (no tracebacks/SQL/paths), unsigned and unsigned-header Stripe webhooks rejected, no credential-shaped strings in public documents or login HTML, anonymous refused on 11 protected routes, brute-force throttle returns 429. Defects found and fixed: x-powered-by exposed; social-preview og:image pointed at http://localhost:3000. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
         }
       ],
-      "status": "UNKNOWN",
-      "owner": "Agent after QA access",
-      "remaining": "Run the authenticated role and tenant checks against deployed QA; review medium and low findings.",
+      "status": "VERIFIED",
+      "owner": "Agent",
+      "remaining": "Signed-webhook acceptance, duplicate and out-of-order events need the Stripe test key (see billing gates).",
       "blocks_initial_release": true
     },
     {
@@ -581,11 +617,15 @@
         {
           "env": "isolated_qa",
           "what": "Bounded test (isolated QA, 30 virtual users max, ~1,500 requests per top step): 5/15/30 VUs, error rate 0, p95 0.27/0.29/0.40 s, p99 up to 2.9 s at 15 VUs (intermittent spike seen in two runs), ~37 rps. Dataset tiny (~3,000 rows, 12 MB)."
+        },
+        {
+          "env": "isolated_qa",
+          "what": "Re-measured on the release-defaults build: 5/15/30 VUs, error rate 0, p95 0.33/0.36/0.44 s, p99 up to 3.0 s at 30 VUs. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
         }
       ],
       "status": "VERIFIED",
       "owner": "Agent",
-      "remaining": "Supported claim limited to <=10 workspaces / <=30 concurrent users on this instance size and small data; larger scale or large datasets not measured; p99 spikes worth monitoring.",
+      "remaining": "Supported claim: <=10 workspaces and <=30 concurrent users on the current instance with small data; p99 spikes of about 3 s recur and should be monitored; larger scale unmeasured.",
       "blocks_initial_release": true
     },
     {
@@ -666,6 +706,60 @@
       "status": "UNKNOWN",
       "owner": "Owner",
       "remaining": "Confirm the production setting is closed before any deploy.",
+      "blocks_initial_release": true
+    },
+    {
+      "id": "APPROVAL-AUTHORITY",
+      "purpose": "Owner holds financial approval; Staff prepare/submit; explicit Owner delegation; enforced server-side with actor/amount/time recorded",
+      "verified_in": [
+        "isolated_qa"
+      ],
+      "sha": "607a51b",
+      "evidence": [
+        {
+          "env": "isolated_qa",
+          "what": "Staff refused (403) on quote, variation and purchase-order approval by default; cannot self-delegate; other workspace's owner cannot delegate; Owner delegates, delegated Staff approves with actor, amount £1,200.00 and time recorded, withdrawal enforced; 14 backend tests plus 88 deployed role checks. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        }
+      ],
+      "status": "VERIFIED",
+      "owner": "Owner (policy approval)",
+      "remaining": "OWNER MUST APPROVE THIS POLICY before production (release default; Staff cost-ledger writes unchanged and still allowed).",
+      "blocks_initial_release": true
+    },
+    {
+      "id": "QUOTE-REVISIONS",
+      "purpose": "Approved quotes are never overwritten; a new revision is derived with history",
+      "verified_in": [
+        "isolated_qa"
+      ],
+      "sha": "607a51b",
+      "evidence": [
+        {
+          "env": "isolated_qa",
+          "what": "Approved quote revised to a draft revision 2 with identical totals; original status, total and approval timestamp unchanged; PATCH on the approved original still 409; history lists revisions 1..n with approved amounts; cross-tenant 404; revising a draft refused. GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        }
+      ],
+      "status": "VERIFIED",
+      "owner": "Owner (confirmation, non-blocking)",
+      "remaining": "Owner to confirm the revision workflow replaces 'cannot amend'.",
+      "blocks_initial_release": true
+    },
+    {
+      "id": "INVOICE-SUPPLIER",
+      "purpose": "Per-workspace supplier legal/VAT/bank/payment-terms settings validated at issue, frozen on the issued invoice with a calculated due date",
+      "verified_in": [
+        "isolated_qa"
+      ],
+      "sha": "607a51b",
+      "evidence": [
+        {
+          "env": "isolated_qa",
+          "what": "Issuance refused (422, with the missing fields) until legal name, address, VAT status/number, payment details and terms are complete; non-registered workspaces cannot charge VAT; settings change after issue does not alter the issued invoice (text identical); due date calculated from terms; numbering, prefixes, discount and VAT arithmetic unchanged (73/73 lifecycle checks). GitHub Actions run 43354712181 (13 Nov), isolated QA, API and web both exact commit 607a51bf3c5afd41f5085a8542813715ed87abda"
+        }
+      ],
+      "status": "VERIFIED",
+      "owner": "Owner (data entry)",
+      "remaining": "Owner must enter the real supplier details per workspace; nothing is prefilled or invented.",
       "blocks_initial_release": true
     }
   ]
