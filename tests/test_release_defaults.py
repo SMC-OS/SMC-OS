@@ -260,3 +260,17 @@ def test_long_names_accents_and_pound_signs_render(client, auth_headers, clean_s
     assert r.status_code == 200
     text = _pdf_text(r.content)
     assert "MÜLLER" in text.upper() and "£1,200.00" in text and "Pay by BACS" in text
+
+
+def test_pdf_font_covers_central_european_names():
+    """ReportLab's bundled Vera rendered ż/ő/ř as empty boxes; the vendored DejaVu Sans must cover them."""
+    import datetime
+    from app.quotes.pdf import PDFGenerator
+    from app.tenants.identity import CompanyIdentity
+    pdf = PDFGenerator().create({
+        "id": "12345678-0000", "invoice_number": "Invoice-000001", "customer": "Zażółć Gęślą Jaźń, Dvořák, Őrmény",
+        "company": CompanyIdentity(display_name="Łódź Stone Ltd"), "line_items": [{"description": "Čeština příliš žluťoučký kůň", "amount": 10.0}],
+        "price_before_vat": 10.0, "vat": 2.0, "total": 12.0, "created_at": datetime.datetime.now(), "title": "t"})
+    text = _pdf_text(pdf)
+    assert "Zażółć Gęślą Jaźń" in text and "Dvořák" in text and "Őrmény" in text and "žluťoučký" in text
+    assert b"DejaVuSans" in pdf

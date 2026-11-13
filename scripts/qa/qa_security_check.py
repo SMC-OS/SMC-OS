@@ -89,6 +89,7 @@ if not LOCAL:
     check("web login HTML does not reference a private Railway hostname", b".railway.internal" not in b)
     for m in re.finditer(rb".{0,60}(localhost|127\\.0\\.0\\.1).{0,60}", b):
         print("INFO loopback reference in login HTML:", m.group(0).decode("utf-8", "replace")[:140].replace("\n", " "))
+    check("web login HTML has no loopback URL (e.g. social-preview og:image base)", not re.search(rb"https?://(localhost|127\\.0\\.0\\.1)", b))
     check("web login HTML does not point the browser at a loopback API (NEXT_PUBLIC_API_URL)", not re.search(rb"NEXT_PUBLIC_API_URL[^,}]{0,40}(localhost|127\\.0\\.0\\.1)", b))
 
 # ---- unauthenticated sweep of representative protected routes

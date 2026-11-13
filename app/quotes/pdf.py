@@ -18,9 +18,17 @@ import reportlab
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+# DejaVu Sans (Bitstream Vera derivative, free licence in fonts/DEJAVU-LICENSE.txt) covers Latin Extended-A/B,
+# Greek and Cyrillic, which ReportLab's bundled Vera does not (Polish/Czech names rendered as empty boxes).
+# Vera stays as the fallback if the vendored files are ever missing.
+_VENDORED_FONT_DIR = Path(__file__).parent / "fonts"
 _FONT_DIR = Path(reportlab.__file__).parent / "fonts"
-pdfmetrics.registerFont(TTFont("GeoCoreBody", str(_FONT_DIR / "Vera.ttf")))
-pdfmetrics.registerFont(TTFont("GeoCoreBold", str(_FONT_DIR / "VeraBd.ttf")))
+_body = _VENDORED_FONT_DIR / "DejaVuSans.ttf"
+_bold = _VENDORED_FONT_DIR / "DejaVuSans-Bold.ttf"
+if not (_body.is_file() and _bold.is_file()):
+    _body, _bold = _FONT_DIR / "Vera.ttf", _FONT_DIR / "VeraBd.ttf"
+pdfmetrics.registerFont(TTFont("GeoCoreBody", str(_body)))
+pdfmetrics.registerFont(TTFont("GeoCoreBold", str(_bold)))
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
