@@ -17,7 +17,7 @@ jobs:
     env:
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
       QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
-      EXPECTED_SHA: 607a51bf3c5afd41f5085a8542813715ed87abda
+      EXPECTED_SHA: 86c4911f3d22acf1a2f5826f79ac0dbfa8e3aa3b
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,22 +37,30 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/qa/qa_railway_ops.sh
-          [[ -n "$RAILWAY_TOKEN" && "$QA_ENV" == "$QA_ENVIRONMENT_ID" ]]
+          fail() { echo "BLOCKED: $1" | tee -a qa-stripe-identity.txt >&2; exit 1; }
+          [[ -n "$RAILWAY_TOKEN" && "$QA_ENV" == "$QA_ENVIRONMENT_ID" ]] || fail "missing scoped QA token or wrong environment"
           railway status --json | jq -r '"project: \(.name)", (.environments.edges[]?.node | "environment: \(.name) (\(.id))")' > qa-stripe-identity.txt
-          grep -Fxq 'project: geocore-qa-20261110' qa-stripe-identity.txt
-          grep -Fxq "environment: acceptance ($QA_ENV)" qa-stripe-identity.txt
+          grep -Fxq 'project: geocore-qa-20261110' qa-stripe-identity.txt || fail "wrong Railway project"
+          grep -Fxq "environment: acceptance ($QA_ENV)" qa-stripe-identity.txt || fail "wrong Railway environment"
           for svc in geocore-api-qa geocore-web-qa; do
             read -r status sha < <(railway deployment list --service "$svc" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.status) \(.meta.commitHash)"')
-            [[ "$status" == SUCCESS ]]
-            commit_matches_candidate "$sha" "$EXPECTED_SHA"
-            echo "$svc $status $sha" >> qa-stripe-identity.txt
+            [[ "$status" == SUCCESS ]] || fail "$svc is not on a successful deployment"
+            match="$(commit_matches_candidate "$sha" "$EXPECTED_SHA")" || fail "$svc runtime differs from immutable final release"
+            echo "$svc $status $sha $match" | tee -a qa-stripe-identity.txt
           done
-          [[ "$(start_get)" == "$QA_ORIG_START" ]]
-          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]]
-          # Refuse overwriting or deleting any existing Stripe or temporary QA variables.
-          railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("STRIPE_") or startswith("QA_"))) | length == 0' >/dev/null
-          curl -fsS "$QA_API/ready" >/dev/null
-          curl -fsS "$QA_API/api/v1/auth/admission" | jq -e '.signups_open == true' >/dev/null
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] || fail "QA start command differs from reviewed baseline"
+          echo "PASS start command baseline"
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || fail "QA predeploy command differs from reviewed baseline"
+          echo "PASS predeploy command baseline"
+          # Check only names; never output the Railway variable payload.
+          railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("STRIPE_") or startswith("QA_"))) | length == 0' >/dev/null || fail "existing Stripe or temporary QA variables; preserve them"
+          echo "PASS no existing Stripe or QA temporary variables"
+          curl -fsS --max-time 30 "$QA_API/ready" >/dev/null || fail "QA API readiness failed"
+          echo "PASS API readiness"
+          admission="$(curl -fsS --max-time 30 "$QA_API/api/v1/auth/admission" | jq -r '.signups_open')" || fail "QA admission probe failed"
+          [[ "$admission" == true || "$admission" == false ]] || fail "unexpected admission response"
+          echo "QA API signups_open=$admission" | tee -a qa-stripe-identity.txt
+          [[ "$admission" == true ]] || fail "QA admission closed; requires isolated-QA-only checkout setup, not a production admission change"
       - name: Configure sandbox credentials and provision fresh synthetic owners
         env:
           RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
