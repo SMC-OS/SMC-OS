@@ -217,7 +217,7 @@ def main():
         rest = cf.db_fingerprint(rdsn)
         problems = cf.diff_fingerprints(t1, rest)
         check("restored database equals the capture: all tables (rows + content hash), sequences, alembic revision", not problems, "; ".join(problems[:3]))
-        check("restored alembic revision is the expected head", rest["alembic_version"] == "a5f6b7c8d9e0", rest["alembic_version"])
+        check("restored alembic revision is the expected head", rest["alembic_version"] == t1["alembic_version"], rest["alembic_version"])
         check("restored row total equals the source", rest["row_total"] == t1["row_total"], f"{rest['row_total']} vs {t1['row_total']}")
         upr = cf.uploads_manifest(scratch)
         uprob = cf.diff_manifests(up1, upr)

@@ -42,8 +42,8 @@ jobs:
     env:
       QA_API: https://geocore-api-qa-acceptance.up.railway.app
       QA_WEB: https://geocore-web-qa-acceptance.up.railway.app
-      EXPECTED_SHA: 7644a222127059991eb8a88e93399ccf02495af9
-      EXPECTED_MIGRATION: a5f6b7c8d9e0
+      EXPECTED_SHA: ae5cd3220faa565e8a329be2d1e8179b12626f37
+      EXPECTED_MIGRATION: b6c7d8e9f0a1
       QA_PROJECT_ID: a16eaf0a-b5a5-4e8e-b79e-4d191457638e
       QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
     steps:
