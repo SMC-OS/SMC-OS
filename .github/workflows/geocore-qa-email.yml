@@ -1,0 +1,167 @@
+name: GeoCore isolated QA real inbox acceptance
+# Sends at most three messages to one owner-designated run-specific Gmail alias.
+# The mailbox is read from the isolated QA web service, never committed to Git.
+# Admission remains closed. No shared-staging or production changes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa/geocore-closure-20261105]
+    paths: ['.github/workflows/geocore-qa-email.yml']
+permissions:
+  contents: read
+concurrency:
+  group: geocore-qa-acceptance
+  cancel-in-progress: false
+jobs:
+  email-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      QA_API: https://geocore-api-qa-acceptance.up.railway.app
+      QA_WEB: https://geocore-web-qa-acceptance.up.railway.app
+      EXPECTED_SHA: 86c4911f3d22acf1a2f5826f79ac0dbfa8e3aa3b
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: npm install --global @railway/cli@4
+      - name: Check isolated environment and prepare real-mail fixture
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+          RESEND_KEY: ${{ secrets.GEOCORE_QA_RESEND_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          [[ "$RESEND_KEY" == re_* ]]
+          railway status --json | jq -r '"project: \(.name)", (.environments.edges[]?.node | "environment: \(.name) (\(.id))")' > qa-email-identity.txt
+          grep -Fxq 'project: geocore-qa-20261110' qa-email-identity.txt
+          grep -Fxq "environment: acceptance ($QA_ENV)" qa-email-identity.txt
+          for svc in geocore-api-qa geocore-web-qa; do
+            read -r status sha < <(railway deployment list --service "$svc" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.status) \(.meta.commitHash)"')
+            [[ "$status" == SUCCESS ]]
+            match="$(commit_matches_candidate "$sha" "$EXPECTED_SHA")"
+            echo "$svc $status $sha $match" >> qa-email-identity.txt
+          done
+          [[ "$(start_get)" == "$QA_ORIG_START" ]]
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]]
+          railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("QA_") or startswith("STRIPE_") or . == "RESEND_API_KEY")) | length == 0' >/dev/null
+          curl -fsS --max-time 30 "$QA_API/ready" >/dev/null
+          curl -fsS --max-time 30 "$QA_API/api/v1/auth/admission" | jq -e '.signups_open == false' >/dev/null
+          MAILBOX="$(railway variable list --service geocore-web-qa --environment "$QA_ENV" --json | jq -er '.GEOCORE_QA_TEST_MAILBOX')"
+          [[ "$MAILBOX" =~ ^[a-zA-Z0-9.]+@gmail\.com$ ]]
+          echo "::add-mask::$MAILBOX"
+          RUN="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          ALIAS="${MAILBOX%@gmail.com}+geocore-qa-$RUN@gmail.com"
+          echo "::add-mask::$ALIAS"
+          PW="$(openssl rand -hex 20)Aa1!"
+          echo "::add-mask::$PW"
+          echo "EMAIL_SETUP_STARTED=1" >> "$GITHUB_ENV"
+          printf '%s' "$RESEND_KEY" | set_qa_var RESEND_API_KEY
+          printf '%s' "$RUN" | set_qa_var QA_EMAIL_RUN
+          printf '%s' "$ALIAS" | set_qa_var QA_EMAIL_RECIPIENT
+          printf '%s' "$PW" | set_qa_var QA_EMAIL_PW
+          base64 -w0 scripts/qa/qa_email_provision.py | set_qa_var QA_EMAIL_SCRIPT_B64
+          read -r PREV _ _ < <(latest_deployment)
+          echo "EMAIL_PREVIOUS_DEPLOY=$PREV" >> "$GITHUB_ENV"
+          EMAIL_START="$(cat <<'START'
+          sh -c 'python -m app.core.migrate_gate && [ -n "$QA_EMAIL_SCRIPT_B64" ] && echo "$QA_EMAIL_SCRIPT_B64" | base64 -d | python - && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log'
+          START
+          )"
+          start_set "$EMAIL_START"
+          [[ "$(start_get)" == "$EMAIL_START" ]]
+          read -r CURRENT STATUS _ < <(latest_deployment)
+          if [[ "$CURRENT" == "$PREV" ]]; then
+            railway redeploy --service geocore-api-qa --yes
+          fi
+          wait_for_new_deployment "$PREV" 900
+          wait_for_ready "$QA_API" 300
+          read -r ID STATUS SHA < <(latest_deployment)
+          [[ "$STATUS" == SUCCESS ]]
+          commit_matches_candidate "$SHA" "$EXPECTED_SHA"
+          LOG="$(railway logs "$ID" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 300 2>/dev/null | grep -a '^EMAILQA|' || true)"
+          printf '%s\n' "$LOG" | tee qa-email-provider.txt
+          grep -Fxq 'EMAILQA|DONE' qa-email-provider.txt
+          grep -Fxq 'EMAILQA|PASS|email_verification|provider accepted' qa-email-provider.txt
+          grep -Fxq 'EMAILQA|PASS|password_reset|provider accepted' qa-email-provider.txt
+          {
+            echo "QA_EMAIL_ALIAS=$ALIAS"
+            echo "QA_EMAIL_PASSWORD=$PW"
+          } >> "$GITHUB_ENV"
+      - name: Verify deployed resend and invalid-link API behavior
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          api = os.environ["QA_API"] + "/api/v1/auth"
+          def post(path, payload, token=None):
+              headers = {"Content-Type":"application/json"}
+              if token:
+                  headers["Authorization"] = "Bearer " + token
+              req = urllib.request.Request(api + path, json.dumps(payload).encode(), headers, method="POST")
+              try:
+                  with urllib.request.urlopen(req, timeout=40) as response:
+                      return response.status, json.loads(response.read())
+              except urllib.error.HTTPError as error:
+                  return error.code, {}
+          results = {}
+          status, login = post("/login", {"email": os.environ["QA_EMAIL_ALIAS"], "password": os.environ["QA_EMAIL_PASSWORD"]})
+          results["login"] = status == 200 and bool(login.get("access_token"))
+          if results["login"]:
+              # If the owner has already clicked the initial link, do not send another.
+              status, resend = post("/email/verify/resend", {}, login["access_token"])
+              results["resend"] = status == 200 and (resend.get("delivery_status") == "sent" or resend.get("already_verified") is True)
+              results["resend_already_verified"] = resend.get("already_verified") is True
+          else:
+              results["resend"] = False
+          status, _ = post("/email/verify/confirm", {"token":"invalid-synthetic-qa-token"})
+          results["invalid_verification_rejected"] = status == 400
+          status, _ = post("/password/reset", {"token":"invalid-synthetic-qa-token", "new_password":"SyntheticInvalidReset8!x"})
+          results["invalid_reset_rejected"] = status == 400
+          print(json.dumps(results))
+          with open("qa-email-api.json", "w") as f:
+              json.dump(results, f, indent=2)
+          if not all(results[k] for k in ("login", "resend", "invalid_verification_rejected", "invalid_reset_rejected")):
+              raise SystemExit(1)
+          PY
+      - name: Restore original isolated QA configuration
+        if: always()
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "${EMAIL_SETUP_STARTED:-}" == 1 ]] || { echo 'No configuration to restore'; exit 0; }
+          source scripts/qa/qa_railway_ops.sh
+          rc=0
+          start_set "$QA_ORIG_START" || rc=1
+          for key in QA_EMAIL_SCRIPT_B64 QA_EMAIL_RUN QA_EMAIL_RECIPIENT QA_EMAIL_PW RESEND_API_KEY; do
+            railway variable delete "$key" --service geocore-api-qa --environment "$QA_ENV" >/dev/null 2>&1 || true
+          done
+          railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("QA_") or . == "RESEND_API_KEY")) | length == 0' >/dev/null || rc=1
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] || rc=1
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || rc=1
+          read -r RESTORE_PREV _ _ < <(latest_deployment)
+          if [[ "$RESTORE_PREV" != "${EMAIL_PREVIOUS_DEPLOY:-}" ]]; then
+            wait_for_stable_success 1200 || rc=1
+            read -r RESTORE_PREV _ _ < <(latest_deployment)
+            railway redeploy --service geocore-api-qa --yes || rc=1
+            wait_for_new_deployment "$RESTORE_PREV" 900 || rc=1
+          fi
+          wait_for_stable_success 1200 || rc=1
+          wait_for_ready "$QA_API" 300 || rc=1
+          curl -fsS --max-time 30 "$QA_API/api/v1/auth/admission" | jq -e '.signups_open == false' >/dev/null || rc=1
+          echo "QA restoration exit=$rc" >> qa-email-identity.txt
+          exit "$rc"
+      - name: Retain redacted email acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geocore-qa-real-inbox-acceptance
+          path: |
+            qa-email-identity.txt
+            qa-email-provider.txt
+            qa-email-api.json
+          retention-days: 14
+          if-no-files-found: warn
