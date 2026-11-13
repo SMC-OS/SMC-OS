@@ -104,18 +104,10 @@ def main():
     check("unsigned webhook refused", code == 400)
     checkout_id = customer_id = sub_id = None
     try:
-        checkout = api("POST", "/billing/checkout", token, {"plan": "starter", "billing_period": "monthly"})
-        url = checkout.get("checkout_url", "")
-        match = re.search(r"/(cs_test_[a-zA-Z0-9]+)", urllib.parse.urlsplit(url).path)
-        check("hosted sandbox Checkout URL", urllib.parse.urlsplit(url).hostname == "checkout.stripe.com" and match is not None)
-        checkout_id = match.group(1)
-        session = stripe("GET", "/checkout/sessions/" + checkout_id)
-        check("actual Checkout session is subscription in test mode", session.get("livemode") is False and session.get("mode") == "subscription")
-        check("Checkout bound to synthetic workspace", session.get("client_reference_id") == tenant and session.get("metadata", {}).get("tenant_id") == tenant)
-        lines = stripe("GET", "/checkout/sessions/" + checkout_id + "/line_items")
-        check("Checkout correct price", len(lines.get("data", [])) == 1 and lines["data"][0]["price"]["id"] == PRICES["STARTER_MONTHLY"][0])
+        api("POST", "/billing/checkout", token, {"plan": "starter", "billing_period": "monthly"},
+            label="closed admission refuses first checkout", expected=(403,))
         # Real Stripe API subscription, not a fabricated webhook. This separately exercises actual Stripe event delivery.
-        # Hosted Checkout card submission is NOT covered by this API-created subscription.
+        # Public admission stays CLOSED. This creates only a synthetic subscription; it is not proof of first-checkout completion.
         customer = stripe("POST", "/customers", {"email": email, "description": "GeoCore isolated QA " + os.environ.get("GITHUB_RUN_ID", ""), "metadata[geocore_qa]": "true", "metadata[tenant_id]": tenant})
         customer_id = customer["id"]
         check("customer sandbox and synthetic", customer.get("livemode") is False and customer.get("email") == email)
@@ -163,6 +155,20 @@ def main():
             time.sleep(5)
         check("real sandbox invoice paid", paid)
         poll(token, "trial-to-active after real Stripe event", lambda x: x.get("plan") == "starter" and x.get("status") == "active", 240)
+        # Existing subscription holders may still use Checkout while admission is closed.
+        # Create but do not complete this session: a second subscription would be unwanted.
+        checkout = api("POST", "/billing/checkout", token, {"plan": "starter", "billing_period": "monthly"})
+        url = checkout.get("checkout_url", "")
+        match = re.search(r"/(cs_test_[a-zA-Z0-9]+)", urllib.parse.urlsplit(url).path)
+        check("existing subscriber hosted sandbox Checkout URL", urllib.parse.urlsplit(url).hostname == "checkout.stripe.com" and match is not None)
+        checkout_id = match.group(1)
+        session = stripe("GET", "/checkout/sessions/" + checkout_id)
+        check("actual Checkout session is subscription in test mode", session.get("livemode") is False and session.get("mode") == "subscription")
+        check("Checkout bound to synthetic workspace", session.get("client_reference_id") == tenant and session.get("metadata", {}).get("tenant_id") == tenant)
+        lines = stripe("GET", "/checkout/sessions/" + checkout_id + "/line_items")
+        check("Checkout correct price", len(lines.get("data", [])) == 1 and lines["data"][0]["price"]["id"] == PRICES["STARTER_MONTHLY"][0])
+        stripe("POST", "/checkout/sessions/" + checkout_id + "/expire", {})
+        checkout_id = None
         portal = api("POST", "/billing/portal", token)
         check("customer portal created", urllib.parse.urlsplit(portal.get("portal_url", "")).hostname == "billing.stripe.com")
         cancel = api("POST", "/billing/cancel", token)
@@ -201,6 +207,6 @@ if __name__ == "__main__":
         print("BILLING RUN STOPPED:", type(exc).__name__, flush=True)
         sys.exit(1)
     finally:
-        Path("qa-stripe-results.json").write_text(json.dumps({"environment": "isolated_qa", "checks": results, "scope": "real sandbox API, subscription and webhook acceptance; hosted checkout completion and failed-payment recovery not covered"}, indent=2))
+        Path("qa-stripe-results.json").write_text(json.dumps({"environment": "isolated_qa", "checks": results, "scope": "closed admission denial; real sandbox API-created subscription and webhook acceptance; existing-subscriber checkout session only; initial hosted checkout completion and failed-payment recovery not covered"}, indent=2))
     if not all(x["passed"] for x in results):
         sys.exit(1)
