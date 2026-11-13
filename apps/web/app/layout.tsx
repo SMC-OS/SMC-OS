@@ -21,7 +21,12 @@ const geistMono = Geist_Mono({
 // single customer company, which is a tenant identity and belongs in that
 // tenant's own company profile (Settings → Company identity), never in
 // global chrome every tenant sees.
+// Absolute base for social-preview URLs. Without it Next.js falls back to http://localhost:3000 in a production build
+// (found by the deployed security check). The authenticated app lives at app.geocore.one (docs/DNS_GEOCORE_ONE.md).
+const APP_PUBLIC_ORIGIN = process.env.APP_PUBLIC_URL || "https://app.geocore.one";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(APP_PUBLIC_ORIGIN),
   title: "GeoCore",
   description: "The AI operating system for construction and renovation businesses",
   manifest: "/manifest.webmanifest",

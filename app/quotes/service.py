@@ -97,9 +97,73 @@ def build_handoff_notes(quote) -> str | None:
 
 
 
+class QuoteRevisionStateError(Exception):
+    """Only an approved quote can be revised (a draft is simply edited)."""
+
+
+_REVISION_SKIP_COLUMNS = {
+    "id", "created_at", "status", "sent_at", "approved_at", "approved_by_user_id", "approved_amount",
+    "invoice_number", "invoice_issued_at", "invoice_due_date", "invoice_snapshot", "revision_of_quote_id", "revision_number",
+}
+
+
 class QuoteService:
     def __init__(self) -> None:
         self.calculator = QuoteCalculator()
+
+    def revise(self, db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID, actor_user_id: uuid.UUID):
+        """Create a new DRAFT revision derived from an approved quote. The approved original is never touched:
+        same customer, scope, lines and totals are copied; approval, invoice number and issued-invoice snapshot are
+        not. Revision numbers run 2, 3, ... on one flat chain rooted at the original."""
+        from sqlalchemy import select, func
+        from app.database.models import Quote, QuoteItem
+
+        source = crud.get_quote_by_id(db, quote_id, tenant_id)
+        if source is None:
+            raise QuoteNotFoundError(quote_id)
+        if source.status != "approved":
+            raise QuoteRevisionStateError(source.status)
+        root_id = source.revision_of_quote_id or source.id
+        latest = db.scalar(
+            select(func.max(Quote.revision_number)).where(
+                Quote.tenant_id == tenant_id, (Quote.id == root_id) | (Quote.revision_of_quote_id == root_id)
+            )
+        ) or 1
+        values = {c.name: getattr(source, c.name) for c in Quote.__table__.columns if c.name not in _REVISION_SKIP_COLUMNS}
+        revision = Quote(**values, status="draft", revision_of_quote_id=root_id, revision_number=latest + 1)
+        db.add(revision)
+        db.flush()
+        for item in source.items:
+            copied = {c.name: getattr(item, c.name) for c in QuoteItem.__table__.columns if c.name not in {"id", "quote_id"}}
+            db.add(QuoteItem(**copied, quote_id=revision.id))
+        activity_service.log(
+            ActivityEventCreate(
+                type=ActivityType.QUOTE_CREATED,
+                title="Quote revision created",
+                description=f"Revision {revision.revision_number} of quote {root_id}",
+            ),
+            tenant_id=tenant_id,
+            db=db,
+        )
+        db.commit()
+        db.refresh(revision)
+        return revision
+
+    def revisions(self, db: Session, quote_id: uuid.UUID, tenant_id: uuid.UUID):
+        from sqlalchemy import select
+        from app.database.models import Quote
+
+        source = crud.get_quote_by_id(db, quote_id, tenant_id)
+        if source is None:
+            raise QuoteNotFoundError(quote_id)
+        root_id = source.revision_of_quote_id or source.id
+        return list(
+            db.scalars(
+                select(Quote)
+                .where(Quote.tenant_id == tenant_id, (Quote.id == root_id) | (Quote.revision_of_quote_id == root_id))
+                .order_by(Quote.revision_number)
+            )
+        )
     def approve(
         self,
         db: Session,
@@ -123,6 +187,7 @@ class QuoteService:
         quote.status = "approved"
         quote.approved_at = datetime.now(timezone.utc)
         quote.approved_by_user_id = actor_user_id
+        quote.approved_amount = quote.total
 
         # Same backend-logs-its-own-ActivityEvent pattern as create() above.
         activity_service.log(

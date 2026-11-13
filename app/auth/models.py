@@ -60,6 +60,8 @@ class UserOut(BaseModel):
     name: str
     email: str
     role: UserRole | None = None
+    # Release default: Owners always may approve financial commitments; Staff only when an Owner delegated it.
+    can_approve_financials: bool = False
     # Sprint 009 — every user now belongs to exactly one tenant. Built via
     # AuthService.build_user_out(), not automatic from_attributes validation
     # (tenant_name isn't a column on `users`, it's resolved from `tenants`).

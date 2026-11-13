@@ -1,0 +1,59 @@
+name: GeoCore isolated QA web same-origin configuration
+
+# Isolated QA only (project geocore-qa-20261110 / environment acceptance). The web app is designed to call the API
+# same-origin through its /api/v1 rewrite (API_PROXY_URL) so the HttpOnly SameSite=Lax session cookie is first-party.
+# The QA web service had API_PROXY_URL empty and NEXT_PUBLIC_API_URL pointing at the API host, which makes the
+# browser cross-site (up.railway.app is a public suffix) and drops the session cookie. This sets the intended values
+# and verifies a login through the web origin returns a Set-Cookie. No secrets are printed.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ccr-12966459-skf9q0]
+    paths: ['.github/workflows/geocore-qa-webconfig.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geocore-qa-acceptance
+  cancel-in-progress: false
+
+jobs:
+  webconfig:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      QA_API: https://geocore-api-qa-acceptance.up.railway.app
+      QA_WEB: https://geocore-web-qa-acceptance.up.railway.app
+      QA_ENV: f948241d-446f-43ed-bff0-5d12decffd50
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: npm install --global @railway/cli@4
+      - name: Show current values, set same-origin configuration, wait for the rebuild
+        shell: bash
+        run: |
+          set -uo pipefail
+          show() { railway variable list --service geocore-web-qa --environment "$QA_ENV" --kv 2>&1 | grep -E '^(NEXT_PUBLIC_API_URL|API_PROXY_URL)=' | sort || echo "(none of the two set)"; }
+          echo "== before"; show
+          latest() { railway deployment list --service geocore-web-qa --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.id) \(.status) \(.meta.commitHash // "n/a")"'; }
+          read -r PREV _ _ < <(latest)
+          railway variable set "API_PROXY_URL=$QA_API" --service geocore-web-qa --environment "$QA_ENV" --skip-deploys 2>&1 | tail -2
+          railway variable set "NEXT_PUBLIC_API_URL=$QA_WEB" --service geocore-web-qa --environment "$QA_ENV" 2>&1 | tail -2
+          echo "== after"; show
+          deadline=$(( $(date +%s) + 1500 ))
+          while (( $(date +%s) < deadline )); do
+            read -r id status commit < <(latest)
+            echo "web deployment $id $status $commit"
+            if [[ "$id" != "$PREV" ]]; then
+              [[ "$status" == "SUCCESS" ]] && break
+              [[ "$status" == "FAILED" || "$status" == "CRASHED" ]] && { echo "web deployment failed"; exit 1; }
+            fi
+            sleep 15
+          done
+          [[ "$id" != "$PREV" && "$status" == "SUCCESS" ]] || { echo "no successful new web deployment"; exit 1; }
+          for i in $(seq 1 30); do [[ "$(curl -s -o /dev/null -w '%{http_code}' "$QA_WEB/login")" == 200 ]] && break; sleep 6; done
+          echo "== unauthenticated probe through the web origin (expect 401/422 from the API, not 404)"
+          curl -sS -o /dev/null -w 'web /api/v1/auth/login -> %{http_code}\n' -X POST "$QA_WEB/api/v1/auth/login" -H "Origin: $QA_WEB" -H 'Content-Type: application/json' -d '{"email":"nobody@acceptance.invalid","password":"x"}'

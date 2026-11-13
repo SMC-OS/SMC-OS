@@ -109,17 +109,18 @@ Reproduced at `63e8ac9` on a disposable PostgreSQL 16.2, against the seeded `sto
 - **Defect:** `POST /projects/{A}/allocations` with project B's requirement set B's requirement to `allocated`, which opened B's Fabrication gate. It also accepted any PO line id without checking its tenant.
 - **Fix:** returns 422 unless the requirement belongs to A, is not cancelled, and the PO line belongs to the same workspace.
 
-## QA-UPLOAD-ORPHAN — an upload that fails at the database step leaves an orphan file (Low, open)
+## QA-UPLOAD-ORPHAN — an upload that fails at the database step leaves an orphan file (Low, FIXED locally 12 Nov, awaiting CI)
 
 - **Found:** A1 writer-barrier rehearsal, 8 November 2026 (local, disposable database).
 - **Defect:** `DocumentService.upload_document` writes the file to `UPLOAD_DIR` first and inserts the `documents` row second. If the insert fails for any reason (database outage, read-only mode, constraint), the request errors but the file stays on the volume with no row pointing at it.
 - **Effect:** wasted storage and files that no manifest-by-database comparison will explain. It also means a database-only freeze does not stop volume writes, so the A1 barrier needs its uploads layer.
-- **Proposed fix (not applied):** remove the destination file when `crud.create_document` raises. Not applied because A2 is pinned to `740b6b4`; schedule it for the next code change and add a regression test with an injected database failure.
+- **Fix (12 Nov, new release candidate, not in `740b6b4`):** `DocumentService.upload_document` removes the file on any failure, but only when the row is confirmed absent. If a commit succeeded and only its acknowledgement was lost, the file is kept (deleting it would leave a dangling row); if the database cannot be asked, the file is kept. Tests: `tests/test_upload_orphan_and_partial_commit.py` (4 upload cases; the failed-insert case fails on the old code).
 - **Evidence:** `evidence/writer-barrier-rehearsal-local.json` (check "FINDING: with the DB barrier alone, a rejected upload still leaves an orphan FILE").
 
-## QA-PARTIAL-COMMIT — a request can commit its main write and then fail on a follow-up write (Low, open, by design today)
+## QA-PARTIAL-COMMIT — a request can commit its main write and then fail on a follow-up write (Low, FIXED locally 12 Nov for customer creation and the shared audit path, awaiting CI)
 
 - **Found:** same rehearsal, concurrent load across the barrier cutoff.
 - **Behaviour:** creating a customer commits the customer and then writes its activity-log row in a separate step. When the second write fails, the client sees an error although the customer exists (2 of about 100 requests in the recorded run; both lacked their activity row).
 - **Effect:** under any database interruption the business operation can be half-recorded, so a client retry can create a duplicate. The database stays internally consistent.
-- **Not fixed:** a design question for the owner (single transaction versus best-effort audit). For A1 it is now **fenced by refusal**: barrier v2 engages only after a quiet period and detects a write that lands before the cutoff (document 14); the application behaviour itself is unchanged.
+- **Fix (12 Nov):** customer creation and its activity record are now one transaction (all or nothing, safe to retry). The standalone activity write used by about 34 other call sites can no longer turn an already-committed request into an error: a failure is logged (`activity_log_write_failed`) and swallowed, because the activity feed is informational. Remaining design choice for the owner: moving those other call sites to the same single-transaction form (12 already are). Tests fail on the old code for both behaviours.
+- **A1:** also fenced by barrier v2's refusal-unless-quiet rule (document 14).

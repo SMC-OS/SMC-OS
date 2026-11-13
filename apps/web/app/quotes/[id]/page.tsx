@@ -69,7 +69,7 @@ function describeLine(
 export default function QuoteDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAuthenticated, isReady, role } = useAuth();
+  const { isAuthenticated, isReady, role, canApproveFinancials } = useAuth();
   const [quote, setQuote] = useState<Quote | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -239,7 +239,8 @@ export default function QuoteDetailPage() {
                 )}
 
                 {(quote.status === "draft" || quote.status === "sent") &&
-                  canAct && (
+                  canAct &&
+                  canApproveFinancials && (
                     <Button
                       variant={quote.status === "sent" ? "primary" : "outline"}
                       disabled={approving}
@@ -255,6 +256,25 @@ export default function QuoteDetailPage() {
                       {approving ? "Approving…" : "Approve"}
                     </Button>
                   )}
+
+                {quote.status === "approved" && canAct && (
+                  <Button
+                    variant="outline"
+                    disabled={approving}
+                    onClick={() =>
+                      run(
+                        async () => {
+                          const revision = await api.reviseQuote(quote.id);
+                          window.location.assign(`/quotes/${revision.id}`);
+                        },
+                        setApproving,
+                        "Could not create a revision.",
+                      )
+                    }
+                  >
+                    Create revision
+                  </Button>
+                )}
 
                 {quote.status === "approved" && canAct && (
                   <Button

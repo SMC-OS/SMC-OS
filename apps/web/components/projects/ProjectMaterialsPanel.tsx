@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle, EmptyState } from "@/components/ui/Card";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { PlusIcon, TrashIcon } from "@/components/ui/icons";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { ApiError, api } from "@/lib/api";
 import { parseNumberInput } from "@/lib/number";
 import { formatCurrencyGBP, formatDate, formatDateTime } from "@/lib/utils";
@@ -69,6 +70,7 @@ export function ProjectMaterialsPanel({
   projectId: string;
   quoteId?: string | null;
 }) {
+  const { canApproveFinancials } = useAuth();
   const [requirements, setRequirements] = useState<MaterialRequirement[] | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[] | null>(null);
   const [suppliers, setSuppliers] = useState<CatalogueSupplierSummary[]>([]);
@@ -728,7 +730,7 @@ export function ProjectMaterialsPanel({
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {po.status === "draft" && (
+                    {po.status === "draft" && canApproveFinancials && (
                       <Button
                         variant="outline"
                         size="sm"

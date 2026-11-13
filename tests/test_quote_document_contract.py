@@ -55,6 +55,8 @@ def test_authenticated_pdf_contains_persisted_contract_fields(client, auth_heade
     })
     assert response.status_code == 201, response.text
     quote_id = response.json()["id"]
+    from tests.conftest import make_supplier_ready
+    make_supplier_ready(client, auth_headers)
     try:
         result = client.get(f"/api/v1/quotes/{quote_id}/invoice", headers=auth_headers)
         assert result.status_code == 200

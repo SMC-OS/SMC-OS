@@ -39,6 +39,7 @@ vi.mock("@/components/auth/AuthProvider", () => ({
     isReady: true,
     tenantName: "Pytest Co",
     role: "Owner",
+    canApproveFinancials: true,
     userId: "owner-1",
     login: vi.fn(),
     signup: vi.fn(),

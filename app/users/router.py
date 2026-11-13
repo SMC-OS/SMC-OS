@@ -17,8 +17,8 @@ from app.auth.dependencies import require_role_and_billing
 from app.auth.models import UserRole
 from app.database.database import get_db
 from app.database.models import User
-from app.users.models import TeamMemberOut
-from app.users.service import CannotDeactivateSelfError, UserNotFoundError, user_management_service
+from app.users.models import ApprovalAuthorityUpdate, TeamMemberOut
+from app.users.service import ApprovalAuthorityNotApplicableError, CannotDeactivateSelfError, UserNotFoundError, user_management_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -57,4 +57,23 @@ def deactivate_user(
         ),
         tenant_id=current_user.tenant_id,
     )
+    return row
+
+
+@router.patch("/{user_id}/approval-authority", response_model=TeamMemberOut)
+def set_approval_authority(
+    user_id: uuid.UUID,
+    data: ApprovalAuthorityUpdate,
+    current_user: User = Depends(require_role_and_billing(UserRole.OWNER)),
+    db: Session = Depends(get_db),
+):
+    """Owner-only: explicitly delegate (or withdraw) authority to approve quotes, variations and purchase orders."""
+    try:
+        row = user_management_service.set_approval_authority(
+            db, tenant_id=current_user.tenant_id, user_id=user_id, allowed=data.can_approve_financials
+        )
+    except UserNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    except ApprovalAuthorityNotApplicableError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only Staff members can be delegated approval authority.")
     return row

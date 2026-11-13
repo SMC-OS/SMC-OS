@@ -1,3 +1,4 @@
+import logging
 import uuid
 from abc import ABC, abstractmethod
 
@@ -6,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.activity.models import ActivityEvent, ActivityType
 from app.database import crud
 from app.database.database import SessionLocal
+
+logger = logging.getLogger("simo_os")
 
 
 class ActivityRepository(ABC):
@@ -113,14 +116,26 @@ class PostgresActivityRepository(ActivityRepository):
             )
             return event
 
-        with SessionLocal() as db:
-            crud.create_activity_log(
-                db,
-                id=uuid.UUID(event.id),
-                tenant_id=tenant_id,
-                type=event.type.value,
-                title=event.title,
-                description=event.description,
-                timestamp=event.timestamp,
+        # QA-PARTIAL-COMMIT: this standalone path runs AFTER the caller's own
+        # write has committed. If it raised, the client would see an error for
+        # work that was saved and a retry would duplicate it. The activity feed
+        # is informational, so a failure here is logged loudly and swallowed;
+        # callers that need all-or-nothing pass their own `db` (above).
+        try:
+            with SessionLocal() as db:
+                crud.create_activity_log(
+                    db,
+                    id=uuid.UUID(event.id),
+                    tenant_id=tenant_id,
+                    type=event.type.value,
+                    title=event.title,
+                    description=event.description,
+                    timestamp=event.timestamp,
+                )
+        except Exception:
+            logger.error(
+                "Activity log write failed after the primary write committed",
+                extra={"event": "activity_log_write_failed", "activity_type": event.type.value},
+                exc_info=True,
             )
         return event

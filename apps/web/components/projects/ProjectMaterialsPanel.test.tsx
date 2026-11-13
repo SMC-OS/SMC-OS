@@ -10,6 +10,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/components/auth/AuthProvider", () => ({ useAuth: () => ({ role: "Owner", canApproveFinancials: true }) }));
+
 import type { MaterialRequirement, PurchaseOrder } from "@/types/procurement";
 
 const getProjectRequirementsMock = vi.fn();

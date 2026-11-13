@@ -392,6 +392,12 @@ export const api = {
   resumeSubscription: () =>
     request<Subscription>("/billing/resume", { method: "POST" }),
 
+  setApprovalAuthority: (id: string, canApprove: boolean) =>
+    request<TeamMemberOut>(`/users/${id}/approval-authority`, {
+      method: "PATCH",
+      body: JSON.stringify({ can_approve_financials: canApprove }),
+    }),
+
   deactivateUser: (id: string) =>
     request<TeamMemberOut>(`/users/${id}/deactivate`, { method: "POST" }),
 
@@ -827,6 +833,9 @@ export const api = {
   // caller without that role gets a 403 handled by the caller, same as
   // invitations/users).
   approveQuote: (id: string) => request<Quote>(`/quotes/${id}/approve`, { method: "POST" }),
+
+  // Release default: derive a new draft revision from an approved quote; the approved original is preserved.
+  reviseQuote: (id: string) => request<Quote>(`/quotes/${id}/revise`, { method: "POST" }),
 
   // Sprint 020 — Owner/Staff only, same role gate as approveQuote. The
   // returned Project's own id is authoritative for the post-handoff

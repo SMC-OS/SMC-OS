@@ -3,6 +3,8 @@ export interface AuthUser {
   name: string;
   email: string;
   role: string | null;
+  /** Owners always; Staff only when an Owner delegated approval authority. Enforced by the server. */
+  can_approve_financials?: boolean;
   // Sprint 009 — every user now belongs to exactly one tenant.
   tenant_id: string;
   tenant_name: string;

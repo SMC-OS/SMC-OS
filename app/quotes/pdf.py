@@ -18,9 +18,17 @@ import reportlab
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+# DejaVu Sans (Bitstream Vera derivative, free licence in fonts/DEJAVU-LICENSE.txt) covers Latin Extended-A/B,
+# Greek and Cyrillic, which ReportLab's bundled Vera does not (Polish/Czech names rendered as empty boxes).
+# Vera stays as the fallback if the vendored files are ever missing.
+_VENDORED_FONT_DIR = Path(__file__).parent / "fonts"
 _FONT_DIR = Path(reportlab.__file__).parent / "fonts"
-pdfmetrics.registerFont(TTFont("GeoCoreBody", str(_FONT_DIR / "Vera.ttf")))
-pdfmetrics.registerFont(TTFont("GeoCoreBold", str(_FONT_DIR / "VeraBd.ttf")))
+_body = _VENDORED_FONT_DIR / "DejaVuSans.ttf"
+_bold = _VENDORED_FONT_DIR / "DejaVuSans-Bold.ttf"
+if not (_body.is_file() and _bold.is_file()):
+    _body, _bold = _FONT_DIR / "Vera.ttf", _FONT_DIR / "VeraBd.ttf"
+pdfmetrics.registerFont(TTFont("GeoCoreBody", str(_body)))
+pdfmetrics.registerFont(TTFont("GeoCoreBold", str(_bold)))
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -192,6 +200,8 @@ class PDFGenerator:
             story.append(Paragraph(f"Site: {_escape(str(invoice['site_address']))}", styles["Normal"]))
         if invoice.get("valid_until"):
             story.append(Paragraph(f"Valid until: {invoice['valid_until']:%d %B %Y}", styles["Normal"]))
+        if invoice.get("due_date"):
+            story.append(Paragraph(f"Payment due: {invoice['due_date']:%d %B %Y}", styles["Normal"]))
         for key, label in [("scope_of_works", "Scope of works"), ("exclusions", "Exclusions"), ("terms", "Terms")]:
             value = invoice.get(key)
             if value:
@@ -262,6 +272,20 @@ class PDFGenerator:
             )
         )
         story.append(table)
+
+        payment = invoice.get("payment")
+        if payment:
+            story.append(Spacer(1, 14))
+            story.append(Paragraph("Payment details", styles["Heading3"]))
+            if payment.get("terms_days") is not None:
+                story.append(Paragraph(f"Payment terms: {payment['terms_days']} days", styles["Normal"]))
+            for label, key in (("Account name", "account_name"), ("Sort code", "sort_code"), ("Account number", "account_number")):
+                if payment.get(key):
+                    story.append(Paragraph(f"{label}: {_escape(str(payment[key]))}", styles["Normal"]))
+            if payment.get("instructions"):
+                for line in str(payment["instructions"]).splitlines():
+                    story.append(Paragraph(_escape(line) or "<br/>", styles["Normal"]))
+            story.append(Paragraph(f"Please use {_escape(str(invoice.get('invoice_number') or ''))} as the payment reference.", styles["Normal"]))
 
         if company.document_footer:
             story.append(Spacer(1, 16))

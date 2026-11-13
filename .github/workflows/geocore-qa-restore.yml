@@ -1,0 +1,65 @@
+name: GeoCore isolated QA restore and log check
+
+# Restores the isolated QA API to its original configuration (pre-deploy command, no temporary QA_* variables)
+# and prints a secret-free summary of a named deployment's logs. QA only (project geocore-qa-20261110).
+# Idempotent: safe to run when nothing needs restoring.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ccr-12966459-skf9q0
+    paths:
+      - '.github/workflows/geocore-qa-restore.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geocore-qa-acceptance
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+      QA_API: https://geocore-api-qa-acceptance.up.railway.app
+      INSPECT_DEPLOYMENT: e40174e2-5c3e-4bce-adba-1bc6e53644ff
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: npm install --global @railway/cli@4
+      - name: Provisioning deployment logs (secret-free summary)
+        shell: bash
+        run: |
+          set -uo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          deployment_log_summary "$INSPECT_DEPLOYMENT"
+      - name: Pre-deploy configuration the inspected deployment actually used, and raw log head
+        shell: bash
+        run: |
+          set -uo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          echo "== deployment meta: paths mentioning pre-deploy / start command (values are commands, not secrets)"
+          gql 'query($id:String!){ deployment(id:$id){ id status meta } }' "$(jq -nc --arg id "$INSPECT_DEPLOYMENT" '{id:$id}')" \
+            | jq -r '.data.deployment.meta as $m | ($m // {}) | [paths(scalars) as $p | select(($p|map(tostring)|join(".")) | test("preDeploy|startCommand";"i")) | "\($p|map(tostring)|join(".")) = \(getpath($p))"] | .[]' 2>&1 | cut -c1-300 | head -12
+          echo "== raw deployment log head (provisioning prints no secrets)"
+          railway logs "$INSPECT_DEPLOYMENT" --deployment --service geocore-api-qa --environment "$QA_ENV" --lines 300 2>&1 | cut -c1-170 | head -70 || true
+      - name: Restore configuration and remove temporary variables
+        shell: bash
+        run: |
+          set -uo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          rc=0
+          echo "start before: $(start_get)"
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] || start_set "$QA_ORIG_START" || rc=1
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] && echo "start command is the original" || { echo "RESTORE FAILED: start command"; rc=1; }
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || predeploy_set "$QA_ORIG_PREDEPLOY" || rc=1
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] && echo "pre-deploy command is the original" || { echo "RESTORE FAILED: pre-deploy"; rc=1; }
+          remove_temp_vars && echo "no temporary QA_* variables remain" || { echo "RESTORE FAILED: temporary variables remain"; rc=1; }
+          wait_for_stable_success 1200 || rc=1
+          wait_for_ready "$QA_API" 240 || rc=1
+          exit $rc

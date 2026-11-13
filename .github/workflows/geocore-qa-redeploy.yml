@@ -1,0 +1,64 @@
+name: GeoCore isolated QA redeploy from branch head
+
+# Railway did not auto-deploy a push to the tracked branch. A variable change makes Railway build the branch HEAD with the
+# current service configuration (proven in earlier probes). This sets and removes a harmless stamp variable on BOTH QA
+# services (API first, web second) and waits for stable SUCCESS deployments at the expected commit. Isolated QA only.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ccr-12966459-skf9q0]
+    paths: ['.github/workflows/geocore-qa-redeploy.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: geocore-qa-acceptance
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      QA_ENV: f948241d-446f-43ed-bff0-5d12decffd50
+      RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: npm install --global @railway/cli@4
+      - name: Redeploy API then web from the branch head
+        shell: bash
+        run: |
+          set -uo pipefail
+          latest() { railway deployment list --service "$1" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.id) \(.status) \(.meta.commitHash // "n/a")"'; }
+          wait_new() {  # wait_new <service> <previous-id>
+            local deadline=$(( $(date +%s) + 1200 )) id status commit
+            while (( $(date +%s) < deadline )); do
+              read -r id status commit < <(latest "$1")
+              if [[ "$id" != "$2" ]]; then
+                echo "$1 deployment $id $status commit=$commit"
+                [[ "$status" == "SUCCESS" ]] && return 0
+                [[ "$status" == "FAILED" || "$status" == "CRASHED" ]] && return 1
+              fi
+              sleep 15
+            done
+            return 1
+          }
+          rc=0
+          for svc in geocore-api-qa geocore-web-qa; do
+            read -r prev _ _ < <(latest "$svc")
+            printf '%s' "$GITHUB_RUN_ID" | railway variable set QA_REDEPLOY_STAMP --stdin --service "$svc" --environment "$QA_ENV" >/dev/null || rc=1
+            wait_new "$svc" "$prev" || rc=1
+            railway variable delete QA_REDEPLOY_STAMP --service "$svc" --environment "$QA_ENV" >/dev/null 2>&1 || true
+            sleep 20
+            read -r id status commit < <(latest "$svc")
+            while [[ "$status" != "SUCCESS" && "$status" != "FAILED" && "$status" != "CRASHED" ]]; do sleep 15; read -r id status commit < <(latest "$svc"); done
+            echo "$svc settled: $id $status commit=$commit"; [[ "$status" == "SUCCESS" ]] || rc=1
+          done
+          for svc in geocore-api-qa geocore-web-qa; do echo "final: $svc $(latest "$svc")"; done
+          for u in https://geocore-api-qa-acceptance.up.railway.app/ready https://geocore-web-qa-acceptance.up.railway.app/login; do
+            for i in $(seq 1 30); do [[ "$(curl -s -o /dev/null -w '%{http_code}' "$u")" == 200 ]] && break; sleep 6; done
+            echo "$u -> $(curl -s -o /dev/null -w '%{http_code}' "$u")"
+          done
+          exit $rc

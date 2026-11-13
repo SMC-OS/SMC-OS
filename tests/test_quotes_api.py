@@ -133,6 +133,8 @@ def test_get_unknown_quote_returns_404(client, auth_headers):
 
 
 def test_download_invoice_returns_pdf(client, auth_headers, created_quote):
+    from tests.conftest import make_supplier_ready
+    make_supplier_ready(client, auth_headers)
     r = client.get(
         f"/api/v1/quotes/{created_quote['id']}/invoice", headers=auth_headers
     )
