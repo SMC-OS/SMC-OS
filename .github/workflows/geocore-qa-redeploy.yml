@@ -5,6 +5,9 @@ name: GeoCore isolated QA redeploy from branch head
 # services (API first, web second) and waits for stable SUCCESS deployments at the expected commit. Isolated QA only.
 on:
   workflow_dispatch:
+  push:
+    branches: [ccr-12966459-skf9q0]
+    paths: ['.github/workflows/geocore-qa-redeploy.yml']
 
 permissions:
   contents: read
