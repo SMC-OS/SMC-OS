@@ -211,6 +211,14 @@ jobs:
         env:
           QA_API: ${{ env.QA_API }}
 
+      - name: Deployed security checks (headers, CORS, error sanitisation, webhook, throttle, secrets)
+        if: ${{ !cancelled() && env.STAGING_OWNER_EMAIL != '' }}
+        shell: bash
+        run: python3 scripts/qa/qa_security_check.py
+        env:
+          QA_API: ${{ env.QA_API }}
+          QA_WEB: ${{ env.QA_WEB }}
+
       - name: Bounded capacity test (30 virtual users maximum, 4,000 requests, isolated QA only)
         if: ${{ !cancelled() && env.STAGING_OWNER_EMAIL != '' }}
         shell: bash
@@ -258,6 +266,7 @@ jobs:
             qa-owner-decisions.json
             qa-capacity-results.json
             qa-stone-workflow-results.json
+            qa-security-results.json
             qa-pdf-evidence/invoice-a.pdf
             candidate/apps/web/staging-acceptance-results/results.json
             candidate/apps/web/staging-acceptance-results/artifacts/**/*.png
