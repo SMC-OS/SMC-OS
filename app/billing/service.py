@@ -201,11 +201,49 @@ class BillingService:
                 to_dict = getattr(event_object, "to_dict", None)
                 if callable(to_dict):
                     event_object = to_dict()
+                event_at = self._event_time(event)
+                if self._is_stale(db, event["type"], event_object, event_at):
+                    db.commit()  # keep the processed marker; the event is older than what is already applied
+                    return
                 handler(self, db, event_object)
+                self._record_event_time(db, event["type"], event_object, event_at)
             db.commit()
         except Exception:
             db.rollback()
             raise
+
+    @staticmethod
+    def _event_time(event) -> datetime | None:
+        created = event.get("created") if hasattr(event, "get") else None
+        return datetime.fromtimestamp(created, tz=timezone.utc) if isinstance(created, (int, float)) else None
+
+    def _subscription_for_event(self, db: Session, event_type: str, obj: dict):
+        if event_type.startswith("customer.subscription."):
+            sub_id = obj.get("id")
+        elif event_type.startswith("invoice."):
+            sub_id = self._invoice_subscription_id(obj)
+        else:
+            return None
+        return crud.get_subscription_by_stripe_subscription_id(db, sub_id) if sub_id else None
+
+    def _is_stale(self, db: Session, event_type: str, obj: dict, event_at: datetime | None) -> bool:
+        """Stripe does not guarantee delivery order. An event older than the newest one already applied to this
+        subscription must not undo it (e.g. a late trialing update after active, or a late payment_failed after
+        recovery). Equal timestamps are applied."""
+        if event_at is None:
+            return False
+        row = self._subscription_for_event(db, event_type, obj)
+        return bool(row is not None and row.stripe_event_at is not None and event_at < row.stripe_event_at)
+
+    def _record_event_time(self, db: Session, event_type: str, obj: dict, event_at: datetime | None) -> None:
+        if event_at is None:
+            return
+        row = self._subscription_for_event(db, event_type, obj)
+        if row is None and event_type.startswith("customer.subscription."):
+            tenant_raw = (obj.get("metadata") or {}).get("tenant_id")
+            row = crud.get_subscription_by_tenant_id(db, uuid.UUID(tenant_raw)) if tenant_raw else None
+        if row is not None and (row.stripe_event_at is None or event_at > row.stripe_event_at):
+            row.stripe_event_at = event_at
 
     def _handle_checkout_completed(self, db: Session, session_obj: dict) -> None:
         """Wires up tenant<->Stripe linkage (customer/subscription ids,

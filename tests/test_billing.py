@@ -1025,3 +1025,65 @@ def test_checkout_rejects_an_unknown_plan_string(client, owner_headers):
         headers=owner_headers,
     )
     assert r.status_code == 422
+
+
+# ---- out-of-order delivery: Stripe does not guarantee event order, so an older event must never undo a newer one
+def _post_event(client, event, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_fake")
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_fake")
+    fake_stripe = MagicMock()
+    fake_stripe.Webhook.construct_event.return_value = event
+    billing_service._stripe = fake_stripe
+    db = SessionLocal()
+    try:
+        db.query(ProcessedStripeEvent).filter(ProcessedStripeEvent.id == event["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
+    return client.post("/api/v1/billing/webhook", content=b"{}", headers={"stripe-signature": "sig"})
+
+
+def _sub_event(event_id, created, status, tenant, sub_id="sub_ooo"):
+    return {"id": event_id, "type": "customer.subscription.updated", "created": created,
+            "data": {"object": {"id": sub_id, "customer": "cus_ooo", "status": status, "cancel_at_period_end": False,
+                                "metadata": {"tenant_id": str(tenant.id), "plan": "pro", "billing_period": "monthly"}}}}
+
+
+def _status(tenant):
+    db = SessionLocal()
+    try:
+        return crud.get_subscription_by_tenant_id(db, tenant.id).status
+    finally:
+        db.close()
+
+
+def test_an_older_subscription_event_does_not_undo_a_newer_one(client, owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    assert _post_event(client, _sub_event("evt_ooo_new", 2000, "active", tenant), monkeypatch).status_code == 200
+    assert _status(tenant) == "active"
+    # a delayed, older event (trial era) is delivered afterwards
+    assert _post_event(client, _sub_event("evt_ooo_old", 1000, "trialing", tenant), monkeypatch).status_code == 200
+    assert _status(tenant) == "active"
+
+
+def test_a_late_payment_failed_does_not_undo_a_later_recovery(client, owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    assert _post_event(client, _sub_event("evt_rec_active", 3000, "active", tenant, "sub_rec"), monkeypatch).status_code == 200
+    late_failure = {"id": "evt_rec_failed", "type": "invoice.payment_failed", "created": 2500,
+                    "data": {"object": {"subscription": "sub_rec"}}}
+    assert _post_event(client, late_failure, monkeypatch).status_code == 200
+    assert _status(tenant) == "active"
+
+
+def test_newer_events_still_apply_in_order(client, owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    _post_event(client, _sub_event("evt_ord_1", 100, "trialing", tenant, "sub_ord"), monkeypatch)
+    _post_event(client, _sub_event("evt_ord_2", 200, "active", tenant, "sub_ord"), monkeypatch)
+    failed = {"id": "evt_ord_3", "type": "invoice.payment_failed", "created": 300, "data": {"object": {"subscription": "sub_ord"}}}
+    _post_event(client, failed, monkeypatch)
+    assert _status(tenant) == "past_due"
+    paid = {"id": "evt_ord_4", "type": "invoice.paid", "created": 400, "data": {"object": {"subscription": "sub_ord"}}}
+    _post_event(client, paid, monkeypatch)
+    assert _status(tenant) == "active"
