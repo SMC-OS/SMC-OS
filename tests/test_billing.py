@@ -1025,3 +1025,202 @@ def test_checkout_rejects_an_unknown_plan_string(client, owner_headers):
         headers=owner_headers,
     )
     assert r.status_code == 422
+
+
+# ---- out-of-order delivery: Stripe does not guarantee event order, so an older event must never undo a newer one
+def _post_event(client, event, monkeypatch, canonical=None):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_fake")
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_fake")
+    fake_stripe = MagicMock()
+    fake_stripe.Webhook.construct_event.return_value = event
+    if canonical is not None:
+        fake_stripe.Subscription.retrieve.side_effect = (
+            canonical if callable(canonical) else lambda _sub_id: dict(canonical)
+        )
+    billing_service._stripe = fake_stripe
+    db = SessionLocal()
+    try:
+        db.query(ProcessedStripeEvent).filter(ProcessedStripeEvent.id == event["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
+    return client.post("/api/v1/billing/webhook", content=b"{}", headers={"stripe-signature": "sig"})
+
+
+def _sub_event(event_id, created, status, tenant, sub_id="sub_ooo"):
+    return {"id": event_id, "type": "customer.subscription.updated", "created": created,
+            "data": {"object": {"id": sub_id, "customer": "cus_ooo", "status": status, "cancel_at_period_end": False,
+                                "metadata": {"tenant_id": str(tenant.id), "plan": "pro", "billing_period": "monthly"}}}}
+
+
+def _status(tenant):
+    db = SessionLocal()
+    try:
+        return crud.get_subscription_by_tenant_id(db, tenant.id).status
+    finally:
+        db.close()
+
+
+def _canonical(tenant, sub_id, status, *, created=100, cancel=False):
+    return {"id": sub_id, "customer": "cus_ooo", "status": status, "created": created,
+            "cancel_at_period_end": cancel,
+            "metadata": {"tenant_id": str(tenant.id), "plan": "pro", "billing_period": "monthly"}}
+
+
+def test_an_older_subscription_event_does_not_undo_a_newer_one(client, owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    current = _canonical(tenant, "sub_ooo", "active")
+    assert _post_event(client, _sub_event("evt_ooo_new", 2000, "active", tenant), monkeypatch, current).status_code == 200
+    assert _status(tenant) == "active"
+    assert _post_event(client, _sub_event("evt_ooo_old", 1000, "trialing", tenant), monkeypatch, current).status_code == 200
+    assert _status(tenant) == "active"
+
+
+def test_a_late_payment_failed_does_not_undo_a_later_recovery(client, owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    current = _canonical(tenant, "sub_rec", "active")
+    assert _post_event(client, _sub_event("evt_rec_active", 3000, "active", tenant, "sub_rec"), monkeypatch, current).status_code == 200
+    late_failure = {"id": "evt_rec_failed", "type": "invoice.payment_failed", "created": 2500,
+                    "data": {"object": {"subscription": "sub_rec"}}}
+    assert _post_event(client, late_failure, monkeypatch, current).status_code == 200
+    assert _status(tenant) == "active"
+
+
+def test_newer_events_still_apply_in_order(client, owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    _post_event(client, _sub_event("evt_ord_1", 100, "trialing", tenant, "sub_ord"), monkeypatch,
+                _canonical(tenant, "sub_ord", "trialing"))
+    _post_event(client, _sub_event("evt_ord_2", 200, "active", tenant, "sub_ord"), monkeypatch,
+                _canonical(tenant, "sub_ord", "active"))
+    failed = {"id": "evt_ord_3", "type": "invoice.payment_failed", "created": 300, "data": {"object": {"subscription": "sub_ord"}}}
+    _post_event(client, failed, monkeypatch, _canonical(tenant, "sub_ord", "past_due"))
+    assert _status(tenant) == "past_due"
+    paid = {"id": "evt_ord_4", "type": "invoice.paid", "created": 400, "data": {"object": {"subscription": "sub_ord"}}}
+    _post_event(client, paid, monkeypatch, _canonical(tenant, "sub_ord", "active"))
+    assert _status(tenant) == "active"
+
+
+def test_same_second_conflicting_events_use_authoritative_state(client, owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    current = _canonical(tenant, "sub_equal", "active")
+    for event_id, snapshot in [("evt_equal_new", "active"), ("evt_equal_late", "trialing")]:
+        assert _post_event(client, _sub_event(event_id, 500, snapshot, tenant, "sub_equal"),
+                           monkeypatch, current).status_code == 200
+    assert _status(tenant) == "active"
+
+
+def test_invoice_before_linkage_and_noop_watermark_cannot_mask_state(client, owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    paid = {"id": "evt_first_invoice", "type": "invoice.paid", "created": 900,
+            "data": {"object": {"parent": {"type": "subscription_details",
+                                         "subscription_details": {"subscription": "sub_first"}}}}}
+    assert _post_event(client, paid, monkeypatch, _canonical(tenant, "sub_first", "active")).status_code == 200
+    assert _status(tenant) == "active"
+    # A newer no-op invoice cannot mask a current plan/status change whose
+    # notification carries an older event timestamp.
+    assert _post_event(client, _sub_event("evt_first_older", 800, "past_due", tenant, "sub_first"),
+                       monkeypatch, _canonical(tenant, "sub_first", "past_due")).status_code == 200
+    assert _status(tenant) == "past_due"
+
+
+def test_retired_subscription_event_cannot_replace_new_contract(client, owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    old = _canonical(tenant, "sub_retired", "canceled", created=100)
+    new = _canonical(tenant, "sub_replacement", "active", created=200)
+    assert _post_event(client, _sub_event("evt_retired", 300, "canceled", tenant, "sub_retired"),
+                       monkeypatch, old).status_code == 200
+    resources = {"sub_retired": old, "sub_replacement": new}
+    assert _post_event(client, _sub_event("evt_replacement", 400, "active", tenant, "sub_replacement"),
+                       monkeypatch, lambda sub_id: dict(resources[sub_id])).status_code == 200
+    assert _post_event(client, _sub_event("evt_retired_late", 500, "active", tenant, "sub_retired"),
+                       monkeypatch, old).status_code == 200
+    db = SessionLocal()
+    try:
+        row = crud.get_subscription_by_tenant_id(db, tenant.id)
+        assert row.stripe_subscription_id == "sub_replacement"
+        assert row.status == "active"
+    finally:
+        db.close()
+
+
+def test_reconciliation_failure_rolls_back_marker_and_state(owner_and_staff, monkeypatch):
+    tenant, _, _ = owner_and_staff
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_fake")
+    stripe = MagicMock()
+    event = _sub_event("evt_atomic_" + uuid.uuid4().hex, 600, "past_due", tenant, "sub_atomic")
+    stripe.Webhook.construct_event.return_value = event
+    stripe.Subscription.retrieve.return_value = _canonical(tenant, "sub_atomic", "past_due")
+    billing_service._stripe = stripe
+    original = crud.upsert_subscription
+    def fail_after_flush(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("forced failure after flush")
+    monkeypatch.setattr(crud, "upsert_subscription", fail_after_flush)
+    db = SessionLocal()
+    try:
+        with pytest.raises(RuntimeError, match="forced failure"):
+            billing_service.handle_webhook(db, b"{}", "sig")
+        assert db.get(ProcessedStripeEvent, event["id"]) is None
+        assert crud.get_subscription_by_tenant_id(db, tenant.id).status == "active"
+    finally:
+        db.close()
+
+
+def test_concurrent_distinct_events_serialize_on_tenant(owner_and_staff, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from app.core.config import settings
+    from app.billing.service import BillingService
+    tenant, _, _ = owner_and_staff
+    tenant_id = tenant.id
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_fake")
+    first_entered, release_first, second_started, second_entered = Event(), Event(), Event(), Event()
+    ids = ["evt_parallel_" + uuid.uuid4().hex for _ in range(2)]
+    events = [_sub_event(ids[0], 700, "trialing", tenant, "sub_parallel"),
+              _sub_event(ids[1], 700, "active", tenant, "sub_parallel")]
+    snapshots = [_canonical(tenant, "sub_parallel", "trialing"),
+                 _canonical(tenant, "sub_parallel", "active")]
+
+    def deliver(index):
+        stripe = MagicMock()
+        stripe.Webhook.construct_event.return_value = events[index]
+        def retrieve(_sub_id):
+            if index == 0:
+                first_entered.set()
+                if not release_first.wait(10):
+                    raise RuntimeError("test synchronization timed out")
+            else:
+                second_entered.set()
+            return dict(snapshots[index])
+        stripe.Subscription.retrieve.side_effect = retrieve
+        db = SessionLocal()
+        try:
+            if index == 1:
+                second_started.set()
+            BillingService(stripe).handle_webhook(db, b"{}", "sig")
+        finally:
+            db.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(deliver, 0)
+        try:
+            assert first_entered.wait(10)
+            second = pool.submit(deliver, 1)
+            assert second_started.wait(10)
+            # While the first read holds the tenant lock, the second
+            # must not enter its own authoritative read.
+            assert not second_entered.wait(0.5)
+        finally:
+            release_first.set()
+        first.result(timeout=15)
+        second.result(timeout=15)
+    assert second_entered.is_set()
+    db = SessionLocal()
+    try:
+        assert crud.get_subscription_by_tenant_id(db, tenant_id).status == "active"
+        assert all(db.get(ProcessedStripeEvent, event_id) is not None for event_id in ids)
+    finally:
+        db.close()
