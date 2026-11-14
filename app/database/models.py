@@ -1051,7 +1051,7 @@ class Subscription(Base):
 
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Stripe `created` time of the newest event applied; an older late-delivered event is ignored.
+    # Latest observed Stripe event time for the linked contract; audit only, not ordering authority.
     stripe_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Sprint 039 Production Readiness Defect Gate, Blocker 3 (migration

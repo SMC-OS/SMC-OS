@@ -1501,6 +1501,7 @@ def upsert_subscription(
     trial_start=None,
     trial_end=None,
     legacy_grandfathered: bool | None = None,
+    commit: bool = True,
 ) -> Subscription:
     row = get_subscription_by_tenant_id(db, tenant_id)
     if row is None:
@@ -1540,7 +1541,10 @@ def upsert_subscription(
     if legacy_grandfathered is not None:
         row.legacy_grandfathered = legacy_grandfathered
 
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(row)
     return row
 

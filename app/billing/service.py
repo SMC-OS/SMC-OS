@@ -18,6 +18,7 @@ same event.
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.billing.plans import plan_and_period_for_price_id, price_id_for
@@ -148,7 +149,8 @@ class BillingService:
     def set_cancel_at_period_end(self, db: Session, tenant: Tenant, cancel: bool) -> Subscription:
         stripe = self._get_stripe()
 
-        subscription = crud.get_subscription_by_tenant_id(db, tenant.id)
+        # Serialize direct cancellation with webhook reconciliation on the same tenant.
+        subscription = self._lock_subscription(db, tenant.id)
         if subscription is None or subscription.stripe_subscription_id is None:
             raise BillingError("No active Stripe subscription to update.")
 
@@ -202,11 +204,18 @@ class BillingService:
                 if callable(to_dict):
                     event_object = to_dict()
                 event_at = self._event_time(event)
-                if self._is_stale(db, event["type"], event_object, event_at):
-                    db.commit()  # keep the processed marker; the event is older than what is already applied
-                    return
-                handler(self, db, event_object)
-                self._record_event_time(db, event["type"], event_object, event_at)
+                if event_at is not None:
+                    # A signed Stripe event is a notification, not a current-state
+                    # snapshot. Stripe timestamps have one-second resolution and
+                    # cross-type delivery is unordered. Reconcile under a tenant lock.
+                    self._reconcile_stripe_event(db, stripe, event["type"], event_object, event_at)
+                else:
+                    # Historical internal fixtures / payloads without a created field.
+                    # The production Stripe event contract always includes created.
+                    tenant_id = self._event_tenant_id(db, event["type"], event_object)
+                    if tenant_id is not None:
+                        self._lock_subscription(db, tenant_id)
+                    handler(self, db, event_object)
             db.commit()
         except Exception:
             db.rollback()
@@ -217,32 +226,120 @@ class BillingService:
         created = event.get("created") if hasattr(event, "get") else None
         return datetime.fromtimestamp(created, tz=timezone.utc) if isinstance(created, (int, float)) else None
 
-    def _subscription_for_event(self, db: Session, event_type: str, obj: dict):
+    @staticmethod
+    def _lock_subscription(db: Session, tenant_id: uuid.UUID) -> Subscription | None:
+        # Lock the tenant rather than just its subscription: first linkage may
+        # not yet have a row. All webhook writes and cancellation share this
+        # lock, and it is held until the marker and the state commit together.
+        db.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
+        return db.scalars(
+            select(Subscription).where(Subscription.tenant_id == tenant_id)
+            .execution_options(populate_existing=True)
+        ).first()
+
+    @staticmethod
+    def _metadata_tenant(obj: dict) -> uuid.UUID | None:
+        raw = (obj.get("metadata") or {}).get("tenant_id") or obj.get("client_reference_id")
+        if not raw:
+            return None
+        try:
+            return uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            raise BillingError("Invalid Stripe tenant metadata") from None
+
+    def _event_subscription_id(self, event_type: str, obj: dict) -> str | None:
         if event_type.startswith("customer.subscription."):
             sub_id = obj.get("id")
         elif event_type.startswith("invoice."):
             sub_id = self._invoice_subscription_id(obj)
+        elif event_type == "checkout.session.completed":
+            sub_id = obj.get("subscription")
         else:
             return None
-        return crud.get_subscription_by_stripe_subscription_id(db, sub_id) if sub_id else None
+        return sub_id if isinstance(sub_id, str) and sub_id else None
 
-    def _is_stale(self, db: Session, event_type: str, obj: dict, event_at: datetime | None) -> bool:
-        """Stripe does not guarantee delivery order. An event older than the newest one already applied to this
-        subscription must not undo it (e.g. a late trialing update after active, or a late payment_failed after
-        recovery). Equal timestamps are applied."""
-        if event_at is None:
-            return False
-        row = self._subscription_for_event(db, event_type, obj)
-        return bool(row is not None and row.stripe_event_at is not None and event_at < row.stripe_event_at)
+    def _event_tenant_id(self, db: Session, event_type: str, obj: dict) -> uuid.UUID | None:
+        sub_id = self._event_subscription_id(event_type, obj)
+        row = crud.get_subscription_by_stripe_subscription_id(db, sub_id) if sub_id else None
+        metadata_tenant = self._metadata_tenant(obj) if not event_type.startswith("invoice.") else None
+        if row is not None and metadata_tenant is not None and row.tenant_id != metadata_tenant:
+            raise BillingError("Conflicting Stripe tenant linkage")
+        return row.tenant_id if row is not None else metadata_tenant
 
-    def _record_event_time(self, db: Session, event_type: str, obj: dict, event_at: datetime | None) -> None:
-        if event_at is None:
+    @staticmethod
+    def _retrieve_subscription(stripe, sub_id: str) -> dict:
+        # Do not acknowledge an event if the authoritative read failed: the
+        # outer transaction rolls back the processed marker for Stripe's retry.
+        obj = stripe.Subscription.retrieve(sub_id)
+        if not isinstance(obj, dict):
+            convert = getattr(obj, "to_dict_recursive", None) or getattr(obj, "to_dict", None)
+            obj = convert() if callable(convert) else None
+        if not isinstance(obj, dict) or obj.get("id") != sub_id or not obj.get("status"):
+            raise BillingError("Stripe subscription response is incomplete")
+        return obj
+
+    def _reconcile_stripe_event(self, db: Session, stripe, event_type: str, obj: dict, event_at: datetime) -> None:
+        sub_id = self._event_subscription_id(event_type, obj)
+        if not sub_id:
+            return  # e.g. invoice without a subscription parent
+
+        tenant_id = self._event_tenant_id(db, event_type, obj)
+        if tenant_id is None:
+            # Invoice may arrive before either linkage event. Resolve the
+            # tenant from Stripe, then re-read current state under the lock.
+            tenant_id = self._metadata_tenant(self._retrieve_subscription(stripe, sub_id))
+        if tenant_id is None:
             return
-        row = self._subscription_for_event(db, event_type, obj)
-        if row is None and event_type.startswith("customer.subscription."):
-            tenant_raw = (obj.get("metadata") or {}).get("tenant_id")
-            row = crud.get_subscription_by_tenant_id(db, uuid.UUID(tenant_raw)) if tenant_raw else None
-        if row is not None and (row.stripe_event_at is None or event_at > row.stripe_event_at):
+        if db.get(Tenant, tenant_id) is None:
+            return  # other environments can share the sandbox; never create their tenant
+
+        existing = self._lock_subscription(db, tenant_id)
+        canonical = self._retrieve_subscription(stripe, sub_id)
+        canonical_tenant = self._metadata_tenant(canonical)
+        if canonical_tenant is not None and canonical_tenant != tenant_id:
+            raise BillingError("Stripe subscription belongs to another tenant")
+        linked = crud.get_subscription_by_stripe_subscription_id(db, sub_id)
+        if linked is not None and linked.tenant_id != tenant_id:
+            raise BillingError("Stripe subscription already linked to another tenant")
+
+        status = canonical["status"]
+        terminal = {"canceled", "cancelled", "incomplete_expired"}
+        replacing = bool(existing and existing.stripe_subscription_id and existing.stripe_subscription_id != sub_id)
+        if replacing:
+            # A delayed event for a retired contract must not switch the
+            # workspace back. Only a newer, non-terminal contract can replace
+            # an authoritative terminal contract. Never silently replace a
+            # live contract (two live contracts require operator resolution).
+            if status in terminal:
+                return
+            prior = self._retrieve_subscription(stripe, existing.stripe_subscription_id)
+            if prior["status"] not in terminal:
+                raise BillingError("Multiple live Stripe subscriptions for one tenant")
+            old_created, new_created = prior.get("created"), canonical.get("created")
+            if not isinstance(old_created, (int, float)) or not isinstance(new_created, (int, float)):
+                raise BillingError("Cannot establish Stripe subscription replacement order")
+            if new_created <= old_created:
+                if new_created == old_created:
+                    raise BillingError("Ambiguous same-second Stripe subscription replacement")
+                return
+
+        # Normalize the modern Stripe period-end location. The legacy
+        # snapshot handler already maps configured prices and trial history.
+        items = (canonical.get("items") or {}).get("data") or []
+        if not canonical.get("current_period_end") and items:
+            canonical["current_period_end"] = items[0].get("current_period_end")
+        if status == "canceled":
+            canonical["status"] = "cancelled"
+        # Use trusted tenant resolution even when old Stripe subscriptions
+        # omitted metadata; don't let stale Checkout plan metadata win.
+        canonical["metadata"] = {**(canonical.get("metadata") or {}), "tenant_id": str(tenant_id)}
+        self._handle_subscription_upsert(db, canonical)
+        row = crud.get_subscription_by_tenant_id(db, tenant_id)
+        if row is None or row.stripe_subscription_id != sub_id:
+            raise BillingError("Stripe subscription reconciliation did not establish linkage")
+        # Audit watermark only: never use event timestamps to overrule
+        # Stripe's current resource state, including equal-second events.
+        if replacing or row.stripe_event_at is None or event_at > row.stripe_event_at:
             row.stripe_event_at = event_at
 
     def _handle_checkout_completed(self, db: Session, session_obj: dict) -> None:
@@ -276,6 +373,7 @@ class BillingService:
         existing = crud.get_subscription_by_tenant_id(db, tenant_id)
         crud.upsert_subscription(
             db,
+            commit=False,
             tenant_id=tenant_id,
             plan=plan,
             billing_period=billing_period,
@@ -334,6 +432,7 @@ class BillingService:
 
         crud.upsert_subscription(
             db,
+            commit=False,
             tenant_id=tenant_id,
             plan=plan,
             billing_period=billing_period,
@@ -357,6 +456,7 @@ class BillingService:
 
         crud.upsert_subscription(
             db,
+            commit=False,
             tenant_id=existing.tenant_id,
             plan=existing.plan,
             billing_period=existing.billing_period,
@@ -399,6 +499,7 @@ class BillingService:
 
         crud.upsert_subscription(
             db,
+            commit=False,
             tenant_id=existing.tenant_id,
             plan=existing.plan,
             billing_period=existing.billing_period,
@@ -420,6 +521,7 @@ class BillingService:
 
         crud.upsert_subscription(
             db,
+            commit=False,
             tenant_id=existing.tenant_id,
             plan=existing.plan,
             billing_period=existing.billing_period,
