@@ -3,6 +3,9 @@ Run with --preflight before configuring QA; normal mode uses a fresh synthetic o
 Never log secrets, tokens, checkout URLs or raw upstream error payloads.
 """
 import datetime as dt
+import hashlib
+import hmac
+import uuid
 import json
 import os
 import re
@@ -77,6 +80,28 @@ def preflight():
               and p.get("currency") == "gbp" and p.get("unit_amount") == amount
               and p.get("recurring", {}).get("interval") == interval)
 
+def signed_probe():
+    # A runner-generated, non-business event isolates deployed signature verification
+    # from Stripe's endpoint signing secret. It must NOT count as real Stripe delivery.
+    ts = int(time.time())
+    payload = json.dumps({
+        "id": "evt_geocore_qa_" + uuid.uuid4().hex,
+        "object": "event", "type": "geocore.qa.signature_probe",
+        "created": ts, "livemode": False, "data": {"object": {"object": "qa_probe"}},
+    }, separators=(",", ":")).encode()
+    signature = hmac.new(SECRET.encode(), str(ts).encode() + b"." + payload, hashlib.sha256).hexdigest()
+    req = urllib.request.Request(API + "/api/v1/billing/webhook", data=payload, method="POST",
+        headers={"Content-Type": "application/json", "Stripe-Signature": f"t={ts},v1={signature}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            code = response.status
+            accepted = json.loads(response.read()).get("received") is True
+    except urllib.error.HTTPError as exc:
+        code, accepted = exc.code, False
+    except Exception:
+        code, accepted = 0, False
+    check(f"runner-signed no-op diagnostic webhook HTTP {code} (not actual Stripe delivery)", code == 200 and accepted)
+
 def poll(token, label, predicate, seconds=180):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
@@ -102,6 +127,7 @@ def main():
     check("trial has >48h remaining", trial_end - time.time() > 172800)
     code, _ = request("POST", API + "/api/v1", "/billing/webhook", body={"invalid": True})
     check("unsigned webhook refused", code == 400)
+    signed_probe()
     checkout_id = customer_id = sub_id = None
     try:
         api("POST", "/billing/checkout", token, {"plan": "starter", "billing_period": "monthly"},
