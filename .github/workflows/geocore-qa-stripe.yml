@@ -100,18 +100,24 @@ jobs:
           echo "BILLING_PREVIOUS_DEPLOY=$PREV" >> "$GITHUB_ENV"
           start_set "$QA_PROVISION_START"
           [[ "$(start_get)" == "$QA_PROVISION_START" ]]
-          # A variable change alone did not create a deployment in run 43514983821.
-          # Use the already verified acceptance-scoped project token and explicitly redeploy.
+          deploy_current_config() {
+            local out id
+            out="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --arg sha "$EXPECTED_SHA" '{s:$s,e:$e,sha:$sha}')")" || return 1
+            id="$(jq -er 'if (.errors // [])|length > 0 then error("Railway deployment request rejected") else .data.serviceInstanceDeployV2 end | select(type == "string" and length > 0)' <<<"$out")" || return 1
+            echo "New isolated QA deployment requested: $id" >&2
+            printf '%s\n' "$id"
+          }
+          # Fresh deploy uses current configuration, not an earlier test snapshot.
           read -r CURRENT STATUS _ < <(latest_deployment)
           if [[ "$CURRENT" == "$PREV" ]]; then
-            railway redeploy --service geocore-api-qa --yes
+            TARGET="$(deploy_current_config)"
           else
-            echo "QA deployment already triggered ($STATUS); not issuing a duplicate"
+            TARGET="$CURRENT"
           fi
           wait_for_new_deployment "$PREV" 900
           wait_for_ready "$QA_API" 300
           read -r ID STATUS SHA < <(latest_deployment)
-          [[ "$STATUS" == SUCCESS ]]
+          [[ "$ID" == "$TARGET" && "$STATUS" == SUCCESS ]]
           commit_matches_candidate "$SHA" "$EXPECTED_SHA"
           echo "QA billing deployment $ID $SHA" >> qa-stripe-identity.txt
           {
@@ -141,15 +147,21 @@ jobs:
           railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("STRIPE_") or startswith("QA_"))) | length == 0' >/dev/null || rc=1
           [[ "$(start_get)" == "$QA_ORIG_START" ]] || rc=1
           [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || rc=1
-          # Restore actual running service, not just the stored configuration. If setup
-          # deployed a new container, require a subsequent clean deployment.
+          deploy_current_config() {
+            local out id
+            out="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --arg sha "$EXPECTED_SHA" '{s:$s,e:$e,sha:$sha}')")" || return 1
+            id="$(jq -er 'if (.errors // [])|length > 0 then error("Railway deployment request rejected") else .data.serviceInstanceDeployV2 end | select(type == "string" and length > 0)' <<<"$out")" || return 1
+            echo "New isolated QA deployment requested: $id" >&2
+            printf '%s\n' "$id"
+          }
+          # Fresh deploy from the restored configuration and immutable source.
           if [[ -n "${BILLING_PREVIOUS_DEPLOY:-}" ]]; then
             read -r RESTORE_PREV _ _ < <(latest_deployment)
             if [[ "$RESTORE_PREV" != "$BILLING_PREVIOUS_DEPLOY" ]]; then
-              wait_for_stable_success 1200 || rc=1
-              read -r RESTORE_PREV _ _ < <(latest_deployment)
-              railway redeploy --service geocore-api-qa --yes || rc=1
+              TARGET="$(deploy_current_config)" || rc=1
               wait_for_new_deployment "$RESTORE_PREV" 900 || rc=1
+              read -r ID STATUS SHA < <(latest_deployment)
+              [[ "$ID" == "$TARGET" && "$STATUS" == SUCCESS && "$SHA" == "$EXPECTED_SHA" ]] || rc=1
             fi
           fi
           wait_for_stable_success 1200 || rc=1
