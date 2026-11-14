@@ -12,7 +12,7 @@ import { PasswordField } from "@/components/ui/PasswordField";
 import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 import { ApiError } from "@/lib/api";
 import { passwordPolicyError } from "@/lib/passwordPolicy";
-import { legalUrl } from "@/lib/legal";
+import { legalUrl, requestDemoUrl } from "@/lib/legal";
 
 // Phase B — the plan chosen on the public pricing page arrives as
 // ?plan=&billing_period= and is carried into signup, so the no-card
@@ -57,6 +57,9 @@ function SignupForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Issue #67 — when the server has closed admission, say so plainly and
+  // point to a demo request, rather than a generic failure.
+  const [admissionClosed, setAdmissionClosed] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -104,7 +107,9 @@ function SignupForm() {
             : "/onboarding"
       );
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
+      if (err instanceof ApiError && err.status === 403) {
+        setAdmissionClosed(err.detail ?? "GeoCore is not accepting new accounts yet.");
+      } else if (err instanceof ApiError && err.status === 409) {
         setError("An account with that email already exists.");
       } else if (err instanceof ApiError && err.status === 422) {
         setError(policyError ?? "Password does not meet the requirements below.");
@@ -202,6 +207,15 @@ function SignupForm() {
               <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
                 {error}
               </p>
+            )}
+
+            {admissionClosed && (
+              <div role="status" className="rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+                <p className="text-foreground">{admissionClosed}</p>
+                <a className="mt-1 inline-block text-accent hover:underline" href={requestDemoUrl()}>
+                  Request a demo
+                </a>
+              </div>
             )}
 
             <Button type="submit" disabled={submitting}>

@@ -34,6 +34,28 @@ ALLOWED_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".heic", ".webp",
 }
 
+# The served media type comes from the allowlisted extension, never from
+# the uploader's Content-Type header: a ".pdf" declared as text/html must not
+# be served as HTML. Keyed by the same extensions as ALLOWED_EXTENSIONS.
+MEDIA_TYPES = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".txt": "text/plain; charset=utf-8",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".heic": "image/heic",
+    ".webp": "image/webp",
+}
+
+
+def media_type_for(filename: str) -> str:
+    return MEDIA_TYPES.get(Path(filename).suffix.lower(), "application/octet-stream")
+
+
 _CHUNK_SIZE = 1024 * 1024
 
 
@@ -87,30 +109,56 @@ class DocumentService:
         storage_filename = f"{uuid.uuid4()}{extension}"
         destination = upload_dir / storage_filename
 
+        document_id = uuid.uuid4()
         size_bytes = 0
-        with destination.open("wb") as out_file:
-            while True:
-                chunk = file.file.read(_CHUNK_SIZE)
-                if not chunk:
-                    break
-                size_bytes += len(chunk)
-                if size_bytes > MAX_UPLOAD_BYTES:
-                    out_file.close()
-                    destination.unlink(missing_ok=True)
-                    raise FileTooLargeError(size_bytes)
-                out_file.write(chunk)
+        try:
+            with destination.open("wb") as out_file:
+                while True:
+                    chunk = file.file.read(_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    size_bytes += len(chunk)
+                    if size_bytes > MAX_UPLOAD_BYTES:
+                        raise FileTooLargeError(size_bytes)
+                    out_file.write(chunk)
 
-        return crud.create_document(
-            db,
-            id=uuid.uuid4(),
-            tenant_id=tenant_id,
-            customer_id=customer_id,
-            uploaded_by_user_id=uploaded_by_user_id,
-            original_filename=original_filename,
-            storage_filename=storage_filename,
-            content_type=file.content_type or "application/octet-stream",
-            size_bytes=size_bytes,
-        )
+            return crud.create_document(
+                db,
+                id=document_id,
+                tenant_id=tenant_id,
+                customer_id=customer_id,
+                uploaded_by_user_id=uploaded_by_user_id,
+                original_filename=original_filename,
+                storage_filename=storage_filename,
+                content_type=media_type_for(storage_filename),
+                size_bytes=size_bytes,
+            )
+        except BaseException:
+            # QA-UPLOAD-ORPHAN: the bytes are written before the row, so any
+            # failure (oversize, disk error, database error) must not leave an
+            # unreferenced file behind.
+            self._discard_unreferenced_file(db, document_id, destination)
+            raise
+
+    @staticmethod
+    def _discard_unreferenced_file(db: Session, document_id: uuid.UUID, destination: Path) -> None:
+        """Remove `destination` only when the document row is CONFIRMED absent.
+
+        If the commit actually succeeded but its acknowledgement was lost, the
+        row exists and the file is its only copy: deleting it would leave a
+        dangling row, which is worse than an orphan. If the database cannot be
+        asked, the file is kept (an orphan is detectable and harmless; data
+        loss is not)."""
+        try:
+            db.rollback()
+            if db.get(Document, document_id) is not None:
+                return
+        except Exception:
+            return
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def list_documents(
         self, db: Session, tenant_id: uuid.UUID, customer_id: uuid.UUID | None = None

@@ -204,6 +204,7 @@ class VariationService:
         if target == "approved":
             changes["approved_at"] = datetime.now(timezone.utc)
             changes["approved_by_user_id"] = actor_user_id
+            changes["approved_amount"] = variation.total
 
         variation = crud.update_variation(db, variation, changes)
         return variation

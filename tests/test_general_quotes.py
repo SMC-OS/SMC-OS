@@ -392,6 +392,8 @@ def test_general_and_stone_quotes_share_one_list(client, auth_headers):
 
 
 def test_invoice_pdf_renders_a_general_quote(client, auth_headers):
+    from tests.conftest import make_supplier_ready
+    make_supplier_ready(client, auth_headers)
     quote = _create(client, auth_headers)
     r = client.get(f"/api/v1/quotes/{quote['id']}/invoice", headers=auth_headers)
 

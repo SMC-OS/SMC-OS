@@ -1,0 +1,73 @@
+name: GeoCore QA Resend provider smoke
+# Tests the supplied sending-only key and the actual GeoCore sender domain.
+# Resend's simulated recipient; no real mailbox or customer data, no Railway mutations.
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa/geocore-closure-20261105]
+    paths: ['.github/workflows/geocore-qa-resend.yml']
+permissions:
+  contents: read
+concurrency:
+  group: geocore-qa-resend
+  cancel-in-progress: false
+jobs:
+  provider-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Send one provider test message with the GeoCore sender domain
+        env:
+          RESEND_API_KEY: ${{ secrets.GEOCORE_QA_RESEND_API_KEY }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, urllib.request, urllib.error
+          key = os.environ.get("RESEND_API_KEY", "")
+          if not key.startswith("re_"):
+              sys.exit("BLOCKED: missing or invalid-format GEOCORE_QA_RESEND_API_KEY")
+          payload = {
+              "from": "GeoCore QA <noreply@send.geocore.one>",
+              "to": ["delivered@resend.dev"],
+              "subject": "GeoCore QA provider smoke",
+              "text": "Synthetic Resend provider test only. No customer information.",
+          }
+          request = urllib.request.Request(
+              "https://api.resend.com/emails",
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Authorization": "Bearer " + key,
+                  "Content-Type": "application/json",
+                  "User-Agent": "GeoCore-QA/1.0",
+                  "Idempotency-Key": "geocore-qa-provider-" + os.environ["GITHUB_RUN_ID"],
+              },
+              method="POST",
+          )
+          result = {"scope": "provider simulated delivery only; not an app or real inbox test", "sender": "noreply@send.geocore.one", "recipient": "delivered@resend.dev"}
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  data = json.loads(response.read())
+                  result.update(http_status=response.status, accepted=response.status in (200, 201) and bool(data.get("id")))
+                  if result["accepted"]:
+                      result["provider_message_id"] = data["id"]
+          except urllib.error.HTTPError as error:
+              result.update(http_status=error.code, accepted=False)
+              # No raw provider errors, headers or secrets in evidence.
+              hints = {401: "API key authentication refused", 403: "sending permission or sender-domain verification refused", 422: "provider validation refused", 429: "rate limited"}
+              result["failure_category"] = hints.get(error.code, "provider request failed")
+          except Exception as error:
+              result.update(accepted=False, failure_category=type(error).__name__)
+          with open("qa-resend-provider.json", "w") as f:
+              json.dump(result, f, indent=2)
+          print(json.dumps(result))
+          if not result.get("accepted"):
+              sys.exit(1)
+          PY
+      - name: Save provider acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geocore-resend-provider-smoke
+          path: qa-resend-provider.json
+          retention-days: 14
+          if-no-files-found: warn

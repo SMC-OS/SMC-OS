@@ -63,13 +63,16 @@ def test_foreign_catalogue_material_cannot_be_used_with_manual_price(monkeypatch
 def jsonb_sqlite(type_, compiler, **kw): return "JSON"
 
 
+_SUP=dict(legal_name="Synthetic Ltd",address_line1="1 Test St",postcode="SW1A 1AA",vat_registered=True,vat_number="GB123456789",bank_account_name="Synthetic Ltd",bank_sort_code="12-34-56",bank_account_number="12345678",payment_terms_days=30)
+
+
 def test_invoice_sequence_is_tenant_scoped_stable_customisable_and_skips_used_numbers():
     engine=create_engine("sqlite://")
     Tenant.__table__.create(engine)
     Quote.__table__.create(engine)
     QuoteItem.__table__.create(engine)
     with Session(engine) as db:
-        a=Tenant(name="A",slug="a");b=Tenant(name="B",slug="b")
+        a=Tenant(name="A",slug="a",**_SUP);b=Tenant(name="B",slug="b",**_SUP)
         db.add_all([a,b]); db.flush()
         q1=Quote(tenant_id=a.id);q2=Quote(tenant_id=a.id);q3=Quote(tenant_id=b.id)
         db.add_all([q1,q2,q3]);db.commit()
@@ -134,7 +137,7 @@ def test_invoice_download_uses_persisted_reference_and_original_price(monkeypatc
     engine=create_engine("sqlite://")
     Tenant.__table__.create(engine);Quote.__table__.create(engine);QuoteItem.__table__.create(engine)
     with Session(engine) as db:
-        tenant=Tenant(name="Synthetic",slug="invoice-route")
+        tenant=Tenant(name="Synthetic",slug="invoice-route",**_SUP)
         db.add(tenant);db.commit()
         created=QuoteService().create(db,request(manual_price=1234.56,vat_rate=0),tenant.id)
         user=SimpleNamespace(tenant_id=tenant.id)
@@ -152,7 +155,7 @@ def test_postgres_concurrent_downloads_allocate_one_reference_per_quote(db):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
     from app.database.database import SessionLocal
-    tenant=Tenant(name="Synthetic sequence concurrency",slug=f"sequence-{uuid4()}")
+    tenant=Tenant(name="Synthetic sequence concurrency",slug=f"sequence-{uuid4()}",**_SUP)
     db.add(tenant);db.flush()
     quotes=[Quote(tenant_id=tenant.id) for _ in range(3)]
     db.add_all(quotes);db.commit()

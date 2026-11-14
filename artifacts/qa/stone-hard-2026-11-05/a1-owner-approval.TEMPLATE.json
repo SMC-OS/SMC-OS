@@ -1,0 +1,22 @@
+{
+  "schema": "geocore-a1-approval/1",
+  "_instructions": "OWNER fills and signs off this file. An agent must never fill it in. Every null/false below means UNAPPROVED. Keep the completed copy OUTSIDE the repository and pass it with --approval-file.",
+  "approved_by": null,
+  "approved_at_utc": null,
+  "window_start": null,
+  "window_end": null,
+  "operator": null,
+  "users_notified_at_utc": null,
+  "notification_channel": null,
+  "private_storage_description": null,
+  "private_storage_approved": false,
+  "private_storage_encryption_attested": false,
+  "barrier_operational_procedure_approved": false,
+  "scope_staging_only": false,
+  "historical_backups_untouched": false,
+  "production_untouched": false,
+  "_proposal_only_not_approved": {
+    "window_start": "2026-11-10T10:00:00Z",
+    "window_end": "2026-11-10T10:30:00Z"
+  }
+}

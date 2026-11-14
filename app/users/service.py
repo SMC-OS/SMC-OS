@@ -48,5 +48,22 @@ class UserManagementService:
             raise UserNotFoundError(user_id)
         return crud.update_user_active(db, user_id, is_active=False)
 
+    def set_approval_authority(
+        self, db: Session, *, tenant_id: uuid.UUID, user_id: uuid.UUID, allowed: bool
+    ) -> User:
+        row = crud.get_user_by_id(db, user_id)
+        if row is None or row.tenant_id != tenant_id:
+            raise UserNotFoundError(user_id)
+        if row.role != "Staff":
+            raise ApprovalAuthorityNotApplicableError(user_id)
+        row.can_approve_financials = allowed
+        db.commit()
+        db.refresh(row)
+        return row
+
+
+class ApprovalAuthorityNotApplicableError(Exception):
+    """Owners always hold approval authority; only Staff can be delegated or revoked."""
+
 
 user_management_service = UserManagementService()

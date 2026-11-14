@@ -5,6 +5,16 @@ on:
   pull_request:
 
 jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan tracked files and full git history for credential formats
+        run: python3 scripts/qa/scan_secrets.py --history
+
   dependency-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10

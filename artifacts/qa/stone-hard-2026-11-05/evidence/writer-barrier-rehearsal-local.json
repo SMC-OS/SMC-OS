@@ -1,0 +1,575 @@
+{
+ "title": "A1 writer barrier + capture tool: disposable LOCAL rehearsal evidence",
+ "NOT_STAGING_EVIDENCE": true,
+ "run_utc": "2026-11-08T13:41:54Z",
+ "tools_commit_parent": "02fef54fc8e8d4ae2a955383332fb3d078f48b3c",
+ "environment": {
+  "postgres": "16.15 (local throwaway cluster, torn down after the run)",
+  "staging_postgres_reported": "18.6 - NOT rehearsed",
+  "app": "real API, APP_ENV=production, UID 10001",
+  "app_roles_tested": [
+   "superuser (worst case, like Railway's postgres role)",
+   "non-superuser"
+  ],
+  "alembic_head": "a5f6b7c8d9e0",
+  "data": "synthetic only; uploads were 4 files / 276 bytes in the rehearsal"
+ },
+ "scale_check_separate": {
+  "files": 3766,
+  "bytes": 275645492,
+  "manifest_seconds": 0.37,
+  "archive_seconds": 1.43,
+  "sha256sum_archive_seconds": 0.26,
+  "note": "local disk only; the railway ssh transfer time is unmeasured"
+ },
+ "totals": {
+  "checks": 91,
+  "failed": 0
+ },
+ "checks": [
+  {
+   "check": "control: API mutation succeeds before the barrier",
+   "passed": true,
+   "status": 201
+  },
+  {
+   "check": "control: upload succeeds and writes files before the barrier",
+   "passed": true,
+   "files": 3
+  },
+  {
+   "check": "control: direct DB write succeeds as simo_super before the barrier",
+   "passed": true
+  },
+  {
+   "check": "control: direct DB write succeeds as simo_limited before the barrier",
+   "passed": true
+  },
+  {
+   "check": "control: automation job entrypoint runs before the barrier",
+   "passed": true,
+   "exit": 0
+  },
+  {
+   "check": "negative: wrong cluster system identifier is refused",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "negative: --confirm-environment production is refused",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "negative: record file inside the repository is refused",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "negative: refused engage left the database untouched",
+   "passed": true,
+   "state": {
+    "setting": null,
+    "engaged": false
+   }
+  },
+  {
+   "check": "concurrency: engage waited for the in-flight transaction (never killed it)",
+   "passed": true,
+   "drain": {
+    "cutoff": "2026-11-08T13:39:10.036755+00:00",
+    "database": "rehearsal",
+    "inflight_waited_for": 5,
+    "terminated_idle": 4
+   },
+   "seconds": 2.74
+  },
+  {
+   "check": "concurrency: the in-flight transaction committed intact",
+   "passed": true
+  },
+  {
+   "check": "concurrency: every acknowledged write is present (no loss)",
+   "passed": true,
+   "acknowledged": 101,
+   "present": 103
+  },
+  {
+   "check": "concurrency: no request STARTED after the barrier left a row",
+   "passed": true,
+   "leaked_after": 0
+  },
+  {
+   "check": "FINDING: a request straddling the cutoff can be half-applied (row saved, follow-up write refused, client sees an error)",
+   "passed": true,
+   "straddling_requests_with_error_but_saved_row": 2,
+   "of_which_missing_their_activity_log_row": 2,
+   "note": "database stays internally consistent; engage when staging is idle and take T0 only after the drain"
+  },
+  {
+   "check": "concurrency: no write started after the barrier succeeded",
+   "passed": true,
+   "attempts_after_barrier": 100,
+   "statuses": [
+    500
+   ],
+   "slowest": [
+    [
+     0.1,
+     500
+    ],
+    [
+     0.1,
+     500
+    ],
+    [
+     0.1,
+     500
+    ],
+    [
+     0.2,
+     500
+    ]
+   ],
+   "engage_seconds": 2.7
+  },
+  {
+   "check": "concurrency: the load was real (writes succeeded before the barrier)",
+   "passed": true,
+   "acknowledged_before": 101,
+   "unknown": 0
+  },
+  {
+   "check": "barrier: direct DB write rejected for simo_super (no-op and real INSERT), reads work",
+   "passed": true,
+   "result": {
+    "session_read_only": true,
+    "noop_write_rejected": true,
+    "read_works": true,
+    "real_write_rejected": true,
+    "ok": true
+   }
+  },
+  {
+   "check": "barrier: direct DB write rejected for simo_limited (no-op and real INSERT), reads work",
+   "passed": true,
+   "result": {
+    "session_read_only": true,
+    "noop_write_rejected": true,
+    "read_works": true,
+    "real_write_rejected": true,
+    "ok": true
+   }
+  },
+  {
+   "check": "barrier: API mutation rejected",
+   "passed": true,
+   "status": 500
+  },
+  {
+   "check": "reads: GET /api/v1/customers still 200",
+   "passed": true,
+   "status": 200
+  },
+  {
+   "check": "reads: GET /api/v1/documents still 200",
+   "passed": true,
+   "status": 200
+  },
+  {
+   "check": "reads: GET /api/v1/auth/me still 200",
+   "passed": true,
+   "status": 200
+  },
+  {
+   "check": "reads: /health still 200",
+   "passed": true
+  },
+  {
+   "check": "reads: /ready still 200",
+   "passed": true
+  },
+  {
+   "check": "informational: fresh login during the barrier",
+   "passed": true,
+   "status": 200,
+   "note": "log in BEFORE the window; tokens already issued keep working for reads"
+  },
+  {
+   "check": "barrier: denied attempts left the database byte-identical",
+   "passed": true,
+   "differences": []
+  },
+  {
+   "check": "FINDING: with the DB barrier alone, a rejected upload still leaves an orphan FILE (uploads layer is mandatory)",
+   "passed": true,
+   "status": 500,
+   "orphan_files": 1
+  },
+  {
+   "check": "negative: uploads probe refuses to run as root (root would bypass permissions)",
+   "passed": true
+  },
+  {
+   "check": "control: before freezing, the uploads probe correctly FAILS (writes still possible)",
+   "passed": true,
+   "exit": 5
+  },
+  {
+   "check": "barrier: actual new-file write and existing-file write-open rejected, reads work",
+   "passed": true,
+   "result": {
+    "euid": 10001,
+    "existing_file_unchanged": true,
+    "existing_file_write_rejected": true,
+    "new_file_rejected": true,
+    "ok": true,
+    "read_works": true
+   }
+  },
+  {
+   "check": "barrier: API upload rejected and NO file left behind",
+   "passed": true,
+   "status": 500,
+   "differences": []
+  },
+  {
+   "check": "reads: existing document still downloads with identical bytes while frozen",
+   "passed": true,
+   "status": 200
+  },
+  {
+   "check": "barrier: a job-style writer using the app's own SessionLocal is rejected",
+   "passed": true,
+   "exit": 1
+  },
+  {
+   "check": "informational: app.jobs.automations during the barrier",
+   "passed": true,
+   "exit": 0,
+   "note": "exit code only; the content fingerprint below proves nothing changed"
+  },
+  {
+   "check": "informational: app.jobs.follow_up during the barrier",
+   "passed": true,
+   "exit": 0,
+   "note": "exit code only; the content fingerprint below proves nothing changed"
+  },
+  {
+   "check": "informational: app.jobs.trial_reminders during the barrier",
+   "passed": true,
+   "exit": 0,
+   "note": "exit code only; the content fingerprint below proves nothing changed"
+  },
+  {
+   "check": "barrier: jobs changed nothing (content fingerprint identical)",
+   "passed": true,
+   "differences": []
+  },
+  {
+   "check": "monitor: continuous watch over an idle barrier reports clean",
+   "passed": true,
+   "out": "{\n  \"samples\": 4,\n  \"watch\": \"clean\"\n}"
+  },
+  {
+   "check": "HAZARD: an API restart during the freeze crash-loops on the production upload probe",
+   "passed": true,
+   "exit": 3
+  },
+  {
+   "check": "reversal: uploads thaw restores recorded modes with NO content/metadata drift",
+   "passed": true,
+   "result": {
+    "drift": [],
+    "no_drift": true,
+    "restored_entries": 4
+   }
+  },
+  {
+   "check": "reversal: database setting removed",
+   "passed": true,
+   "release": {
+    "database": "rehearsal",
+    "evicted_read_only_sessions": 5,
+    "released": true
+   }
+  },
+  {
+   "check": "reversal: database is byte-identical to its state at barrier time (nothing lost or altered)",
+   "passed": true,
+   "differences": []
+  },
+  {
+   "check": "reversal: uploads are byte-identical to their pre-barrier state",
+   "passed": true
+  },
+  {
+   "check": "reversal: API mutation works again with no restart",
+   "passed": true,
+   "status": 201
+  },
+  {
+   "check": "reversal: uploads work again",
+   "passed": true,
+   "status": 201
+  },
+  {
+   "check": "reversal: a second release is a safe no-op",
+   "passed": true
+  },
+  {
+   "check": "negative: an undrainable in-flight transaction => DRAIN_TIMEOUT (exit 3)",
+   "passed": true,
+   "exit": 3
+  },
+  {
+   "check": "negative: the in-flight transaction was not terminated and committed intact",
+   "passed": true
+  },
+  {
+   "check": "negative: after the timeout the barrier is still engaged (fail closed)",
+   "passed": true
+  },
+  {
+   "check": "negative: engaging an already-engaged database is refused",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "KNOWN LIMIT: an explicit SET ... = off override can still write",
+   "passed": true,
+   "note": "default_transaction_read_only is a default, not a lock; the app never overrides it"
+  },
+  {
+   "check": "detection: the monitor flags the override write",
+   "passed": true,
+   "problems": [
+    "user-table inserted counter changed"
+   ]
+  },
+  {
+   "check": "detection: the content fingerprint flags the override write",
+   "passed": true,
+   "differences": [
+    "table public.barrier_probe differs",
+    "sequence public.barrier_probe_id_seq differs"
+   ]
+  },
+  {
+   "check": "negative: release refuses a record that belongs to another database",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "emergency: release works without the original record",
+   "passed": true
+  },
+  {
+   "check": "negative: a pre-existing read-only setting of unknown origin is not adopted",
+   "passed": true,
+   "exit": 2
+  },
+  {
+   "check": "emergency: freeze blocks writes; emergency thaw restores them without a state file",
+   "passed": true,
+   "result": {
+    "write_while_frozen": false,
+    "write_after_emergency_thaw": true
+   }
+  },
+  {
+   "check": "monitor: violation detector flags lifted barrier, stale RW session and write counters",
+   "passed": true
+  },
+  {
+   "check": "STOP: uploads still writable (database barrier alone is not enough)",
+   "passed": true,
+   "reason": "preflight: uploads are not frozen: 5 entries still writable",
+   "quarantined": true
+  },
+  {
+   "check": "REFUSED: window longer than 30 minutes",
+   "passed": true,
+   "reason": "window must be positive and at most 30 minutes"
+  },
+  {
+   "check": "STOP: window already expired",
+   "passed": true,
+   "reason": "preflight: the approved window has expired",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: window not yet open",
+   "passed": true,
+   "reason": "preflight: the approved window has not opened yet",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: fewer than 2 minutes remain",
+   "passed": true,
+   "reason": "preflight: less than 2 minutes of the window remain; do not start",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: wrong cluster",
+   "passed": true,
+   "reason": "preflight: cluster identity does not match the approved target",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: barrier not recorded as engaged",
+   "passed": true,
+   "reason": "preflight: the writer barrier is not recorded as engaged and drained for this database",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: insufficient free disk",
+   "passed": true,
+   "reason": "preflight: insufficient free disk: 30806597632 bytes free, 11402539000000000 required",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: pg_dump older than the server",
+   "passed": true,
+   "reason": "preflight: pg_dump is older than the server; use a client of the same major version",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: pg_dump missing",
+   "passed": true,
+   "reason": "preflight: pg_dump is not usable",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: stray idle-in-transaction session",
+   "passed": true,
+   "reason": "preflight: 1 unexpected active or in-transaction session(s)",
+   "quarantined": true
+  },
+  {
+   "check": "REFUSED: world-readable output directory",
+   "passed": true
+  },
+  {
+   "check": "REFUSED: non-empty output directory",
+   "passed": true
+  },
+  {
+   "check": "REFUSED: output directory inside the repository",
+   "passed": true
+  },
+  {
+   "check": "A1: capture verified, T0 equals T1, four distinct independently computed hashes",
+   "passed": true,
+   "seconds": 3.2,
+   "files": [
+    "RESULT.json",
+    "correlation.json",
+    "dump.pgdump",
+    "uploads.manifest.json",
+    "uploads.tar"
+   ]
+  },
+  {
+   "check": "A1: out-of-band hash record matches a fresh sha256sum of every artifact",
+   "passed": true
+  },
+  {
+   "check": "A1: artifacts are owner-read-only and the working copy of customer files was removed",
+   "passed": true
+  },
+  {
+   "check": "A1: correlation record binds both digests, window, barrier cutoff and scope limits",
+   "passed": true,
+   "alembic": "a5f6b7c8d9e0",
+   "uploads": {
+    "bytes": 276,
+    "files": 4
+   },
+   "rows": 1483
+  },
+  {
+   "check": "A1: dump restores into a scratch database with an identical content fingerprint (local rehearsal only)",
+   "passed": true,
+   "differences": [],
+   "stderr": ""
+  },
+  {
+   "check": "A1: uploads archive extracts to a tree identical to the live manifest",
+   "passed": true
+  },
+  {
+   "check": "A1: capture changed neither database nor uploads",
+   "passed": true
+  },
+  {
+   "check": "STOP: an upload appears mid-capture",
+   "passed": true,
+   "reason": "uploads: the copied uploads do not match the live manifest (transfer or source change)",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: the partial dump was quarantined, not deleted",
+   "passed": true
+  },
+  {
+   "check": "STOP: archive corrupted after creation",
+   "passed": true,
+   "reason": "verify: archive contents do not match the manifest (missing, extra or altered file)",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: SIGTERM mid-capture",
+   "passed": true,
+   "reason": "interrupted: received SIGTERM",
+   "quarantined": true
+  },
+  {
+   "check": "STOP: a database write slips past the barrier mid-capture",
+   "passed": true,
+   "reason": "uploads: barrier violated: user-table inserted counter changed",
+   "quarantined": true
+  },
+  {
+   "check": "reversal after A1: thaw detects the simulated intruder's directory change and no content drift",
+   "passed": true,
+   "result": {
+    "drift": [
+     ".: directory changed"
+    ],
+    "no_drift": false,
+    "restored_entries": 5
+   }
+  },
+  {
+   "check": "reversal after A1: database barrier removed",
+   "passed": true
+  },
+  {
+   "check": "reversal after A1: normal writes work again",
+   "passed": true
+  },
+  {
+   "check": "helper: pg_restore listing parser finds TABLE DATA entries",
+   "passed": true
+  },
+  {
+   "check": "helper: version parser",
+   "passed": true
+  },
+  {
+   "check": "helper: tar extraction refuses a path-traversal member",
+   "passed": true
+  },
+  {
+   "check": "operator path: freeze, probe, read-only manifest and thaw all work when piped to `python3 -` as the app user",
+   "passed": true,
+   "exits": [
+    0,
+    0,
+    0
+   ],
+   "stderr": ""
+  }
+ ]
+}

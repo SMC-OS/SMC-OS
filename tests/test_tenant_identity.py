@@ -273,7 +273,7 @@ def test_patch_only_writes_the_fields_it_was_sent(client, auth_headers):
         client.patch(
             "/api/v1/tenants/me/profile",
             headers=auth_headers,
-            json={"legal_name": "Keep Me Ltd", "vat_number": "GB555"},
+            json={"legal_name": "Keep Me Ltd", "vat_number": "GB555555555"},
         )
         r = client.patch(
             "/api/v1/tenants/me/profile",
@@ -284,7 +284,7 @@ def test_patch_only_writes_the_fields_it_was_sent(client, auth_headers):
         body = r.json()
         assert body["contact_phone"] == "0161 000 0000"
         assert body["legal_name"] == "Keep Me Ltd"
-        assert body["vat_number"] == "GB555"
+        assert body["vat_number"] == "GB555555555"
     finally:
         _restore_profile(client, auth_headers, original)
 
@@ -407,6 +407,9 @@ def test_second_tenants_invoice_carries_its_own_identity_not_another_tenants(
         },
     )
     assert quote.status_code in (200, 201), quote.text
+    client.patch("/api/v1/tenants/me/profile", headers=other_tenant_headers, json={
+        "postcode": OTHER_POSTCODE, "vat_registered": True, "bank_account_name": "Other Ltd", "bank_sort_code": "11-22-33",
+        "bank_account_number": "87654321", "payment_terms_days": 14})
 
     r = client.get(
         f"/api/v1/quotes/{quote.json()['id']}/invoice", headers=other_tenant_headers

@@ -22,4 +22,9 @@ class TeamMemberOut(BaseModel):
     email: str
     role: str | None = None
     is_active: bool
+    can_approve_financials: bool = False
     created_at: datetime
+
+
+class ApprovalAuthorityUpdate(BaseModel):
+    can_approve_financials: bool

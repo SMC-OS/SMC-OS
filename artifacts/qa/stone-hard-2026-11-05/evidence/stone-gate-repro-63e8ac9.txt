@@ -1,0 +1,30 @@
+INFO simo_os event=http_request_completed request_id=<request-id> HTTP request completed
+----------------------------- Captured log setup ------------------------------
+INFO     simo_os:middleware.py:53 HTTP request completed
+---------------------------- Captured stderr call -----------------------------
+INFO simo_os event=http_request_completed request_id=<request-id> HTTP request completed
+INFO simo_os event=http_request_completed request_id=<request-id> HTTP request completed
+INFO simo_os event=http_request_completed request_id=<request-id> HTTP request completed
+INFO simo_os event=http_request_completed request_id=<request-id> HTTP request completed
+INFO simo_os event=http_request_completed request_id=<request-id> HTTP request completed
+INFO simo_os event=http_request_completed request_id=<request-id> HTTP request completed
+------------------------------ Captured log call ------------------------------
+INFO     simo_os:middleware.py:53 HTTP request completed
+INFO     simo_os:middleware.py:53 HTTP request completed
+INFO     simo_os:middleware.py:53 HTTP request completed
+INFO     simo_os:middleware.py:53 HTTP request completed
+INFO     simo_os:middleware.py:53 HTTP request completed
+INFO     simo_os:middleware.py:53 HTTP request completed
+<local-path> Operating system\SMC-OS\.worktrees\geocore-closure-20261105\tests\test_procurement_stone_gate.py:241: AssertionError: assert '61b76263-330...-f1906a5826bb' == '5bec4550-a3d...-42af29d269d1'
+=========================== short test summary info ===========================
+FAILED tests/test_procurement_stone_gate.py::test_decimal_part_deliveries_can_complete_an_order
+FAILED tests/test_procurement_stone_gate.py::test_receiving_less_than_required_does_not_open_the_gate
+FAILED tests/test_procurement_stone_gate.py::test_one_of_two_linked_lines_does_not_open_the_gate
+FAILED tests/test_procurement_stone_gate.py::test_a_po_not_on_order_cannot_receive_or_open_the_gate[draft]
+FAILED tests/test_procurement_stone_gate.py::test_a_po_not_on_order_cannot_receive_or_open_the_gate[approved]
+FAILED tests/test_procurement_stone_gate.py::test_a_po_not_on_order_cannot_receive_or_open_the_gate[cancelled]
+FAILED tests/test_procurement_stone_gate.py::test_cancelling_the_only_po_releases_the_ordered_requirement
+FAILED tests/test_procurement_stone_gate.py::test_unlinked_po_item_can_be_linked_after_ordering_and_catches_up
+FAILED tests/test_procurement_stone_gate.py::test_po_item_cannot_link_another_projects_or_tenants_requirement
+FAILED tests/test_procurement_stone_gate.py::test_retried_delivery_with_same_key_is_not_counted_twice
+10 failed, 2 passed in 18.28s

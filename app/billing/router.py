@@ -38,6 +38,7 @@ from app.billing.plans import (
 )
 from app.billing.trial import start_trial_if_eligible, trial_status
 from app.billing.service import BillingError, BillingUnavailable, WebhookSignatureError, billing_service
+from app.core.admission import admission_open, require_admission_open
 from app.database import crud
 from app.database.database import get_db
 from app.database.models import User
@@ -116,6 +117,7 @@ def start_trial(
     have no subscription row). Any workspace that already has a
     subscription of any kind — paid, cancelled, grandfathered or a past
     trial — gets 409 and nothing changes."""
+    require_admission_open()
     if billing_service.get_subscription(db, current_user.tenant_id) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -136,6 +138,12 @@ def create_checkout_session(
     current_user: User = Depends(require_role(UserRole.OWNER)),
     db: Session = Depends(get_db),
 ):
+    if not admission_open():
+        # Only a workspace that already has a real Stripe subscription (an
+        # existing paying contract) may still go through checkout.
+        existing = billing_service.get_subscription(db, current_user.tenant_id)
+        if existing is None or not existing.stripe_subscription_id:
+            require_admission_open()
     tenant = crud.get_tenant_by_id(db, current_user.tenant_id)
     try:
         url = billing_service.create_checkout_session(db, tenant, data.plan, data.billing_period)

@@ -40,6 +40,7 @@ from app.auth.verification_service import (
     email_verification_service,
     verification_delivery_outcome,
 )
+from app.core.admission import admission_open, require_admission_open
 from app.core.config import settings
 from app.database import crud
 from app.database.database import get_db
@@ -63,6 +64,7 @@ _FORGOT_PASSWORD_MESSAGE = "If an account exists for that email, we've sent a re
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def signup(data: SignupRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     validate_browser_session_request(request)
+    require_admission_open()
     try:
         tenant, user = auth_service.signup(db, data)
     except EmailAlreadyRegisteredError:
@@ -161,6 +163,13 @@ def login(credentials: LoginRequest, request: Request, response: Response, db: S
         subject=str(user.id), tenant_id=str(user.tenant_id), token_version=user.token_version
     )
     return session_token_response(request, response, token, auth_service.build_user_out(db, user))
+
+
+@router.get("/admission")
+def admission_status():
+    """Public, data-free: lets the sign-up page show waitlist wording
+    instead of a form the server would refuse."""
+    return {"signups_open": admission_open()}
 
 
 @router.get("/me", response_model=UserOut)

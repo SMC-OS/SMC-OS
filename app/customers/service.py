@@ -102,10 +102,13 @@ class CustomerService:
             city=data.city,
             postcode=data.postcode,
             notes=data.notes,
+            commit=False,
         )
-        # Sprint 004: the backend now logs this itself, replacing the
-        # frontend's previous standalone api.logActivity() call — creation
-        # and its activity record happen atomically in one place.
+        # QA-PARTIAL-COMMIT: the customer and its activity record are one
+        # transaction. Previously the customer committed first and the log
+        # used a second session, so a failure between them returned an error
+        # for a customer that had been saved (a client retry then duplicated
+        # it). Now either both persist or neither does.
         activity_service.log(
             ActivityEventCreate(
                 type=ActivityType.CUSTOMER_ADDED,
@@ -113,7 +116,10 @@ class CustomerService:
                 description=customer.name,
             ),
             tenant_id=tenant_id,
+            db=db,
         )
+        db.commit()
+        db.refresh(customer)
         # Sprint 036 (Workstream G) — dispatched after the customer has
         # committed, and total: a broken automation records a failed run
         # and is swallowed, so adding a customer can never fail because of

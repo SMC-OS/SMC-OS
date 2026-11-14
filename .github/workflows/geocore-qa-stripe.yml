@@ -1,0 +1,183 @@
+name: GeoCore isolated QA Stripe acceptance
+# Sandbox-only, using secrets supplied by the owner. Never deploy production or shared staging.
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa/geocore-closure-20261105]
+    paths: ['.github/workflows/geocore-qa-stripe.yml']
+permissions:
+  contents: read
+concurrency:
+  group: geocore-qa-acceptance
+  cancel-in-progress: false
+jobs:
+  stripe-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      QA_API: https://geocore-api-qa-acceptance.up.railway.app
+      QA_ENVIRONMENT_ID: f948241d-446f-43ed-bff0-5d12decffd50
+      EXPECTED_SHA: 86c4911f3d22acf1a2f5826f79ac0dbfa8e3aa3b
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify supplied credentials and all sandbox prices (read only)
+        env:
+          QA_STRIPE_KEY: ${{ secrets.GEOCORE_QA_STRIPE_SECRET_KEY }}
+          QA_STRIPE_SIGNING_SECRET: ${{ secrets.GEOCORE_QA_STRIPE_WEBHOOK_SECRET }}
+        run: python3 scripts/qa/qa_stripe_acceptance.py --preflight
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli@4
+      - name: Verify isolated QA and unchanged runtime before any mutation
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          fail() { echo "BLOCKED: $1" | tee -a qa-stripe-identity.txt >&2; exit 1; }
+          [[ -n "$RAILWAY_TOKEN" && "$QA_ENV" == "$QA_ENVIRONMENT_ID" ]] || fail "missing scoped QA token or wrong environment"
+          railway status --json | jq -r '"project: \(.name)", (.environments.edges[]?.node | "environment: \(.name) (\(.id))")' > qa-stripe-identity.txt
+          grep -Fxq 'project: geocore-qa-20261110' qa-stripe-identity.txt || fail "wrong Railway project"
+          grep -Fxq "environment: acceptance ($QA_ENV)" qa-stripe-identity.txt || fail "wrong Railway environment"
+          for svc in geocore-api-qa geocore-web-qa; do
+            read -r status sha < <(railway deployment list --service "$svc" --environment "$QA_ENV" --json --limit 5 | jq -r 'sort_by(.createdAt) | last | "\(.status) \(.meta.commitHash)"')
+            [[ "$status" == SUCCESS ]] || fail "$svc is not on a successful deployment"
+            match="$(commit_matches_candidate "$sha" "$EXPECTED_SHA")" || fail "$svc runtime differs from immutable final release"
+            echo "$svc $status $sha $match" | tee -a qa-stripe-identity.txt
+          done
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] || fail "QA start command differs from reviewed baseline"
+          echo "PASS start command baseline"
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || fail "QA predeploy command differs from reviewed baseline"
+          echo "PASS predeploy command baseline"
+          # Check only names; never output the Railway variable payload.
+          railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("STRIPE_") or startswith("QA_"))) | length == 0' >/dev/null || fail "existing Stripe or temporary QA variables; preserve them"
+          echo "PASS no existing Stripe or QA temporary variables"
+          curl -fsS --max-time 30 "$QA_API/ready" >/dev/null || fail "QA API readiness failed"
+          echo "PASS API readiness"
+          admission="$(curl -fsS --max-time 30 "$QA_API/api/v1/auth/admission" | jq -r '.signups_open')" || fail "QA admission probe failed"
+          [[ "$admission" == true || "$admission" == false ]] || fail "unexpected admission response"
+          echo "QA API signups_open=$admission" | tee -a qa-stripe-identity.txt
+          [[ "$admission" == false ]] || fail "QA admission must stay closed for this synthetic existing-subscription test"
+      - name: Configure sandbox credentials and provision fresh synthetic owners
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+          QA_STRIPE_KEY: ${{ secrets.GEOCORE_QA_STRIPE_SECRET_KEY }}
+          QA_STRIPE_SIGNING_SECRET: ${{ secrets.GEOCORE_QA_STRIPE_WEBHOOK_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/qa/qa_railway_ops.sh
+          [[ "$QA_STRIPE_KEY" == rk_test_* || "$QA_STRIPE_KEY" == sk_test_* ]]
+          [[ "$QA_STRIPE_SIGNING_SECRET" == whsec_* ]]
+          echo "BILLING_SETUP_STARTED=1" >> "$GITHUB_ENV"
+          printf '%s' "$QA_STRIPE_KEY" | set_qa_var STRIPE_SECRET_KEY
+          printf '%s' "$QA_STRIPE_SIGNING_SECRET" | set_qa_var STRIPE_WEBHOOK_SECRET
+          printf '%s' price_1UFciG3AQWJTR2rG5pTEIwMl | set_qa_var STRIPE_PRICE_STARTER_MONTHLY
+          printf '%s' price_1UFcik3AQWJTR2rGfU9dKc7G | set_qa_var STRIPE_PRICE_STARTER_ANNUAL
+          printf '%s' price_1UFciN3AQWJTR2rG2XvyLuqb | set_qa_var STRIPE_PRICE_TEAM_MONTHLY
+          printf '%s' price_1UFcir3AQWJTR2rGHyFXBBAU | set_qa_var STRIPE_PRICE_TEAM_ANNUAL
+          printf '%s' price_1UFciW3AQWJTR2rGndTcBJJx | set_qa_var STRIPE_PRICE_PRO_MONTHLY
+          printf '%s' price_1UFciy3AQWJTR2rGWmbmBUyc | set_qa_var STRIPE_PRICE_PRO_ANNUAL
+          printf '%s' price_1UFcif3AQWJTR2rGiY1msITo | set_qa_var STRIPE_PRICE_BUSINESS_MONTHLY
+          printf '%s' price_1UFcj43AQWJTR2rGf2kBBxCp | set_qa_var STRIPE_PRICE_BUSINESS_ANNUAL
+          RUN="$(date -u +%Y%m%d%H%M%S)-$GITHUB_RUN_ATTEMPT"
+          PW_A="$(openssl rand -hex 16)Aa1!"
+          PW_B="$(openssl rand -hex 16)Bb2!"
+          echo "::add-mask::$PW_A"
+          echo "::add-mask::$PW_B"
+          base64 -w0 scripts/qa/provision_synthetic_owner.py | set_qa_var QA_PROVISION_PY_B64
+          provision_script_sh | base64 -w0 | set_qa_var QA_PROVISION_SH_B64
+          printf '%s' "stripe-qa-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_A_EMAIL
+          printf '%s' "Stripe QA A $RUN" | set_qa_var QA_OWNER_A_COMPANY
+          printf '%s' "$PW_A" | set_qa_var QA_OWNER_A_PW
+          printf '%s' "stripe-qa-other-$RUN@acceptance.invalid" | set_qa_var QA_OWNER_B_EMAIL
+          printf '%s' "Stripe QA B $RUN" | set_qa_var QA_OWNER_B_COMPANY
+          printf '%s' "$PW_B" | set_qa_var QA_OWNER_B_PW
+          read -r PREV _ _ < <(latest_deployment)
+          echo "BILLING_PREVIOUS_DEPLOY=$PREV" >> "$GITHUB_ENV"
+          start_set "$QA_PROVISION_START"
+          [[ "$(start_get)" == "$QA_PROVISION_START" ]]
+          deploy_current_config() {
+            local out id
+            out="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --arg sha "$EXPECTED_SHA" '{s:$s,e:$e,sha:$sha}')")" || return 1
+            id="$(jq -er 'if (.errors // [])|length > 0 then error("Railway deployment request rejected") else .data.serviceInstanceDeployV2 end | select(type == "string" and length > 0)' <<<"$out")" || return 1
+            echo "New isolated QA deployment requested: $id" >&2
+            printf '%s\n' "$id"
+          }
+          # Fresh deploy uses current configuration, not an earlier test snapshot.
+          read -r CURRENT STATUS _ < <(latest_deployment)
+          if [[ "$CURRENT" == "$PREV" ]]; then
+            TARGET="$(deploy_current_config)"
+          else
+            TARGET="$CURRENT"
+          fi
+          wait_for_new_deployment "$PREV" 900
+          wait_for_ready "$QA_API" 300
+          read -r ID STATUS SHA < <(latest_deployment)
+          [[ "$ID" == "$TARGET" && "$STATUS" == SUCCESS ]]
+          commit_matches_candidate "$SHA" "$EXPECTED_SHA"
+          echo "QA billing deployment $ID $SHA" >> qa-stripe-identity.txt
+          {
+            echo "STAGING_OWNER_EMAIL=stripe-qa-$RUN@acceptance.invalid"
+            echo "STAGING_OWNER_PASSWORD=$PW_A"
+          } >> "$GITHUB_ENV"
+      - name: Run real sandbox subscription and webhook lifecycle
+        env:
+          QA_STRIPE_KEY: ${{ secrets.GEOCORE_QA_STRIPE_SECRET_KEY }}
+          QA_STRIPE_SIGNING_SECRET: ${{ secrets.GEOCORE_QA_STRIPE_WEBHOOK_SECRET }}
+        run: python3 scripts/qa/qa_stripe_acceptance.py
+      - name: Restore QA configuration (even on failure)
+        if: always()
+        env:
+          RAILWAY_TOKEN: ${{ secrets.GEOCORE_QA_RAILWAY_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          [[ "${BILLING_SETUP_STARTED:-}" == 1 ]] || { echo 'No configuration to restore'; exit 0; }
+          source scripts/qa/qa_railway_ops.sh
+          rc=0
+          start_set "$QA_ORIG_START" || rc=1
+          for key in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_PRICE_STARTER_MONTHLY STRIPE_PRICE_STARTER_ANNUAL STRIPE_PRICE_TEAM_MONTHLY STRIPE_PRICE_TEAM_ANNUAL STRIPE_PRICE_PRO_MONTHLY STRIPE_PRICE_PRO_ANNUAL STRIPE_PRICE_BUSINESS_MONTHLY STRIPE_PRICE_BUSINESS_ANNUAL; do
+            railway variable delete "$key" --service geocore-api-qa --environment "$QA_ENV" >/dev/null 2>&1 || true
+          done
+          remove_temp_vars || rc=1
+          railway variable list --service geocore-api-qa --environment "$QA_ENV" --json | jq -e 'keys | map(select(startswith("STRIPE_") or startswith("QA_"))) | length == 0' >/dev/null || rc=1
+          [[ "$(start_get)" == "$QA_ORIG_START" ]] || rc=1
+          [[ "$(predeploy_get)" == "$QA_ORIG_PREDEPLOY" ]] || rc=1
+          deploy_current_config() {
+            local out id
+            out="$(gql 'mutation($s:String!,$e:String!,$sha:String!){serviceInstanceDeployV2(serviceId:$s,environmentId:$e,commitSha:$sha)}' "$(jq -nc --arg s "$QA_API_SVC" --arg e "$QA_ENV" --arg sha "$EXPECTED_SHA" '{s:$s,e:$e,sha:$sha}')")" || return 1
+            id="$(jq -er 'if (.errors // [])|length > 0 then error("Railway deployment request rejected") else .data.serviceInstanceDeployV2 end | select(type == "string" and length > 0)' <<<"$out")" || return 1
+            echo "New isolated QA deployment requested: $id" >&2
+            printf '%s\n' "$id"
+          }
+          # Fresh deploy from the restored configuration and immutable source.
+          if [[ -n "${BILLING_PREVIOUS_DEPLOY:-}" ]]; then
+            read -r RESTORE_PREV _ _ < <(latest_deployment)
+            if [[ "$RESTORE_PREV" != "$BILLING_PREVIOUS_DEPLOY" ]]; then
+              TARGET="$(deploy_current_config)" || rc=1
+              wait_for_new_deployment "$RESTORE_PREV" 900 || rc=1
+              read -r ID STATUS SHA < <(latest_deployment)
+              [[ "$ID" == "$TARGET" && "$STATUS" == SUCCESS && "$SHA" == "$EXPECTED_SHA" ]] || rc=1
+            fi
+          fi
+          wait_for_stable_success 1200 || rc=1
+          wait_for_ready "$QA_API" 300 || rc=1
+          # Original unconfigured billing endpoint must return unavailable.
+          code="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' -X POST "$QA_API/api/v1/billing/webhook" -H 'Content-Type: application/json' -d '{}')" || rc=1
+          [[ "$code" == 503 ]] || { echo "RESTORE FAILED: unconfigured webhook expected 503; got $code"; rc=1; }
+          echo "QA configuration restoration exit=$rc" >> qa-stripe-identity.txt
+          exit "$rc"
+      - name: Retain redacted billing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geocore-sandbox-stripe-acceptance
+          path: |
+            qa-stripe-results.json
+            qa-stripe-identity.txt
+          retention-days: 14
+          if-no-files-found: warn

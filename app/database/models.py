@@ -49,6 +49,13 @@ class Tenant(Base):
     __tablename__ = "tenants"
     invoice_prefix: Mapped[str] = mapped_column(String(40), nullable=False, server_default="Invoice")
     invoice_next_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    # Invoice supplier settings (release default). Never prefilled or invented.
+    vat_registered: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false", default=False)
+    bank_account_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    bank_sort_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    bank_account_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    payment_terms_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30", default=30)
+    payment_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -274,6 +281,17 @@ class Quote(Base):
     approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
+    # Amount (total incl. VAT) the approver saw at approval time.
+    approved_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Revisions: an approved quote is never edited; a new draft derived from it points back at it.
+    revision_of_quote_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=True, index=True
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1", default=1)
+    # Issued-invoice snapshot: supplier identity, VAT status and payment details frozen at first issue.
+    invoice_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invoice_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    invoice_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -691,6 +709,9 @@ class User(Base):
     # Still a plain String column, no DB-level enum or CHECK constraint.
     role: Mapped[str | None] = mapped_column(String, nullable=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Release default: the Owner approves financial commitments; an Owner may explicitly delegate that authority to
+    # a Staff user. Off by default; only an Owner can change it.
+    can_approve_financials: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false", default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -1768,6 +1789,7 @@ class Variation(Base):
     approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
+    approved_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
@@ -1952,6 +1974,7 @@ class PurchaseOrder(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -2017,6 +2040,9 @@ class PurchaseReceipt(Base):
     )
     delivery_reference: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Client-generated per delivery attempt, so a retried submit returns the
+    # first receipt instead of counting the same delivery twice.
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

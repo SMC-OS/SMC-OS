@@ -155,6 +155,7 @@ class AuthService:
             name=user.name,
             email=user.email,
             role=user.role,
+            can_approve_financials=bool(user.role == "Owner" or user.can_approve_financials),
             tenant_id=user.tenant_id,
             tenant_name=tenant.name if tenant is not None else "",
             email_verified_at=user.email_verified_at,

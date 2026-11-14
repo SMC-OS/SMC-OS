@@ -118,6 +118,27 @@ export function TeamCard() {
                   <Badge tone={member.is_active ? "success" : "neutral"}>
                     {member.is_active ? "Active" : "Inactive"}
                   </Badge>
+                  {member.role === "Staff" && (
+                    <Badge tone={member.can_approve_financials ? "success" : "neutral"}>
+                      {member.can_approve_financials ? "Can approve" : "Cannot approve"}
+                    </Badge>
+                  )}
+                  {member.is_active && member.role === "Staff" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await api.setApprovalAuthority(member.id, !member.can_approve_financials);
+                          load();
+                        } catch {
+                          setError("Could not change approval authority.");
+                        }
+                      }}
+                    >
+                      {member.can_approve_financials ? "Withdraw approval authority" : "Allow approvals"}
+                    </Button>
+                  )}
                   {member.is_active && member.role !== "Owner" && (
                     <Button
                       variant="outline"

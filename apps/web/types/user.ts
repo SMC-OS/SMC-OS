@@ -6,5 +6,6 @@ export interface TeamMemberOut {
   email: string;
   role: string | null;
   is_active: boolean;
+  can_approve_financials?: boolean;
   created_at: string;
 }
